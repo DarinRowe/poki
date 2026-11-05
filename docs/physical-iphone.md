@@ -1,0 +1,26 @@
+# Physical iPhone setup
+
+Physical iPhone support has been verified only with the Chinese interface in portrait orientation. Read the [verification record and known limits](verification.md) first.
+
+Run `./bin/setup` first. It needs full Xcode and the Rust toolchain, and you do not need to set any environment variables. See the [requirements](install.md#requirements).
+
+## First-Time USB Preparation
+
+1. Connect the iPhone to your Mac over USB, unlock the phone, and accept **Trust This Computer**.
+2. On the iPhone, enable **Developer Mode** and turn on **UI Automation** in Developer Settings. Complete all on-device prompts manually.
+3. Ensure developer services are mounted before capturing screens or injecting input. If compatible Apple-signed Developer Disk Image files already exist on your Mac under `/Library/Developer/DeveloperDiskImages/iOS_DDI/Restore`, run:
+
+```sh
+node bin/prepare-device.mjs YOUR_DEVICE_ID
+```
+
+*(If exactly one device is connected, `YOUR_DEVICE_ID` can be omitted.)* This helper checks device services and mounts the local image when needed; it does not download Apple files, alter security settings, or reboot the device.
+
+## Post-Pairing Wi-Fi Operation
+
+Once paired over USB, the Mac and iPhone can communicate over the same local network for wireless discovery and supported operations while the phone stays unlocked and reachable:
+
+- **Verified wireless operations**: Prior hardware testing (with USB disconnected) verified screenshots, accessibility field readback, standard key input, backward/forward deletion, Unicode paste, and verified paste followed by `Return`. *(Note: Those checks were not re-run as a full hardware pass after later input changes.)*
+- **Native app launch**: Physical `launch_app` and `open_settings` without a page use the paired device’s RemoteXPC AppService directly. An explicit bundle ID skips application discovery; name lookup uses the advertised streaming app list. Arguments, environment, language, and locale are preserved. A positive process ID must match the observed foreground before success is reported. Foreground verification makes at most three observation attempts with a 2.5-second attempt limit and an 8-second total observation deadline; child-process cleanup completes before returning. Only observation is retried, never launch. If launch may have happened but cannot be confirmed, the receipt preserves known facts and stops even a permissive batch.
+- **Application discovery**: Physical `list_apps` uses the paired device’s advertised streaming app list, including for shared name resolution. System filtering retains the application-path distinction. Container-access eligibility is not supplied by this list and is not inferred.
+- **Wireless limitations**: Application install/uninstall use paired InstallationProxy and verify the resulting app inventory. If an installation is interrupted, its private recovery record remains under the state directory at `install/operations/<UUID>.json`, identifying the exact possible device staging path; it is never automatically retried or deleted while its status is uncertain. Remaining process/container management and Settings deep links still use Apple `devicectl`, which may fail to discover a wirelessly paired device (`CoreDeviceError 1000`) or reject a launch (`4016`). Native input and app launch do not prove those separate management paths work.

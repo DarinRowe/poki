@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$project_dir"
+mkdir -p build
+export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=$HOME=/builder --remap-path-prefix=/Volumes=/build --remap-path-prefix=$project_dir=/poki"
+export CFLAGS="${CFLAGS:-} -ffile-prefix-map=$HOME=/builder -ffile-prefix-map=/Volumes=/build"
+export CXXFLAGS="${CXXFLAGS:-} -ffile-prefix-map=$HOME=/builder -ffile-prefix-map=/Volumes=/build"
+xcrun swiftc -debug-prefix-map "$project_dir=/poki" native/ocr.swift -o build/ocr
+xcrun clang -ffile-prefix-map="$project_dir=/poki" -fobjc-arc -fblocks -framework Foundation -framework AppKit -framework UniformTypeIdentifiers native/simulator.m -o build/simulator
+cargo build --locked --release --manifest-path native/bridge/Cargo.toml --target-dir build/native-target --bin poki-native --example unlock_iphone -j 4
+cp build/native-target/release/poki-native build/poki-native

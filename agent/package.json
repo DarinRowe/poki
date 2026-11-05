@@ -1,0 +1,22 @@
+{
+  "name": "poki-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node cli.mjs",
+    "test": "node --test test/*.test.mjs",
+    "messages": "node imessage.mjs",
+    "telegram": "node telegram.mjs"
+  },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "1.5.0",
+    "@modelcontextprotocol/client": "2.4.0",
+    "zod": "4.6.7",
+    "@earendil-works/pi-ai": "1.5.0"
+  },
+  "license": "AGPL-3.0-only"
+}

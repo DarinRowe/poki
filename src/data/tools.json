@@ -1,0 +1,1347 @@
+{
+  "tools": [
+    {
+      "name": "list_devices",
+      "description": "Find attached iOS devices and booted or previously used simulators. Set include_all_simulators to also show shutdown simulators and available models.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "include_all_simulators": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    {
+      "name": "start_simulator",
+      "description": "Boot an existing simulator by id or name, or create one from an available model. Prepare accessibility before boot and select the resulting simulator.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "simulator": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "shut_down_simulator",
+      "description": "Shut down the selected simulator. This operation does not power off physical devices. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "select_device",
+      "description": "Select one connected device by id or unambiguous name for this MCP session. Selecting a shutdown simulator can boot it. Optional device selects an id or name; otherwise the session selection or sole available device is used. Consecutive calls do not require an explicit device lease.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "device"
+        ]
+      }
+    },
+    {
+      "name": "get_device_info",
+      "description": "Read device identity, capture dimensions in logical points, and optionally platform settings. Missing or unsupported settings remain visible in the result. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "include_settings": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    {
+      "name": "take_screenshot",
+      "description": "Capture the current display and return a JPEG image with screen dimensions and a prompt warning check. max_width resizes the image only; interaction coordinates remain logical points. The compatibility lossless argument does not change this JPEG response. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "max_width": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 16384
+          },
+          "lossless": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    {
+      "name": "save_screenshot",
+      "description": "Save a full-resolution screenshot to an absolute PNG or JPEG path or directory. The file extension controls encoding. Existing files require overwrite=true; the default directory is Pictures/Poki MCP. The compatibility lossless argument does not override the extension. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "overwrite": {
+            "type": "boolean"
+          },
+          "lossless": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    {
+      "name": "start_recording",
+      "description": "Start recording the selected device display to an H.264 movie. One recording is retained per device in this session; requires ffmpeg and ffprobe. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "stop_recording",
+      "description": "Finalize the session recording and inspect the saved movie before returning its path and media details. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "get_foreground_app",
+      "description": "Read the current foreground application from accessibility services. A missing bundle identifier may be null; no app is inferred from launch history. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "list_elements",
+      "description": "Read accessibility elements, or OCR when auto mode cannot use accessibility. Return logical-point frames and short-lived element refs. Refresh refs after input or screen changes. max_elements defaults to 400. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "accessibility",
+              "ocr"
+            ]
+          },
+          "include_offscreen": {
+            "type": "boolean"
+          },
+          "max_elements": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 5000
+          }
+        }
+      }
+    },
+    {
+      "name": "tap",
+      "description": "Tap at x/y in screen points or at the center of a current element ref. Refresh refs with list_elements after input; ambiguous or stale targets are rejected. sent=true only means the touch was written to the device. screen_changed compares what accessibility reports before and after the tap: the elements, their text, values, selected/enabled/focused state and positions. false means no change was observed, which is not proof the tap failed (an effect on a canvas or image, or one that arrives late, is not seen); the reply says so in instruction. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "ref": {
+            "type": "string",
+            "pattern": "^[eE][0-9]{1,6}$"
+          },
+          "x": {
+            "type": "number",
+            "minimum": -1000000,
+            "maximum": 1000000
+          },
+          "y": {
+            "type": "number",
+            "minimum": -1000000,
+            "maximum": 1000000
+          }
+        }
+      }
+    },
+    {
+      "name": "tap_text",
+      "description": "Find one visible element matching text, waiting up to five seconds for it to appear and hold still, trying OCR when needed, and tap it. Returns the visible text afterwards and screen_changed. sent=true only means the touch was written to the device, which does not acknowledge it. screen_changed compares what accessibility reports before and after the tap: the elements, their text, values, selected/enabled/focused state and positions. false means no change was observed, which is not proof the tap failed (an effect on a canvas or image, or one that arrives late, is not seen); the reply says so in instruction. Multiple matches produce an error without tapping; a missing target reports the closest text on screen. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ]
+      }
+    },
+    {
+      "name": "double_tap",
+      "description": "Send two taps at x/y in logical screen points or at a current element ref. Read back the screen to confirm the intended effect. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "ref": {
+            "type": "string",
+            "pattern": "^[eE][0-9]{1,6}$"
+          },
+          "x": {
+            "type": "number",
+            "minimum": -1000000,
+            "maximum": 1000000
+          },
+          "y": {
+            "type": "number",
+            "minimum": -1000000,
+            "maximum": 1000000
+          }
+        }
+      }
+    },
+    {
+      "name": "long_press",
+      "description": "Hold one touch at x/y or an element ref. duration is in seconds and defaults to one second. Coordinates use logical screen points. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "ref": {
+            "type": "string",
+            "pattern": "^[eE][0-9]{1,6}$"
+          },
+          "x": {
+            "type": "number",
+            "minimum": -1000000,
+            "maximum": 1000000
+          },
+          "y": {
+            "type": "number",
+            "minimum": -1000000,
+            "maximum": 1000000
+          },
+          "duration": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 60
+          }
+        }
+      }
+    },
+    {
+      "name": "swipe",
+      "description": "Move a touch from from_x/from_y to to_x/to_y in logical screen points. duration_ms defaults to 300. Inspect the resulting screen after delivery. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "from_x": {
+            "type": "number",
+            "minimum": -1000000,
+            "maximum": 1000000
+          },
+          "from_y": {
+            "type": "number",
+            "minimum": -1000000,
+            "maximum": 1000000
+          },
+          "to_x": {
+            "type": "number",
+            "minimum": -1000000,
+            "maximum": 1000000
+          },
+          "to_y": {
+            "type": "number",
+            "minimum": -1000000,
+            "maximum": 1000000
+          },
+          "duration_ms": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 60000
+          }
+        },
+        "required": [
+          "from_x",
+          "from_y",
+          "to_x",
+          "to_y"
+        ]
+      }
+    },
+    {
+      "name": "scroll",
+      "description": "Scroll up, down, left, or right around x/y, or the screen center when omitted. Coordinates use logical points. Waits for the list to stop, then returns screen_changed (false means it did not move, as at the end of a list) and the visible text, so there is no need to look again. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "up",
+              "down",
+              "left",
+              "right"
+            ]
+          },
+          "x": {
+            "type": "number",
+            "minimum": -1000000,
+            "maximum": 1000000
+          },
+          "y": {
+            "type": "number",
+            "minimum": -1000000,
+            "maximum": 1000000
+          }
+        },
+        "required": [
+          "direction"
+        ]
+      }
+    },
+    {
+      "name": "scroll_to",
+      "description": "Search for visible text and scroll until it is found, content stops changing, or max_scrolls is reached. The default limit is ten scrolls and at most 50 are made; missing text is an error. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "up",
+              "down",
+              "left",
+              "right"
+            ]
+          },
+          "max_scrolls": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "x": {
+            "type": "number",
+            "minimum": -1000000,
+            "maximum": 1000000
+          },
+          "y": {
+            "type": "number",
+            "minimum": -1000000,
+            "maximum": 1000000
+          }
+        },
+        "required": [
+          "text"
+        ]
+      }
+    },
+    {
+      "name": "drag",
+      "description": "Hold a touch, then move between the supplied logical-point endpoints. hold_seconds defaults to 0.6 and duration_ms to 800. Delivery does not prove a drop succeeded. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "from_x": {
+            "type": "number",
+            "minimum": -1000000,
+            "maximum": 1000000
+          },
+          "from_y": {
+            "type": "number",
+            "minimum": -1000000,
+            "maximum": 1000000
+          },
+          "to_x": {
+            "type": "number",
+            "minimum": -1000000,
+            "maximum": 1000000
+          },
+          "to_y": {
+            "type": "number",
+            "minimum": -1000000,
+            "maximum": 1000000
+          },
+          "hold_seconds": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 10
+          },
+          "duration_ms": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 60000
+          }
+        },
+        "required": [
+          "from_x",
+          "from_y",
+          "to_x",
+          "to_y"
+        ]
+      }
+    },
+    {
+      "name": "pinch",
+      "description": "Perform a two-finger gesture centered at x/y in screen points. scale above one spreads fingers; below one brings them together. Centers too close to an edge are rejected. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "x": {
+            "type": "number",
+            "minimum": -1000000,
+            "maximum": 1000000
+          },
+          "y": {
+            "type": "number",
+            "minimum": -1000000,
+            "maximum": 1000000
+          },
+          "scale": {
+            "type": "number",
+            "minimum": 0.01,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "x",
+          "y",
+          "scale"
+        ]
+      }
+    },
+    {
+      "name": "type_text",
+      "description": "Enter text into the focused field, optionally clearing it first and sending Return after verification. An empty text with clear=true only clears. Unicode uses the clipboard; an unavailable snapshot means old contents cannot be restored. A system paste permission prompt raised by the input is answered with Allow Paste, and Return waits for the read-back. If the text cannot be confirmed, the result is an error with reason and instruction, and Return is not sent. submit_sent reports a key event, not a completed form. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "clear": {
+            "type": "boolean"
+          },
+          "submit": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "text"
+        ]
+      }
+    },
+    {
+      "name": "fill",
+      "description": "Focus a field by ref, coordinates, or matching field label/placeholder/value/identifier, replace its text, and optionally submit after text verification. With none of these, it uses the only text field on screen, waiting up to five seconds for it. A fill whose text could not be confirmed in the field is an error that stops a batch, on a phone as on a simulator, and says what the field holds. On a simulator plain text switches the keyboard to en_US first so an input method cannot rewrite it. A field it cannot confirm as the target gets no text and returns an error. On a phone that includes coordinates with no field under them. Text fields with no id, the same name and the same text cannot be told apart, so fill refuses them: tap the one you want, then use type_text. Clipboard restoration can be unavailable. A system paste permission prompt raised by the input is answered with Allow Paste, and Return waits for the read-back. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "ref": {
+            "type": "string",
+            "pattern": "^[eE][0-9]{1,6}$"
+          },
+          "x": {
+            "type": "number",
+            "minimum": -1000000,
+            "maximum": 1000000
+          },
+          "y": {
+            "type": "number",
+            "minimum": -1000000,
+            "maximum": 1000000
+          },
+          "field": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "submit": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "text"
+        ]
+      }
+    },
+    {
+      "name": "press_key",
+      "description": "Send a named keyboard key with optional modifiers and count (default one). delete is backward deletion; forward_delete deletes ahead of the caret. Read back the field to verify edits. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string",
+            "enum": [
+              "0",
+              "1",
+              "2",
+              "3",
+              "4",
+              "5",
+              "6",
+              "7",
+              "8",
+              "9",
+              "a",
+              "b",
+              "c",
+              "d",
+              "delete",
+              "down",
+              "e",
+              "end",
+              "escape",
+              "f",
+              "forward_delete",
+              "g",
+              "h",
+              "home",
+              "i",
+              "j",
+              "k",
+              "l",
+              "left",
+              "m",
+              "n",
+              "o",
+              "p",
+              "page_down",
+              "page_up",
+              "q",
+              "r",
+              "return",
+              "right",
+              "s",
+              "space",
+              "t",
+              "tab",
+              "u",
+              "up",
+              "v",
+              "w",
+              "x",
+              "y",
+              "z"
+            ]
+          },
+          "modifiers": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "command",
+                "control",
+                "option",
+                "shift"
+              ]
+            }
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200
+          }
+        },
+        "required": [
+          "key"
+        ]
+      }
+    },
+    {
+      "name": "hide_keyboard",
+      "description": "Detect a visible keyboard, send its toggle event, and verify dismissal. Does nothing when already hidden. Some emoji panels remain visible and are reported as an error without changing input methods. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "press_button",
+      "description": "Send a hardware-style button event such as Home, lock, volume, mute, or Siri. Supported effects depend on the target platform. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "button": {
+            "type": "string",
+            "enum": [
+              "home",
+              "lock",
+              "volume_up",
+              "volume_down",
+              "mute",
+              "siri"
+            ]
+          }
+        },
+        "required": [
+          "button"
+        ]
+      }
+    },
+    {
+      "name": "system_gesture",
+      "description": "Send the requested system navigation gesture. Read back the display to check which system surface opened. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "gesture": {
+            "type": "string",
+            "enum": [
+              "go_home",
+              "app_switcher",
+              "control_center",
+              "notification_center",
+              "spotlight"
+            ]
+          }
+        },
+        "required": [
+          "gesture"
+        ]
+      }
+    },
+    {
+      "name": "go_back",
+      "description": "Tap a uniquely identified back control when available, otherwise swipe from the left edge. The application decides whether navigation occurs. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "rotate",
+      "description": "Request a display orientation and invalidate cached coordinates. A rotation lock or missing orientation confirmation is reported as an error. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "orientation": {
+            "type": "string",
+            "enum": [
+              "portrait",
+              "landscape_left",
+              "landscape_right",
+              "portrait_upside_down"
+            ]
+          }
+        },
+        "required": [
+          "orientation"
+        ]
+      }
+    },
+    {
+      "name": "set_appearance",
+      "description": "Request light or dark appearance through the selected platform adapter. Unsupported device actions are returned as errors. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "style": {
+            "type": "string",
+            "enum": [
+              "light",
+              "dark"
+            ]
+          }
+        },
+        "required": [
+          "style"
+        ]
+      }
+    },
+    {
+      "name": "set_accessibility",
+      "description": "Change supported text-size or accessibility display settings. Some settings require manual Settings interaction or are unavailable on a particular OS; errors are preserved. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "text_size": {
+            "type": "string",
+            "enum": [
+              "extra_small",
+              "small",
+              "medium",
+              "large",
+              "extra_large",
+              "extra_extra_large",
+              "extra_extra_extra_large",
+              "accessibility_medium",
+              "accessibility_large",
+              "accessibility_extra_large",
+              "accessibility_extra_extra_large",
+              "accessibility_extra_extra_extra_large"
+            ]
+          },
+          "reduce_motion": {
+            "type": "boolean"
+          },
+          "increase_contrast": {
+            "type": "boolean"
+          },
+          "reduce_transparency": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    {
+      "name": "list_apps",
+      "description": "List installed applications, excluding system apps unless include_system=true. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "include_system": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    {
+      "name": "launch_app",
+      "description": "Launch an application by bundle_id or unambiguous name. Optional language, locale, arguments, and environment affect launch. Physical-device launch uses the paired device AppService directly and verifies its returned PID against the observed foreground. Physical-device name lookup uses installed names and available localized Home Screen aliases, preferring an exact match then a unique case-insensitive substring; ambiguous matches require an explicit bundle_id. A per-device directory is shared across sessions for up to five minutes; misses or ambiguous cached results refresh once. Explicit bundle_id skips lookup. Name lookup requires the device streaming app-list service. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "bundle_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "language": {
+            "type": "string"
+          },
+          "locale": {
+            "type": "string"
+          },
+          "arguments": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "environment": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "terminate_app",
+      "description": "Stop an application identified by bundle_id on the selected device. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "bundle_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "bundle_id"
+        ]
+      }
+    },
+    {
+      "name": "install_app",
+      "description": "Install an application from a local path. Requires operator approval by default and valid Apple signing where applicable. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    },
+    {
+      "name": "uninstall_app",
+      "description": "Remove an installed application identified by bundle_id. Requires operator approval by default; application data may be removed by the platform. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "bundle_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "bundle_id"
+        ]
+      }
+    },
+    {
+      "name": "open_settings",
+      "description": "Open a supported Settings page or an application settings page. Routes vary by iOS version and some require visible navigation or manual interaction. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "page": {
+            "type": "string",
+            "enum": [
+              "about",
+              "accessibility",
+              "battery",
+              "bluetooth",
+              "camera",
+              "cellular",
+              "control_center",
+              "date_time",
+              "device_management",
+              "display",
+              "focus",
+              "general",
+              "keyboard",
+              "language_region",
+              "location",
+              "notifications",
+              "personal_hotspot",
+              "privacy",
+              "privacy_calendars",
+              "privacy_camera",
+              "privacy_contacts",
+              "privacy_motion",
+              "privacy_photos",
+              "privacy_reminders",
+              "privacy_tracking",
+              "safari",
+              "screen_time",
+              "siri",
+              "software_update",
+              "sounds",
+              "vpn",
+              "wallpaper",
+              "wifi"
+            ]
+          },
+          "app": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "open_url",
+      "description": "Ask the selected device to open a URL. Requires operator approval by default; the device chooses the registered handler. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ]
+      }
+    },
+    {
+      "name": "build_and_run",
+      "description": "Build an Xcode project or workspace from project_path, install the result, and launch it. scheme may be required for ambiguous projects; configuration defaults to Debug. Requires operator approval and platform signing when applicable. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "project_path": {
+            "type": "string"
+          },
+          "scheme": {
+            "type": "string"
+          },
+          "configuration": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_path"
+        ]
+      }
+    },
+    {
+      "name": "set_location",
+      "description": "Start a simulated latitude/longitude for the selected device. The platform session owns the override until cleared or closed. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "latitude": {
+            "type": "number",
+            "minimum": -90,
+            "maximum": 90
+          },
+          "longitude": {
+            "type": "number",
+            "minimum": -180,
+            "maximum": 180
+          }
+        },
+        "required": [
+          "latitude",
+          "longitude"
+        ]
+      }
+    },
+    {
+      "name": "clear_location",
+      "description": "Stop the location simulation owned by this service for the selected device. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "get_clipboard",
+      "description": "Read clipboard contents supported by the platform. Requires operator approval by default; returned contents may be private. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "set_clipboard",
+      "description": "Replace the selected device clipboard with text. Requires operator approval by default. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ]
+      }
+    },
+    {
+      "name": "list_crashes",
+      "description": "List available reports, optionally filtering by process name or bundle identifier and kind. Defaults to crash reports and a limit of 30. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "process": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "crash",
+              "spin",
+              "log",
+              "diagnostic",
+              "all"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500
+          }
+        }
+      }
+    },
+    {
+      "name": "get_crash",
+      "description": "Read a report by path from list_crashes, or find the newest report for process. Return a summary unless full=true. Symbolication uses only matching build UUIDs and architecture from this session. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "process": {
+            "type": "string"
+          },
+          "full": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    {
+      "name": "download_app_container",
+      "description": "Copy an accessible application container to a local destination, or the service state directory by default. Requires operator approval and platform container access. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "bundle_id": {
+            "type": "string"
+          },
+          "destination": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "bundle_id"
+        ]
+      }
+    },
+    {
+      "name": "request_human_action",
+      "description": "Optional. Show a macOS dialog asking the user to complete reason on the device; no other tool requires it. Wait for an actual Done/Cancel response, up to timeout_seconds (default 300). Done is an acknowledgment; inspect the device before continuing. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 3600
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      }
+    },
+    {
+      "name": "handle_alert",
+      "description": "Choose a visible alert button by text or accept/dismiss action, waiting up to five seconds for it to appear. Ambiguous buttons are not tapped. Recognized prompts are reported by kind. For purchase prompts, generic accept does not tap and returns the kind and available buttons. Confirm a purchase only when the user explicitly requested it, by setting button to the visible button text. Generic dismiss and other prompt kinds remain available. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "accept",
+              "dismiss"
+            ]
+          },
+          "button": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "wait_for",
+      "description": "Poll visible text until it appears, or disappears when gone=true. timeout_seconds defaults to ten. Disappearance requires a complete readable result; unreadable or truncated content is not proof of absence. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "gone": {
+            "type": "boolean"
+          },
+          "timeout_seconds": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 60
+          }
+        },
+        "required": [
+          "text"
+        ]
+      }
+    },
+    {
+      "name": "wait",
+      "description": "Pause for seconds without interacting with a device.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "seconds": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 30
+          }
+        },
+        "required": [
+          "seconds"
+        ]
+      }
+    },
+    {
+      "name": "batch_commands",
+      "description": "Do a whole known task in one call: launch the app, tap, fill, scroll, go back and answer alerts, up to 30 steps in order, each {tool, arguments}. Prefer this to separate calls whenever the request already names what to do. Every step is checked before any runs. Steps that tap wait up to five seconds for their target, so a batch can cross screens. The reply ends with the foreground app and the visible text, so no screenshot or second look is needed unless you need pixels. It stops at the first failure and reports the failed step, the closest text on screen and remaining_steps; fix that step and send only those. It also pauses before the steps that follow a tap after which no change was observed (same elements, text, values, state and positions), named in unchanged_step: those steps were written for the screen that tap should produce, and the batch cannot tell whether it did. That is not a failed tap; check screen in the reply, then send remaining_steps, with that tap first only if its effect is missing. stop_on_error=false continues past ordinary errors and such taps. Cancellation, timeout and unknown input always stop it. Nested batches are rejected and approval requirements still apply.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "commands": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 30,
+            "items": {
+              "type": "object",
+              "required": [
+                "tool"
+              ],
+              "properties": {
+                "tool": {
+                  "type": "string"
+                },
+                "arguments": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "stop_on_error": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "commands"
+        ]
+      }
+    },
+    {
+      "name": "acquire_device",
+      "description": "Exclusively occupy one device across tool calls in this MCP session. No boot occurs. One lease per session; renew explicitly before expiry. Arbitration applies only inside this daemon.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "ttl_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 600,
+            "default": 120
+          }
+        },
+        "required": [
+          "device"
+        ]
+      }
+    },
+    {
+      "name": "renew_device",
+      "description": "Extend this session’s active device lease by 1–600 seconds (default 120).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "lease_id": {
+            "type": "string"
+          },
+          "ttl_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 600,
+            "default": 120
+          }
+        },
+        "required": [
+          "lease_id"
+        ]
+      }
+    },
+    {
+      "name": "release_device",
+      "description": "Release this session’s device lease after cancelling accepted work and awaiting recording/location cleanup. Dispatched input is not undone.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "lease_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "lease_id"
+        ]
+      }
+    },
+    {
+      "name": "cancel_device",
+      "description": "Stop all previously accepted work and background recording/location in this MCP session, including compatibility calls without a lease. Optionally require the matching lease_id. Does not undo dispatched input or affect another session.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "lease_id": {
+            "type": "string"
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "observe_device",
+      "description": "Capture one image with its structured observation, non-reused element references and prompt check. AX and image are sequential, not atomic. Use before input and after unknown delivery.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "accessibility",
+              "ax",
+              "ocr"
+            ]
+          },
+          "max_elements": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          },
+          "include_offscreen": {
+            "type": "boolean"
+          }
+        },
+        "required": []
+      }
+    }
+  ]
+}

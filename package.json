@@ -1,0 +1,35 @@
+{
+  "name": "poki-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node src/daemon.mjs",
+    "mcp": "node src/stdio.mjs",
+    "test": "node --test test/*.test.mjs",
+    "build:native": "./bin/build-native"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/client": "2.4.0",
+    "@modelcontextprotocol/node": "2.1.2",
+    "@modelcontextprotocol/server": "2.4.0",
+    "sharp": "0.34.5",
+    "zod": "^4.2.0"
+  },
+  "license": "AGPL-3.0-only",
+  "description": "Local MCP tools for iPhone and iOS Simulator automation on macOS.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/JosssphZhou/poki.git"
+  },
+  "homepage": "https://github.com/JosssphZhou/poki",
+  "bugs": {
+    "url": "https://github.com/JosssphZhou/poki/issues"
+  },
+  "bin": {
+    "poki-mcp": "bin/poki-mcp"
+  }
+}

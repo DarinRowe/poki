@@ -1,0 +1,686 @@
+{
+  "mac_keycode_to_hid": [
+    {
+      "mac_keycode": 0,
+      "hid": 4
+    },
+    {
+      "mac_keycode": 11,
+      "hid": 5
+    },
+    {
+      "mac_keycode": 8,
+      "hid": 6
+    },
+    {
+      "mac_keycode": 2,
+      "hid": 7
+    },
+    {
+      "mac_keycode": 14,
+      "hid": 8
+    },
+    {
+      "mac_keycode": 3,
+      "hid": 9
+    },
+    {
+      "mac_keycode": 5,
+      "hid": 10
+    },
+    {
+      "mac_keycode": 4,
+      "hid": 11
+    },
+    {
+      "mac_keycode": 34,
+      "hid": 12
+    },
+    {
+      "mac_keycode": 38,
+      "hid": 13
+    },
+    {
+      "mac_keycode": 40,
+      "hid": 14
+    },
+    {
+      "mac_keycode": 37,
+      "hid": 15
+    },
+    {
+      "mac_keycode": 46,
+      "hid": 16
+    },
+    {
+      "mac_keycode": 45,
+      "hid": 17
+    },
+    {
+      "mac_keycode": 31,
+      "hid": 18
+    },
+    {
+      "mac_keycode": 35,
+      "hid": 19
+    },
+    {
+      "mac_keycode": 12,
+      "hid": 20
+    },
+    {
+      "mac_keycode": 15,
+      "hid": 21
+    },
+    {
+      "mac_keycode": 1,
+      "hid": 22
+    },
+    {
+      "mac_keycode": 17,
+      "hid": 23
+    },
+    {
+      "mac_keycode": 32,
+      "hid": 24
+    },
+    {
+      "mac_keycode": 9,
+      "hid": 25
+    },
+    {
+      "mac_keycode": 13,
+      "hid": 26
+    },
+    {
+      "mac_keycode": 7,
+      "hid": 27
+    },
+    {
+      "mac_keycode": 16,
+      "hid": 28
+    },
+    {
+      "mac_keycode": 6,
+      "hid": 29
+    },
+    {
+      "mac_keycode": 18,
+      "hid": 30
+    },
+    {
+      "mac_keycode": 19,
+      "hid": 31
+    },
+    {
+      "mac_keycode": 20,
+      "hid": 32
+    },
+    {
+      "mac_keycode": 21,
+      "hid": 33
+    },
+    {
+      "mac_keycode": 23,
+      "hid": 34
+    },
+    {
+      "mac_keycode": 22,
+      "hid": 35
+    },
+    {
+      "mac_keycode": 26,
+      "hid": 36
+    },
+    {
+      "mac_keycode": 28,
+      "hid": 37
+    },
+    {
+      "mac_keycode": 25,
+      "hid": 38
+    },
+    {
+      "mac_keycode": 29,
+      "hid": 39
+    },
+    {
+      "mac_keycode": 36,
+      "hid": 40
+    },
+    {
+      "mac_keycode": 53,
+      "hid": 41
+    },
+    {
+      "mac_keycode": 51,
+      "hid": 42
+    },
+    {
+      "mac_keycode": 48,
+      "hid": 43
+    },
+    {
+      "mac_keycode": 49,
+      "hid": 44
+    },
+    {
+      "mac_keycode": 27,
+      "hid": 45
+    },
+    {
+      "mac_keycode": 24,
+      "hid": 46
+    },
+    {
+      "mac_keycode": 33,
+      "hid": 47
+    },
+    {
+      "mac_keycode": 30,
+      "hid": 48
+    },
+    {
+      "mac_keycode": 42,
+      "hid": 49
+    },
+    {
+      "mac_keycode": 41,
+      "hid": 51
+    },
+    {
+      "mac_keycode": 39,
+      "hid": 52
+    },
+    {
+      "mac_keycode": 50,
+      "hid": 53
+    },
+    {
+      "mac_keycode": 43,
+      "hid": 54
+    },
+    {
+      "mac_keycode": 47,
+      "hid": 55
+    },
+    {
+      "mac_keycode": 44,
+      "hid": 56
+    },
+    {
+      "mac_keycode": 57,
+      "hid": 57
+    },
+    {
+      "mac_keycode": 122,
+      "hid": 58
+    },
+    {
+      "mac_keycode": 120,
+      "hid": 59
+    },
+    {
+      "mac_keycode": 99,
+      "hid": 60
+    },
+    {
+      "mac_keycode": 118,
+      "hid": 61
+    },
+    {
+      "mac_keycode": 96,
+      "hid": 62
+    },
+    {
+      "mac_keycode": 97,
+      "hid": 63
+    },
+    {
+      "mac_keycode": 98,
+      "hid": 64
+    },
+    {
+      "mac_keycode": 100,
+      "hid": 65
+    },
+    {
+      "mac_keycode": 101,
+      "hid": 66
+    },
+    {
+      "mac_keycode": 109,
+      "hid": 67
+    },
+    {
+      "mac_keycode": 103,
+      "hid": 68
+    },
+    {
+      "mac_keycode": 111,
+      "hid": 69
+    },
+    {
+      "mac_keycode": 115,
+      "hid": 74
+    },
+    {
+      "mac_keycode": 116,
+      "hid": 75
+    },
+    {
+      "mac_keycode": 117,
+      "hid": 76
+    },
+    {
+      "mac_keycode": 119,
+      "hid": 77
+    },
+    {
+      "mac_keycode": 121,
+      "hid": 78
+    },
+    {
+      "mac_keycode": 124,
+      "hid": 79
+    },
+    {
+      "mac_keycode": 123,
+      "hid": 80
+    },
+    {
+      "mac_keycode": 125,
+      "hid": 81
+    },
+    {
+      "mac_keycode": 126,
+      "hid": 82
+    },
+    {
+      "mac_keycode": 76,
+      "hid": 88
+    },
+    {
+      "mac_keycode": 59,
+      "hid": 224
+    },
+    {
+      "mac_keycode": 56,
+      "hid": 225
+    },
+    {
+      "mac_keycode": 58,
+      "hid": 226
+    },
+    {
+      "mac_keycode": 55,
+      "hid": 227
+    },
+    {
+      "mac_keycode": 62,
+      "hid": 228
+    },
+    {
+      "mac_keycode": 60,
+      "hid": 229
+    },
+    {
+      "mac_keycode": 61,
+      "hid": 230
+    },
+    {
+      "mac_keycode": 54,
+      "hid": 231
+    }
+  ],
+  "option_characters": [
+    {
+      "text": "ç",
+      "hid": 6,
+      "shift": false,
+      "option": true
+    },
+    {
+      "text": "Ç",
+      "hid": 6,
+      "shift": true,
+      "option": true
+    },
+    {
+      "text": "ß",
+      "hid": 22,
+      "shift": false,
+      "option": true
+    },
+    {
+      "text": "å",
+      "hid": 4,
+      "shift": false,
+      "option": true
+    },
+    {
+      "text": "Å",
+      "hid": 4,
+      "shift": true,
+      "option": true
+    },
+    {
+      "text": "æ",
+      "hid": 52,
+      "shift": false,
+      "option": true
+    },
+    {
+      "text": "Æ",
+      "hid": 52,
+      "shift": true,
+      "option": true
+    },
+    {
+      "text": "ø",
+      "hid": 18,
+      "shift": false,
+      "option": true
+    },
+    {
+      "text": "Ø",
+      "hid": 18,
+      "shift": true,
+      "option": true
+    },
+    {
+      "text": "œ",
+      "hid": 20,
+      "shift": false,
+      "option": true
+    },
+    {
+      "text": "Œ",
+      "hid": 20,
+      "shift": true,
+      "option": true
+    },
+    {
+      "text": "–",
+      "hid": 45,
+      "shift": false,
+      "option": true
+    },
+    {
+      "text": "—",
+      "hid": 45,
+      "shift": true,
+      "option": true
+    },
+    {
+      "text": "…",
+      "hid": 51,
+      "shift": false,
+      "option": true
+    },
+    {
+      "text": "“",
+      "hid": 47,
+      "shift": false,
+      "option": true
+    },
+    {
+      "text": "”",
+      "hid": 47,
+      "shift": true,
+      "option": true
+    },
+    {
+      "text": "‘",
+      "hid": 48,
+      "shift": false,
+      "option": true
+    },
+    {
+      "text": "’",
+      "hid": 48,
+      "shift": true,
+      "option": true
+    },
+    {
+      "text": "€",
+      "hid": 31,
+      "shift": true,
+      "option": true
+    },
+    {
+      "text": "£",
+      "hid": 32,
+      "shift": false,
+      "option": true
+    },
+    {
+      "text": "¥",
+      "hid": 28,
+      "shift": false,
+      "option": true
+    },
+    {
+      "text": "©",
+      "hid": 10,
+      "shift": false,
+      "option": true
+    },
+    {
+      "text": "®",
+      "hid": 21,
+      "shift": false,
+      "option": true
+    },
+    {
+      "text": "™",
+      "hid": 31,
+      "shift": false,
+      "option": true
+    },
+    {
+      "text": "•",
+      "hid": 37,
+      "shift": false,
+      "option": true
+    },
+    {
+      "text": "°",
+      "hid": 37,
+      "shift": true,
+      "option": true
+    },
+    {
+      "text": "¡",
+      "hid": 30,
+      "shift": false,
+      "option": true
+    },
+    {
+      "text": "¿",
+      "hid": 56,
+      "shift": true,
+      "option": true
+    },
+    {
+      "text": "π",
+      "hid": 19,
+      "shift": false,
+      "option": true
+    },
+    {
+      "text": "∞",
+      "hid": 34,
+      "shift": false,
+      "option": true
+    },
+    {
+      "text": "≠",
+      "hid": 46,
+      "shift": false,
+      "option": true
+    },
+    {
+      "text": "≤",
+      "hid": 54,
+      "shift": false,
+      "option": true
+    },
+    {
+      "text": "≥",
+      "hid": 55,
+      "shift": false,
+      "option": true
+    },
+    {
+      "text": "÷",
+      "hid": 56,
+      "shift": false,
+      "option": true
+    },
+    {
+      "text": "§",
+      "hid": 35,
+      "shift": false,
+      "option": true
+    },
+    {
+      "text": "¶",
+      "hid": 36,
+      "shift": false,
+      "option": true
+    }
+  ],
+  "alert_accept_priority": [
+    "allow paste",
+    "允许粘贴",
+    "允許貼上",
+    "allow while using app",
+    "allow",
+    "allow full access",
+    "allow access to all photos",
+    "ok",
+    "continue",
+    "turn on",
+    "open",
+    "yes"
+  ],
+  "alert_dismiss_priority": [
+    "don't allow paste",
+    "不允许粘贴",
+    "不允許貼上",
+    "don't allow",
+    "ask app not to track",
+    "not now",
+    "cancel",
+    "close",
+    "no",
+    "later",
+    "dismiss",
+    "ignore",
+    "deny"
+  ],
+  "prompt_detector": [
+    {
+      "name": "passcode",
+      "contains": [
+        "enter iphone passcode",
+        "enter ipad passcode",
+        "enter your passcode",
+        "enter passcode",
+        "解锁密码",
+        "解鎖密碼"
+      ],
+      "exact": []
+    },
+    {
+      "name": "face_id",
+      "contains": [
+        "look at your iphone",
+        "look at your ipad",
+        "confirm with face id"
+      ],
+      "exact": [
+        "face id",
+        "面容 id"
+      ]
+    },
+    {
+      "name": "touch_id",
+      "contains": [
+        "place your finger",
+        "rest your finger",
+        "confirm with touch id",
+        "touch id for “",
+        "touch id for \""
+      ],
+      "exact": [
+        "touch id",
+        "触控 id"
+      ]
+    },
+    {
+      "name": "apple_account",
+      "contains": [
+        "apple account password",
+        "enter the password for",
+        "sign in with your apple account",
+        "账户密码",
+        "帳號密碼"
+      ],
+      "exact": []
+    },
+    {
+      "name": "vpn",
+      "contains": [
+        "would like to add vpn configurations",
+        "would like to add vpn configuration",
+        "添加 vpn 配置",
+        "添加vpn配置",
+        "加入 vpn 設定",
+        "加入vpn設定"
+      ],
+      "exact": []
+    },
+    {
+      "name": "paste",
+      "contains": [
+        "would like to paste from",
+        "paste from \"dtpasteboardd\"",
+        "paste from “dtpasteboardd”",
+        "允许粘贴",
+        "允許貼上"
+      ],
+      "exact": [
+        "allow paste",
+        "don't allow paste",
+        "don’t allow paste"
+      ]
+    },
+    {
+      "name": "profile",
+      "contains": [
+        "install profile",
+        "安装描述文件",
+        "安装配置描述文件",
+        "安裝描述檔",
+        "安裝設定描述檔"
+      ],
+      "exact": []
+    },
+    {
+      "name": "purchase",
+      "contains": [
+        "double-click to pay",
+        "double click to pay",
+        "double-click to install",
+        "double click to install",
+        "confirm with side button",
+        "confirm with top button",
+        "购买",
+        "購買"
+      ],
+      "exact": []
+    }
+  ]
+}

@@ -1,0 +1,170 @@
+#!/usr/bin/env python3
+import argparse
+import getpass
+import hashlib
+import json
+import os
+from pathlib import Path
+import platform
+import plistlib
+import shutil
+import subprocess
+import sys
+import tempfile
+from urllib.parse import urlsplit
+
+
+VERSION = '1.9.12'
+RELEASE = 'https://github.com/BlueBubblesApp/bluebubbles-server/releases/download/v' + VERSION
+ASSETS = {
+    'arm64': ('BlueBubbles-1.9.12-arm64-mac.zip', 'e1d96d67fe4fc79ad44a8f1eeac3de78eef561635842b66d380dd3eba5092d89'),
+    'x86_64': ('BlueBubbles-1.9.12-mac.zip', '7078ea4302b4df6ab4b236bdaea84440aabf95b2a07b281919fd0ef8822e958c'),
+}
+NEXT_STEPS = '''Finish setup yourself (the installer does not open apps or send messages):
+1. Open Messages > Settings > iMessage and sign in to your Apple Account.
+2. Open the installed BlueBubbles.app. Follow Intro > Permissions. In System
+   Settings > Privacy & Security, grant Full Disk Access and Accessibility to
+   this copy of BlueBubbles. Allow Messages automation when macOS asks.
+3. In BlueBubbles Connection, set the same server password you supplied here
+   and click the save icon. Keep the local server URL/port consistent with it.
+   Follow any remaining onboarding prompts in BlueBubbles yourself.
+4. Private API and disabling SIP are not required for Poki's plain-text channel.
+   See docs/imessage-gateway.md before checking or starting the channel.'''
+
+
+def ask(label, default=None):
+    answer = input(label + (f' [{default}]' if default else '') + ': ').strip()
+    return answer or default or ''
+
+
+def settings(answers):
+    if answers:
+        path = Path(answers)
+        if path.stat().st_mode & 0o077:
+            raise ValueError('The answers file must be private. Run chmod 600 on it.')
+        try:
+            data = json.loads(path.read_text())
+        except (ValueError, OSError):
+            raise ValueError('Cannot read the private answers file as JSON.') from None
+    else:
+        if not sys.stdin.isatty():
+            raise ValueError('Use a terminal for hidden password input, or pass --answers with a private JSON file.')
+        print('Choose a server password now, then set the same password in BlueBubbles during onboarding.')
+        data = {'url': ask('Local BlueBubbles server URL', 'http://127.0.0.1:1234'),
+                'sender': ask('Allowed iMessage sender (email or phone number)'),
+                'device': ask('Poki device name or ID')}
+        data['chatGuid'] = ask('Exact direct chat GUID', 'iMessage;-;' + data['sender'])
+        data['password'] = getpass.getpass('BlueBubbles server password (hidden): ')
+    if not isinstance(data, dict):
+        raise ValueError('Answers must be a JSON object.')
+    for field in ['url', 'sender', 'device', 'password']:
+        if not isinstance(data.get(field), str) or not data[field].strip():
+            raise ValueError(f'Missing {field} in setup answers.')
+    data['sender'] = data['sender'].strip()
+    if ';' in data['sender']:
+        raise ValueError('Configure exactly one sender, without semicolons.')
+    url = urlsplit(data['url'])
+    if (url.scheme != 'http' or url.hostname not in ['localhost', '127.0.0.1', '::1']
+            or url.username or url.password or url.path not in ['', '/'] or url.query or url.fragment):
+        raise ValueError('Use a loopback HTTP server URL without credentials, path or query.')
+    try:
+        url.port
+    except ValueError:
+        raise ValueError('Invalid server port.') from None
+    chat = data.get('chatGuid', 'iMessage;-;' + data['sender'])
+    if chat not in ['iMessage;-;' + data['sender'], 'any;-;' + data['sender']]:
+        raise ValueError('Use the exact direct chat GUID for the allowed sender.')
+    return ({'sender': data['sender'], 'chatGuid': chat, 'device': data['device'], 'auth': 'chatgpt'},
+            {'url': data['url'], 'password': data['password']})
+
+
+def install(args):
+    if platform.system() != 'Darwin' or platform.machine() not in ASSETS:
+        raise ValueError('BlueBubbles requires an Apple Silicon or Intel Mac.')
+    app_dir = Path(args.app_dir).expanduser().resolve()
+    config_dir = Path(args.config_dir).expanduser().absolute()
+    app = app_dir / 'BlueBubbles.app'
+    if os.path.lexists(app) or os.path.lexists(config_dir):
+        raise ValueError('The app or configuration destination already exists; nothing was changed. Choose unused directories.')
+    config, connection = settings(args.answers)
+    filename, digest = ASSETS[platform.machine()]
+    installed = False
+    configured = False
+    try:
+        with tempfile.TemporaryDirectory(prefix='poki-bluebubbles-') as temporary:
+            work = Path(temporary)
+            archive = work / filename
+            if args.archive:
+                shutil.copyfile(Path(args.archive).expanduser(), archive)
+            else:
+                print(f'Downloading official BlueBubbles {VERSION} for {platform.machine()}...', flush=True)
+                result = subprocess.run(['curl', '--fail', '--location', '--silent', '--show-error',
+                                         '--proto', '=https', '--proto-redir', '=https', '--connect-timeout', '20',
+                                         '--max-time', '600', '--output', str(archive), RELEASE + '/' + filename],
+                                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                if result.returncode:
+                    raise ValueError('Download failed. No app or channel configuration was installed; retry when the official release is reachable.')
+            with archive.open('rb') as stream:
+                actual = hashlib.file_digest(stream, 'sha256').hexdigest()
+            if actual != digest:
+                raise ValueError('Checksum verification failed. No app or channel configuration was installed.')
+            print(f'BlueBubbles {VERSION} checksum verified.', flush=True)
+            extracted = work / 'extracted'
+            subprocess.run(['/usr/bin/ditto', '-x', '-k', str(archive), str(extracted)], check=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            source = extracted / 'BlueBubbles.app'
+            with (source / 'Contents/Info.plist').open('rb') as stream:
+                if plistlib.load(stream).get('CFBundleShortVersionString') != VERSION:
+                    raise ValueError('The extracted app has an unexpected version.')
+            app_dir.mkdir(parents=True, exist_ok=True)
+            with tempfile.TemporaryDirectory(prefix='.poki-bluebubbles-', dir=app_dir) as staging:
+                staged = Path(staging) / 'BlueBubbles.app'
+                subprocess.run(['/usr/bin/ditto', str(source), str(staged)], check=True,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                if os.path.lexists(app):
+                    raise ValueError('The app destination now exists; it was left unchanged.')
+                staged.rename(app)
+                installed = True
+            config_dir.mkdir(parents=True, mode=0o700)
+            configured = True
+            for name, value in [('imessage.json', config), ('connection.json', connection)]:
+                with (config_dir / name).open('x') as stream:
+                    os.fchmod(stream.fileno(), 0o600)
+                    json.dump(value, stream, indent=2)
+                    stream.write('\n')
+    except BaseException:
+        if configured:
+            shutil.rmtree(config_dir)
+        if installed:
+            shutil.rmtree(app)
+        raise
+    print(f'Installed BlueBubbles {VERSION}: {app}\nPrivate channel configuration: {config_dir}')
+    print(NEXT_STEPS)
+
+
+def main():
+    parser = argparse.ArgumentParser(description='Optionally install the pinned BlueBubbles gateway and configure Poki iMessage.')
+    parser.add_argument('--channel', choices=['none', 'imessage'], help='Omit to choose interactively; default is none.')
+    parser.add_argument('--app-dir', default='~/Applications', help='Application destination directory; existing apps are never replaced.')
+    parser.add_argument('--config-dir', default='~/.config/poki-agent/imessage', help='New private configuration directory.')
+    parser.add_argument('--answers', help='Private JSON file with url, password, sender, chatGuid and device for unattended setup.')
+    parser.add_argument('--archive', help='Use an already downloaded official ZIP; the pinned checksum is still required.')
+    args = parser.parse_args()
+    channel = args.channel
+    if channel is None:
+        channel = ask('Optional messaging channel: none or imessage', 'none').lower()
+    if channel == 'none':
+        print('Skipped iMessage. No gateway downloaded or installed; existing Poki setup is unchanged.')
+    elif channel == 'imessage':
+        install(args)
+    else:
+        raise ValueError('Choose none or imessage.')
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (ValueError, OSError, subprocess.CalledProcessError, EOFError, KeyboardInterrupt) as error:
+        message = str(error) if isinstance(error, ValueError) else 'Setup could not finish. Check destination permissions and available disk space, then retry.'
+        print('Setup failed: ' + message, file=sys.stderr)
+        sys.exit(1)

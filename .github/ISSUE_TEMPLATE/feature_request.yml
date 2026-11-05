@@ -1,0 +1,18 @@
+name: Feature request
+description: Ask for a task or capability Poki does not handle yet.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: task
+    attributes:
+      label: What you want to do
+      description: The real task on your iPhone, in one or two sentences.
+    validations:
+      required: true
+  - type: textarea
+    id: today
+    attributes:
+      label: What happens today
+      description: How Poki handles the task now, or where it stops.
+    validations:
+      required: true

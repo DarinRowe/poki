@@ -1,0 +1,46 @@
+name: Bug report
+description: Something in Poki does not work as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Remove passcodes, tokens, and private screen contents. To report a vulnerability, use [private reporting](https://github.com/JosssphZhou/poki/security/advisories/new).
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you expected, and what you saw instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The task or tool call, and the response you got.
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Poki MCP
+        - Poki Agent
+    validations:
+      required: true
+  - type: dropdown
+    id: device
+    attributes:
+      label: Device
+      options:
+        - Physical iPhone
+        - iOS Simulator
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Poki commit, macOS, Xcode, and iOS.
+    validations:
+      required: true

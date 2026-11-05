@@ -1,0 +1,289 @@
+// Source: poki-app gateway/routes.mjs at 9972d34.
+import { readFile, writeFile, mkdir, rename, readdir } from 'node:fs/promises';
+import { join } from 'node:path';
+import { createHash, randomUUID } from 'node:crypto';
+import { matching, conditionsMatch, planSchema, selectorFor } from './fast/task.mjs';
+import { learnReadout, readCurrent } from './readout.mjs';
+
+const observationTools = new Set(['observe_device', 'list_elements']);
+const passiveTools = new Set(['poki_mcp_status', 'list_apps', 'get_foreground_app', 'take_screenshot', 'acquire_device', 'renew_device', 'release_device']);
+const label = e => e.label ?? e.text ?? '';
+const role = e => e.role ?? e.type;
+const selector = selectorFor;
+const quote = /“([^”]+)”|「([^」]+)」|"([^"\n]+)"/g;
+const escape = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+function goal(prompt, texts) {
+  const parts = []; let position = 0;
+  const spans = [];
+  for (const match of prompt.matchAll(quote)) {
+    const value = match.slice(1).find(Boolean);
+    const id = Object.keys(texts).find(id => texts[id] === value);
+    if (id) spans.push({ start: match.index + 1, end: match.index + 1 + value.length, id });
+  }
+  for (const [id, value] of Object.entries(texts)) {
+    if (!value || spans.some(span => span.id === id)) continue;
+    const start = prompt.indexOf(value), end = start + value.length;
+    if (start >= 0 && start === prompt.lastIndexOf(value) && !spans.some(span => start < span.end && end > span.start)) spans.push({ start, end, id });
+  }
+  for (const span of spans.sort((a, b) => a.start - b.start)) {
+    parts.push(prompt.slice(position, span.start), { text_id: span.id });
+    position = span.end;
+  }
+  parts.push(prompt.slice(position));
+  return parts;
+}
+function bind(parts, prompt, literals) {
+  const ids = parts.filter(part => typeof part !== 'string').map(part => part.text_id);
+  const pattern = parts.map((part, index) => {
+    if (typeof part === 'string') return escape(part).replace(/\s+/g, '\\s+').replace(/[“”「」"]/g, '[“”「」"]');
+    const quoted = /[“「"]$/.test(parts[index - 1]) && /^[”」"]/.test(parts[index + 1]);
+    return quoted ? '([^“”「」"]+?)' : `(${escape(literals[part.text_id])})`;
+  }).join('');
+  const match = prompt.trim().match(new RegExp(`^${pattern}$`));
+  if (!match) return null;
+  const texts = {};
+  for (let i = 0; i < ids.length; i++) {
+    if (Object.hasOwn(texts, ids[i]) && texts[ids[i]] !== match[i + 1]) return null;
+    texts[ids[i]] = match[i + 1];
+  }
+  return texts;
+}
+function substitute(value, texts) {
+  if (typeof value === 'string') return value.replace(/\{\{(text_\d+)\}\}/g, (whole, id) => texts[id] ?? whole);
+  if (Array.isArray(value)) return value.map(item => substitute(item, texts));
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, substitute(item, texts)]));
+  return value;
+}
+function template(value, texts) {
+  return typeof value === 'string' ? goal(value, texts).map(part => typeof part === 'string' ? part : `{{${part.text_id}}}`).join('') : value;
+}
+const elementKey = e => JSON.stringify([role(e), e.identifier ? ['identifier', e.identifier] : e.id ? ['id', e.id] : ['label', label(e)]]);
+function inputTemplate(before, after, text, id) {
+  if (typeof after !== 'string' || before === after || !text) return null;
+  const candidates = [];
+  for (let at = after.indexOf(text); at >= 0; at = after.indexOf(text, at + 1)) {
+    const prefix = after.slice(0, at), suffix = after.slice(at + text.length);
+    if (before.length >= prefix.length + suffix.length && before.startsWith(prefix) && before.endsWith(suffix)) candidates.push(`${prefix}{{${id}}}${suffix}`);
+  }
+  return candidates.length === 1 ? candidates[0] : null;
+}
+function fillConditions(when, action, before, after, text) {
+  if (action.op !== 'fill' || !action.text_id || !/^(TextField|TextView|TextArea|SearchField)$/.test(action.role ?? '')) return when;
+  const targets = matching(before.elements, action), written = matching(after.elements, action);
+  if (targets.length !== 1 || written.length !== 1 || elementKey(targets[0]) !== elementKey(written[0]) || written[0].value !== text) return when;
+  const target = targets[0], oldText = target.value === target.placeholder ? '' : target.value;
+  if (typeof oldText !== 'string') return when;
+  return when.flatMap(condition => {
+    const element = matching(before.elements, condition)[0];
+    if (element === target) {
+      const { value, ...locator } = condition;
+      return [{ ...locator, ...(action.identifier ? { identifier: action.identifier } : { element_id: action.element_id }) }];
+    }
+    if (!element || role(element) !== 'StaticText') return [condition];
+    const changed = after.elements.filter(e => elementKey(e) === elementKey(element));
+    if (changed.length !== 1) return [condition];
+    const replacement = inputTemplate(label(element), label(changed[0]), text, action.text_id);
+    return replacement && substitute(replacement, { [action.text_id]: oldText }) === label(element) ? [] : [condition];
+  });
+}
+function parameterizedPlan(compiled, texts) {
+  const bindings = new Map();
+  const parameterize = (condition, observation) => {
+    const element = matching(observation.elements, condition)[0];
+    const fields = element && bindings.get(elementKey(element));
+    const result = { ...condition };
+    for (const [field, binding] of Object.entries(fields ?? {})) {
+      if (result[field] === binding.value) result[field] = binding.template;
+    }
+    return result;
+  };
+  const steps = compiled.steps.map(({ before, after, when, action, complete }) => {
+    const start = fillConditions(when, action, before, after, texts[action.text_id]);
+    const next = { when: start.map(c => parameterize(c, before)), action: parameterize(action, before) };
+    if (action.text_id) {
+      for (const element of after.elements) {
+        const key = elementKey(element), previous = before.elements.filter(e => elementKey(e) === key);
+        if (previous.length !== 1) continue;
+        const fields = { ...bindings.get(key) };
+        for (const field of ['label', 'value']) {
+          const value = field === 'label' ? label(element) : element.value;
+          const prior = field === 'label' ? label(previous[0]) : previous[0].value ?? '';
+          const replacement = inputTemplate(prior, value, texts[action.text_id], action.text_id);
+          if (replacement) fields[field] = { value, template: replacement };
+        }
+        bindings.set(key, fields);
+      }
+    }
+    return { ...next, complete: complete.map(c => parameterize(c, after)) };
+  });
+  return { steps, success: compiled.success.map(c => parameterize(c, compiled.final)) };
+}
+function conditions(observation, preferStates = true) {
+  const candidates = observation.elements.flatMap(e => {
+    if (!/Heading|StaticText|TextField|TextView|TextArea|SearchField|Button|Link|GenericElement|Group|CheckBox/.test(role(e) ?? '') && typeof e.checked !== 'boolean') return [];
+    if (!label(e) && !/TextField|TextView|TextArea|SearchField/.test(role(e) ?? '')) return [];
+    const s = selector(e);
+    if ((!s.label && !s.role) || matching(observation.elements, s).length !== 1) return [];
+    return [{ ...s, ...(typeof e.value === 'string' ? { value: e.value } : {}), ...(typeof e.checked === 'boolean' ? { checked: e.checked } : {}) }];
+  });
+  const states = candidates.filter(condition => /Heading|StaticText|TextField|TextView|TextArea|SearchField/.test(condition.role ?? '') || typeof condition.checked === 'boolean');
+  return (preferStates && states.length ? states : candidates).slice(0, 20);
+}
+function resultMatches(observation, details) {
+  const candidates = conditions(observation, false);
+  const selected = [];
+  for (const detail of details) {
+    if (typeof detail.value !== 'string' || !detail.value) return null;
+    const field = typeof detail.label === 'string' ? detail.label.replace(/\s+/g, '') : '';
+    const matches = candidates.filter(condition => condition.label === detail.value || condition.value === detail.value
+      || field && condition.label.replace(/\s+/g, '').includes(field) && condition.label.includes(detail.value));
+    if (matches.length !== 1) return null;
+    selected.push(matches[0]);
+  }
+  return details.length ? selected : null;
+}
+function resultConditions(observation, details) {
+  const matches = resultMatches(observation, details);
+  if (!matches) return null;
+  const headings = conditions(observation, false).filter(condition => condition.role === 'Heading' || condition.trait_names?.includes('Header'));
+  const selected = [...headings, ...matches];
+  const unique = [...new Map(selected.map(condition => [JSON.stringify(condition), condition])).values()];
+  return details.length && unique.length <= 20 ? unique : null;
+}
+function navigationConditions({ action, before, after }) {
+  if (action.op !== 'tap' || action.role !== 'Button' || !action.label) return null;
+  const isHeading = e => role(e) === 'Heading' || e.trait_names?.includes('Header');
+  const headings = after.elements.filter(e => label(e) === action.label && isHeading(e));
+  if (headings.length !== 1) return null;
+  const heading = selector(headings[0]);
+  if (matching(before.elements, heading).length || matching(after.elements, heading).length !== 1) return null;
+  const previousHeadings = before.elements.filter(isHeading).map(label);
+  const back = after.elements.filter(e => role(e) === 'Button' && label(e) &&
+    (e.identifier === 'BackButton' || previousHeadings.includes(label(e))));
+  if (back.length !== 1) return null;
+  const previousPage = selector(back[0]);
+  if (matching(before.elements, previousPage).length || matching(after.elements, previousPage).length !== 1) return null;
+  return [heading, previousPage];
+}
+function actionFor(entry, before, id) {
+  const { device, ref, field, x, y, ...args } = entry.args;
+  let target;
+  if (ref) target = before.elements.find(e => e.ref === ref);
+  else if (field || entry.tool === 'tap_text') {
+    const text = field ?? args.text;
+    const matches = before.elements.filter(e => [label(e), e.value, e.placeholder, e.identifier].includes(text));
+    if (matches.length === 1) target = matches[0];
+  } else if (Number.isFinite(x) && Number.isFinite(y)) {
+    const matches = before.elements.filter(e => {
+      const f = e.frame ?? e;
+      return e.visible !== false && x >= f.x && y >= f.y && x <= f.x + f.width && y <= f.y + f.height;
+    }).sort((a, b) => (a.frame ?? a).width * (a.frame ?? a).height - (b.frame ?? b).width * (b.frame ?? b).height);
+    target = matches[0];
+  }
+  if ((ref || field || x !== undefined || entry.tool === 'tap_text') && !target) return null;
+  if (target && matching(before.elements, selector(target)).length !== 1) return null;
+  const identity = target?.identifier ? { identifier: target.identifier } : target?.id ? { element_id: target.id } : null;
+  if (entry.tool === 'fill' && !identity) return null;
+  if (entry.tool === 'tap_text') delete args.text;
+  return { id, op: entry.tool === 'tap_text' ? 'tap' : entry.tool, ...(target ? selector(target) : {}),
+    ...(entry.tool === 'fill' ? identity : {}),
+    ...(args.direction ? { direction: args.direction } : {}), arguments: args };
+}
+function compile(trace) {
+  let current, pending;
+  const steps = [];
+  for (const entry of trace) {
+    if (passiveTools.has(entry.tool)) continue;
+    if (entry.tool === 'launch_app') { if (steps.length || pending) return null; current = null; continue; }
+    if (entry.error) return null;
+    if (entry.tool === 'hide_keyboard' && entry.result?.hidden === true && entry.result?.already_hidden === true) continue;
+    if (observationTools.has(entry.tool) && entry.result?.elements?.length) {
+      if (pending) {
+        const complete = conditions(entry.result);
+        if (!complete.length) return null;
+        const { before, ...step } = pending;
+        if (!conditionsMatch(step.when, entry.result) || !conditionsMatch(complete, before)) steps.push({ ...step, complete, before, after: entry.result });
+        pending = null;
+      }
+      current = entry.result;
+      continue;
+    }
+    if (!current || pending) return null;
+    const action = actionFor(entry, current, `step_${steps.length + 1}`);
+    const when = conditions(current).slice(0, 10);
+    if (!action || !when.length) return null;
+    pending = { before: current, when, action };
+    current = null;
+  }
+  if (pending || !steps.length || !current) return null;
+  const success = conditions(current);
+  if (!success.length || !conditionsMatch(success, current)) return null;
+  return { steps, success, final: current };
+}
+
+export class RouteStore {
+  constructor(directory) { this.directory = directory; }
+  async find(prompt, context = '') {
+    let names;
+    try { names = await readdir(this.directory); } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+    const routes = [];
+    for (const name of names.filter(name => name.endsWith('.json'))) {
+      const route = JSON.parse(await readFile(join(this.directory, name), 'utf8'));
+      if (route.version !== 5 || !route.bundle_id) continue;
+      if ((route.context ?? '') !== context) continue;
+      if (route.plan.steps.some(({ action }) => action.op === 'fill' && !action.identifier && !action.element_id)) continue;
+      const bindings = bind(route.goal, prompt, route.texts);
+      if (bindings) routes.push({ ...route, readout: substitute(route.readout, bindings), plan: { ...substitute(route.plan, bindings), texts: { ...route.texts, ...bindings } } });
+    }
+    const [route, ...alternatives] = routes.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    return route ? { ...route, alternatives: alternatives.filter(candidate => candidate.bundle_id === route.bundle_id) } : null;
+  }
+  async learn({ id, prompt, context = '', bundleId, device, trace, details = [], answer, planTitle, opening, verify }) {
+    if (!bundleId) return null;
+    const compiled = compile(trace);
+    if (!compiled) return null;
+    if (!verify || !await verify()) return null;
+    const readout = learnReadout(answer, compiled.final);
+    if (!readout) return null;
+    const texts = {};
+    for (const step of compiled.steps) {
+      const text = step.action.arguments.text;
+      if (typeof text !== 'string') continue;
+      let textId = Object.keys(texts).find(id => texts[id] === text);
+      if (!textId) { textId = `text_${Object.keys(texts).length + 1}`; texts[textId] = text; }
+      step.action.text_id = textId;
+      delete step.action.arguments.text;
+    }
+    const parts = goal(prompt, texts);
+    if (!Object.keys(texts).length) {
+      const headings = conditions(compiled.final, false).filter(condition => condition.role === 'Heading' || condition.trait_names?.includes('Header'));
+      compiled.success = readout.kind === 'action' ? resultConditions(compiled.final, details)
+        : readout.kind === 'field' ? [...headings, ...readout.fields.map(field => field.selector)]
+          : headings.length ? headings : readout.start ? [readout.start] : null;
+      if (!compiled.success) return null;
+      for (let index = 0; index < compiled.steps.length; index++) {
+        const step = compiled.steps[index], navigation = navigationConditions(step);
+        if (!navigation) continue;
+        step.complete = navigation;
+        const next = compiled.steps[index + 1];
+        if (next && conditionsMatch(navigation, next.before)) next.when = navigation;
+      }
+    }
+    const plan = parameterizedPlan(compiled, texts);
+    if (!Object.keys(texts).length) plan.steps.at(-1).complete = plan.success;
+    const key = createHash('sha256').update(JSON.stringify([bundleId, parts, context, plan.steps[0].when])).digest('hex');
+    planSchema.parse({ device, bundle_id: bundleId, goal: prompt, texts, ...substitute(plan, texts) });
+    const route = { version: 5, id: key, bundle_id: bundleId, goal: parts, context, texts, plan, readout,
+      planTitle: template(planTitle, texts), opening: template(opening, texts), sourceTask: id, updatedAt: new Date().toISOString() };
+    await mkdir(this.directory, { recursive: true, mode: 0o700 });
+    const path = join(this.directory, `${key}.json`), temporary = `${path}.${randomUUID()}.tmp`;
+    await writeFile(temporary, JSON.stringify(route, null, 2), { mode: 0o600 });
+    await rename(temporary, path);
+    return { id: key, path };
+  }
+  render(value, texts) { return substitute(value, texts); }
+  readResult(route, observation) {
+    return conditionsMatch(route.plan.success, observation) ? readCurrent(route.readout, observation) : null;
+  }
+}
