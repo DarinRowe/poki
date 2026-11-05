@@ -9,6 +9,27 @@ export const version = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8
 const execute = promisify(execFile);
 const bridge = join(root, 'build/poki-native');
 
+async function codeMarker() {
+  const files = (await readdir(join(root, 'src'), { recursive: true }))
+    .filter(file => file.endsWith('.mjs')).map(file => join('src', file));
+  files.push('package.json', 'build/poki-native');
+  return JSON.stringify(await Promise.all(files.sort().map(async file => {
+    const info = await stat(join(root, file)).catch(error => {
+      if (error.code === 'ENOENT') return null;
+      throw error;
+    });
+    return [file, info && [info.mtimeMs, info.ctimeMs, info.size, info.ino]];
+  })));
+}
+
+const startupCode = await codeMarker();
+
+export async function requireCurrentCode() {
+  if (await codeMarker() !== startupCode) {
+    throw new Error('The service is running old code. Stop the running service and restart it with npm start.');
+  }
+}
+
 export async function buildInfo() {
   const [commit, native] = await Promise.all([
     execute('git', ['rev-parse', '--short', 'HEAD'], { cwd: root, timeout: 1000 }).then(result => result.stdout.trim(), () => 'unknown'),

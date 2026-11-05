@@ -16,6 +16,14 @@ node bin/prepare-device.mjs YOUR_DEVICE_ID
 
 *(If exactly one device is connected, `YOUR_DEVICE_ID` can be omitted.)* This helper checks device services and mounts the local image when needed; it does not download Apple files, alter security settings, or reboot the device.
 
+## Before a test session
+
+In **Settings > Display & Brightness > Auto-Lock**, choose a longer interval or **Never** for the test session. Turn off **Sleep Focus** and keep the iPhone unlocked with the target app visible. Restore your preferred settings after testing.
+
+When the iPhone locks or sleeps, accessibility and input can fail or time out. Waking the screen does not unlock the phone. Unlock it manually, return to the target app, and read the screen again before retrying. Repeated retries while the phone is locked can spend time reconnecting to device services without completing the action.
+
+After updating Poki or rebuilding the native helper, stop the running service and restart it with `npm start`. An existing service keeps its loaded JavaScript until it restarts. If it reports that it is running old code, restart it before retrying the phone task.
+
 ## Post-Pairing Wi-Fi Operation
 
 Once paired over USB, the Mac and iPhone can communicate over the same local network for wireless discovery and supported operations while the phone stays unlocked and reachable:

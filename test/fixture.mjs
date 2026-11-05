@@ -82,7 +82,7 @@ else if(tool==='osascript') {log({dialog:true});setInterval(()=>{},10000);}
 else throw Error('Unexpected fixture command '+tool);
 `;
 export const value = result => JSON.parse(result.content.find(c => c.type === 'text').text);
-export async function fixture(t, { approvalMode = 'ask', staleNative = false, toolsProfile = '' } = {}) {
+export async function fixture(t, { approvalMode = 'ask', staleNative = false, toolsProfile = '', beforeStart } = {}) {
  const dir=await mkdtemp(join(tmpdir(),'poki-coordination-'));
  await cp(join(root,'src'),join(dir,'src'),{recursive:true});
  await cp(join(root,'package.json'),join(dir,'package.json'));
@@ -97,6 +97,7 @@ export async function fixture(t, { approvalMode = 'ask', staleNative = false, to
  let stderr='';
  const daemons=[];
  const startDaemon=async(port=0)=>{const child=spawn(process.execPath,[join(dir,'src/daemon.mjs'),'--port',String(port)],{env,stdio:['ignore','pipe',staleNative?'pipe':'inherit']});child.stderr?.on('data',chunk=>{stderr+=chunk;});const exited=once(child,'exit'),lines=createInterface({input:child.stdout});await once(lines,'line');const running={stop:async(signal='SIGTERM')=>{child.kill(signal);await exited;lines.close();}};daemons.push(running);return running;};
+ await beforeStart?.(dir);
  const daemon=await startDaemon();
  const clients=[];
  t.after(async()=>{await Promise.allSettled(clients.map(c=>c.close()));await Promise.all(daemons.map(d=>d.stop()));await rm(dir,{recursive:true,force:true});});

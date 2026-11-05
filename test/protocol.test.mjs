@@ -11,6 +11,45 @@ import { root } from '../src/config.mjs';
 import { hidPoint } from '../src/device.mjs';
 import { fixture, value } from './fixture.mjs';
 
+test('fill asks for a daemon restart after native or JavaScript updates and recovers after restart', async t => {
+  for (const updated of ['native', 'JavaScript']) await t.test(updated, async t => {
+    let currentInteraction;
+    const f = await fixture(t, { beforeStart: async dir => {
+      const file = join(dir, 'src/interaction.mjs');
+      currentInteraction = await readFile(file, 'utf8');
+      const legacy = currentInteraction.replace('target: { object_id, role: here.role ?? here.type, label, placeholder, value }', 'x: 30, y: 50');
+      assert.notEqual(legacy, currentInteraction, 'The fixture must reproduce the old fill request.');
+      await writeFile(file, legacy);
+    } });
+    await f.set({ phone: { keyboard: true, rows: [{ id: 'name-field', placeholder: 'Name', value: '', editing: true, up: 40, down: 40 }] } });
+    const before = await f.call('fill', { field: 'Name', text: 'before update' });
+    assert.ok(!before.isError, JSON.stringify(before));
+    if (updated === 'native') {
+      const file = join(f.dir, 'build/poki-native');
+      const program = await readFile(file, 'utf8');
+      await writeFile(file, program.replace("if(state.block===req.op)", "if(req.op==='type_text'&&'x' in req){console.error('unknown field `x`, expected one of `text`, `clear`, `submit`, `target`');process.exit(1);}\n if(state.block===req.op)"));
+    } else await writeFile(join(f.dir, 'src/interaction.mjs'), currentInteraction);
+
+    const result = await f.call('fill', { field: 'Name', text: 'after update' });
+    const reply = result.content.find(c => c.type === 'text').text;
+    t.diagnostic(`${updated} update: ${reply}`);
+    assert.equal(result.isError, true);
+    assert.match(reply, /service is running old code.*restart.*npm start/i);
+    assert.doesNotMatch(reply, /unknown field|missing field/);
+    assert.ok(!reply.includes(f.dir), 'The restart instruction must not expose a local path.');
+
+    await f.daemon.stop();
+    await writeFile(join(f.dir, 'src/interaction.mjs'), currentInteraction);
+    await f.startDaemon();
+    const recovered = await f.call('fill', { field: 'Name', text: 'after restart' });
+    assert.ok(!recovered.isError, JSON.stringify(recovered));
+    assert.equal(value(recovered).text_verified, true);
+    const screen = value(await f.call('list_elements'));
+    assert.equal(screen.elements.find(e => e.type === 'TextField').value, 'after restart');
+    t.diagnostic(`${updated} update after restart: field value="after restart"`);
+  });
+});
+
 test('stdio reaches the authenticated local MCP service and rejects an absent device', { timeout: 20000 }, async t => {
     const f = await fixture(t, { staleNative: true }), client = f.a;
     assert.equal(f.stderr.trim().split('\n').length, 1);
