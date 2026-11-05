@@ -6,14 +6,14 @@
 
 <p align="center">
   Poki 让 AI 智能体从 Mac 操控你的 iPhone：看屏幕、点击、滑动和打字。<br>
-  手机端无需安装辅助 App 或 WebDriverAgent，USB 配对一次后即可通过 Wi-Fi 连接。
+  手机端无需安装辅助 App 或 WebDriverAgent。<br>
+  USB 配对一次后即可通过 Wi-Fi 连接。
 </p>
 
 <p align="center">
-  <a href="README.md">English</a> | 简体中文
+  <a href="README.md">English</a> | 简体中文 | <a href="README.zh-TW.md">繁體中文</a> | <a href="README.ja.md">日本語</a> | <a href="README.ko.md">한국어</a> | <a href="README.es.md">Español</a><br>
+  <a href="https://poki.bot">poki.bot</a>
 </p>
-
-复制给 agent：「安装 https://github.com/JosssphZhou/poki，按根目录 AGENTS.md 配好 MCP 和使用技能，遇到必须由我操作的步骤就停下来告诉我。」
 
 <!-- badges:start -->
 <p align="center">
@@ -26,16 +26,13 @@
 </p>
 <!-- badges:end -->
 
-<p align="center">
-  <img src="docs/images/poki-demo.gif" height="300" alt="Poki on a real iPhone opening Luma and browsing Los Angeles events, shown at 4x speed">
-</p>
-
-<p align="center">
-  <img src="docs/images/acknowledgments.png" width="860" alt="开源致谢：pi、idevice、idb、BlueBubbles、Hermes Agent、MCP SDK、sharp 与 FFmpeg"><br>
-  开源致谢：<a href="https://github.com/earendil-works/pi">pi</a> | <a href="https://github.com/jkcoxson/idevice">idevice</a> | <a href="https://github.com/facebook/idb">idb</a> | <a href="https://github.com/BlueBubblesApp/bluebubbles-server">BlueBubbles</a> | <a href="https://github.com/NousResearch/hermes-agent">Hermes Agent</a> | <a href="https://github.com/modelcontextprotocol/typescript-sdk">MCP SDK</a> | <a href="https://github.com/lovell/sharp">sharp</a> | <a href="https://github.com/FFmpeg/FFmpeg">FFmpeg</a>
-</p>
-
 ## 快速开始
+
+**让 agent 帮你安装。** 把这段发给你的 agent：
+
+```text
+安装 https://github.com/JosssphZhou/poki，按根目录 AGENTS.md 配好 MCP 和使用技能，遇到必须由我操作的步骤就停下来告诉我。
+```
 
 **Poki MCP。** 已经在用 Claude Code、Codex 或其他 MCP 客户端？接入 Poki MCP，直接用你自己的订阅，不需要另外登录模型账号。
 
@@ -48,7 +45,7 @@ cd poki
 npm start
 ```
 
-需要 macOS、完整版 Xcode、Rust、Node.js 24+ 和 ffmpeg。`./bin/setup` 会检查缺失的依赖，首次构建需要几分钟。
+需要 macOS 15 或更高版本、完整版 Xcode、Rust、Node.js 24+ 和 ffmpeg。`./bin/setup` 会检查缺失的依赖，首次构建需要几分钟。
 
 ### macOS arm64 预编译安装包
 
@@ -144,8 +141,17 @@ Poki 是独立的开源项目，与 Apple、OpenAI 以及它所操作的任何�
 
 Poki 按「原样」提供，不附带任何担保，具体以 AGPL-3.0 许可证为准。
 
+如有歧义，以英文版为准。
+
 ## 开源许可
 
 Poki 基于 [AGPL-3.0-only 许可证](LICENSE)开源。
 
 Copyright (c) 2026 Joseph Zhou and contributors。开源依赖项保留各自的许可证，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。如需参与贡献，请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+## 致谢
+
+<p align="center">
+  <img src="docs/images/acknowledgments.png" width="860" alt="开源致谢：pi、idevice、idb、BlueBubbles、Hermes Agent、MCP SDK、sharp 与 FFmpeg"><br>
+  <sub>开源致谢：<a href="https://github.com/earendil-works/pi">pi</a> | <a href="https://github.com/jkcoxson/idevice">idevice</a> | <a href="https://github.com/facebook/idb">idb</a> | <a href="https://github.com/BlueBubblesApp/bluebubbles-server">BlueBubbles</a> | <a href="https://github.com/NousResearch/hermes-agent">Hermes Agent</a> | <a href="https://github.com/modelcontextprotocol/typescript-sdk">MCP SDK</a> | <a href="https://github.com/lovell/sharp">sharp</a> | <a href="https://github.com/FFmpeg/FFmpeg">FFmpeg</a></sub>
+</p>

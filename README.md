@@ -6,14 +6,14 @@
 
 <p align="center">
   Poki lets AI agents see, tap, swipe, and type on your iPhone from a Mac.<br>
-  No companion app or WebDriverAgent on the iPhone. Pair once over USB, then run over Wi-Fi.
+  No companion app or WebDriverAgent on the iPhone.<br>
+  Pair once over USB, then run over Wi-Fi.
 </p>
 
 <p align="center">
-  English | <a href="README.zh-CN.md">简体中文</a>
+  English | <a href="README.zh-CN.md">简体中文</a> | <a href="README.zh-TW.md">繁體中文</a> | <a href="README.ja.md">日本語</a> | <a href="README.ko.md">한국어</a> | <a href="README.es.md">Español</a><br>
+  <a href="https://poki.bot">poki.bot</a>
 </p>
-
-Copy to your agent: "Install https://github.com/JosssphZhou/poki following its root AGENTS.md, including the MCP skill, and stop whenever you need me to act."
 
 <!-- badges:start -->
 <p align="center">
@@ -26,16 +26,13 @@ Copy to your agent: "Install https://github.com/JosssphZhou/poki following its r
 </p>
 <!-- badges:end -->
 
-<p align="center">
-  <img src="docs/images/poki-demo.gif" height="300" alt="Poki on a real iPhone opening Luma and browsing Los Angeles events, shown at 4x speed">
-</p>
-
-<p align="center">
-  <img src="docs/images/acknowledgments.png" width="860" alt="Built on open source: pi, idevice, idb, BlueBubbles, Hermes Agent, MCP SDK, sharp, and FFmpeg"><br>
-  Open source acknowledgments: <a href="https://github.com/earendil-works/pi">pi</a> | <a href="https://github.com/jkcoxson/idevice">idevice</a> | <a href="https://github.com/facebook/idb">idb</a> | <a href="https://github.com/BlueBubblesApp/bluebubbles-server">BlueBubbles</a> | <a href="https://github.com/NousResearch/hermes-agent">Hermes Agent</a> | <a href="https://github.com/modelcontextprotocol/typescript-sdk">MCP SDK</a> | <a href="https://github.com/lovell/sharp">sharp</a> | <a href="https://github.com/FFmpeg/FFmpeg">FFmpeg</a>
-</p>
-
 ## Quick start
+
+**Let your agent install it.** Copy this to your agent:
+
+```text
+Install https://github.com/JosssphZhou/poki following its root AGENTS.md, including the MCP skill, and stop whenever you need me to act.
+```
 
 **Poki MCP.** Already using Claude Code, Codex, or another MCP client? Connect Poki MCP and use your own subscription. No extra model account needed.
 
@@ -48,7 +45,7 @@ cd poki
 npm start
 ```
 
-Requires macOS, full Xcode, Rust, Node.js 24+, and ffmpeg. `./bin/setup` checks for missing dependencies. The initial build takes a few minutes.
+Requires macOS 15 or later, full Xcode, Rust, Node.js 24+, and ffmpeg. `./bin/setup` checks for missing dependencies. The initial build takes a few minutes.
 
 ### Prebuilt macOS arm64 package
 
@@ -149,3 +146,10 @@ Poki is provided "as is", without warranty, as set out in the AGPL-3.0 license.
 Poki is open source under the [AGPL-3.0-only license](LICENSE).
 
 Copyright (c) 2026 Joseph Zhou and contributors. Open-source dependencies retain their respective licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). To contribute, see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Acknowledgments
+
+<p align="center">
+  <img src="docs/images/acknowledgments.png" width="860" alt="Built on open source: pi, idevice, idb, BlueBubbles, Hermes Agent, MCP SDK, sharp, and FFmpeg"><br>
+  <sub>Open source acknowledgments: <a href="https://github.com/earendil-works/pi">pi</a> | <a href="https://github.com/jkcoxson/idevice">idevice</a> | <a href="https://github.com/facebook/idb">idb</a> | <a href="https://github.com/BlueBubblesApp/bluebubbles-server">BlueBubbles</a> | <a href="https://github.com/NousResearch/hermes-agent">Hermes Agent</a> | <a href="https://github.com/modelcontextprotocol/typescript-sdk">MCP SDK</a> | <a href="https://github.com/lovell/sharp">sharp</a> | <a href="https://github.com/FFmpeg/FFmpeg">FFmpeg</a></sub>
+</p>

@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- **macOS** with a full **Xcode** installation from the App Store, opened at least once to finish its first-launch setup (Command Line Tools alone are not enough). Xcode also provides Git and Python 3.
+- **macOS 15 or later** with a full **Xcode** installation from the App Store, opened at least once to finish its first-launch setup (Command Line Tools alone are not enough). Xcode also provides Git and Python 3.
 - **Git**
 - **Node.js 24+** and **npm** (required for both the daemon and the stdio client)
 - **Rust / Cargo** with Rust 2024 edition support, from [rustup.rs](https://rustup.rs). Setup always uses it to build the iPhone bridge, even if you use only the Simulator.
