@@ -1,17 +1,17 @@
 # Tool behavior and conventions
 
-**Poki MCP** is a local macOS MCP server that lets AI clients inspect and control an iPhone or iOS Simulator. It registers 56 tools and lists 29 by default for screenshots, accessibility and Vision OCR inspection, touch and keyboard input, application management, screen recording, and diagnostics.
+**Poki MCP** is a local macOS MCP server that lets AI clients inspect and control an iPhone or iOS Simulator. By default it lists the tools for phone tasks, and it can expose a complete catalog for screenshots, accessibility and Vision OCR inspection, touch and keyboard input, application management, screen recording, and diagnostics.
 
 - **Screen & UI Inspection**: Capture screenshots (`take_screenshot`, `save_screenshot`) and inspect UI hierarchies via Accessibility or Vision OCR (`list_elements`).
 - **Touch & Keyboard Input**: Send taps, swipes, hardware keys, and Unicode text across simulators and paired physical devices.
 - **App & Device Lifecycle**: Manage applications, open URLs, inspect containers, record video, and run diagnostic checks.
 - **Local Daemon Architecture**: Runs a localhost-only service (`127.0.0.1:47825`) with serialized device execution, per-client session isolation, and interactive local approval gates for sensitive actions.
 
-Tool names and input validation schemas live in [`src/data/tools.json`](../src/data/tools.json) and are served via MCP `tools/list`. `poki_mcp_status` returns the selected device, available device count, approval mode, and separate counts for the 50 device tools, one observation tool, four management tools and 56 total tools.
+Tool names and input validation schemas live in [`src/data/tools.json`](../src/data/tools.json) and are served via MCP `tools/list`. `poki_mcp_status` returns the selected device, available device count, approval mode, and separate counts for device, observation, management, and total tools.
 
 ## MCP tool profiles
 
-The default `tools/list` response contains 29 tools for phone tasks. Tool names, arguments, and execution behavior are unchanged.
+The default `tools/list` response contains the tools for phone tasks. Tool names, arguments, and execution behavior are unchanged.
 
 | Use | Default tools |
 | --- | --- |
@@ -21,11 +21,11 @@ The default `tools/list` response contains 29 tools for phone tasks. Tool names,
 | Touch and input | `tap`, `tap_text`, `long_press`, `double_tap`, `drag`, `pinch`, `fill`, `type_text`, `scroll`, `scroll_to`, `swipe`, `press_key`, `go_back`, `hide_keyboard`, `press_button`, `get_clipboard` |
 | Wait, prompts, and batches | `wait_for`, `handle_alert`, `batch_commands` |
 
-The runtime default list is defined in `src/tools.mjs`. The complete catalog contains 56 tools, including simulator management, app installation, recording, location, appearance, and device leases.
+The runtime default list is defined in `src/tools.mjs`. The complete catalog includes simulator management, app installation, recording, location, appearance, and device leases.
 
 ### Complete catalog
 
-`POKI_MCP_TOOLS=all` makes `tools/list` return all 56 tools. Any other value, including an unset or empty value, selects the default list.
+`POKI_MCP_TOOLS=all` makes `tools/list` return the complete catalog. Any other value, including an unset or empty value, selects the default list.
 
 For a stdio client, the variable belongs to the MCP process environment. This client configuration enables the complete catalog:
 
@@ -71,9 +71,7 @@ Three tools handle most interactions:
 
 Installing apps, opening URLs, and reading the clipboard trigger a macOS approval dialog on your Mac. See [Approval & Clipboard Behavior](#approval--clipboard-behavior).
 
-## The 56 MCP tools
-
-<!-- Count check: node -e "console.log(require('./src/data/tools.json').tools.length + 1)" prints 56; poki_mcp_status is registered in src/tools.mjs. -->
+## All MCP tools
 
 | Group | Tool | What it does |
 | --- | --- | --- |
