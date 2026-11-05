@@ -5,9 +5,7 @@
 <h1 align="center">Poki uses your iPhone like you do</h1>
 
 <p align="center">
-  Poki lets AI agents see, tap, swipe, and type on your iPhone from a Mac.<br>
-  No companion app or WebDriverAgent on the iPhone.<br>
-  Pair once over USB, then run over Wi-Fi.
+  <img src="docs/images/poki-home.gif" width="720" alt="Poki website home page animation">
 </p>
 
 <p align="center">

@@ -5,9 +5,7 @@
 <h1 align="center">Poki 像你一样使用你的 iPhone</h1>
 
 <p align="center">
-  Poki 让 AI 智能体从 Mac 操控你的 iPhone：看屏幕、点击、滑动和打字。<br>
-  手机端无需安装辅助 App 或 WebDriverAgent。<br>
-  USB 配对一次后即可通过 Wi-Fi 连接。
+  <img src="docs/images/poki-home.gif" width="720" alt="Poki 官网首页动画">
 </p>
 
 <p align="center">

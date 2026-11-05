@@ -5,9 +5,7 @@
 <h1 align="center">Poki 用你的 iPhone，就像你自己在用</h1>
 
 <p align="center">
-  Poki 讓 AI agent 從 Mac 看你的 iPhone 畫面，並進行點按、滑動和輸入。<br>
-  iPhone 上不必安裝輔助 App 或 WebDriverAgent。<br>
-  用 USB 配對一次，之後就能透過 Wi-Fi 執行。
+  <img src="docs/images/poki-home.gif" width="720" alt="Poki 官網首頁動畫">
 </p>
 
 <p align="center">

@@ -5,9 +5,7 @@
 <h1 align="center">Poki usa tu iPhone como lo harías tú</h1>
 
 <p align="center">
-  Poki permite que los agentes de IA vean, toquen, deslicen y escriban en tu iPhone desde tu Mac.<br>
-  Sin app complementaria ni WebDriverAgent en el iPhone.<br>
-  Empareja una vez por USB y después funciona por Wi-Fi.
+  <img src="docs/images/poki-home.gif" width="720" alt="Animación de la página de inicio del sitio web de Poki">
 </p>
 
 <p align="center">

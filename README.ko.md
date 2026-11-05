@@ -5,9 +5,7 @@
 <h1 align="center">Poki는 당신의 iPhone을 당신처럼 씁니다</h1>
 
 <p align="center">
-  Poki를 쓰면 AI 에이전트가 Mac에서 iPhone 화면을 보고, 탭하고, 스와이프하고, 입력할 수 있습니다.<br>
-  iPhone에 보조 앱이나 WebDriverAgent를 설치할 필요가 없습니다.<br>
-  USB로 한 번만 페어링하면 이후에는 Wi-Fi로 동작합니다.
+  <img src="docs/images/poki-home.gif" width="720" alt="Poki 공식 웹사이트 홈페이지 애니메이션">
 </p>
 
 <p align="center">
