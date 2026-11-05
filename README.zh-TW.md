@@ -110,10 +110,14 @@ poki "Search esp32 in Chrome and summarize the top result"
 
 ## 路線圖
 
-- 支援 iPhone Duo
-- 不必安裝 Xcode 也能使用實體 iPhone
-- 原生 iOS App
-- 更多模型供應商
+<p align="center">
+  <img src="docs/images/roadmap.png" width="860" alt="Poki roadmap. Shipped: Poki MCP, Poki Agent, iMessage and Terminal channels, self-learning routes. Next: no shared Wi-Fi needed, Telegram, native text input without using the clipboard, faster persistent connections, simplified tool interfaces. Then: Poki App, which runs on your iPhone even when your Mac is off. Later: iPhone Duo support, use a physical iPhone without installing Xcode, support for more model providers.">
+</p>
+
+- **已發布:** Poki MCP、Poki Agent、iMessage 與終端機入口、自我學習路線
+- **下一步:** **不必連同一個 Wi-Fi**；Telegram、不經剪貼簿的原生文字輸入、常駐連線提速、更簡潔的工具介面
+- **再下一步:** Poki App：手機自己執行，Mac 關機也能用
+- **之後:** 支援 iPhone Duo、不必安裝 Xcode 也能使用實體 iPhone、更多模型供應商
 
 ## Star History
 

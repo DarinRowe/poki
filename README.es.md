@@ -110,10 +110,14 @@ La compatibilidad con iPhone físico solo se ha verificado en iPhone con la inte
 
 ## Hoja de ruta
 
-- Compatibilidad con iPhone Duo
-- Usar un iPhone físico sin instalar Xcode
-- App nativa para iOS
-- Más proveedores de modelos
+<p align="center">
+  <img src="docs/images/roadmap.png" width="860" alt="Poki roadmap. Shipped: Poki MCP, Poki Agent, iMessage and Terminal channels, self-learning routes. Next: no shared Wi-Fi needed, Telegram, native text input without using the clipboard, faster persistent connections, simplified tool interfaces. Then: Poki App, which runs on your iPhone even when your Mac is off. Later: iPhone Duo support, use a physical iPhone without installing Xcode, support for more model providers.">
+</p>
+
+- **Publicado:** Poki MCP, Poki Agent, canales de iMessage y terminal, rutas de autoaprendizaje
+- **Siguiente:** **Sin necesidad de compartir Wi-Fi**, Telegram, entrada de texto nativa sin usar el portapapeles, conexiones persistentes más rápidas, interfaces de herramientas más simples
+- **Después:** Poki App: se ejecuta en tu iPhone, incluso con el Mac apagado
+- **Más adelante:** Compatibilidad con iPhone Duo, usar un iPhone físico sin instalar Xcode, más proveedores de modelos
 
 ## Star History
 

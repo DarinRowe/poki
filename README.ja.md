@@ -110,10 +110,14 @@ poki "Search esp32 in Chrome and summarize the top result"
 
 ## ロードマップ
 
-- iPhone Duo のサポート
-- Xcode をインストールせずに実機 iPhone を使う
-- ネイティブ iOS アプリ
-- 対応モデルプロバイダーの拡充
+<p align="center">
+  <img src="docs/images/roadmap.png" width="860" alt="Poki roadmap. Shipped: Poki MCP, Poki Agent, iMessage and Terminal channels, self-learning routes. Next: no shared Wi-Fi needed, Telegram, native text input without using the clipboard, faster persistent connections, simplified tool interfaces. Then: Poki App, which runs on your iPhone even when your Mac is off. Later: iPhone Duo support, use a physical iPhone without installing Xcode, support for more model providers.">
+</p>
+
+- **リリース済み:** Poki MCP、Poki Agent、iMessage とターミナルのチャネル、自己学習ルート
+- **次:** **同じ Wi-Fi が不要に**、Telegram、クリップボードを使わないネイティブ文字入力、常時接続の高速化、ツールインターフェースの簡素化
+- **その次:** Poki App：iPhone 単体で動作し、Mac の電源が切れていても使える
+- **今後:** iPhone Duo のサポート、Xcode をインストールせずに実機 iPhone を使う、対応モデルプロバイダーの拡充
 
 ## Star History
 

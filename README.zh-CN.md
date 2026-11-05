@@ -110,10 +110,9 @@ poki "Search esp32 in Chrome and summarize the top result"
 
 ## 路线图
 
-- iPhone Duo 支持
-- 使用真机无需安装 Xcode
-- 原生 iOS App
-- 接入更多模型提供方
+<p align="center">
+  <img src="docs/images/roadmap.zh-CN.png" width="860" alt="Poki 路线图。已发布：Poki MCP、Poki Agent、iMessage 和终端入口、自学习路线。下一步：不依赖同一 Wi-Fi、Telegram、不经剪贴板的原生文本输入、常驻连接提速、更简洁的工具接口。再下一步：Poki App，手机自己运行，Mac 关机也能用。之后：iPhone Duo 支持、使用真机无需安装 Xcode、更多模型提供方。">
+</p>
 
 ## Star History
 
