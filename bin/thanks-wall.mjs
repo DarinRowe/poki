@@ -16,6 +16,9 @@ const start = '<!-- THANKS-WALL:START -->';
 const end = '<!-- THANKS-WALL:END -->';
 const perLine = 8;
 const imageSize = 80;
+// Listed first, in this order; everyone else follows alphabetically.
+// ZhehanZhang was the first outside contributor.
+const pinned = ['ZhehanZhang'];
 
 const usage = `Usage: node bin/thanks-wall.mjs [--check | --print]
 Rebuild the README thanks wall from everyone who opened an issue or pull request on ${repo}.
@@ -38,7 +41,8 @@ function people() {
     if (!user || user.type === 'Bot' || user.login.endsWith('[bot]') || user.login === owner) continue;
     byLogin.set(user.login, { login: user.login, profile: user.html_url, avatar: user.avatar_url });
   }
-  return [...byLogin.values()].sort((a, b) => a.login.localeCompare(b.login, 'en', { sensitivity: 'base' }));
+  const rank = login => { const index = pinned.indexOf(login); return index === -1 ? pinned.length : index; };
+  return [...byLogin.values()].sort((a, b) => rank(a.login) - rank(b.login) || a.login.localeCompare(b.login, 'en', { sensitivity: 'base' }));
 }
 
 function formatAvatarUrl(avatarUrl) {
