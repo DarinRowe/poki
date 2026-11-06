@@ -151,6 +151,10 @@ enum Request {
         #[serde(default)]
         include_offscreen: bool,
     },
+    /// Names the app running as `pid`, for an accessibility root that carries no bundle ID.
+    AppForPid {
+        pid: u32,
+    },
     Tap {
         x: u16,
         y: u16,
@@ -236,6 +240,7 @@ impl Request {
         matches!(
             self,
             Self::AxTree { .. }
+                | Self::AppForPid { .. }
                 | Self::Screenshot { .. }
                 | Self::DeviceInfo
                 | Self::DisplayInfo
@@ -289,6 +294,7 @@ impl Request {
                     return Err("Invalid button count or interval_ms".into());
                 }
             }
+            Self::AppForPid { pid: 0 } => return Err("pid must be positive".into()),
             Self::TypeText { text, .. } if text.len() > 1024 * 1024 => {
                 return Err("text exceeds 1 MiB".into());
             }
@@ -482,6 +488,9 @@ async fn execute_connected(
     if let Request::AxTree { include_offscreen } = request {
         return ax::read_tree(adapter, rsd, include_offscreen).await;
     }
+    if let Request::AppForPid { pid } = request {
+        return apps::app_for_pid(adapter, rsd, pid).await;
+    }
     if matches!(request, Request::DisplayInfo) {
         let mut display =
             idevice::core_device::DisplayServiceClient::connect_rsd(adapter, rsd).await?;
@@ -510,6 +519,7 @@ async fn execute_connected(
             | Request::InstallApp { .. }
             | Request::UninstallApp { .. }
             | Request::AxTree { .. }
+            | Request::AppForPid { .. }
             | Request::Configuration { .. }
             | Request::LaunchApp(_) => {
                 unreachable!()
