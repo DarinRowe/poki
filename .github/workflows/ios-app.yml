@@ -4,10 +4,13 @@
 name: iOS app
 
 on:
+  # Manual only (Actions > Run workflow), so nothing runs on every push in this repository.
   workflow_dispatch:
-  push:
-    branches: [dev/ios-app]
-    paths: [native/ios-app/**, native/ios/**, native/launcher/**, native/patches/**, native/ios-runner/branding/**, docs/images/**, .github/workflows/ios-app.yml]
+  # The release workflow builds the app from the tagged commit with the release's version.
+  workflow_call:
+    inputs:
+      version: { type: string, required: true }
+      build: { type: string, required: true }
 
 permissions:
   contents: read
@@ -70,6 +73,21 @@ jobs:
             CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO \
             ARCHS=arm64 | tee build/app.log | grep -E "error:|BUILD (SUCCEEDED|FAILED)|\*\* " || true
           test -d build/app/Build/Products/Release-iphoneos/Poki.app
+
+      - name: Version (from the release tag when called by the release workflow)
+        run: |
+          set -euo pipefail
+          VERSION="${{ inputs.version }}"; BUILD="${{ inputs.build }}"
+          [ -n "$VERSION" ] || VERSION=$(cat native/ios-app/VERSION 2>/dev/null || echo 0.2.0)
+          [ -n "$BUILD" ] || BUILD="${{ github.run_number }}"
+          APP=build/app/Build/Products/Release-iphoneos/Poki.app
+          for plist in "$APP/Info.plist" "$APP/PlugIns/PokiWidgets.appex/Info.plist"; do
+            for kv in "CFBundleShortVersionString $VERSION" "CFBundleVersion $BUILD"; do
+              set -- $kv
+              /usr/libexec/PlistBuddy -c "Set :$1 $2" "$plist" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :$1 string $2" "$plist"
+            done
+          done
+          echo "Poki $VERSION ($BUILD)"
 
       - name: Package the IPA
         run: |
