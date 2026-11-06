@@ -45,3 +45,13 @@ test('Ordinary app name launch recovers a cold directory disconnect, uses the wa
   assert.ok(!direct.isError, JSON.stringify(direct));
   assert.equal(value(direct).bundle_id, 'local.fixture');
 });
+
+test('Input on a phone without displayservice reports nothing sent and names the preparation command', async t => {
+  const f = await fixture(t);
+  await f.set({ inputError: 'Cannot establish input media session: no display service: ServiceNotFound' });
+  const failed = await f.call('press_key', { key: 'return' });
+  assert.equal(failed.isError, true);
+  const result = value(failed);
+  assert.equal(result.outcome, 'not_sent');
+  assert.match(result.instruction, /node bin\/prepare-device\.mjs fixture-phone/);
+});
