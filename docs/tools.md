@@ -7,7 +7,7 @@
 - **App & Device Lifecycle**: Manage applications, open URLs, inspect containers, record video, and run diagnostic checks.
 - **Local Daemon Architecture**: Runs a localhost-only service (`127.0.0.1:47825`) with serialized device execution, per-client session isolation, and interactive local approval gates for sensitive actions.
 
-Tool names and input validation schemas live in [`src/data/tools.json`](../src/data/tools.json) and are served via MCP `tools/list`. `poki_mcp_status` returns the selected device, available device count, approval mode, and separate counts for device, observation, management, and total tools.
+Tool names and input validation schemas live in [`src/data/tools.json`](../src/data/tools.json) with remote connection maintenance definitions in [`src/tools.mjs`](../src/tools.mjs). MCP serves them through `tools/list`. `poki_mcp_status` returns the selected device, available device count, approval mode, and separate counts for device, observation, management, and total tools.
 
 ## MCP tool profiles
 
@@ -78,6 +78,8 @@ Installing apps, opening URLs, and reading the clipboard trigger a macOS approva
 | Devices | `list_devices` | Find attached iOS devices and booted or previously used simulators. |
 | Devices | `start_simulator` | Boot an existing simulator by id or name, or create one from an available model. |
 | Devices | `shut_down_simulator` | Shut down the selected simulator. |
+| Devices | `reconnect_device` | Attempt a replacement RemotePairing tunnel while preserving a working tunnel if replacement fails. Does not replay input. |
+| Devices | `disconnect_device` | Close the selected RemotePairing helper and tunnel. |
 | Devices | `select_device` | Select one connected device by id or unambiguous name for this MCP session. |
 | Devices | `get_device_info` | Read device identity, capture dimensions in logical points, and optionally platform settings. |
 | Devices | `poki_mcp_status` | Report tool counts, connected-device count, selected device, and approval mode. |

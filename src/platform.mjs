@@ -1,3 +1,4 @@
+import { remoteRequest } from './remote.mjs';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { execute, pause, checkWork, signal, deadline, stopped, stoppingReason, phase } from './work.mjs';
@@ -28,6 +29,7 @@ const physical = async (id, args, expect) => {
   return result;
 };
 async function configuration(target, method, value) {
+  if (target.remote) return remoteRequest(target, { op: 'configuration', method, ...(value === undefined ? {} : { value }) });
   const { stdout } = await platformRun(join(root, 'build/poki-native'), ['--udid', target.id], { input: JSON.stringify({ op: 'configuration', method, ...(value === undefined ? {} : { value }) }) });
   return JSON.parse(stdout);
 }
@@ -676,6 +678,7 @@ async function buildAndRun(ctx, target, args) {
 export async function platformTool(ctx, name, args = {}) {
   if (name === 'start_simulator') return startSimulator(ctx, args);
   const target = await ctx.target();
+  if (target.remote && !['list_apps', 'launch_app'].includes(name)) throw new Error(`${name} is unavailable over RemotePairing. Remove this device from remote-devices.json and reconnect over USB or local Wi-Fi.`);
   if (!['list_apps', 'get_clipboard', 'list_crashes', 'get_crash', 'download_app_container', 'start_recording', 'stop_recording'].includes(name)) ctx.changed(target);
   const changesApps = ['install_app', 'uninstall_app', 'build_and_run'].includes(name);
   try {

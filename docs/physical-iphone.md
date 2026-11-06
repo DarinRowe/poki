@@ -1,5 +1,7 @@
 # Physical iPhone setup
 
+For experimental access across networks, see [iPhone over Tailscale](remote-iphone.md). The iPhone needs the Tailscale app and an initial trusted USB setup.
+
 Physical iPhone support has been verified only with the Chinese interface in portrait orientation. Read the [verification record and known limits](verification.md) first.
 
 Run `./bin/setup` first. It needs full Xcode and the Rust toolchain, and you do not need to set any environment variables. See the [requirements](install.md#requirements).

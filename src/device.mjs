@@ -1,3 +1,4 @@
+import { remoteDevices, remoteRequest } from './remote.mjs';
 import { execute, checkWork, deadline, pause, phase, stopped, stoppingReason } from './work.mjs';
 import { Coordination, managementTools } from './coordination.mjs';
 import { runBatch } from './batch.mjs';
@@ -74,6 +75,7 @@ export class Devices {
       if (!device.id || (physical.has(device.id) && device.connection !== 'USB')) continue;
       physical.set(device.id, { ...device, kind: 'physical', name: this.physicalNames.get(device.id) ?? device.id });
     }
+    for (const remote of await remoteDevices()) physical.set(remote.id, remote);
     const simulators = await inventorySimulators().catch(() => []);
     return [...physical.values(), ...simulators.filter(d => all || d.state === 'Booted' || usedSimulators.has(d.id))];
   }
@@ -84,6 +86,10 @@ export class Devices {
       if (device.kind === 'simulator' || occupancy.occupied && !occupancy.owned_by_session) return { ...device, ...occupancy, selected: device.id === this.selected };
       try {
         this.access(device);
+        if (device.remote) {
+          const info = await remoteRequest(device, { op: 'device_info' });
+          return { ...device, remote: undefined, name: info.properties.DeviceName ?? device.name, model: info.properties.ProductType, osVersion: info.properties.ProductVersion, selected: device.id === this.selected, ...occupancy, readiness: 'remote services connected' };
+        }
         const values = await Promise.all(['DeviceName','ProductType','ProductVersion'].map(async key => {
           const response = await this.run(idevice, ['--udid',device.id,'lockdown','get',key],8000);
           if (!response.stdout) throw new Error(response.stderr || `No ${key} response`);
@@ -92,7 +98,7 @@ export class Devices {
         this.physicalNames.set(device.id,values[0]);
         return { ...device,name:values[0],model:values[1],osVersion:values[2],selected:device.id===this.selected,...occupancy,readiness:'paired device discovered; developer-service availability is checked when used' };
       } catch(error) {
-        return { ...device,selected:device.id===this.selected,blocked:error.message,action:'Keep the device connected and unlocked, trust this Mac, and enable Developer Mode / UI Automation.' };
+        return { ...device,remote:undefined,selected:device.id===this.selected,blocked:error.message,action:device.remote ? 'Keep Tailscale connected and the iPhone unlocked; return it to Wi-Fi to establish a new session.' : 'Keep the device connected and unlocked, trust this Mac, and enable Developer Mode / UI Automation.' };
       }
     }));
   }
@@ -132,6 +138,7 @@ export class Devices {
   async native(args, expected, timeout = 45000) {
     const target = await this.target();
     if (target.kind !== 'physical') throw new Error('This native command requires a physical device.');
+    if (target.remote) throw new Error('This operation is unavailable over RemotePairing. Remove this device from remote-devices.json and reconnect over USB or local Wi-Fi.');
     const result = await this.run(idevice, ['--udid', target.id, ...args], timeout);
     if (expected && !expected.test(result.stdout + '\n' + result.stderr)) throw new Error(`Device service did not confirm the action: ${(result.stderr || result.stdout).slice(-3000)}`);
     return result;
@@ -140,15 +147,17 @@ export class Devices {
     const target = await this.target();
     if (target.kind === 'simulator') return simulatorRequest(target.id, request);
     const nativeRequest = request.op === 'ax' ? { op: 'ax_tree', include_offscreen: request.include_offscreen ?? false } : request;
-    const { stdout } = await this.run(join(root, 'build/poki-native'), ['--udid', target.id], 95000, JSON.stringify(nativeRequest));
-    const result = JSON.parse(stdout);
+    const result = target.remote ? await remoteRequest(target, nativeRequest)
+      : JSON.parse((await this.run(join(root, 'build/poki-native'), ['--udid', target.id], 95000, JSON.stringify(nativeRequest))).stdout);
     if (request.op === 'ax') return { ...result, foreground: result.foreground_app, elements: result.elements?.map(e => ({ ...e, type: e.type ?? e.role })) };
     return result;
   }
   async scale(target) {
     if (this.scales.has(target.id)) return this.scales.get(target.id);
     let scale;
-    if (target.kind === 'physical') {
+    if (target.remote) {
+      scale = (await remoteRequest(target, { op: 'device_info' })).scale;
+    } else if (target.kind === 'physical') {
       const result = await this.native(['lockdown', '--domain', 'com.apple.mobile.iTunes', 'get', 'ScreenScaleFactor']);
       scale = Number(result.stdout);
     } else {
@@ -169,6 +178,7 @@ export class Devices {
     try {
       // Unmasked, the area around the Dynamic Island differs between frames of a still screen, which would expire refs.
       if (target.kind === 'simulator') await this.run('xcrun', ['simctl', 'io', target.id, 'screenshot', '--type=png', '--mask=black', path]);
+      else if (target.remote) await remoteRequest(target, { op: 'screenshot', path });
       else await this.native(['screenshot', path], /Screenshot saved to:/);
       const original = await readFile(path), meta = await sharp(original).metadata();
       const scale = await this.scale(target);
@@ -329,8 +339,15 @@ export class Devices {
       }
       switch (name) {
         case 'acquire_device': return text(await this.coordinator.acquire(this, await this.target(false), args.ttl_seconds ?? 120));
-        case 'poki_mcp_status': return text({ implementation: `Poki MCP ${version}`, ...await buildInfo(), registered_device_tools: 50, observation_tools: 1, management_tools: 4, total_tools: definitions.length, devices: (await this.inventory()).length, selected: this.selected ?? null, approval_mode: process.env.POKI_MCP_APPROVAL_MODE === 'allow' ? 'operator-preapproved' : 'ask-human' });
+        case 'poki_mcp_status': return text({ implementation: `Poki MCP ${version}`, ...await buildInfo(), registered_device_tools: 50, observation_tools: 1, management_tools: 4, transport_tools: 2, total_tools: definitions.length, devices: (await this.inventory()).length, selected: this.selected ?? null, approval_mode: process.env.POKI_MCP_APPROVAL_MODE === 'allow' ? 'operator-preapproved' : 'ask-human' });
         case 'list_devices': return text({ devices: await this.describeDevices(args.include_all_simulators), ...(args.include_all_simulators ? { simulator_models: await simulatorModels() } : {}) });
+        case 'disconnect_device':
+        case 'reconnect_device': {
+          const target = await this.target();
+          if (!target.remote) throw new Error('This device is not configured for RemotePairing.');
+          this.changed(target);
+          return text(await remoteRequest(target, { op: name === 'disconnect_device' ? 'disconnect' : 'reconnect' }));
+        }
         case 'select_device': {
           this.requested = args.device;
           const target = await this.target(); this.selected = target.id; this.frame = undefined; this.elements = [];
@@ -339,11 +356,13 @@ export class Devices {
         case 'get_device_info': {
           const target = await this.target(), frame = await this.capture();
           const info = { ...target, screen: { width: frame.width, height: frame.height, scale: frame.scale, units: 'points' } };
-          if (target.kind === 'physical') for (const key of ['DeviceName', 'ProductType', 'ProductVersion']) {
+          if (target.remote) { Object.assign(info, (await remoteRequest(target, { op: 'device_info' })).properties); delete info.remote; }
+          else if (target.kind === 'physical') for (const key of ['DeviceName', 'ProductType', 'ProductVersion']) {
             const result = await this.native(['lockdown', 'get', key]); info[key] = JSON.parse(result.stdout);
           }
           if (target.kind === 'physical') { info.name=info.DeviceName; info.model=info.ProductType; info.osVersion=info.ProductVersion; this.physicalNames.set(target.id,info.name); }
           info.engine=target.kind==='simulator'?'CoreSimulator':'CoreDevice'; info.mirror_status='screen capture available';
+          if (args.include_settings && target.remote) throw new Error('Device settings inspection is unavailable over RemotePairing. Remove this device from remote-devices.json and reconnect over USB or local Wi-Fi.');
           if (args.include_settings) info.settings = await readSettings(target);
           return text(info);
         }

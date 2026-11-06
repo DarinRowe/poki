@@ -4,6 +4,7 @@ mod configuration;
 mod gesture;
 mod installation;
 mod pasteboard;
+mod remote;
 mod stream;
 
 use gesture::{Drag, Pinch, pinch_contacts};
@@ -58,6 +59,10 @@ impl Keyboard {
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 enum Request {
     DisplayInfo,
+    Screenshot {
+        path: String,
+    },
+    DeviceInfo,
     ListApps,
     InstallApp {
         ipa_path: String,
@@ -239,6 +244,12 @@ impl Request {
 async fn main() {
     let result = async {
         let args: Vec<String> = std::env::args().collect();
+        if args.len() == 4 && args[1] == "--remote-server" {
+            return remote::serve_socket(&args[2], &args[3]).await;
+        }
+        if args.len() == 3 && args[1] == "--remote" {
+            return remote::serve(&args[2]).await;
+        }
         if args.len() != 3 || args[1] != "--udid" {
             return Err("usage: poki-native --udid ID < request.json".into());
         }
@@ -319,31 +330,69 @@ async fn execute(udid: &str, request: Request) -> Result<Value> {
             |error| json!({"isError":true,"outcome":"not_sent","error":error.to_string()}),
         ));
     }
+    let connection = connect_device(udid).await;
+    let (mut adapter, mut rsd, provider) = match connection {
+        Ok(connection) => connection,
+        Err(error) if matches!(request, Request::LaunchApp(_)) => return Ok(apps::not_sent(error)),
+        Err(error) => return Err(error),
+    };
+    execute_connected(&mut adapter, &mut rsd, Some(&provider), request).await
+}
+
+async fn execute_connected(
+    adapter: &mut idevice::tcp::handle::AdapterHandle,
+    rsd: &mut RsdHandshake,
+    provider: Option<&dyn idevice::provider::IdeviceProvider>,
+    request: Request,
+) -> Result<Value> {
     if let Request::LaunchApp(request) = request {
-        let result = async {
-            let (mut adapter, mut rsd, _provider) = connect_device(udid).await?;
-            apps::launch(&mut adapter, &mut rsd, request).await
-        }
-        .await;
-        return Ok(result.unwrap_or_else(apps::not_sent));
+        return Ok(apps::launch(adapter, rsd, request)
+            .await
+            .unwrap_or_else(apps::not_sent));
     }
-    let (mut adapter, mut rsd, provider) = connect_device(udid).await?;
+    if let Request::Screenshot { path } = request {
+        let mut dvt =
+            idevice::dvt::remote_server::RemoteServerClient::connect_rsd(adapter, rsd).await?;
+        dvt.read_message(0).await?;
+        let mut screenshot = idevice::dvt::screenshot::ScreenshotClient::new(&mut dvt).await?;
+        let bytes = screenshot.take_screenshot().await?;
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(path)?;
+        file.write_all(&bytes)?;
+        return Ok(json!({"saved":true}));
+    }
+    if matches!(request, Request::DeviceInfo) {
+        let mut lockdown = idevice::lockdown::LockdownClient::connect_rsd(adapter, rsd).await?;
+        let scale = lockdown
+            .get_value(Some("ScreenScaleFactor"), Some("com.apple.mobile.iTunes"))
+            .await?;
+        let properties = ["DeviceName", "ProductType", "ProductVersion"]
+            .into_iter()
+            .filter_map(|key| rsd.properties.get(key).map(|value| (key, value)))
+            .collect::<std::collections::HashMap<_, _>>();
+        return Ok(json!({"scale":scale,"properties":properties}));
+    }
     if matches!(request, Request::ListApps) {
-        return apps::list(&mut adapter, &mut rsd, &provider).await;
+        return apps::list(adapter, rsd, provider).await;
     }
     if let Request::Configuration { method, value } = request {
-        return configuration::execute(&mut adapter, &mut rsd, &method, value).await;
+        return configuration::execute(adapter, rsd, &method, value).await;
     }
     if let Request::AxTree { include_offscreen } = request {
-        return ax::read_tree(&mut adapter, &rsd, include_offscreen).await;
+        return ax::read_tree(adapter, rsd, include_offscreen).await;
     }
     if matches!(request, Request::DisplayInfo) {
         let mut display =
-            idevice::core_device::DisplayServiceClient::connect_rsd(&mut adapter, &mut rsd).await?;
+            idevice::core_device::DisplayServiceClient::connect_rsd(adapter, rsd).await?;
         let info = display.get_media_support_info().await?;
         return Ok(serde_json::to_value(info)?);
     }
-    let mut media = stream::start_screen_media_stream(&mut adapter, &mut rsd, 1)
+    let mut media = stream::start_screen_media_stream(adapter, rsd, 1)
         .await
         .map_err(|e| format!("Cannot establish input media session: {e}"))?;
     trace("media ready");
@@ -355,6 +404,8 @@ async fn execute(udid: &str, request: Request) -> Result<Value> {
     let action: Result<Value> = async {
         match request {
             Request::DisplayInfo
+            | Request::DeviceInfo
+            | Request::Screenshot { .. }
             | Request::ListApps
             | Request::InstallApp { .. }
             | Request::UninstallApp { .. }
@@ -364,11 +415,11 @@ async fn execute(udid: &str, request: Request) -> Result<Value> {
                 unreachable!()
             }
             Request::Tap { x, y, duration_ms } | Request::LongPress { x, y, duration_ms } => {
-                let hid = touch.insert(Touch::connect_rsd(&mut adapter, &mut rsd).await?);
+                let hid = touch.insert(Touch::connect_rsd(adapter, rsd).await?);
                 held_tap(hid, x, y, duration_ms).await?;
             }
             Request::DoubleTap { x, y, duration_ms } => {
-                let hid = touch.insert(Touch::connect_rsd(&mut adapter, &mut rsd).await?);
+                let hid = touch.insert(Touch::connect_rsd(adapter, rsd).await?);
                 held_tap(hid, x, y, duration_ms).await?;
                 tokio::time::sleep(Duration::from_millis(80)).await;
                 held_tap(hid, x, y, duration_ms).await?;
@@ -382,7 +433,7 @@ async fn execute(udid: &str, request: Request) -> Result<Value> {
                 hold_ms,
                 end_hold_ms,
             } => {
-                let hid = touch.insert(Touch::connect_rsd(&mut adapter, &mut rsd).await?);
+                let hid = touch.insert(Touch::connect_rsd(adapter, rsd).await?);
                 Drag {
                     x1,
                     y1,
@@ -403,7 +454,7 @@ async fn execute(udid: &str, request: Request) -> Result<Value> {
                 angle,
                 duration_ms,
             } => {
-                let hid = touch.insert(Touch::connect_rsd(&mut adapter, &mut rsd).await?);
+                let hid = touch.insert(Touch::connect_rsd(adapter, rsd).await?);
                 Pinch {
                     x,
                     y,
@@ -420,7 +471,7 @@ async fn execute(udid: &str, request: Request) -> Result<Value> {
                 modifiers,
                 count,
             } => {
-                let mut keyboard = Keyboard::connect(&mut adapter, &mut rsd).await?;
+                let mut keyboard = Keyboard::connect(adapter, rsd).await?;
                 let usages = modifiers
                     .iter()
                     .map(|m| modifier_usage(m))
@@ -441,7 +492,7 @@ async fn execute(udid: &str, request: Request) -> Result<Value> {
                 count,
                 interval_ms,
             } => {
-                let mut keyboard = Indigo::connect_rsd(&mut adapter, &mut rsd).await?;
+                let mut keyboard = Indigo::connect_rsd(adapter, rsd).await?;
                 let (code, duration) = button_usage(&button)?;
                 for index in 0..count {
                     if index > 0 {
@@ -458,10 +509,10 @@ async fn execute(udid: &str, request: Request) -> Result<Value> {
                 submit,
                 target,
             } => {
-                let mut keyboard = Keyboard::connect(&mut adapter, &mut rsd).await?;
+                let mut keyboard = Keyboard::connect(adapter, rsd).await?;
                 let outcome = pasteboard::paste_text(
-                    &mut adapter,
-                    &rsd,
+                    adapter,
+                    rsd,
                     &mut keyboard,
                     &text,
                     clear,

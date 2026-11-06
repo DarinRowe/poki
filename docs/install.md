@@ -1,5 +1,7 @@
 # Install
 
+For experimental access across networks, see [iPhone over Tailscale](remote-iphone.md). The iPhone needs the Tailscale app and an initial trusted USB setup.
+
 ## Requirements
 
 - **macOS 15 or later** with a full **Xcode** installation from the App Store, opened at least once to finish its first-launch setup (Command Line Tools alone are not enough). Xcode also provides Git and Python 3.
