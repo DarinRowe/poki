@@ -137,6 +137,27 @@ poki "Search esp32 in Chrome and summarize the top result"
   <img src="https://contrib.rocks/image?repo=JosssphZhou/poki" alt="Contributors">
 </a>
 
+## 고마운 분들
+
+Issue나 Pull Request를 남겨 주신 모든 분께 감사드리며, 여러분의 제보와 수정 덕분에 Poki가 더 좋아지고 있습니다.
+
+<!-- THANKS-WALL:START -->
+<table>
+  <tbody>
+    <tr>
+      <td align="center" valign="top" width="12.5%"><a href="https://github.com/carrotciallo"><img src="https://avatars.githubusercontent.com/u/69567867?v=4&size=160" width="80px" height="80px" alt="carrotciallo"/><br /><sub><b>carrotciallo</b></sub></a></td>
+      <td align="center" valign="top" width="12.5%"><a href="https://github.com/edge369"><img src="https://avatars.githubusercontent.com/u/63720633?v=4&size=160" width="80px" height="80px" alt="edge369"/><br /><sub><b>edge369</b></sub></a></td>
+      <td align="center" valign="top" width="12.5%"><a href="https://github.com/igc110"><img src="https://avatars.githubusercontent.com/u/241411380?v=4&size=160" width="80px" height="80px" alt="igc110"/><br /><sub><b>igc110</b></sub></a></td>
+      <td align="center" valign="top" width="12.5%"><a href="https://github.com/kilingzhang"><img src="https://avatars.githubusercontent.com/u/17439300?v=4&size=160" width="80px" height="80px" alt="kilingzhang"/><br /><sub><b>kilingzhang</b></sub></a></td>
+      <td align="center" valign="top" width="12.5%"><a href="https://github.com/makirqi-alt"><img src="https://avatars.githubusercontent.com/u/295395617?v=4&size=160" width="80px" height="80px" alt="makirqi-alt"/><br /><sub><b>makirqi-alt</b></sub></a></td>
+      <td align="center" valign="top" width="12.5%"><a href="https://github.com/mawenhao1028"><img src="https://avatars.githubusercontent.com/u/70818670?v=4&size=160" width="80px" height="80px" alt="mawenhao1028"/><br /><sub><b>mawenhao1028</b></sub></a></td>
+      <td align="center" valign="top" width="12.5%"><a href="https://github.com/zcyoung2000"><img src="https://avatars.githubusercontent.com/u/62181891?v=4&size=160" width="80px" height="80px" alt="zcyoung2000"/><br /><sub><b>zcyoung2000</b></sub></a></td>
+      <td align="center" valign="top" width="12.5%"><a href="https://github.com/ZhehanZhang"><img src="https://avatars.githubusercontent.com/u/67270559?v=4&size=160" width="80px" height="80px" alt="ZhehanZhang"/><br /><sub><b>ZhehanZhang</b></sub></a></td>
+    </tr>
+  </tbody>
+</table>
+<!-- THANKS-WALL:END -->
+
 ## 면책 조항
 
 Poki는 독립적인 오픈소스 프로젝트입니다. Apple, OpenAI 또는 Poki가 조작하는 앱이나 웹사이트의 제작사와 제휴 관계가 없으며, 이들의 보증을 받지 않았습니다. iPhone은 Apple Inc.의 상표입니다.

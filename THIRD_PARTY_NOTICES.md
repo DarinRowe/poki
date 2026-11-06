@@ -70,3 +70,7 @@ The prebuilt macOS package includes the native bridge, OCR and simulator helpers
 ## GitHub CLI update check
 
 [src/update-check.mjs](src/update-check.mjs) ports the complete release-check flow (`CheckForUpdate`, `getLatestReleaseInfo`, `getStateEntry`, and `setStateEntry`) from [GitHub CLI v2.83.0](https://github.com/cli/cli/blob/152d328db80d4d4d7318c7700b6644ee827618a7/internal/update/update.go), copyright 2019 GitHub Inc., under the [MIT license](third_party/LICENSE.github-cli). The port uses JavaScript and JSON instead of Go and YAML. Poki adds an anonymous short-timeout request, silent failed-attempt caching, release-note summaries, and cached notices for noninteractive MCP clients. It omits GitHub CLI's extension updates and terminal/CI restrictions.
+
+## all-contributors thanks wall
+
+[bin/thanks-wall.mjs](bin/thanks-wall.mjs) adapts the list layout and marker injection (`chunk`, `formatLine`, `generateContributorsList`, `injectListBetweenTags`, the avatar block template, and `formatAvatarUrl`) from [all-contributors/cli](https://github.com/all-contributors/cli/tree/ea23f04fd76498dd7c21717d715119d337e54012/src/generate), copyright 2016 Kent C. Dodds, 2019 Jake Bolam, 2020 Maximilian Berkmann, under the [MIT license](third_party/LICENSE.all-contributors-cli). Poki reads issue and pull request authors through the GitHub CLI instead of a `.all-contributorsrc` file, drops contribution badges and the table footer, and fails when a README is missing its markers.
