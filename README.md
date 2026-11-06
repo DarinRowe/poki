@@ -74,6 +74,8 @@ poki login
 poki status
 ```
 
+Poki Agent uses GPT-6.1 Terra (`gpt-6.1-terra`) with low reasoning by default. We recommend keeping it: it is the fastest setup we have tested for phone tasks. Override it with `POKI_AGENT_MODEL`; see [Run Poki Agent](agent/README.md).
+
 For a physical iPhone, pair it with your Mac over USB first. See [Physical iPhone setup](docs/physical-iphone.md).
 
 Update with `./bin/poki update`. Set `POKI_NO_UPDATE_CHECK=1` to disable the daily anonymous GitHub release check. See [Update](AGENTS.md#update) for the request URL, restart steps, and prebuilt packages.

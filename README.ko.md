@@ -74,6 +74,8 @@ poki login
 poki status
 ```
 
+Poki Agent는 기본적으로 GPT-6.1 Terra(`gpt-6.1-terra`)를 low 추론 강도로 사용합니다. 휴대폰 작업에서 저희가 테스트한 가장 빠른 설정이므로 그대로 사용하는 것을 권장합니다. `POKI_AGENT_MODEL`로 모델을 변경할 수 있습니다. [Poki Agent 실행](agent/README.md)을 참고하세요.
+
 실제 iPhone을 쓰려면 먼저 USB로 Mac과 페어링하세요. [실제 iPhone 설정](docs/physical-iphone.md)을 참고하세요.
 
 ## 작업 실행해 보기

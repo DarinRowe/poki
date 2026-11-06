@@ -74,6 +74,8 @@ poki login
 poki status
 ```
 
+Poki Agent 默认使用 GPT-6.1 Terra（`gpt-6.1-terra`），推理强度为 low。建议保留这一配置，它是我们在手机任务中测试过的最快配置。可通过 `POKI_AGENT_MODEL` 更换模型，详见[运行 Poki Agent](agent/README.md)。
+
 如果连接 iPhone 真机，请先通过 USB 与 Mac 配对。详见[真机配置指南](docs/physical-iphone.md)。
 
 ## 试跑一个任务

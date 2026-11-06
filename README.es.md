@@ -74,6 +74,8 @@ poki login
 poki status
 ```
 
+Poki Agent usa GPT-6.1 Terra (`gpt-6.1-terra`) con razonamiento low de forma predeterminada. Recomendamos mantener esta configuración: es la más rápida que hemos probado para tareas en el teléfono. Puedes cambiar el modelo con `POKI_AGENT_MODEL`; consulta [Ejecutar Poki Agent](agent/README.md).
+
 Para un iPhone físico, primero emparéjalo con tu Mac por USB. Consulta [Configuración del iPhone físico](docs/physical-iphone.md).
 
 ## Prueba una tarea
