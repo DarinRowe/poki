@@ -112,7 +112,8 @@ export class PiSession extends EventEmitter {
         payload.instructions = this.instructions;
         if (this.serviceTier === undefined) delete payload.service_tier;
         else payload.service_tier = this.serviceTier;
-        const actual = [...new Set([...(payload.tools ?? []), ...(payload.input ?? []).filter(item => item.type === 'additional_tools').flatMap(item => item.tools ?? [])].map(tool => tool.name))];
+        const toolName = tool => tool?.name ?? tool?.function?.name ?? `<${tool?.type ?? 'unknown'}>`;
+        const actual = [...new Set([...(payload.tools ?? []), ...(payload.input ?? []).filter(item => item.type === 'additional_tools').flatMap(item => item.tools ?? [])].map(toolName))];
         if (actual.length !== names.length || actual.some(name => !names.includes(name))) throw new Error(`pi tools do not match Poki: expected=${names.join(',')} actual=${actual.join(',')}`);
         this.responseStarted = performance.now();
         this.requestedServiceTier = payload.service_tier ?? null;

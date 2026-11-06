@@ -32,7 +32,10 @@ async function exercise(t, mode) {
     let raw = ''; for await (const chunk of req) raw += chunk;
     const payload = JSON.parse(raw);
     if (mode === 'fast-defaults') { assert.equal(payload.model, 'gpt-6.1-terra'); assert.equal(payload.service_tier, 'priority'); }
-    assert.equal(payload.reasoning?.effort, 'low');
+    if (mode === 'chat-completions') {
+      assert.equal(req.url, '/v1/chat/completions');
+      assert.deepEqual(payload.tools.map(tool => tool.function.name), ['record_result']);
+    } else assert.equal(payload.reasoning?.effort, 'low');
     requests.push(payload);
     if (req.headers.authorization !== `Bearer ${secret}`) { res.writeHead(401).end(); return; }
     if (mode === 'rejected' && requests.length === 2) {
@@ -41,7 +44,14 @@ async function exercise(t, mode) {
     if (mode === 'auth-error') {
       res.writeHead(401, { 'content-type': 'application/json' }).end(JSON.stringify({ error: { message: `Invalid API key: ${secret}`, type: 'authentication_error' } })); return;
     }
-    response(res, mode === 'rejected' && requests.length === 1, mode === 'rejected' && requests.length === 1 ? 'priority' : mode === 'fast-defaults' ? 'priority' : 'default', payload.model);
+    if (mode === 'chat-completions') {
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.write(`data: ${JSON.stringify({ id: 'chat_test', object: 'chat.completion.chunk', model: payload.model,
+        choices: [{ index: 0, delta: { role: 'assistant', content: 'DONE' }, finish_reason: null }] })}\n\n`);
+      res.write(`data: ${JSON.stringify({ id: 'chat_test', object: 'chat.completion.chunk', model: payload.model,
+        choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })}\n\n`);
+      res.end('data: [DONE]\n\n');
+    } else response(res, mode === 'rejected' && requests.length === 1, mode === 'rejected' && requests.length === 1 ? 'priority' : mode === 'fast-defaults' ? 'priority' : 'default', payload.model);
   });
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -73,6 +83,11 @@ async function exercise(t, mode) {
     });
   });
   await session.open();
+  if (mode === 'chat-completions') {
+    session.runtime.registerProvider('openai', { baseUrl: `${base}/v1`, api: 'openai-completions',
+      models: [{ id: 'gpt-5.4', name: 'Local chat-completions fixture', reasoning: false, input: ['text'],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 128000, maxTokens: 1024 }] });
+  }
   const { thread } = await session.request('thread/start', { developerInstructions: 'Use record_result when needed, then answer DONE.', dynamicTools: [{ name: 'record_result', description: 'Record a result', inputSchema: { type: 'object', properties: { value: { type: 'string' } }, required: ['value'], additionalProperties: false } }] });
   await session.request('turn/start', { threadId: thread.id, effort: mode === 'fast-defaults' ? 'high' : 'low', input: [{ type: 'text', text: 'Run the protocol check.' }] });
   const turn = await done;
@@ -81,8 +96,13 @@ async function exercise(t, mode) {
   if (mode === 'auth-error') {
     assert.equal(turn.status, 'failed'); assert.match(turn.error.message, /redacted/); assert.equal(requests.length, 1);
   } else {
-    assert.equal(turn.status, 'completed');
+    assert.equal(turn.status, 'completed', turn.error?.message);
     assert.ok(messages.some(message => message.params?.item?.text === 'DONE'));
+    if (mode === 'chat-completions') {
+      assert.equal(requests.length, 1);
+      await assert.rejects(session.session.agent.onPayload({ ...requests[0], tools: [...requests[0].tools, { type: 'web_search' }] }), /pi tools do not match Poki/);
+      await assert.rejects(session.session.agent.onPayload({ ...requests[0], input: [{ type: 'additional_tools', tools: [{ type: 'web_search' }] }] }), /pi tools do not match Poki/);
+    }
     if (mode === 'fast-defaults') { assert.equal(requests.length, 1); assert.equal(warnings.length, 0); assert.match(evidence, /"service_tier":"priority"/); }
     if (mode === 'default') { assert.equal(requests.length, 1); assert.equal(requests[0].service_tier, 'default'); assert.equal(warnings.length, 0); }
     if (mode === 'rejected') {
@@ -102,6 +122,6 @@ async function exercise(t, mode) {
   }
 }
 
-for (const mode of ['default', 'rejected', 'downgraded', 'auth-error', 'fast-defaults']) {
+for (const mode of ['default', 'rejected', 'downgraded', 'auth-error', 'fast-defaults', 'chat-completions']) {
   test(`OpenAI protocol: ${mode}`, { timeout: 20000 }, t => exercise(t, mode));
 }

@@ -51,6 +51,26 @@ export async function runMessageWorker(channel, Source) {
   const abort = new AbortController();
   const stop = () => abort.abort();
   process.on('SIGINT', stop); process.on('SIGTERM', stop);
+  const ignorePipeError = () => {};
+  process.stdout.on('error', ignorePipeError);
+  process.stderr.on('error', ignorePipeError);
+  process.on('SIGHUP', stop);
+  const supervisedBy = Number(process.env.POKI_PARENT_PID ?? '');
+  let watchdog;
+  if (Number.isInteger(supervisedBy) && supervisedBy > 0 && !values.check) {
+    watchdog = setInterval(() => {
+      try { process.kill(supervisedBy, 0); } catch {
+        console.log(`${channel}: supervisor ${supervisedBy} is gone, stopping.`);
+        stop();
+        return;
+      }
+      if (process.ppid !== supervisedBy) {
+        console.log(`${channel}: reparented away from supervisor, stopping.`);
+        stop();
+      }
+    }, 1500);
+    watchdog.unref();
+  }
   try {
     if (values.check) {
       await source.check(abort.signal);
@@ -75,7 +95,12 @@ export async function runMessageWorker(channel, Source) {
   } catch (error) {
     if (!abort.signal.aborted) throw error;
   } finally {
+    if (watchdog) clearInterval(watchdog);
     try { await Promise.all([...runners.values()].map(runner => runner.close())); }
-    finally { await unlink(lock); process.removeListener('SIGINT', stop); process.removeListener('SIGTERM', stop); }
+    finally {
+      process.removeListener('SIGINT', stop); process.removeListener('SIGTERM', stop); process.removeListener('SIGHUP', stop);
+      process.stdout.removeListener('error', ignorePipeError); process.stderr.removeListener('error', ignorePipeError);
+      await unlink(lock);
+    }
   }
 }

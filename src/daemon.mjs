@@ -90,3 +90,20 @@ async function stop() {
 }
 process.on('SIGINT', () => void stop());
 process.on('SIGTERM', () => void stop());
+
+const supervisedBy = Number(process.env.POKI_PARENT_PID ?? '');
+if (Number.isInteger(supervisedBy) && supervisedBy > 0) {
+  const watchdog = setInterval(() => {
+    try { process.kill(supervisedBy, 0); } catch {
+      console.error(JSON.stringify({ event: 'parent-gone', pid: supervisedBy }));
+      void stop();
+      return;
+    }
+    if (process.ppid !== supervisedBy) {
+      console.error(JSON.stringify({ event: 'parent-changed', expected: supervisedBy, actual: process.ppid }));
+      void stop();
+    }
+  }, 1500);
+  watchdog.unref();
+  process.on('exit', () => clearInterval(watchdog));
+}
