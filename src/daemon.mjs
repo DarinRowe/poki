@@ -1,4 +1,5 @@
 import http from 'node:http';
+import { closeLocalHelpers } from './remote.mjs';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { mkdir, writeFile, readFile, unlink, rename, chmod } from 'node:fs/promises';
 import { once } from 'node:events';
@@ -88,6 +89,7 @@ async function stop() {
   listener.closeAllConnections();
   await Promise.allSettled([...sessions.values()].map(devices => devices.close()));
   await Promise.allSettled([...active].map(server => server.close()));
+  await closeLocalHelpers();
   await closed;
   const entry = await readFile(endpointFile, 'utf8').then(JSON.parse).catch(() => null);
   if (entry?.pid === process.pid) await unlink(endpointFile);

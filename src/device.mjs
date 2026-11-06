@@ -1,4 +1,4 @@
-import { remoteDevices, remoteRequest } from './remote.mjs';
+import { remoteDevices, nativeRequest } from './remote.mjs';
 import { execute, checkWork, deadline, pause, phase, stopped, stoppingReason } from './work.mjs';
 import { Coordination, managementTools } from './coordination.mjs';
 import { runBatch } from './batch.mjs';
@@ -88,7 +88,7 @@ export class Devices {
       try {
         this.access(device);
         if (device.remote) {
-          const info = await remoteRequest(device, { op: 'device_info' });
+          const info = await nativeRequest(device, { op: 'device_info' });
           return { ...device, remote: undefined, name: info.properties.DeviceName ?? device.name, model: info.properties.ProductType, osVersion: info.properties.ProductVersion, selected: device.id === this.selected, ...occupancy, readiness: 'remote services connected' };
         }
         const values = await Promise.all(['DeviceName','ProductType','ProductVersion'].map(async key => {
@@ -147,9 +147,8 @@ export class Devices {
   async bridge(request) {
     const target = await this.target();
     if (target.kind === 'simulator') return simulatorRequest(target.id, request);
-    const nativeRequest = request.op === 'ax' ? { op: 'ax_tree', include_offscreen: request.include_offscreen ?? false } : request;
-    const result = target.remote ? await remoteRequest(target, nativeRequest)
-      : JSON.parse((await this.run(join(root, 'build/poki-native'), ['--udid', target.id], 95000, JSON.stringify(nativeRequest))).stdout);
+    const command = request.op === 'ax' ? { op: 'ax_tree', include_offscreen: request.include_offscreen ?? false } : request;
+    const result = await nativeRequest(target, command);
     if (request.op === 'ax') return { ...result, foreground: result.foreground_app, elements: result.elements?.map(e => ({ ...e, type: e.type ?? e.role })) };
     return result;
   }
@@ -157,7 +156,7 @@ export class Devices {
     if (this.scales.has(target.id)) return this.scales.get(target.id);
     let scale;
     if (target.remote) {
-      scale = (await remoteRequest(target, { op: 'device_info' })).scale;
+      scale = (await nativeRequest(target, { op: 'device_info' })).scale;
     } else if (target.kind === 'physical') {
       const result = await this.native(['lockdown', '--domain', 'com.apple.mobile.iTunes', 'get', 'ScreenScaleFactor']);
       scale = Number(result.stdout);
@@ -179,7 +178,7 @@ export class Devices {
     try {
       // Unmasked, the area around the Dynamic Island differs between frames of a still screen, which would expire refs.
       if (target.kind === 'simulator') await this.run('xcrun', ['simctl', 'io', target.id, 'screenshot', '--type=png', '--mask=black', path]);
-      else if (target.remote) await remoteRequest(target, { op: 'screenshot', path });
+      else if (target.remote) await nativeRequest(target, { op: 'screenshot', path });
       else await this.native(['screenshot', path], /Screenshot saved to:/);
       const original = await readFile(path), meta = await sharp(original).metadata();
       const scale = await this.scale(target);
@@ -235,7 +234,7 @@ export class Devices {
     const observation = this.observation(frame);
     return { observation, source, width: frame.width, height: frame.height, units: 'points', foreground, elements: this.elements, total: count, truncated: count > this.elements.length, ...(source === 'ocr' && nativeError ? { fallback_reason: nativeError } : {}) };
   }
-  // One accessibility read and no screenshot, so polling costs one helper process per attempt.
+  // One accessibility read and no screenshot, so polling costs one native request per attempt.
   async structure(maxAge = 0) {
     const target = await this.target();
     if (this.seen?.device === target.id && performance.now() - this.seen.at <= maxAge) return this.seen;
@@ -253,9 +252,9 @@ export class Devices {
   }
   // Reading the result back saves the caller a round trip to look. The action has already happened,
   // so a failed read only loses the report; a stop request still surfaces as a stop.
-  async readback(before) {
+  async readback(before, options) {
     try {
-      const { signature, screen } = await deadline(readbackMs, () => readScreen(this));
+      const { signature, screen } = await deadline(readbackMs, () => readScreen(this, options));
       const compared = before !== undefined && signature !== undefined;
       return { screen, screen_change_verified: compared, ...(compared ? { screen_changed: signature !== before } : {}) };
     } catch (error) {
@@ -347,7 +346,7 @@ export class Devices {
           const target = await this.target();
           if (!target.remote) throw new Error('This device is not configured for RemotePairing.');
           this.changed(target);
-          return text(await remoteRequest(target, { op: name === 'disconnect_device' ? 'disconnect' : 'reconnect' }));
+          return text(await nativeRequest(target, { op: name === 'disconnect_device' ? 'disconnect' : 'reconnect' }));
         }
         case 'select_device': {
           this.requested = args.device;
@@ -357,7 +356,7 @@ export class Devices {
         case 'get_device_info': {
           const target = await this.target(), frame = await this.capture();
           const info = { ...target, screen: { width: frame.width, height: frame.height, scale: frame.scale, units: 'points' } };
-          if (target.remote) { Object.assign(info, (await remoteRequest(target, { op: 'device_info' })).properties); delete info.remote; }
+          if (target.remote) { Object.assign(info, (await nativeRequest(target, { op: 'device_info' })).properties); delete info.remote; }
           else if (target.kind === 'physical') for (const key of ['DeviceName', 'ProductType', 'ProductVersion']) {
             const result = await this.native(['lockdown', 'get', key]); info[key] = JSON.parse(result.stdout);
           }
@@ -418,7 +417,8 @@ export class Devices {
         // Without await, the finally below restores the device state while the first step is still looking up its device.
         case 'batch_commands': return await runBatch(this, args);
         default: {
-          const looks = reportsScreen.has(name) && !this.inBatch, touches = touchesControl.has(name);
+          const verify = args.verify !== false;
+          const looks = verify && reportsScreen.has(name) && !this.inBatch, touches = verify && touchesControl.has(name);
           this.beforeInput = undefined;
           // A batch step may reuse the read its predecessor just took of the same screen.
           const before = looks || touches ? await this.readBefore(this.inBatch ? justReadMs : 0) : undefined;
@@ -429,6 +429,7 @@ export class Devices {
           const sentTo = this.beforeInput ?? before, signature = sentTo?.elements.length ? sentTo.signature : undefined;
           if (looks && delivered) result = { ...result, ...await this.readback(signature) };
           else if (touches && delivered && signature !== undefined) result = { ...result, ...await this.changedSince(signature) };
+          if (!verify) result = { ...result, verified: false };
           const unchanged = touches && result.screen_changed === false && !result.stopped;
           if (unchanged) result = { ...result, instruction: unchangedAdvice };
           // The input layers always answer false here. Only a touch is compared inside a batch; the batch ends with the screen.

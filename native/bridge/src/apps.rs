@@ -1,4 +1,4 @@
-use super::Result;
+use super::{Result, not_sent_error};
 use futures_util::TryStreamExt;
 use idevice::{
     IdeviceService, RsdService,
@@ -12,7 +12,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LaunchRequest {
     pub bundle_id: Option<String>,
@@ -66,7 +66,9 @@ pub async fn launch(
     rsd: &mut RsdHandshake,
     request: LaunchRequest,
 ) -> Result<Value> {
-    let mut service = AppServiceClient::connect_rsd(adapter, rsd).await?;
+    let mut service = AppServiceClient::connect_rsd(adapter, rsd)
+        .await
+        .map_err(not_sent_error)?;
     let (bundle_id, name) = if let Some(bundle_id) = request.bundle_id {
         (bundle_id.clone(), bundle_id)
     } else {

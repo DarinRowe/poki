@@ -24,7 +24,30 @@ import { createInterface } from 'node:readline';
 const args=process.argv.slice(2), tool=basename(process.argv[1]), state=JSON.parse(readFileSync(process.env.FIXTURE_STATE));
 const log=(event)=>appendFileSync(process.env.FIXTURE_LOG,JSON.stringify(event)+'\\n');
 log({tool,args,pid:process.pid});
-if(tool==='python3') console.log(JSON.stringify(state.simulatorOnly?[]:state.twoPhones?[{id:'fixture-phone',connection:'USB'},{id:'fixture-phone-2',connection:'USB'}]:[{id:'fixture-phone',connection:'USB'}]));
+if(tool==='poki-native'&&args[0]==='--local-server') {
+ const {createServer}=await import('node:net'),{execFile}=await import('node:child_process');
+ const running=new Set();
+ // Like the Rust helper, an abandoned read runs to completion and an abandoned input is dropped; the helper's own exit ends both.
+ process.once('SIGTERM',async()=>{await Promise.all([...running].map(child=>new Promise(done=>{child.once('exit',done);child.kill('SIGKILL');})));process.exit(0);});
+ // Like the Rust helper, end with the daemon that owns stdin, even when it crashed.
+ process.stdin.once('end',()=>process.kill(process.pid,'SIGTERM'));process.stdin.resume();
+ const server=createServer(socket=>{
+  socket.write(JSON.stringify({pid:process.pid})+'\\n');
+  createInterface({input:socket}).once('line',line=>{
+   const child=execFile(process.execPath,[process.argv[1],'--fixture-request'],(error,stdout,stderr)=>{
+    running.delete(child);
+    if(!socket.destroyed)socket.end((error?JSON.stringify({transport_error:true,error:stderr||'Fixture native service failed'}):stdout.trim())+'\\n');
+   });
+   running.add(child);
+   const op=JSON.parse(line).op;
+   if(!['ax_tree','screenshot','device_info','display_info','list_apps'].includes(op))socket.once('close',()=>child.kill());
+   child.stdin.end(line);
+  });
+ });
+ server.listen(args[2],()=>console.log(JSON.stringify({ready:true})));
+ await new Promise(()=>{});
+}
+else if(tool==='python3') console.log(JSON.stringify(state.simulatorOnly?[]:state.twoPhones?[{id:'fixture-phone',connection:'USB'},{id:'fixture-phone-2',connection:'USB'}]:[{id:'fixture-phone',connection:'USB'}]));
 else if(tool==='xcrun') {if(args.includes('listapps')){console.log('<?xml version="1.0"?><plist version="1.0"><dict><key>local.fixture</key><dict><key>CFBundleName</key><string>Fixture</string></dict></dict></plist>');process.exit(0);}if(args.includes('launch')){console.log('local.fixture: 4242');process.exit(0);}if(args.includes('keyboard')){writeFileSync(process.env.FIXTURE_STATE,JSON.stringify({...state,keyboard:args.at(-1)}));process.exit(0);}if(args.includes('screenshot')){copyFileSync(process.env.FIXTURE_IMAGE,args.at(-1));process.exit(0);}if(args.includes('devicectl')&&args.includes('copy')){if(state.denyContainer){console.error('Container access denied by device');process.exit(1);}const destination=args[args.indexOf('--destination')+1];mkdirSync(destination+'/Documents',{recursive:true});writeFileSync(destination+'/Documents/check.txt','fixture container contents');console.log(JSON.stringify({info:{outcome:'success'},result:{}}));process.exit(0);}if(state.coreDeviceUnavailable&&args.includes('devicectl')){console.error('ERROR: The specified device was not found. (com.apple.dt.CoreDeviceError error 1000)');process.exit(1);} console.log(JSON.stringify({devices:state.simulatorOnly?{'com.apple.CoreSimulator.SimRuntime.iOS-27-0':[{udid:'fixture-sim',name:'Fixture Simulator',state:state.simulatorBooted?'Booted':'Shutdown',dataPath:process.env.HOME+'/simulator'},...(state.secondSimulator?[{udid:'fixture-sim-2',name:'Second Simulator',state:'Booted',dataPath:process.env.HOME+'/simulator-2'}]:[])]}:{}}));}
 else if(tool==='idevice') {
  if(args.includes('screenshot')) {if(state.screenshotUnavailable){console.error('Screenshot service unavailable');process.exit(1);}copyFileSync(process.env.FIXTURE_IMAGE,args.at(-1));console.log('Screenshot saved to: fixture');}
@@ -48,7 +71,8 @@ else if(tool==='simulator') {
 }
 else if(tool==='poki-native') {
  let input='';for await(const chunk of process.stdin)input+=chunk;const req=JSON.parse(input);log({op:req.op,request:req});
- if(state.block===req.op){setInterval(()=>{},10000);}
+ if(req.op==='release_input')console.log(JSON.stringify({released:true}));
+ else if(state.block===req.op){setInterval(()=>{},10000);}
  else if(req.op==='install_app'||req.op==='uninstall_app'){if(req.op==='install_app'&&!execFileSync('/usr/bin/unzip',['-p',req.ipa_path,'Payload/InstallFixture.app/Info.plist'],{encoding:'utf8'}).includes('local.installfixture'))throw Error('Invalid package layout');if(state.installUnknown){console.log(JSON.stringify({isError:true,outcome:'unknown',operation:req.op,bundle_id:req.bundle_id,error:'Connection closed after sending request'}));process.exit(0);}writeFileSync(process.env.FIXTURE_STATE,JSON.stringify({...state,installed:req.op==='install_app',inventoryFailed:state.failInventoryAfterMutation}));console.log(JSON.stringify({outcome:'completed',bundle_id:req.bundle_id,staging_cleanup:{removed:true}}));}
  else if(req.op==='list_apps'&&state.inventoryFailed){console.error('Inventory connection unavailable');process.exit(1);}
  else if(req.op==='list_apps'&&state.appDirectoryFailures){writeFileSync(process.env.FIXTURE_STATE,JSON.stringify({...state,appDirectoryFailures:state.appDirectoryFailures-1}));console.error('bad device');process.exit(1);}

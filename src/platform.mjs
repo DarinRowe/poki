@@ -1,4 +1,4 @@
-import { remoteRequest } from './remote.mjs';
+import { nativeRequest } from './remote.mjs';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { execute, pause, checkWork, signal, deadline, stopped, stoppingReason, phase } from './work.mjs';
@@ -29,7 +29,7 @@ const physical = async (id, args, expect) => {
   return result;
 };
 async function configuration(target, method, value) {
-  if (target.remote) return remoteRequest(target, { op: 'configuration', method, ...(value === undefined ? {} : { value }) });
+  if (target.remote) return nativeRequest(target, { op: 'configuration', method, ...(value === undefined ? {} : { value }) });
   const { stdout } = await platformRun(join(root, 'build/poki-native'), ['--udid', target.id], { input: JSON.stringify({ op: 'configuration', method, ...(value === undefined ? {} : { value }) }) });
   return JSON.parse(stdout);
 }

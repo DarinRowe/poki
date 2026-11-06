@@ -32,6 +32,60 @@ fn trace(stage: &str) {
         eprintln!("native stage: {stage} (+{} ms)", elapsed.as_millis());
     }
 }
+struct InputMedia {
+    client: idevice::core_device::DisplayServiceClient<Box<dyn ReadWrite>>,
+    receivers: tokio::task::JoinSet<()>,
+    ready_at: tokio::time::Instant,
+}
+
+impl InputMedia {
+    async fn connect(
+        adapter: &mut idevice::tcp::handle::AdapterHandle,
+        rsd: &mut RsdHandshake,
+    ) -> Result<Self> {
+        let stream = stream::start_screen_media_stream(adapter, rsd, 1)
+            .await
+            .map_err(|e| format!("Cannot establish input media session: {e}"))?;
+        let mut receivers = tokio::task::JoinSet::new();
+        // The transport queues UDP without a bound. Consume packets while holding the input gate open.
+        for socket in [stream.audio_udp, stream.video_udp] {
+            receivers.spawn(async move { while socket.recv().await.is_ok() {} });
+        }
+        trace("input media connected");
+        Ok(Self {
+            client: stream.client,
+            receivers,
+            ready_at: tokio::time::Instant::now() + Duration::from_millis(1000),
+        })
+    }
+}
+
+/// Connecting or opening a phone service failed, so no input reached the phone.
+#[derive(Debug)]
+struct NotSent(Box<dyn std::error::Error + Send + Sync>);
+impl std::fmt::Display for NotSent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+impl std::error::Error for NotSent {}
+fn not_sent_error(
+    error: impl Into<Box<dyn std::error::Error + Send + Sync>>,
+) -> Box<dyn std::error::Error + Send + Sync> {
+    Box::new(NotSent(error.into()))
+}
+
+async fn close_input(media: &mut Option<InputMedia>) -> Result<()> {
+    if let Some(mut media) = media.take() {
+        let result =
+            tokio::time::timeout(Duration::from_secs(2), media.client.stop_media_stream()).await;
+        media.receivers.shutdown().await;
+        trace("input media closed");
+        result??;
+    }
+    Ok(())
+}
+
 struct Keyboard {
     hid: Touch,
     service: MainKeyboardService,
@@ -42,9 +96,11 @@ impl Keyboard {
         rsd: &mut RsdHandshake,
     ) -> Result<Self> {
         trace("keyboard connect");
-        let mut hid = Touch::connect_rsd(adapter, rsd).await?;
+        let mut hid = Touch::connect_rsd(adapter, rsd)
+            .await
+            .map_err(not_sent_error)?;
         trace("keyboard create");
-        let service = hid.create_main_keyboard().await?;
+        let service = hid.create_main_keyboard().await.map_err(not_sent_error)?;
         trace("keyboard ready");
         tokio::time::sleep(Duration::from_millis(150)).await;
         Ok(Self { hid, service })
@@ -55,7 +111,7 @@ impl Keyboard {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 enum Request {
     DisplayInfo,
@@ -163,6 +219,17 @@ fn button_interval() -> u64 {
 }
 
 impl Request {
+    fn read_only(&self) -> bool {
+        matches!(
+            self,
+            Self::AxTree { .. }
+                | Self::Screenshot { .. }
+                | Self::DeviceInfo
+                | Self::DisplayInfo
+                | Self::ListApps
+        )
+    }
+
     fn validate(&self) -> Result<()> {
         match self {
             Self::LaunchApp(request) => request.validate()?,
@@ -244,6 +311,9 @@ impl Request {
 async fn main() {
     let result = async {
         let args: Vec<String> = std::env::args().collect();
+        if args.len() == 4 && args[1] == "--local-server" {
+            return remote::serve_local(&args[2], &args[3]).await;
+        }
         if args.len() == 4 && args[1] == "--remote-server" {
             return remote::serve_socket(&args[2], &args[3]).await;
         }
@@ -336,7 +406,17 @@ async fn execute(udid: &str, request: Request) -> Result<Value> {
         Err(error) if matches!(request, Request::LaunchApp(_)) => return Ok(apps::not_sent(error)),
         Err(error) => return Err(error),
     };
-    execute_connected(&mut adapter, &mut rsd, Some(&provider), request).await
+    let launch = matches!(request, Request::LaunchApp(_));
+    let mut media = None;
+    let result =
+        execute_connected(&mut adapter, &mut rsd, Some(&provider), request, &mut media).await;
+    let closed = close_input(&mut media).await;
+    let output = match result {
+        Err(error) if launch => apps::not_sent(error),
+        result => result?,
+    };
+    closed?;
+    Ok(output)
 }
 
 async fn execute_connected(
@@ -344,11 +424,13 @@ async fn execute_connected(
     rsd: &mut RsdHandshake,
     provider: Option<&dyn idevice::provider::IdeviceProvider>,
     request: Request,
+    media: &mut Option<InputMedia>,
 ) -> Result<Value> {
     if let Request::LaunchApp(request) = request {
-        return Ok(apps::launch(adapter, rsd, request)
-            .await
-            .unwrap_or_else(apps::not_sent));
+        return match apps::launch(adapter, rsd, request).await {
+            Err(error) if error.is::<NotSent>() => Err(error),
+            result => Ok(result.unwrap_or_else(apps::not_sent)),
+        };
     }
     if let Request::Screenshot { path } = request {
         let mut dvt =
@@ -392,11 +474,15 @@ async fn execute_connected(
         let info = display.get_media_support_info().await?;
         return Ok(serde_json::to_value(info)?);
     }
-    let mut media = stream::start_screen_media_stream(adapter, rsd, 1)
-        .await
-        .map_err(|e| format!("Cannot establish input media session: {e}"))?;
-    trace("media ready");
-    tokio::time::sleep(Duration::from_millis(1000)).await;
+    if media.is_none() {
+        *media = Some(
+            InputMedia::connect(adapter, rsd)
+                .await
+                .map_err(not_sent_error)?,
+        );
+    }
+    tokio::time::sleep_until(media.as_ref().unwrap().ready_at).await;
+    trace("input media ready");
     // The device sometimes drops a touch whose connection closes straight after its last report, with no
     // error. The touch connection therefore stays open through the wait that follows the action;
     // NATIVE.md has the counts.
@@ -415,11 +501,19 @@ async fn execute_connected(
                 unreachable!()
             }
             Request::Tap { x, y, duration_ms } | Request::LongPress { x, y, duration_ms } => {
-                let hid = touch.insert(Touch::connect_rsd(adapter, rsd).await?);
+                let hid = touch.insert(
+                    Touch::connect_rsd(adapter, rsd)
+                        .await
+                        .map_err(not_sent_error)?,
+                );
                 held_tap(hid, x, y, duration_ms).await?;
             }
             Request::DoubleTap { x, y, duration_ms } => {
-                let hid = touch.insert(Touch::connect_rsd(adapter, rsd).await?);
+                let hid = touch.insert(
+                    Touch::connect_rsd(adapter, rsd)
+                        .await
+                        .map_err(not_sent_error)?,
+                );
                 held_tap(hid, x, y, duration_ms).await?;
                 tokio::time::sleep(Duration::from_millis(80)).await;
                 held_tap(hid, x, y, duration_ms).await?;
@@ -433,7 +527,11 @@ async fn execute_connected(
                 hold_ms,
                 end_hold_ms,
             } => {
-                let hid = touch.insert(Touch::connect_rsd(adapter, rsd).await?);
+                let hid = touch.insert(
+                    Touch::connect_rsd(adapter, rsd)
+                        .await
+                        .map_err(not_sent_error)?,
+                );
                 Drag {
                     x1,
                     y1,
@@ -454,7 +552,11 @@ async fn execute_connected(
                 angle,
                 duration_ms,
             } => {
-                let hid = touch.insert(Touch::connect_rsd(adapter, rsd).await?);
+                let hid = touch.insert(
+                    Touch::connect_rsd(adapter, rsd)
+                        .await
+                        .map_err(not_sent_error)?,
+                );
                 Pinch {
                     x,
                     y,
@@ -492,7 +594,9 @@ async fn execute_connected(
                 count,
                 interval_ms,
             } => {
-                let mut keyboard = Indigo::connect_rsd(adapter, rsd).await?;
+                let mut keyboard = Indigo::connect_rsd(adapter, rsd)
+                    .await
+                    .map_err(not_sent_error)?;
                 let (code, duration) = button_usage(&button)?;
                 for index in 0..count {
                     if index > 0 {
@@ -531,12 +635,7 @@ async fn execute_connected(
     .await;
     tokio::time::sleep(Duration::from_millis(300)).await;
     drop(touch);
-    let stop = media.client.stop_media_stream().await;
-    drop(media.audio_udp);
-    drop(media.video_udp);
-    let output = action?;
-    stop?;
-    Ok(output)
+    action
 }
 
 async fn held_tap(hid: &mut Touch, x: u16, y: u16, ms: u64) -> Result<()> {
