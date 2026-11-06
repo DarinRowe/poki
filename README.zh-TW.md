@@ -47,11 +47,11 @@ npm start
 
 ### 預先編譯的 macOS arm64 套件
 
-從 Release 頁面下載 `poki-v0.1.0-macos-arm64.tar.gz`，然後執行：
+從 Release 頁面下載 `poki-v0.1.1-macos-arm64.tar.gz`，然後執行：
 
 ```sh
-tar -xzf poki-v0.1.0-macos-arm64.tar.gz
-cd poki-v0.1.0
+tar -xzf poki-v0.1.1-macos-arm64.tar.gz
+cd poki-v0.1.1
 npm ci --no-audit --no-fund
 npm start
 ```
@@ -111,13 +111,13 @@ poki "Search esp32 in Chrome and summarize the top result"
 ## 路線圖
 
 <p align="center">
-  <img src="docs/images/roadmap.png" width="860" alt="Poki roadmap. Shipped: Poki MCP, Poki Agent, iMessage and Terminal channels, self-learning routes. Next: no shared Wi-Fi needed, Telegram, native text input without using the clipboard, faster persistent connections, simplified tool interfaces. Then: Poki App, which runs on your iPhone even when your Mac is off. Later: iPhone Duo support, use a physical iPhone without installing Xcode, support for more model providers.">
+  <img src="docs/images/roadmap.png" width="860" alt="Poki roadmap. Shipped: Poki MCP, Poki Agent, iMessage and Terminal integrations, self-learning routes. In Progress: remote connections (no shared LAN required), Telegram integration, native text input (clipboard-free), persistent connection performance improvements, simplified tool interface. Planned: Poki App, which runs locally on iPhone and is available while your Mac is powered off. Future: iPhone Duo support, physical device support (no Xcode required), additional model providers.">
 </p>
 
-- **已發布:** Poki MCP、Poki Agent、iMessage 與終端機入口、自我學習路線
-- **下一步:** **不必連同一個 Wi-Fi**；Telegram、不經剪貼簿的原生文字輸入、常駐連線提速、更簡潔的工具介面
-- **再下一步:** Poki App：手機自己執行，Mac 關機也能用
-- **之後:** 支援 iPhone Duo、不必安裝 Xcode 也能使用實體 iPhone、更多模型供應商
+- **已發布:** Poki MCP、Poki Agent、iMessage 與終端機整合、自我學習路線
+- **開發中:** **遠端連線（無需同一區域網路）**、Telegram 整合、原生文字輸入（不經剪貼簿）、長連線效能最佳化、簡化工具介面
+- **計畫中:** Poki App：在 iPhone 本機執行，Mac 關機時可用
+- **遠期規劃:** 支援 iPhone Duo、實機支援（無需安裝 Xcode）、更多模型供應商
 
 ## Star History
 
@@ -134,8 +134,6 @@ poki "Search esp32 in Chrome and summarize the top result"
 <a href="https://github.com/JosssphZhou/poki/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=JosssphZhou/poki" alt="Contributors">
 </a>
-<br>
-<sub>同時感謝 <a href="https://github.com/ZhehanZhang">ZhehanZ</a> 在 Linux 與 Tailscale 遠端控制（<a href="https://github.com/JosssphZhou/poki/issues/2">#2</a>）以及即時世界狀態提案（<a href="https://github.com/JosssphZhou/poki/issues/7">#7</a>）上的貢獻。</sub>
 
 ## 免責聲明
 

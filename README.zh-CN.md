@@ -47,11 +47,11 @@ npm start
 
 ### macOS arm64 预编译安装包
 
-从版本发布页下载 `poki-v0.1.0-macos-arm64.tar.gz`，然后运行：
+从版本发布页下载 `poki-v0.1.1-macos-arm64.tar.gz`，然后运行：
 
 ```sh
-tar -xzf poki-v0.1.0-macos-arm64.tar.gz
-cd poki-v0.1.0
+tar -xzf poki-v0.1.1-macos-arm64.tar.gz
+cd poki-v0.1.1
 npm ci --no-audit --no-fund
 npm start
 ```
@@ -111,7 +111,7 @@ poki "Search esp32 in Chrome and summarize the top result"
 ## 路线图
 
 <p align="center">
-  <img src="docs/images/roadmap.zh-CN.png" width="860" alt="Poki 路线图。已发布：Poki MCP、Poki Agent、iMessage 和终端入口、自学习路线。下一步：不依赖同一 Wi-Fi、Telegram、不经剪贴板的原生文本输入、常驻连接提速、更简洁的工具接口。再下一步：Poki App，手机自己运行，Mac 关机也能用。之后：iPhone Duo 支持、使用真机无需安装 Xcode、更多模型提供方。">
+  <img src="docs/images/roadmap.zh-CN.png" width="860" alt="Poki 路线图。已发布：Poki MCP、Poki Agent、iMessage 与终端集成、自学习路线。开发中：远程连接（无需同一局域网）、Telegram 集成、原生文本输入（不经剪贴板）、长连接性能优化、简化工具接口。计划中：Poki App，在 iPhone 本地运行，Mac 关机时可用。远期规划：iPhone Duo 支持、真机支持（无需安装 Xcode）、更多模型提供商。">
 </p>
 
 ## Star History
@@ -129,8 +129,6 @@ poki "Search esp32 in Chrome and summarize the top result"
 <a href="https://github.com/JosssphZhou/poki/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=JosssphZhou/poki" alt="Contributors">
 </a>
-<br>
-<sub>同时感谢 <a href="https://github.com/ZhehanZhang">ZhehanZ</a> 在 Linux 与 Tailscale 远程控制（<a href="https://github.com/JosssphZhou/poki/issues/2">#2</a>）以及实时世界状态方案（<a href="https://github.com/JosssphZhou/poki/issues/7">#7</a>）上的贡献。</sub>
 
 ## 免责声明
 

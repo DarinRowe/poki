@@ -47,11 +47,11 @@ Requiere macOS 15 o posterior, Xcode completo, Rust, Node.js 24+ y ffmpeg. `./bi
 
 ### Paquete precompilado para macOS arm64
 
-Descarga `poki-v0.1.0-macos-arm64.tar.gz` desde la release y ejecuta:
+Descarga `poki-v0.1.1-macos-arm64.tar.gz` desde la release y ejecuta:
 
 ```sh
-tar -xzf poki-v0.1.0-macos-arm64.tar.gz
-cd poki-v0.1.0
+tar -xzf poki-v0.1.1-macos-arm64.tar.gz
+cd poki-v0.1.1
 npm ci --no-audit --no-fund
 npm start
 ```
@@ -111,13 +111,13 @@ La compatibilidad con iPhone físico solo se ha verificado en iPhone con la inte
 ## Hoja de ruta
 
 <p align="center">
-  <img src="docs/images/roadmap.png" width="860" alt="Poki roadmap. Shipped: Poki MCP, Poki Agent, iMessage and Terminal channels, self-learning routes. Next: no shared Wi-Fi needed, Telegram, native text input without using the clipboard, faster persistent connections, simplified tool interfaces. Then: Poki App, which runs on your iPhone even when your Mac is off. Later: iPhone Duo support, use a physical iPhone without installing Xcode, support for more model providers.">
+  <img src="docs/images/roadmap.png" width="860" alt="Poki roadmap. Shipped: Poki MCP, Poki Agent, iMessage and Terminal integrations, self-learning routes. In Progress: remote connections (no shared LAN required), Telegram integration, native text input (clipboard-free), persistent connection performance improvements, simplified tool interface. Planned: Poki App, which runs locally on iPhone and is available while your Mac is powered off. Future: iPhone Duo support, physical device support (no Xcode required), additional model providers.">
 </p>
 
-- **Publicado:** Poki MCP, Poki Agent, canales de iMessage y terminal, rutas de autoaprendizaje
-- **Siguiente:** **Sin necesidad de compartir Wi-Fi**, Telegram, entrada de texto nativa sin usar el portapapeles, conexiones persistentes más rápidas, interfaces de herramientas más simples
-- **Después:** Poki App: se ejecuta en tu iPhone, incluso con el Mac apagado
-- **Más adelante:** Compatibilidad con iPhone Duo, usar un iPhone físico sin instalar Xcode, más proveedores de modelos
+- **Publicado:** Poki MCP, Poki Agent, integraciones con iMessage y la terminal, rutas de autoaprendizaje
+- **En desarrollo:** **Conexión remota (sin LAN compartida)**, integración con Telegram, entrada de texto nativa (sin portapapeles), mejoras de rendimiento en conexiones persistentes, interfaz de herramientas simplificada
+- **Planificado:** Poki App: ejecución local en el iPhone, disponible con el Mac apagado
+- **Futuro:** Compatibilidad con iPhone Duo, compatibilidad con dispositivos físicos (sin Xcode), más proveedores de modelos
 
 ## Star History
 
@@ -134,8 +134,6 @@ La compatibilidad con iPhone físico solo se ha verificado en iPhone con la inte
 <a href="https://github.com/JosssphZhou/poki/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=JosssphZhou/poki" alt="Contributors">
 </a>
-<br>
-<sub>Gracias también a <a href="https://github.com/ZhehanZhang">ZhehanZ</a> por el trabajo de control remoto con Linux y Tailscale (<a href="https://github.com/JosssphZhou/poki/issues/2">#2</a>) y la propuesta de estado del mundo en vivo (<a href="https://github.com/JosssphZhou/poki/issues/7">#7</a>).</sub>
 
 ## Descargo de responsabilidad
 

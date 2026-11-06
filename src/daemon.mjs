@@ -7,6 +7,7 @@ import { createServer, definitions } from './tools.mjs';
 import { Coordination } from './coordination.mjs';
 import { Devices } from './device.mjs';
 import { stateDir, endpointFile } from './config.mjs';
+import { startUpdateChecks } from './update-check.mjs';
 import { warnIfNativeStale } from './build-info.mjs';
 
 const portIndex = process.argv.indexOf('--port');
@@ -76,10 +77,13 @@ await rename(temporary, endpointFile);
 await chmod(endpointFile, 0o600);
 console.log(JSON.stringify({ event: 'ready', url: entry.url, endpointFile, tools: definitions.length }));
 
+const stopUpdateChecks = startUpdateChecks();
+
 let stopping = false;
 async function stop() {
   if (stopping) return;
   stopping = true;
+  stopUpdateChecks();
   const closed = new Promise(resolve => listener.close(resolve));
   listener.closeAllConnections();
   await Promise.allSettled([...sessions.values()].map(devices => devices.close()));

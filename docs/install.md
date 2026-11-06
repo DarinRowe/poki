@@ -17,7 +17,7 @@ For experimental access across networks, see [iPhone over Tailscale](remote-ipho
 
 > **Reference environment**: Prepared on an Apple silicon Mac with macOS 27.3, Xcode 27.0 (`27A5209h`), Node 26.10.0, npm 11.19.1, Rust/Cargo 1.99.0, Python 3.13.0, and `ffmpeg`/`ffprobe` 9.0.2. These versions record the build environment rather than claiming that every tool and parameter works across all platform versions.
 
-If you received the optional `poki-v0.1.0-macos-arm64.tar.gz` build, follow its bundled README; the source installation below does not depend on that archive.
+If you received the optional `poki-v0.1.1-macos-arm64.tar.gz` build, follow its bundled README; the source installation below does not depend on that archive.
 
 ## 1. Build from Source and Start the Daemon
 

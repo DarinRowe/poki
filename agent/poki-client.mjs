@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 export class PokiClient {
   async open(session) {
-    this.client = new Client({ name: 'poki-agent', version: '0.1.0' });
+    this.client = new Client({ name: 'poki-agent', version: '0.1.1' });
     await this.client.connect(new StdioClientTransport({
       command: process.execPath,
       args: [fileURLToPath(new URL('../src/stdio.mjs', import.meta.url))],

@@ -47,11 +47,11 @@ macOS 15 이상, 전체 버전 Xcode, Rust, Node.js 24+, ffmpeg가 필요합니�
 
 ### 사전 빌드된 macOS arm64 패키지
 
-릴리스에서 `poki-v0.1.0-macos-arm64.tar.gz`를 내려받아 실행하세요:
+릴리스에서 `poki-v0.1.1-macos-arm64.tar.gz`를 내려받아 실행하세요:
 
 ```sh
-tar -xzf poki-v0.1.0-macos-arm64.tar.gz
-cd poki-v0.1.0
+tar -xzf poki-v0.1.1-macos-arm64.tar.gz
+cd poki-v0.1.1
 npm ci --no-audit --no-fund
 npm start
 ```
@@ -111,13 +111,13 @@ poki "Search esp32 in Chrome and summarize the top result"
 ## 로드맵
 
 <p align="center">
-  <img src="docs/images/roadmap.png" width="860" alt="Poki roadmap. Shipped: Poki MCP, Poki Agent, iMessage and Terminal channels, self-learning routes. Next: no shared Wi-Fi needed, Telegram, native text input without using the clipboard, faster persistent connections, simplified tool interfaces. Then: Poki App, which runs on your iPhone even when your Mac is off. Later: iPhone Duo support, use a physical iPhone without installing Xcode, support for more model providers.">
+  <img src="docs/images/roadmap.png" width="860" alt="Poki roadmap. Shipped: Poki MCP, Poki Agent, iMessage and Terminal integrations, self-learning routes. In Progress: remote connections (no shared LAN required), Telegram integration, native text input (clipboard-free), persistent connection performance improvements, simplified tool interface. Planned: Poki App, which runs locally on iPhone and is available while your Mac is powered off. Future: iPhone Duo support, physical device support (no Xcode required), additional model providers.">
 </p>
 
-- **출시됨:** Poki MCP, Poki Agent, iMessage 및 터미널 채널, 자가 학습 경로
-- **다음:** **같은 Wi-Fi 없이 사용**, Telegram, 클립보드를 쓰지 않는 네이티브 텍스트 입력, 상시 연결 속도 개선, 더 단순한 도구 인터페이스
-- **그다음:** Poki App: iPhone에서 직접 실행되어 Mac이 꺼져 있어도 사용 가능
-- **이후:** iPhone Duo 지원, Xcode 설치 없이 실제 iPhone 사용, 더 많은 모델 제공업체
+- **출시됨:** Poki MCP, Poki Agent, iMessage 및 터미널 통합, 자가 학습 경로
+- **개발 중:** **원격 연결(동일 LAN 불필요)**, Telegram 통합, 네이티브 텍스트 입력(클립보드 미사용), 지속 연결 성능 개선, 도구 인터페이스 간소화
+- **계획됨:** Poki App: iPhone에서 로컬 실행, Mac이 꺼져 있어도 사용 가능
+- **향후 계획:** iPhone Duo 지원, 실기기 지원(Xcode 불필요), 모델 제공업체 추가
 
 ## Star History
 
@@ -134,8 +134,6 @@ poki "Search esp32 in Chrome and summarize the top result"
 <a href="https://github.com/JosssphZhou/poki/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=JosssphZhou/poki" alt="Contributors">
 </a>
-<br>
-<sub>Linux와 Tailscale 원격 제어 작업(<a href="https://github.com/JosssphZhou/poki/issues/2">#2</a>)과 라이브 월드 스테이트 제안(<a href="https://github.com/JosssphZhou/poki/issues/7">#7</a>)에 기여해 주신 <a href="https://github.com/ZhehanZhang">ZhehanZ</a>님께도 감사드립니다.</sub>
 
 ## 면책 조항
 

@@ -66,3 +66,7 @@ Setup and runtime invoke these separately installed tools. Their versions and bu
 This repository contains source code and the retained notices above. Setup downloads npm packages and builds idevice locally. Precompiled dependency bundles and the external tools are not committed here. A binary distribution must also retain the notices and satisfy the terms of the components actually included in that distribution. Poki's AGPL-3.0-only license does not replace any component's license.
 
 The prebuilt macOS package includes the native bridge, OCR and simulator helpers, the unlock helper, and idevice tools. See [idevice release build notes](third_party/idevice-release.md) for the diagnostic-path replacement, reproduction commands, and dependency installation boundary. Rust dependency license texts shipped with the binary package are under `third_party/rust-licenses/`.
+
+## GitHub CLI update check
+
+[src/update-check.mjs](src/update-check.mjs) ports the complete release-check flow (`CheckForUpdate`, `getLatestReleaseInfo`, `getStateEntry`, and `setStateEntry`) from [GitHub CLI v2.83.0](https://github.com/cli/cli/blob/152d328db80d4d4d7318c7700b6644ee827618a7/internal/update/update.go), copyright 2019 GitHub Inc., under the [MIT license](third_party/LICENSE.github-cli). The port uses JavaScript and JSON instead of Go and YAML. Poki adds an anonymous short-timeout request, silent failed-attempt caching, release-note summaries, and cached notices for noninteractive MCP clients. It omits GitHub CLI's extension updates and terminal/CI restrictions.

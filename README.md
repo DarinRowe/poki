@@ -47,11 +47,11 @@ Requires macOS 15 or later, full Xcode, Rust, Node.js 24+, and ffmpeg. `./bin/se
 
 ### Prebuilt macOS arm64 package
 
-Download `poki-v0.1.0-macos-arm64.tar.gz` from the release and run:
+Download `poki-v0.1.1-macos-arm64.tar.gz` from the release and run:
 
 ```sh
-tar -xzf poki-v0.1.0-macos-arm64.tar.gz
-cd poki-v0.1.0
+tar -xzf poki-v0.1.1-macos-arm64.tar.gz
+cd poki-v0.1.1
 npm ci --no-audit --no-fund
 npm start
 ```
@@ -75,6 +75,8 @@ poki status
 ```
 
 For a physical iPhone, pair it with your Mac over USB first. See [Physical iPhone setup](docs/physical-iphone.md).
+
+Update with `./bin/poki update`. Set `POKI_NO_UPDATE_CHECK=1` to disable the daily anonymous GitHub release check. See [Update](AGENTS.md#update) for the request URL, restart steps, and prebuilt packages.
 
 ## Try a task
 
@@ -111,7 +113,7 @@ Physical iPhone support has been verified only on iPhones using the Chinese inte
 ## Roadmap
 
 <p align="center">
-  <img src="docs/images/roadmap.png" width="860" alt="Poki roadmap. Shipped: Poki MCP, Poki Agent, iMessage and Terminal channels, self-learning routes. Next: no shared Wi-Fi needed, Telegram, native text input without using the clipboard, faster persistent connections, simplified tool interfaces. Then: Poki App, which runs on your iPhone even when your Mac is off. Later: iPhone Duo support, use a physical iPhone without installing Xcode, support for more model providers.">
+  <img src="docs/images/roadmap.png" width="860" alt="Poki roadmap. Shipped: Poki MCP, Poki Agent, iMessage and Terminal integrations, self-learning routes. In Progress: remote connections (no shared LAN required), Telegram integration, native text input (clipboard-free), persistent connection performance improvements, simplified tool interface. Planned: Poki App, which runs locally on iPhone and is available while your Mac is powered off. Future: iPhone Duo support, physical device support (no Xcode required), additional model providers.">
 </p>
 
 ## Star History
@@ -129,8 +131,6 @@ Physical iPhone support has been verified only on iPhones using the Chinese inte
 <a href="https://github.com/JosssphZhou/poki/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=JosssphZhou/poki" alt="Contributors">
 </a>
-<br>
-<sub>Thanks also to <a href="https://github.com/ZhehanZhang">ZhehanZ</a> for the Linux and Tailscale remote-control work (<a href="https://github.com/JosssphZhou/poki/issues/2">#2</a>) and the live world-state proposal (<a href="https://github.com/JosssphZhou/poki/issues/7">#7</a>).</sub>
 
 ## Disclaimer
 

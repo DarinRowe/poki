@@ -19,6 +19,7 @@ const help = `Usage: poki "task" [--device <UUID>] [--state <directory>] [--mode
             [--step-timeout <seconds>]
        poki login [--auth chatgpt|api-key]
        poki status
+       poki update
        poki imessage --config <private JSON file> [--check]
        poki telegram --config <private JSON file> [--check]
 With one connected physical phone, --device is optional. Use --device for a simulator.
@@ -109,7 +110,10 @@ async function status(args) {
   console.log(`Access: ${config.auth} (${ready ? 'configured' : 'not configured; run poki login'})\nModel: ${config.model}\nService tier: ${config.serviceTier}`);
   try {
     await withMCP(async call => {
-      await call('poki_mcp_status');
+      const { update } = await call('poki_mcp_status');
+      if (update && process.env.POKI_NO_UPDATE_CHECK !== '1') {
+        console.log(`Poki ${update.version} available.\n${update.summary}\n${update.url}\nRun: ${update.command}`);
+      }
       const { devices } = await call('list_devices');
       console.log('Poki MCP: connected');
       console.log(`Devices: ${devices.length}`);

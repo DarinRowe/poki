@@ -34,3 +34,13 @@ Follow these steps for the selected path. At each **STOP**, tell the user what t
    ```
 
    Report the version, commit, `total_tools`, and whether the intended device appears. The default MCP `tools/list` exposes the tools for phone tasks. `total_tools` counts the complete catalog, including tools callable without default discovery. `POKI_MCP_TOOLS=all` exposes the complete list. Verify current output instead of treating either count as proof that installation works. For the Poki Agent path, run `poki status` after login. After authorization for a phone task, use `poki "<user task>"` and verify its actual result. With multiple devices, pass `--device '<device UUID>'`. Report any untested pairing, login, channel, or phone operation explicitly.
+
+## Update
+
+When the user asks to update Poki, run `./bin/poki update` from this installation. A source checkout must be on `main` with no local changes, including untracked files. The command runs `git fetch`, then `git merge --ff-only --no-overwrite-ignore @{upstream}`, then `./bin/setup`. If incoming files conflict with local ignored files, the merge stops and preserves them. If it stops, report the reason and preserve the user's changes. Do not reset, stash, or switch branches on their behalf. For a prebuilt package, follow the download steps printed by the command.
+
+After a successful source update, reinstall Poki Agent dependencies with `npm ci --prefix agent` if the user uses Poki Agent. Tell the user to stop their existing service and restart it with `npm start`, using the same `POKI_MCP_STATE_DIR`. Updating does not restart the service. After restart, call `poki_mcp_status` and, for Poki Agent users, run `poki status`. Report the installed version and any remaining update notice.
+
+Poki checks `https://api.github.com/repos/JosssphZhou/poki/releases/latest` at service startup and once per day. This anonymous request sends no token, device information, or conversation data. Results and failed attempts are cached for 24 hours in `POKI_MCP_STATE_DIR/update-check.json`. With the default state directory, this file is in `~/Library/Application Support/PokiMCP`. Startup does not wait for the request. Requests time out after 1.5 seconds, and failures stay silent. Status includes a newer stable version, the first sentence of its release notes, a release link, and `poki update`. Tell the user when that notice appears.
+
+To disable checks and notices, set `POKI_NO_UPDATE_CHECK=1` before starting the service. Set it in your terminal too to hide notices in `poki status` from an already running service.

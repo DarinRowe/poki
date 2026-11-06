@@ -47,11 +47,11 @@ macOS 15 以降、完全版の Xcode、Rust、Node.js 24+、ffmpeg が必要で�
 
 ### ビルド済み macOS arm64 パッケージ
 
-リリースから `poki-v0.1.0-macos-arm64.tar.gz` をダウンロードして、次を実行します：
+リリースから `poki-v0.1.1-macos-arm64.tar.gz` をダウンロードして、次を実行します：
 
 ```sh
-tar -xzf poki-v0.1.0-macos-arm64.tar.gz
-cd poki-v0.1.0
+tar -xzf poki-v0.1.1-macos-arm64.tar.gz
+cd poki-v0.1.1
 npm ci --no-audit --no-fund
 npm start
 ```
@@ -111,13 +111,13 @@ poki "Search esp32 in Chrome and summarize the top result"
 ## ロードマップ
 
 <p align="center">
-  <img src="docs/images/roadmap.png" width="860" alt="Poki roadmap. Shipped: Poki MCP, Poki Agent, iMessage and Terminal channels, self-learning routes. Next: no shared Wi-Fi needed, Telegram, native text input without using the clipboard, faster persistent connections, simplified tool interfaces. Then: Poki App, which runs on your iPhone even when your Mac is off. Later: iPhone Duo support, use a physical iPhone without installing Xcode, support for more model providers.">
+  <img src="docs/images/roadmap.png" width="860" alt="Poki roadmap. Shipped: Poki MCP, Poki Agent, iMessage and Terminal integrations, self-learning routes. In Progress: remote connections (no shared LAN required), Telegram integration, native text input (clipboard-free), persistent connection performance improvements, simplified tool interface. Planned: Poki App, which runs locally on iPhone and is available while your Mac is powered off. Future: iPhone Duo support, physical device support (no Xcode required), additional model providers.">
 </p>
 
-- **リリース済み:** Poki MCP、Poki Agent、iMessage とターミナルのチャネル、自己学習ルート
-- **次:** **同じ Wi-Fi が不要に**、Telegram、クリップボードを使わないネイティブ文字入力、常時接続の高速化、ツールインターフェースの簡素化
-- **その次:** Poki App：iPhone 単体で動作し、Mac の電源が切れていても使える
-- **今後:** iPhone Duo のサポート、Xcode をインストールせずに実機 iPhone を使う、対応モデルプロバイダーの拡充
+- **リリース済み:** Poki MCP、Poki Agent、iMessage とターミナルの連携、自己学習ルート
+- **開発中:** **リモート接続（同一 LAN 不要）**、Telegram 連携、ネイティブテキスト入力（クリップボード不使用）、常時接続のパフォーマンス改善、ツールインターフェースの簡素化
+- **計画中:** Poki App：iPhone 上でローカル実行、Mac の電源がオフでも利用可能
+- **将来の予定:** iPhone Duo のサポート、実機サポート（Xcode 不要）、対応モデルプロバイダーの追加
 
 ## Star History
 
@@ -134,8 +134,6 @@ poki "Search esp32 in Chrome and summarize the top result"
 <a href="https://github.com/JosssphZhou/poki/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=JosssphZhou/poki" alt="Contributors">
 </a>
-<br>
-<sub>Linux と Tailscale によるリモート操作（<a href="https://github.com/JosssphZhou/poki/issues/2">#2</a>）およびライブワールドステートの提案（<a href="https://github.com/JosssphZhou/poki/issues/7">#7</a>）にご協力いただいた <a href="https://github.com/ZhehanZhang">ZhehanZ</a> さんにも感謝します。</sub>
 
 ## 免責事項
 
