@@ -62,3 +62,15 @@ test('a gated tool says who approved it, and the status names the tools approval
  assert.deepEqual(value(opened).approval,{mode:'operator-preapproved',approved_by:'operator'});
  assert.equal(value(await f.call('tap',{x:10,y:10})).approval,undefined);
 });
+
+test('launch_app on a phone ends with the screen, says when the app resumed, and fresh relaunches it', { timeout: 60000 }, async t => {
+ const f=await fixture(t);
+ const first=value(await f.call('launch_app',{bundle_id:'local.fixture'}));
+ assert.equal(first.foreground_verified,true);assert.equal(first.resumed,false);
+ assert.ok(first.screen.text.includes('Button: First'),JSON.stringify(first));
+ const again=value(await f.call('launch_app',{bundle_id:'local.fixture'}));
+ assert.equal(again.resumed,true);assert.match(again.notice,/fresh=true/);
+ const fresh=value(await f.call('launch_app',{bundle_id:'local.fixture',fresh:true}));
+ assert.equal(fresh.resumed,false);
+ assert.equal((await f.events()).filter(e=>e.op==='launch_app').at(-1).request.terminate_existing,true);
+});
