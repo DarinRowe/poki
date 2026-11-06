@@ -1,3 +1,4 @@
+import * as cua from './cua.mjs';
 import { readFileSync } from 'node:fs';
 import { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
@@ -39,8 +40,17 @@ definitions.push(['disconnect_device', 'Close the selected remote device connect
 definitions.push(['reconnect_device', 'Re-establish the selected RemotePairing tunnel. Does not replay input. A new session may require Wi-Fi when iOS closes its remote pairing listener.', z.object({ device: z.string().optional() }), false]);
 definitions.push(['poki_mcp_status', 'Report Poki MCP version, current Git commit, native bridge build time, tool count, connected-device count, selected device, approval mode for this session, and any available Poki update with release notes and the update command.', z.object({}), true]);
 
+// The computer-use profile (POKI_TOOL_PROFILE=cua, cua.mjs): look and do, plus device and status tools.
+for (const [name, description, schema, readOnlyHint] of cua.definitions) definitions.push([name, description, z.fromJSONSchema(schema), readOnlyHint]);
+export const profile = (env = process.env) => env.POKI_TOOL_PROFILE ?? 'default';
+const listedFor = name => (name === 'cua' ? cua.tools : defaultTools);
+
+// The tools a tools/list answer names under this process's settings.
+export const listedNames = (env = process.env) => definitions.map(([name]) => name).filter(name => env.POKI_MCP_TOOLS === 'all' || listedFor(profile(env)).has(name));
+
 export function createServer(call) {
-  const server = new McpServer({ name: 'poki-mcp', version }, { instructions });
+  const computerUse = profile() === 'cua', listed = listedFor(profile());
+  const server = new McpServer({ name: 'poki-mcp', version }, { instructions: computerUse ? cua.instructions : instructions });
   for (const [name, description, inputSchema, readOnlyHint] of definitions) {
     server.registerTool(name, { description, inputSchema, annotations: { readOnlyHint } }, async (args, extra) => {
       try { return await call(name, args, { signal: extra.mcpReq?.signal ?? extra.signal, requestId: extra.mcpReq?._meta?.['poki/request_id'] }); }
@@ -49,7 +59,7 @@ export function createServer(call) {
   }
   if (process.env.POKI_MCP_TOOLS !== 'all') {
     server.server.setRequestHandler('tools/list', () => ({
-      tools: definitions.filter(([name]) => defaultTools.has(name)).map(([name, description, inputSchema, readOnlyHint]) => ({
+      tools: definitions.filter(([name]) => listed.has(name)).map(([name, description, inputSchema, readOnlyHint]) => ({
         name, description, inputSchema: z.toJSONSchema(inputSchema, { io: 'input', target: 'draft-2020-12' }),
         annotations: { readOnlyHint },
       })),

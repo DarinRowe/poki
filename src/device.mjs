@@ -16,6 +16,7 @@ import { askHuman } from './human.mjs';
 import { simulatorRequest } from './simulator.mjs';
 import { prepareRecordingInput, resumeRecordings } from './recording.mjs';
 import { updateNotice } from './update-check.mjs';
+import * as cua from './cua.mjs';
 import { version, buildInfo, requireCurrentCode } from './build-info.mjs';
 
 export const text = value => ({ content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }] });
@@ -504,6 +505,8 @@ export class Devices {
         }
         // Without await, the finally below restores the device state while the first step is still looking up its device.
         case 'batch_commands': return await runBatch(this, args);
+        case 'look': return await cua.look(this, args);
+        case 'do': return await cua.act(this, args);
         default: {
           const verify = args.verify !== false;
           // A batch step that asks for verification (verify: true) is compared even when checksStep would skip it.
