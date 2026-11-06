@@ -138,8 +138,9 @@ poki "Search esp32 in Chrome and summarize the top result"
 <table>
   <tbody>
     <tr>
-      <td align="center" valign="top" width="50%"><a href="https://github.com/igc110"><img src="https://avatars.githubusercontent.com/u/241411380?v=4&size=240" width="120" height="120" alt="igc110"/><br /><sub><b>igc110</b></sub></a><br /><a href="https://github.com/JosssphZhou/poki/issues/10">#10</a> で処理段階ごとに計測し、実機 iPhone のタップ 1 回に約 7 秒かかる原因を突き止めました。リクエストのたびに画面を読み戻し、新しい poki-native プロセスを起動していました。その後の修正で、実機 iPhone のタップは約 3 分の 1 速くなりました。</td>
-      <td align="center" valign="top" width="50%"><a href="https://github.com/ZhehanZhang"><img src="https://avatars.githubusercontent.com/u/67270559?v=4&size=240" width="120" height="120" alt="ZhehanZhang"/><br /><sub><b>ZhehanZhang</b></sub></a><br /><a href="https://github.com/JosssphZhou/poki/issues/2">#2</a> で Tailscale 経由で実機 iPhone を操作することを提案しました。これがリモート接続（<a href="https://github.com/JosssphZhou/poki/pull/8">#8</a>）のもとになっています。</td>
+      <td align="center" valign="top" width="33%"><a href="https://github.com/igc110"><img src="https://avatars.githubusercontent.com/u/241411380?v=4&size=240" width="120" height="120" alt="igc110"/><br /><sub><b>igc110</b></sub></a><br /><a href="https://github.com/JosssphZhou/poki/issues/10">#10</a> で実機 iPhone のタップが遅い原因を突き止め、その後の修正でタップが約 3 分の 1 速くなりました。</td>
+      <td align="center" valign="top" width="33%"><a href="https://github.com/ZhehanZhang"><img src="https://avatars.githubusercontent.com/u/67270559?v=4&size=240" width="120" height="120" alt="ZhehanZhang"/><br /><sub><b>ZhehanZhang</b></sub></a><br /><a href="https://github.com/JosssphZhou/poki/issues/2">#2</a> で Tailscale 経由で実機 iPhone を操作することを提案しました。これがリモート接続（<a href="https://github.com/JosssphZhou/poki/pull/8">#8</a>）のもとになっています。</td>
+      <td align="center" valign="top" width="33%"><a href="https://github.com/edge369"><img src="https://avatars.githubusercontent.com/u/63720633?v=4&size=240" width="120" height="120" alt="edge369"/><br /><sub><b>edge369</b></sub></a><br /><a href="https://github.com/JosssphZhou/poki/pull/14">#14</a> で Poki をルーター上で動かせるようにしました。Mac の電源がオフでも、Telegram から iPhone を操作できます。</td>
     </tr>
   </tbody>
 </table>
