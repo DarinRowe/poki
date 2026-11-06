@@ -38,7 +38,7 @@ For unattended installation, use `--answers /path/to/private-answers.json` inste
 
 ## Complete the steps that require you
 
-1. Open **Messages → Settings → iMessage**, then sign in to your Apple Account. Complete Apple verification yourself. The installer never reads your Apple credentials.
+1. Open **Messages → Settings → iMessage**, then sign in to an Apple Account. Use a different account from the one on your iPhone; with the same account, every message appears twice in Messages. Complete Apple verification yourself. The installer never reads your Apple credentials.
 2. Open the installed **BlueBubbles.app**. In its **Intro → Permissions** setup, follow the links to **System Settings → Privacy & Security → Full Disk Access** and enable this copy of BlueBubbles. Follow the Accessibility prompt if you use features that need it. When macOS asks for Messages automation permission, allow BlueBubbles to control Messages.
 3. In BlueBubbles' **Connection** step, set the password you chose in the installer and click the save icon. Use the same local server port as the saved Poki URL. If you change the port or password later, update the private `connection.json` to match. Follow BlueBubbles' remaining onboarding steps, including notification setup if requested, using its [official setup guide](https://docs.bluebubbles.app/server/installation-guides/manual-setup).
 4. Keep the server reachable locally. Poki's polling channel does not require exposing a public URL, enabling Private API or disabling SIP. Do not change those settings just to send ordinary text through Poki.
