@@ -122,6 +122,7 @@ To use a physical iPhone, first pair it with your Mac over USB. After that, keep
 | The default port is in use | Run `npm start -- --port <port>`. Clients read the port from `mcp.json`. |
 | A second daemon on one Mac | Give each daemon its own `POKI_MCP_STATE_DIR`. Both write `mcp.json` in that folder, and a normal shutdown removes it. |
 | `tap_text` cannot find English text | A new simulator uses the language of the Mac. Target the text as it appears on screen. |
+| Screenshots work, but touch fails with `no display service` | The developer disk image on the iPhone lacks the display service. See [Touch and text input fail](physical-iphone.md#touch-and-text-input-fail). |
 | `This device is not recording` from `bin/call.mjs` | A recording ends when its session closes. Record from one MCP client session. |
 
 ## Names and distribution
