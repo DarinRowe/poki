@@ -137,6 +137,17 @@ poki "Search esp32 in Chrome and summarize the top result"
   <img src="https://contrib.rocks/image?repo=JosssphZhou/poki" alt="Contributors">
 </a>
 
+## 핵심 기여자
+
+<table>
+  <tbody>
+    <tr>
+      <td align="center" valign="top" width="50%"><a href="https://github.com/igc110"><img src="https://avatars.githubusercontent.com/u/241411380?v=4&size=240" width="120px" height="120px" alt="igc110"/><br /><sub><b>igc110</b></sub></a><br /><a href="https://github.com/JosssphZhou/poki/issues/10">#10</a>에서 단계별로 시간을 측정해, 실제 iPhone에서 탭 한 번에 약 7초가 걸리는 원인을 찾아냈습니다. 요청마다 화면을 다시 읽고 새 poki-native 프로세스를 띄우고 있었습니다. 이후 수정으로 실제 iPhone의 탭이 약 3분의 1 빨라졌습니다.</td>
+      <td align="center" valign="top" width="50%"><a href="https://github.com/ZhehanZhang"><img src="https://avatars.githubusercontent.com/u/67270559?v=4&size=240" width="120px" height="120px" alt="ZhehanZhang"/><br /><sub><b>ZhehanZhang</b></sub></a><br /><a href="https://github.com/JosssphZhou/poki/issues/2">#2</a>에서 Tailscale을 통해 실제 iPhone을 조작하는 방법을 제안했고, 이것이 원격 연결(<a href="https://github.com/JosssphZhou/poki/pull/8">#8</a>)의 출발점이 되었습니다.</td>
+    </tr>
+  </tbody>
+</table>
+
 ## 고마운 분들
 
 Issue나 Pull Request를 남겨 주신 모든 분께 감사드리며, 여러분의 제보와 수정 덕분에 Poki가 더 좋아지고 있습니다.
@@ -148,10 +159,13 @@ Issue나 Pull Request를 남겨 주신 모든 분께 감사드리며, 여러분�
       <td align="center" valign="top" width="12.5%"><a href="https://github.com/ZhehanZhang"><img src="https://avatars.githubusercontent.com/u/67270559?v=4&size=160" width="80px" height="80px" alt="ZhehanZhang"/><br /><sub><b>ZhehanZhang</b></sub></a></td>
       <td align="center" valign="top" width="12.5%"><a href="https://github.com/carrotciallo"><img src="https://avatars.githubusercontent.com/u/69567867?v=4&size=160" width="80px" height="80px" alt="carrotciallo"/><br /><sub><b>carrotciallo</b></sub></a></td>
       <td align="center" valign="top" width="12.5%"><a href="https://github.com/edge369"><img src="https://avatars.githubusercontent.com/u/63720633?v=4&size=160" width="80px" height="80px" alt="edge369"/><br /><sub><b>edge369</b></sub></a></td>
+      <td align="center" valign="top" width="12.5%"><a href="https://github.com/guangtouge82"><img src="https://avatars.githubusercontent.com/u/269691899?v=4&size=160" width="80px" height="80px" alt="guangtouge82"/><br /><sub><b>guangtouge82</b></sub></a></td>
       <td align="center" valign="top" width="12.5%"><a href="https://github.com/igc110"><img src="https://avatars.githubusercontent.com/u/241411380?v=4&size=160" width="80px" height="80px" alt="igc110"/><br /><sub><b>igc110</b></sub></a></td>
       <td align="center" valign="top" width="12.5%"><a href="https://github.com/kilingzhang"><img src="https://avatars.githubusercontent.com/u/17439300?v=4&size=160" width="80px" height="80px" alt="kilingzhang"/><br /><sub><b>kilingzhang</b></sub></a></td>
       <td align="center" valign="top" width="12.5%"><a href="https://github.com/makirqi-alt"><img src="https://avatars.githubusercontent.com/u/295395617?v=4&size=160" width="80px" height="80px" alt="makirqi-alt"/><br /><sub><b>makirqi-alt</b></sub></a></td>
       <td align="center" valign="top" width="12.5%"><a href="https://github.com/mawenhao1028"><img src="https://avatars.githubusercontent.com/u/70818670?v=4&size=160" width="80px" height="80px" alt="mawenhao1028"/><br /><sub><b>mawenhao1028</b></sub></a></td>
+    </tr>
+    <tr>
       <td align="center" valign="top" width="12.5%"><a href="https://github.com/zcyoung2000"><img src="https://avatars.githubusercontent.com/u/62181891?v=4&size=160" width="80px" height="80px" alt="zcyoung2000"/><br /><sub><b>zcyoung2000</b></sub></a></td>
     </tr>
   </tbody>

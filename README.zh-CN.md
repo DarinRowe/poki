@@ -132,6 +132,17 @@ poki "Search esp32 in Chrome and summarize the top result"
   <img src="https://contrib.rocks/image?repo=JosssphZhou/poki" alt="Contributors">
 </a>
 
+## 核心贡献者
+
+<table>
+  <tbody>
+    <tr>
+      <td align="center" valign="top" width="50%"><a href="https://github.com/igc110"><img src="https://avatars.githubusercontent.com/u/241411380?v=4&size=240" width="120px" height="120px" alt="igc110"/><br /><sub><b>igc110</b></sub></a><br />在 <a href="https://github.com/JosssphZhou/poki/issues/10">#10</a> 中逐个阶段计时，查明真机每次点按约 7 秒的原因：每个请求都要读回屏幕，并新开一个 poki-native 进程。随后的修复让真机点按快了约三分之一。</td>
+      <td align="center" valign="top" width="50%"><a href="https://github.com/ZhehanZhang"><img src="https://avatars.githubusercontent.com/u/67270559?v=4&size=240" width="120px" height="120px" alt="ZhehanZhang"/><br /><sub><b>ZhehanZhang</b></sub></a><br />在 <a href="https://github.com/JosssphZhou/poki/issues/2">#2</a> 中提出通过 Tailscale 驱动 iPhone 真机，这是远程连接（<a href="https://github.com/JosssphZhou/poki/pull/8">#8</a>）的由来。</td>
+    </tr>
+  </tbody>
+</table>
+
 ## 感谢墙
 
 感谢每一位提交过 Issue 或 Pull Request 的朋友，你们的反馈与修复让 Poki 变得更好。
@@ -143,10 +154,13 @@ poki "Search esp32 in Chrome and summarize the top result"
       <td align="center" valign="top" width="12.5%"><a href="https://github.com/ZhehanZhang"><img src="https://avatars.githubusercontent.com/u/67270559?v=4&size=160" width="80px" height="80px" alt="ZhehanZhang"/><br /><sub><b>ZhehanZhang</b></sub></a></td>
       <td align="center" valign="top" width="12.5%"><a href="https://github.com/carrotciallo"><img src="https://avatars.githubusercontent.com/u/69567867?v=4&size=160" width="80px" height="80px" alt="carrotciallo"/><br /><sub><b>carrotciallo</b></sub></a></td>
       <td align="center" valign="top" width="12.5%"><a href="https://github.com/edge369"><img src="https://avatars.githubusercontent.com/u/63720633?v=4&size=160" width="80px" height="80px" alt="edge369"/><br /><sub><b>edge369</b></sub></a></td>
+      <td align="center" valign="top" width="12.5%"><a href="https://github.com/guangtouge82"><img src="https://avatars.githubusercontent.com/u/269691899?v=4&size=160" width="80px" height="80px" alt="guangtouge82"/><br /><sub><b>guangtouge82</b></sub></a></td>
       <td align="center" valign="top" width="12.5%"><a href="https://github.com/igc110"><img src="https://avatars.githubusercontent.com/u/241411380?v=4&size=160" width="80px" height="80px" alt="igc110"/><br /><sub><b>igc110</b></sub></a></td>
       <td align="center" valign="top" width="12.5%"><a href="https://github.com/kilingzhang"><img src="https://avatars.githubusercontent.com/u/17439300?v=4&size=160" width="80px" height="80px" alt="kilingzhang"/><br /><sub><b>kilingzhang</b></sub></a></td>
       <td align="center" valign="top" width="12.5%"><a href="https://github.com/makirqi-alt"><img src="https://avatars.githubusercontent.com/u/295395617?v=4&size=160" width="80px" height="80px" alt="makirqi-alt"/><br /><sub><b>makirqi-alt</b></sub></a></td>
       <td align="center" valign="top" width="12.5%"><a href="https://github.com/mawenhao1028"><img src="https://avatars.githubusercontent.com/u/70818670?v=4&size=160" width="80px" height="80px" alt="mawenhao1028"/><br /><sub><b>mawenhao1028</b></sub></a></td>
+    </tr>
+    <tr>
       <td align="center" valign="top" width="12.5%"><a href="https://github.com/zcyoung2000"><img src="https://avatars.githubusercontent.com/u/62181891?v=4&size=160" width="80px" height="80px" alt="zcyoung2000"/><br /><sub><b>zcyoung2000</b></sub></a></td>
     </tr>
   </tbody>
