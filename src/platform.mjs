@@ -13,7 +13,7 @@ import { idevice, stateDir, root } from './config.mjs';
 import { startRecording, stopRecording, closeRecordings } from './recording.mjs';
 import { openInput, selectKeyboard } from './simulator-input.mjs';
 
-const launchReadyMs = 10000;
+const launchReadyMs = 10000, foregroundGraceMs = 2000, foregroundPollMs = 150;
 
 const states = new WeakMap();
 function state(ctx) {
@@ -252,9 +252,12 @@ async function launch(ctx, target, args) {
       // and a tap takes 6 s. 8 s and 2.5 s are right for the cable and too tight for the tunnel, so
       // the allowance follows the transport instead of being raised for everybody.
       const tunneled = target.kind === 'physical' && target.connection === 'RemotePairing';
+      // The app can take a moment to come to the front, and a warm bridge reads in milliseconds, so the
+      // foreground is polled for a grace period rather than a fixed number of reads.
+      const launchedAt = performance.now();
       await phase('foreground_verification', () => deadline(tunneled ? 20000 : 8000, async () => {
         let lastError = new Error('The launched app did not become the observed foreground.');
-        for (let attempt = 0; attempt < 3; attempt++) {
+        for (let attempt = 0; attempt < 3 || performance.now() - launchedAt < foregroundGraceMs; attempt++) {
           try {
             const tree = await deadline(tunneled ? 6000 : 2500, () => phase('foreground_query', () => ctx.bridge({ op: 'ax', include_offscreen: false })));
             if (tree.foreground?.pid === launched.pid) return;
@@ -263,15 +266,16 @@ async function launch(ctx, target, args) {
             if (error.name !== 'TimeoutError') throw error;
             lastError = error;
           }
-          if (attempt < 2) await pause(100);
+          await pause(foregroundPollMs);
         }
         throw lastError;
       }));
+      const foregroundAfterMs = Math.round(performance.now() - launchedAt);
       (ctx.launchedPids ??= new Map()).set(`${target.id} ${bundle}`, launched.pid);
       const resumed = !terminate && known.includes(launched.pid);
       // A physical launch has no readiness wait, so the screen it shows (a first-run sheet, say) is read back here.
       const screen = ctx.inBatch ? {} : { screen: (await ctx.readback()).screen };
-      return { ...launched, ...(lookup ? { name: lookup.app.name } : {}), ...metadata, foreground_verified: true, resumed,
+      return { ...launched, ...(lookup ? { name: lookup.app.name } : {}), ...metadata, foreground_verified: true, foreground_after_ms: foregroundAfterMs, resumed,
         ...(resumed ? { notice: 'The app was already running and resumed where it was left. Use fresh=true to start it anew, for example to check that something was saved.' } : {}), ...screen };
     } catch (error) {
       return { ...launched, ...metadata, isError: true, outcome: 'unknown', foreground_verified: false,
