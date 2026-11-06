@@ -48,7 +48,8 @@ test('Ordinary app name launch recovers a cold directory disconnect, uses the wa
 
 test('Input on a phone without displayservice reports nothing sent and names the preparation command', async t => {
   const f = await fixture(t);
-  await f.set({ inputError: 'Cannot establish input media session: no display service: ServiceNotFound' });
+  // The native helper's reply when the phone offers no display service; remote.rs a_service_refused_on_a_live_tunnel_keeps_that_tunnel proves it.
+  await f.set({ inputReply: { isError: true, outcome: 'not_sent', stop_reason: 'error', sent: false, screen_change_verified: false, reason: 'display_service_missing', error: 'Cannot establish input media session: no display service: ServiceNotFound', instruction: 'Nothing reached the iPhone. Keep it connected and unlocked, then retry.' } });
   const failed = await f.call('press_key', { key: 'return' });
   assert.equal(failed.isError, true);
   const result = value(failed);

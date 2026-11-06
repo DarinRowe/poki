@@ -515,6 +515,7 @@ mod tests {
         let reply = reply.expect("a refused service is a reply, not a transport error");
         assert_eq!(reply["outcome"], "not_sent", "{reply}");
         assert_eq!(reply["stop_reason"], "error", "{reply}");
+        assert_eq!(reply["reason"], "display_service_missing", "{reply}");
         assert!(phones.recv().await.is_none(), "a live tunnel was rebuilt");
         let kept = session
             .connection
