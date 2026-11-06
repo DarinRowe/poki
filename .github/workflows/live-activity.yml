@@ -5,10 +5,8 @@
 name: Live Activity
 
 on:
+  # Manual only (Actions > Run workflow), so nothing runs on every push in this repository.
   workflow_dispatch:
-  push:
-    branches: [dev/live-activity]
-    paths: [native/ios-app/**, .github/workflows/live-activity.yml]
 
 permissions:
   contents: read

@@ -4,10 +4,8 @@
 name: Runner host check
 
 on:
+  # Manual only (Actions > Run workflow), so nothing runs on every push in this repository.
   workflow_dispatch:
-  push:
-    branches: [dev/ios-runner]
-    paths: [native/ios-runner/host/**, native/ios-runner/branding/**, native/ios-runner/patches/**, .github/workflows/runner-host-check.yml]
 
 permissions:
   contents: read

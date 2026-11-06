@@ -4,9 +4,8 @@
 name: iOS runner
 
 on:
+  # Manual only (Actions > Run workflow), so nothing runs on every push in this repository.
   workflow_dispatch:
-  push:
-    branches: [dev/ios-runner]
   # The release workflow builds the runner from the tagged commit with the release's version.
   workflow_call:
     inputs:

@@ -3,9 +3,7 @@
 name: ios-core
 
 on:
-  push:
-    branches: ["dev/ios-core"]
-    paths: ["native/launcher/**", "native/ios/PokiCore/**", "native/patches/**", ".github/workflows/ios-core.yml"]
+  # Manual only (Actions > Run workflow), so nothing runs on every push in this repository.
   workflow_dispatch:
 
 permissions:

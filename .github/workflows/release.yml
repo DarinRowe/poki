@@ -1,12 +1,13 @@
-# A release: push a tag vX.Y.Z on dev/ios-app (or the default branch). Builds Poki and Poki Runner
+# A release: push a tag ios-vX.Y.Z. Builds Poki and Poki Runner
 # from that commit with the same version (from the tag) and build number (this run's number), and
 # attaches Poki-X.Y.Z-N.ipa, PokiRunner-X.Y.Z-N.ipa and SHA256SUMS to a GitHub Release. Both IPAs are
 # unsigned; people sign them with their own signing tool and Apple ID when they install.
 name: Release
 
 on:
+  # Tag-only: runs when a tag like ios-v0.2.0 is pushed, never on branch pushes.
   push:
-    tags: ['v*.*.*']
+    tags: ['ios-v*.*.*']
 
 permissions:
   contents: read
@@ -20,8 +21,8 @@ jobs:
     steps:
       - id: v
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "::error::tags look like v1.2.3"; exit 1; }
+          VERSION="${GITHUB_REF_NAME#ios-v}"
+          echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "::error::tags look like ios-v1.2.3"; exit 1; }
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "build=${{ github.run_number }}" >> "$GITHUB_OUTPUT"
 
