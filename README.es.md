@@ -116,8 +116,8 @@ La compatibilidad con iPhone físico solo se ha verificado en iPhone con la inte
   <img src="docs/images/roadmap.png" width="860" alt="Poki roadmap. Shipped: Poki MCP, Poki Agent, iMessage and Terminal integrations, self-learning routes, remote connections. In Progress: persistent connection performance improvements, Telegram integration, native text input (clipboard-free), simplified tool interface. Planned: Poki App, which runs locally on iPhone and is available while your Mac is powered off. Future: iPhone Duo support, physical device support (no Xcode required), additional model providers.">
 </p>
 
-- **Publicado:** Poki MCP, Poki Agent, integraciones con iMessage y la terminal, rutas de autoaprendizaje
-- **En desarrollo:** **Conexión remota (sin LAN compartida)**, integración con Telegram, entrada de texto nativa (sin portapapeles), mejoras de rendimiento en conexiones persistentes, interfaz de herramientas simplificada
+- **Publicado:** Poki MCP, Poki Agent, integraciones con iMessage y la terminal, rutas de autoaprendizaje, Conexión remota
+- **En desarrollo:** **mejoras de rendimiento en conexiones persistentes**, integración con Telegram, entrada de texto nativa (sin portapapeles), interfaz de herramientas simplificada
 - **Planificado:** Poki App: ejecución local en el iPhone, disponible con el Mac apagado
 - **Futuro:** Compatibilidad con iPhone Duo, compatibilidad con dispositivos físicos (sin Xcode), más proveedores de modelos
 

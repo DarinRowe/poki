@@ -116,8 +116,8 @@ poki "Search esp32 in Chrome and summarize the top result"
   <img src="docs/images/roadmap.png" width="860" alt="Poki roadmap. Shipped: Poki MCP, Poki Agent, iMessage and Terminal integrations, self-learning routes, remote connections. In Progress: persistent connection performance improvements, Telegram integration, native text input (clipboard-free), simplified tool interface. Planned: Poki App, which runs locally on iPhone and is available while your Mac is powered off. Future: iPhone Duo support, physical device support (no Xcode required), additional model providers.">
 </p>
 
-- **출시됨:** Poki MCP, Poki Agent, iMessage 및 터미널 통합, 자가 학습 경로
-- **개발 중:** **원격 연결(동일 LAN 불필요)**, Telegram 통합, 네이티브 텍스트 입력(클립보드 미사용), 지속 연결 성능 개선, 도구 인터페이스 간소화
+- **출시됨:** Poki MCP, Poki Agent, iMessage 및 터미널 통합, 자가 학습 경로, 원격 연결
+- **개발 중:** **지속 연결 성능 개선**, Telegram 통합, 네이티브 텍스트 입력(클립보드 미사용), 도구 인터페이스 간소화
 - **계획됨:** Poki App: iPhone에서 로컬 실행, Mac이 꺼져 있어도 사용 가능
 - **향후 계획:** iPhone Duo 지원, 실기기 지원(Xcode 불필요), 모델 제공업체 추가
 
