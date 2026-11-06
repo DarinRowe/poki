@@ -34,7 +34,8 @@ function advice(reason, failedStep) {
 }
 
 // A batch is one queued operation, so its steps share a device lookup. A touch is compared with the
-// screen before it; the screen itself is read back once, after the last step.
+// screen before it when a later step depends on that (see Devices.checksStep); the screen itself is
+// read back once, after the last step.
 export async function runBatch(ctx, args) {
   const commands = args.commands.map(command => {
     const tool = stepTool(command.tool);
@@ -52,8 +53,9 @@ export async function runBatch(ctx, args) {
   let stopReason, failed = false, ran = 0, failure, unchanged;
   ctx.inBatch = true;
   try {
-    for (const command of commands) {
+    for (const [index, command] of commands.entries()) {
       const started = performance.now();
+      ctx.batchStep = { next: commands[index + 1], stopOnError };
       let result;
       try {
         checkWork();
@@ -80,7 +82,7 @@ export async function runBatch(ctx, args) {
       if (stopReason) break;
       if (changesDevice.has(command.tool)) ctx.resolved = undefined;
     }
-  } finally { ctx.inBatch = false; }
+  } finally { ctx.inBatch = false; ctx.batchStep = undefined; }
   const summary = unverified ? { verified: false } : {};
   // Reading a simulator that a step just shut down would boot it again.
   const last = commands.slice(0, ran).findLast(command => !offDevice.has(command.tool));
