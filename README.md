@@ -129,6 +129,8 @@ Physical iPhone support has been verified only on iPhones using the Chinese inte
 <a href="https://github.com/JosssphZhou/poki/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=JosssphZhou/poki" alt="Contributors">
 </a>
+<br>
+<sub>Thanks also to <a href="https://github.com/ZhehanZhang">ZhehanZ</a> for the Linux and Tailscale remote-control work (<a href="https://github.com/JosssphZhou/poki/issues/2">#2</a>) and the live world-state proposal (<a href="https://github.com/JosssphZhou/poki/issues/7">#7</a>).</sub>
 
 ## Disclaimer
 

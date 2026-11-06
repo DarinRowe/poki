@@ -134,6 +134,8 @@ La compatibilidad con iPhone físico solo se ha verificado en iPhone con la inte
 <a href="https://github.com/JosssphZhou/poki/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=JosssphZhou/poki" alt="Contributors">
 </a>
+<br>
+<sub>Gracias también a <a href="https://github.com/ZhehanZhang">ZhehanZ</a> por el trabajo de control remoto con Linux y Tailscale (<a href="https://github.com/JosssphZhou/poki/issues/2">#2</a>) y la propuesta de estado del mundo en vivo (<a href="https://github.com/JosssphZhou/poki/issues/7">#7</a>).</sub>
 
 ## Descargo de responsabilidad
 

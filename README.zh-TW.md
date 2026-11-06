@@ -134,6 +134,8 @@ poki "Search esp32 in Chrome and summarize the top result"
 <a href="https://github.com/JosssphZhou/poki/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=JosssphZhou/poki" alt="Contributors">
 </a>
+<br>
+<sub>同時感謝 <a href="https://github.com/ZhehanZhang">ZhehanZ</a> 在 Linux 與 Tailscale 遠端控制（<a href="https://github.com/JosssphZhou/poki/issues/2">#2</a>）以及即時世界狀態提案（<a href="https://github.com/JosssphZhou/poki/issues/7">#7</a>）上的貢獻。</sub>
 
 ## 免責聲明
 

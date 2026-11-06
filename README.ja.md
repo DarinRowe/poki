@@ -134,6 +134,8 @@ poki "Search esp32 in Chrome and summarize the top result"
 <a href="https://github.com/JosssphZhou/poki/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=JosssphZhou/poki" alt="Contributors">
 </a>
+<br>
+<sub>Linux と Tailscale によるリモート操作（<a href="https://github.com/JosssphZhou/poki/issues/2">#2</a>）およびライブワールドステートの提案（<a href="https://github.com/JosssphZhou/poki/issues/7">#7</a>）にご協力いただいた <a href="https://github.com/ZhehanZhang">ZhehanZ</a> さんにも感謝します。</sub>
 
 ## 免責事項
 
