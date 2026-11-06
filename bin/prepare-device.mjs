@@ -18,7 +18,7 @@ const hasDisplay = async () => (await call(['remotexpc'])).stdout.includes(displ
 const newerImage = `Use the developer disk image of an Xcode release that supports this iOS version, or pass a newer Apple-signed Cryptex image: node bin/prepare-device.mjs ${selected} --image DIR.`;
 const restart = 'Quit Xcode, restart the iPhone, reconnect it over USB, unlock it, and run this command again with Xcode closed.';
 const installFailures = [
-  [/BadBuildManifest/, () => `Its BuildManifest.plist has no build identity whose variant ends with "Developer Disk Image Cryptex", the only form the installer accepts. Older images, such as the one in Xcode 26.6 (17F113), name it "Cryptex Developer Disk Image". ${newerImage}`],
+  [/BadBuildManifest/, () => `Its BuildManifest.plist has no build identity whose variant ends with "Developer Disk Image Cryptex", the only form the installer accepts. Older images, such as the one in Xcode 26.6 (17F113), use a variant containing "Cryptex Developer Disk Image" instead. ${newerImage}`],
   [/TSS server responded with non-success status \(([^)]*)\)/, detail => `Apple's signing server declined to personalize this image for this iPhone (${detail}). The image may be older than the builds Apple currently signs for this device. ${newerImage}`],
   [/\/System\/Developer \[17: File exists\]/, () => `Another developer disk image is already mounted at /System/Developer on the iPhone. ${restart}`],
 ];

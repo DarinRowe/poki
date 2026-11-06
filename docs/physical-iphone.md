@@ -24,9 +24,9 @@ node bin/prepare-device.mjs YOUR_DEVICE_ID --image /absolute/path/to/Restore
 
 ## Touch and text input fail
 
-Screenshots, accessibility reads, and app launch can work while touch and text input fail with `outcome: "not_sent"` and `no display service: ServiceNotFound`. Input needs `com.apple.coredevice.displayservice`, which the mounted developer disk image provides. `devicectl` can report a usable image that lacks it. Run `node bin/prepare-device.mjs YOUR_DEVICE_ID`, and follow its message:
+Screenshots, accessibility reads, and app launch can work while touch and text input fail with `outcome: "not_sent"`, and the result's `cause` contains `no display service: ServiceNotFound`. Input needs `com.apple.coredevice.displayservice`, which the mounted developer disk image provides. `devicectl` can report a usable image that lacks it. Run `node bin/prepare-device.mjs YOUR_DEVICE_ID`, and follow its message:
 
-- **No recognized Cryptex build identity.** The installer accepts a `BuildManifest.plist` build identity whose variant ends with `Developer Disk Image Cryptex`. The image in Xcode 26.6 (17F113) names it `Cryptex Developer Disk Image` and is rejected. Use the image of a newer Xcode release, or pass a newer Apple-signed Cryptex image with `--image`.
+- **No recognized Cryptex build identity.** The installer accepts a `BuildManifest.plist` build identity whose variant ends with `Developer Disk Image Cryptex`. The image in Xcode 26.6 (17F113) uses a variant containing `Cryptex Developer Disk Image` instead and is rejected. Use the image of a newer Xcode release, or pass a newer Apple-signed Cryptex image with `--image`.
 - **Apple's signing server declined the image** (for example `STATUS=94`). Apple personalizes each developer disk image for the specific iPhone. An image older than the builds Apple currently signs for that device is one known cause. Use a newer image.
 - **Another image is mounted at `/System/Developer`** (`[17: File exists]`). Quit Xcode, restart the iPhone, reconnect it over USB, unlock it, and run the helper again with Xcode closed.
 
