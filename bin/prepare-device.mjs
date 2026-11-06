@@ -41,6 +41,6 @@ if (await hasDisplay()) {
     fail(`Installing ${image} failed: ${output.trim().split('\n').slice(-3).join(' ')}`);
   });
   if (!/installed com\.apple\.MobileAsset\.DDI|is already installed/.test(result.stdout)) fail('The device did not confirm installation.');
-  if (!(await hasDisplay())) fail(`A developer disk image is installed, but it does not provide ${display}. The installed image may be older than this iOS version needs. Quit Xcode, restart the iPhone, reconnect it over USB, unlock it, and install a newer Apple-signed Cryptex image: node bin/prepare-device.mjs ${selected} --image DIR.`);
+  if (!(await hasDisplay())) fail(`A developer disk image is installed, but it does not provide ${display}. The installed image may be older than this iOS version needs. ${newerImage} ${restart}`);
   console.log('Developer disk image installed; the device now exposes displayservice.');
 }

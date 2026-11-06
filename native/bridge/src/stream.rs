@@ -7,7 +7,7 @@
 // RTP payload is discarded there).
 
 use idevice::{
-    ReadWrite, RsdService,
+    IdeviceError, ReadWrite, RsdService,
     core_device::{
         CallInfoBlob, DisplayServiceClient, build_screen_audio_offer, build_screen_video_offer,
         build_start_audio_parameters, build_start_video_parameters,
@@ -30,6 +30,16 @@ pub struct ScreenMediaStream {
     pub video_udp: UdpSocketHandle,
 }
 
+/// The phone offers no displayservice, which input needs. A developer disk image provides it.
+#[derive(Debug)]
+pub struct NoDisplayService;
+impl std::fmt::Display for NoDisplayService {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Cannot establish input media session: no display service: ServiceNotFound")
+    }
+}
+impl std::error::Error for NoDisplayService {}
+
 /// Connect the displayservice and start the audio+video screen-sharing session.
 ///
 /// Mirrors what Device Hub does: an audio stream is started first to establish
@@ -39,14 +49,19 @@ pub async fn start_screen_media_stream(
     adapter: &mut AdapterHandle,
     handshake: &mut RsdHandshake,
     display_id: i64,
-) -> Result<ScreenMediaStream, String> {
+) -> Result<ScreenMediaStream, Box<dyn std::error::Error + Send + Sync>> {
     macro_rules! log {
         ($($arg:tt)*) => {{}};
     }
 
     let mut client = DisplayServiceClient::connect_rsd(adapter, handshake)
         .await
-        .map_err(|e| format!("no display service: {e:?}"))?;
+        .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> {
+            match e {
+                IdeviceError::ServiceNotFound => Box::new(NoDisplayService),
+                e => format!("no display service: {e:?}").into(),
+            }
+        })?;
 
     let audio_udp = adapter
         .bind_udp(0)

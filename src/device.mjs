@@ -319,10 +319,8 @@ export class Devices {
     this.changed(target);
     let result;
     try { result = await phase('input', () => this.bridge(command)); }
-    catch (error) {
-      // The display service is connected before any touch or key report, so its absence means nothing was sent.
-      if (/no display service: ServiceNotFound/.test(error.message)) result = { outcome: 'not_sent', isError: true, stop_reason: 'error', cause: error.message, error: 'This iPhone does not provide com.apple.coredevice.displayservice, which touch and text input need. Screenshots and accessibility work without it, so they do not show whether input is available.', instruction: `No input was sent. Run node bin/prepare-device.mjs ${target.id} from the Poki checkout to install a developer disk image that provides it. See docs/physical-iphone.md#touch-and-text-input-fail.` };
-      else result = { outcome: 'unknown', error: error.message, stopped: Boolean(stopped(error)), stop_reason: stopped(error) ? stoppingReason(error) : 'unknown', instruction: 'Input may have been delivered. Inspect the screen before retrying.', isError: true }; }
+    catch (error) { result = { outcome: 'unknown', error: error.message, stopped: Boolean(stopped(error)), stop_reason: stopped(error) ? stoppingReason(error) : 'unknown', instruction: 'Input may have been delivered. Inspect the screen before retrying.', isError: true }; }
+    if (result.reason === 'display_service_missing') result = { ...result, instruction: `No input was sent. This iPhone does not provide com.apple.coredevice.displayservice, which touch and text input need. Screenshots and accessibility work without it, so they do not show whether input is available. Run node bin/prepare-device.mjs ${target.id} from the Poki checkout to install a developer disk image that provides it. See docs/physical-iphone.md#touch-and-text-input-fail.` };
     this.lastInputAt = performance.now();
     if (target.kind === 'physical') {
       try { await phase('recording_recovery', () => resumeRecordings(this, target)); }

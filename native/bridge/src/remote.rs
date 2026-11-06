@@ -1,6 +1,8 @@
 #[cfg(not(test))]
 use super::connect_device;
-use super::{InputMedia, NotSent, Request, Result, close_input, execute, execute_connected};
+use super::{
+    InputMedia, NoDisplayService, NotSent, Request, Result, close_input, execute, execute_connected,
+};
 use idevice::{
     remote_pairing::{
         RemotePairingClient, RpPairingFile, RpPairingSocket, connect_tls_psk_tunnel_native,
@@ -236,9 +238,16 @@ fn unsent_reply(
         Request::LaunchApp(_) => Ok(super::apps::not_sent(error)),
         Request::Configuration { .. } => Err(error),
         action if action.read_only() => Err(error),
-        _ => Ok(
-            json!({"isError":true,"outcome":"not_sent","stop_reason":"error","sent":false,"screen_change_verified":false,"error":error.to_string(),"instruction":"Nothing reached the iPhone. Keep it connected and unlocked, then retry."}),
-        ),
+        _ => {
+            let mut reply = json!({"isError":true,"outcome":"not_sent","stop_reason":"error","sent":false,"screen_change_verified":false,"error":error.to_string(),"instruction":"Nothing reached the iPhone. Keep it connected and unlocked, then retry."});
+            if error
+                .downcast_ref::<NotSent>()
+                .is_some_and(|error| error.0.is::<NoDisplayService>())
+            {
+                reply["reason"] = "display_service_missing".into();
+            }
+            Ok(reply)
+        }
     }
 }
 

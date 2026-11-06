@@ -21,6 +21,7 @@ use idevice::{
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{io::Read, time::Duration};
+use stream::NoDisplayService;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 type Touch = UniversalHidServiceClient<Box<dyn ReadWrite>>;
@@ -45,7 +46,13 @@ impl InputMedia {
     ) -> Result<Self> {
         let stream = stream::start_screen_media_stream(adapter, rsd, 1)
             .await
-            .map_err(|e| format!("Cannot establish input media session: {e}"))?;
+            .map_err(|e| {
+                if e.is::<NoDisplayService>() {
+                    e
+                } else {
+                    format!("Cannot establish input media session: {e}").into()
+                }
+            })?;
         let mut receivers = tokio::task::JoinSet::new();
         // The transport queues UDP without a bound. Consume packets while holding the input gate open.
         for socket in [stream.audio_udp, stream.video_udp] {
