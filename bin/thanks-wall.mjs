@@ -14,7 +14,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const readmes = ['README.md', 'README.zh-CN.md', 'README.zh-TW.md', 'README.ja.md', 'README.ko.md', 'README.es.md'];
 const start = '<!-- THANKS-WALL:START -->';
 const end = '<!-- THANKS-WALL:END -->';
-const perLine = 8;
+const perLine = 5;
 const imageSize = 80;
 // Listed first, in this order; everyone else follows alphabetically.
 // ZhehanZhang was the first outside contributor.
@@ -57,7 +57,7 @@ function escapeName(name) {
 
 function formatPerson(person) {
   const name = escapeName(person.login);
-  return `<a href="${person.profile}"><img src="${formatAvatarUrl(person.avatar)}" width="${imageSize}px" height="${imageSize}px" alt="${name}"/><br /><sub><b>${name}</b></sub></a>`;
+  return `<a href="${person.profile}"><img src="${formatAvatarUrl(person.avatar)}" width="${imageSize}" height="${imageSize}" alt="${name}"/><br /><sub><b>${name}</b></sub></a>`;
 }
 
 function chunk(array, size) {
