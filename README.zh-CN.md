@@ -45,6 +45,8 @@ npm start
 
 需要 macOS 15 或更高版本、完整版 Xcode、Rust、Node.js 24+ 和 ffmpeg。`./bin/setup` 会检查缺失的依赖，首次构建需要几分钟。
 
+Poki 面向 macOS。Linux 用户详见社区移植版 [poki-for-linux](https://github.com/carrotciallo/poki-for-linux)（[#16](https://github.com/JosssphZhou/poki/issues/16)），它在本仓库之外维护。
+
 ### macOS arm64 预编译安装包
 
 从版本发布页下载 `poki-v0.1.1-macos-arm64.tar.gz`，然后运行：

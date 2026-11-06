@@ -45,6 +45,8 @@ npm start
 
 macOS 15 이상, 전체 버전 Xcode, Rust, Node.js 24+, ffmpeg가 필요합니다. `./bin/setup`이 누락된 의존성을 확인합니다. 첫 빌드에는 몇 분이 걸립니다.
 
+Poki는 macOS용입니다. Linux에서는 커뮤니티 포팅 버전인 [poki-for-linux](https://github.com/carrotciallo/poki-for-linux)([#16](https://github.com/JosssphZhou/poki/issues/16))를 참고하세요. 이 저장소와 별도로 관리됩니다.
+
 ### 사전 빌드된 macOS arm64 패키지
 
 릴리스에서 `poki-v0.1.1-macos-arm64.tar.gz`를 내려받아 실행하세요:
