@@ -506,7 +506,8 @@ export class Devices {
         case 'batch_commands': return await runBatch(this, args);
         default: {
           const verify = args.verify !== false;
-          const looks = verify && reportsScreen.has(name) && !this.inBatch, touches = verify && touchesControl.has(name) && this.checksStep();
+          // A batch step that asks for verification (verify: true) is compared even when checksStep would skip it.
+          const looks = verify && reportsScreen.has(name) && !this.inBatch, touches = verify && touchesControl.has(name) && (args.verify === true || this.checksStep());
           this.beforeInput = undefined; this.expectsForeground = false;
           // A batch step may reuse the read its predecessor just took of the same screen.
           const before = looks || touches ? await this.readBefore(this.inBatch ? this.reuseMs() : 0) : undefined;
