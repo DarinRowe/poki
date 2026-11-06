@@ -21,6 +21,8 @@ Run `build/poki-native --udid ID` and send one JSON object through standard inpu
 | `key` | `key`, `modifiers=[]`, `count=1` | Send a keyboard combination with command/control/option/shift modifiers. |
 | `button` | `button`, `count=1`, `interval_ms=120` | Send home, lock/power, volume_up, volume_down, mute, or siri. The internal keyboard value toggles the software keyboard. |
 | `type_text` | `text`, `clear=false`, `submit=false`, `target` | Paste Unicode through the clipboard and Command-V, optionally clearing first and sending Return afterward. |
+| `type_keys` | `text`, `clear=false` | Type `text` as US-layout hardware key presses on one keyboard session, with no pasteboard (`POKI_TYPE_KEY_MS` between reports, default 12). At most 2000 characters; a character with no key is refused before anything is sent, so the caller can fall back to `type_text`. `clear` sends Command-A and Delete first. |
+| `pasteboard` | `action`, `text?` | `get` the general pasteboard's text, list its `items` (`index`, `uti`, `state`, `size`), or `set` it to `text` (at most 1 MiB). Used to save and restore the user's clipboard around a paste. Pasteboard data is neither logged nor written to files. |
 | `app_for_pid` | `pid` | Name the app running as `pid` through AppService's process list and the installed bundle paths. Returns `{pid, running, executable?, bundle_id, name}`; `bundle_id` is null when no installed bundle contains the executable, such as SpringBoard. |
 
 ## Input and timing
