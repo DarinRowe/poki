@@ -222,6 +222,25 @@ function compile(trace) {
   return { steps, success, final: current };
 }
 
+const warnedRouteFiles = new Set();
+function ignoreInvalidRoute(path, reason = 'invalid') {
+  if (warnedRouteFiles.has(path)) return;
+  warnedRouteFiles.add(path);
+  console.error(reason === 'incompatible'
+    ? 'Poki Agent: a cached learned route could not be reused for this task; the cache file was preserved.'
+    : 'Poki Agent: an invalid learned-route cache entry was skipped; the cache file was preserved.');
+}
+
+function validStoredRoute(route) {
+  return route && typeof route === 'object' && typeof route.bundle_id === 'string'
+    && Array.isArray(route.goal) && route.texts && typeof route.texts === 'object' && !Array.isArray(route.texts)
+    && route.goal.every(part => typeof part === 'string' || (part && typeof part.text_id === 'string'
+      && typeof route.texts[part.text_id] === 'string'))
+    && route.plan && Array.isArray(route.plan.steps) && Array.isArray(route.plan.success)
+    && route.plan.steps.every(step => step && step.action && typeof step.action.op === 'string')
+    && typeof route.updatedAt === 'string' && route.readout && typeof route.readout === 'object';
+}
+
 export class RouteStore {
   constructor(directory) { this.directory = directory; }
   async find(prompt, context = '') {
@@ -229,12 +248,31 @@ export class RouteStore {
     try { names = await readdir(this.directory); } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
     const routes = [];
     for (const name of names.filter(name => name.endsWith('.json'))) {
-      const route = JSON.parse(await readFile(join(this.directory, name), 'utf8'));
+      const path = join(this.directory, name);
+      // Only malformed cache data is recoverable; do not hide filesystem failures.
+      const content = await readFile(path, 'utf8');
+      let route;
+      try { route = JSON.parse(content); }
+      catch (error) {
+        if (!(error instanceof SyntaxError)) throw error;
+        ignoreInvalidRoute(path);
+        continue;
+      }
+      if (!route || typeof route !== 'object') { ignoreInvalidRoute(path); continue; }
       if (route.version !== 5 || !route.bundle_id) continue;
       if ((route.context ?? '') !== context) continue;
-      if (route.plan.steps.some(({ action }) => action.op === 'fill' && !action.identifier && !action.element_id)) continue;
+      if (!validStoredRoute(route)) { ignoreInvalidRoute(path); continue; }
       const bindings = bind(route.goal, prompt, route.texts);
-      if (bindings) routes.push({ ...route, readout: substitute(route.readout, bindings), plan: { ...substitute(route.plan, bindings), texts: { ...route.texts, ...bindings } } });
+      if (!bindings) continue;
+      const plan = substitute(route.plan, bindings);
+      const texts = { ...route.texts, ...bindings };
+      if (!planSchema.safeParse({ device: 'cached-route', bundle_id: route.bundle_id, goal: prompt, texts, ...plan }).success) {
+        // The bound task can exceed schema limits even when the stored route is healthy.
+        ignoreInvalidRoute(path, 'incompatible');
+        continue;
+      }
+      if (plan.steps.some(({ action }) => action.op === 'fill' && !action.identifier && !action.element_id)) continue;
+      routes.push({ ...route, readout: substitute(route.readout, bindings), plan: { ...plan, texts } });
     }
     const [route, ...alternatives] = routes.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     return route ? { ...route, alternatives: alternatives.filter(candidate => candidate.bundle_id === route.bundle_id) } : null;
