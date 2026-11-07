@@ -10,6 +10,7 @@ Changed:
 - Setup, loopback page: the chosen app's tag is live (Working while 10.7.0.1 answers, Not Answering while it does not, with a line saying what to do); Stash, Quantumult X and Clash Mi added as users report them (marked "as reported", with the lines to add); Egern left out for want of a documented setting.
 - Setup, pairing page: on iOS 26 and earlier, where the phone cannot pair with itself, the page shows pairing from a computer (Poki Setup) and the ways to send the file; Start Pairing and Pair Again appear only on iOS 27 and later. A pairing file opened from AirDrop or Files, or sent by `poki://pairing?url=…&sha256=…` from Poki Setup, lands in Poki; `poki://setup?relay=…` sets the relay.
 - The pairing file and the setup state are kept in the Keychain as well, so a reinstall or a re-sign by a sideloading tool does not send the owner through setup again.
+- iPad is in the device family with every orientation, and CI screenshots home, setup and connect on an iPad Pro 11 simulator. In Split View (iPad, iPhone Duo's inner display) Poki's own process is never the front app; the driven app's part of the screen is the agent's screen: the tree's frames and the screenshot are relative to it and touches are moved back onto the screen (`PKInProcess.viewport`).
 
 Needs the phone:
 - That the banner goes within seconds of the idle stop, and that reopening asks for no passcode within the same boot.

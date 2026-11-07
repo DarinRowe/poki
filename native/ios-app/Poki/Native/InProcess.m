@@ -5,6 +5,7 @@
 #import <objc/message.h>
 #import <objc/runtime.h>
 #import <unistd.h>
+#import <UIKit/UIKit.h>
 
 @interface NSObject (PKObservedPrivateAPI)
 - (id)initForTouchAtPoint:(CGPoint)point offset:(double)offset;
@@ -264,9 +265,26 @@ static BOOL PKInstanceSignature(Class cls, SEL selector, const char *result, NSA
 }
 @end
 
+/// The screenshot cut to the viewport: the picture is in pixels, the viewport in points.
+static NSData *PKCropped(NSData *png, CGRect viewport) {
+    UIImage *image = [UIImage imageWithData:png];
+    CGFloat points = UIScreen.mainScreen.bounds.size.width;
+    if (!image.CGImage || points <= 0) return png;
+    CGFloat scale = image.size.width / points;
+    CGRect rect = CGRectIntegral(CGRectMake(viewport.origin.x * scale, viewport.origin.y * scale, viewport.size.width * scale, viewport.size.height * scale));
+    rect = CGRectIntersection(rect, CGRectMake(0, 0, image.size.width, image.size.height));
+    if (CGRectIsEmpty(rect)) return png;
+    CGImageRef part = CGImageCreateWithImageInRect(image.CGImage, rect);
+    if (!part) return png;
+    NSData *out = UIImagePNGRepresentation([UIImage imageWithCGImage:part]);
+    CGImageRelease(part);
+    return out.length ? out : png;
+}
+
 @implementation PKInProcess {
     SRNativeSession *_sessions;
     uint64_t _accessibilityGeneration;
+    CGRect _viewport;
 }
 
 + (instancetype)shared {
@@ -277,7 +295,7 @@ static BOOL PKInstanceSignature(Class cls, SEL selector, const char *result, NSA
 }
 
 - (instancetype)init {
-    if ((self = [super init])) _sessions = [SRNativeSession new];
+    if ((self = [super init])) { _sessions = [SRNativeSession new]; _viewport = CGRectNull; }
     return self;
 }
 
@@ -414,7 +432,14 @@ static BOOL PKInstanceSignature(Class cls, SEL selector, const char *result, NSA
 - (nullable NSData *)screenshot:(NSString **)code {
     @try {
         NSData *png = [[[NSClassFromString(@"XCUIScreen") mainScreen] screenshot] PNGRepresentation];
-        if (png.length) return png;
+        if (png.length) {
+            // The front app's part of the screen only, when it has a part (Split View).
+            NSDictionary *info; id ax;
+            id element = [self front:&info ax:&ax];
+            if (element) [self noteViewport:[PKRequestSnapshot(ax, element, 1, 1, NULL) frame]];
+            CGRect viewport = self.viewport;
+            return CGRectIsNull(viewport) ? png : PKCropped(png, viewport);
+        }
         if (code) *code = @"no_picture";
     } @catch (NSException *e) {
         if (code) *code = [NSString stringWithFormat:@"%@: %@", e.name, e.reason];
@@ -476,6 +501,24 @@ static BOOL PKInstanceSignature(Class cls, SEL selector, const char *result, NSA
     return chosen;
 }
 
+- (CGRect)viewport {
+    @synchronized (self) { return _viewport; }
+}
+
+/// The front app's frame against the screen: a frame that is not the screen (within a few points) is
+/// the viewport. Split View on iPad gives each app a part of the screen; an alert or a sheet over a
+/// full-screen app still reports the full screen.
+- (void)noteViewport:(CGRect)frame {
+    CGRect screen = UIScreen.mainScreen.bounds;
+    CGRect next = CGRectNull;
+    if (!CGRectIsNull(frame) && !CGRectIsEmpty(frame) && !CGRectIsInfinite(frame) &&
+        (fabs(frame.size.width - screen.size.width) > 8 || fabs(frame.size.height - screen.size.height) > 8)) {
+        next = CGRectIntersection(frame, screen);
+        if (CGRectIsEmpty(next)) next = CGRectNull;
+    }
+    @synchronized (self) { _viewport = next; }
+}
+
 - (NSDictionary<NSString *, id> *)frontApp {
     @try {
         NSDictionary *info;
@@ -483,6 +526,7 @@ static BOOL PKInstanceSignature(Class cls, SEL selector, const char *result, NSA
         id element = [self front:&info ax:&ax];
         if (!element) return @{};
         id root = PKRequestSnapshot(ax, element, 1, 1, NULL);
+        [self noteViewport:[root frame]];
         NSMutableDictionary *out = [info mutableCopy];
         out[@"name"] = PKText([root label]) ?: @"";
         return out;
@@ -496,6 +540,9 @@ static BOOL PKInstanceSignature(Class cls, SEL selector, const char *result, NSA
         if (!app) { if (code) *code = @"no_front_app"; return nil; }
         id root = PKSnapshotTree(ax, app, code);
         if (!root) { if (code && !*code) *code = @"no_snapshot"; return nil; }
+        [self noteViewport:[root frame]];
+        CGRect viewport = self.viewport;
+        CGPoint shift = CGRectIsNull(viewport) ? CGPointZero : viewport.origin;
         NSMutableString *xml = [NSMutableString stringWithString:@"<?xml version=\"1.0\" encoding=\"UTF-8\"?><AppiumAUT>"];
         __block NSDictionary *focus = nil;
         __block void (^walk)(id);
@@ -510,6 +557,7 @@ static BOOL PKInstanceSignature(Class cls, SEL selector, const char *result, NSA
             if (label.length) [xml appendFormat:@" label=\"%@\"", PKEscape(label)];
             if (value.length) [xml appendFormat:@" value=\"%@\"", PKEscape(value)];
             if (CGRectIsNull(f) || CGRectIsInfinite(f)) f = CGRectZero;
+            else f = CGRectOffset(f, -shift.x, -shift.y);
             [xml appendFormat:@" x=\"%d\" y=\"%d\" width=\"%d\" height=\"%d\"", (int)lround(f.origin.x), (int)lround(f.origin.y), (int)lround(f.size.width), (int)lround(f.size.height)];
             BOOL keyboard = [node respondsToSelector:@selector(hasKeyboardFocus)] ? [node hasKeyboardFocus]
                 : [node respondsToSelector:@selector(hasFocus)] && [node hasFocus];

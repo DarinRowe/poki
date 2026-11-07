@@ -53,6 +53,11 @@ typedef NS_ENUM(NSInteger, PKDelivery) {
 - (nullable NSData *)screenshot:(NSString *_Nullable *_Nullable)code;
 /// The app in front: bundleId, name, pid. Empty when accessibility gives none.
 - (NSDictionary<NSString *, id> *)frontApp;
+/// The front app's frame when it does not fill the screen (Split View on iPad or the iPhone Duo's
+/// inner display, with Poki on the other side), else CGRectNull. Set by the last tree read, front
+/// read or screenshot. The tree's frames and the screenshot are relative to it, and touches are
+/// offset by it, so the agent sees and drives the one app as if it had the screen.
+@property (nonatomic, readonly) CGRect viewport;
 /// The front app's elements in WebDriverAgent's XML source format, and the element with the
 /// keyboard focus (keys value, x, y, width, height) when there is one.
 - (nullable NSString *)sourceXML:(NSDictionary *_Nullable *_Nullable)focused code:(NSString *_Nullable *_Nullable)code;

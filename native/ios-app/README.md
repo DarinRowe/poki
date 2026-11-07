@@ -188,6 +188,17 @@ service succeeds. Selecting an app, saving a profile or a VPN's Connected label 
 it. Built-in VPN transport cannot be validated in the Simulator. See [the design and acceptance
 checks](../../docs/ios-loopback.md).
 
+## iPad, iPhone Duo and Split View
+
+Poki builds for iPhone and iPad (every orientation on iPad; the iPhone Duo's inner display is
+regular width, laid out like an iPad). The point of the larger screens is Poki, or any agent chat,
+on one side of Split View and the app being driven on the other. The in-process path handles it:
+with several apps on screen Poki's own process is never the front app, and when the front app has
+a part of the screen rather than all of it, that part is the viewport (`PKInProcess.viewport`): the
+element tree's frames and the screenshot are relative to it, `/wda/screen` reports its size, and
+touches are moved back onto the screen. An app that fills the screen has no viewport. Not yet
+checked in the gym on an iPad simulator in Split View.
+
 ## Pairing by iOS version, and the pairing file's life
 
 Pairing on the phone itself (Settings > Privacy & Security > Developer Mode > Pair with Poki) exists
