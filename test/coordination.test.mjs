@@ -564,6 +564,13 @@ test('launch_app on a simulator waits for a readable interface and reports when 
  assert.notEqual(blank.isError,true);assert.equal(value(blank).interface_ready,false);
 });
 
+// A route replay opens its app and goes on only when the receipt says the app is in front, as a phone's does.
+test('launch_app on a simulator says the launched app is in front',async t=>{
+ const f=await fixture(t);await f.set({simulatorOnly:true,simulatorBooted:true,label:'Ready'});
+ const launched=value(await f.call('launch_app',{bundle_id:'local.fixture'}));
+ assert.equal(launched.pid,4242);assert.equal(launched.foreground_verified,true);
+});
+
 test('fill enters plain text exactly when the simulator keyboard is an input method',async t=>{
  const f=await fixture(t);await f.set({simulatorOnly:true,simulatorBooted:true,label:'Ready',field:'',typed:'hello poki',imeResult:'hellopo ki'});
  const named=value(await f.call('fill',{field:'Name',text:'hello poki'}));
