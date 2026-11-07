@@ -213,8 +213,8 @@ final class VoiceModel {
     /// Poki's approval for a tap (PokiCore's rules and approval card): text, app bundle id, app name.
     private let clearTap: @MainActor (String, String?, String?) async -> TapClearance
 
-    /// How long a tap waits for the owner's OK on the phone.
-    static let approvalWait: Double = 60
+    /// How long a tap waits for the owner's OK on the phone: about as long as the card says it lasts.
+    static let approvalWait: Double = 115
 
     init(clearTap: @escaping @MainActor (String, String?, String?) async -> TapClearance) {
         self.clearTap = clearTap

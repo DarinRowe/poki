@@ -12,7 +12,7 @@
 //                target}, the element it would tap and the app in front. The phone checks that with Poki's
 //                approval rules (PokiCore), asks the owner when they say so, and sends the same call again
 //                with checked: {app, text}; only then is the element tapped, matched exactly, in that app.
-// With --test-dir <dir> (test runs of the app, poki://voice?test=1-20):
+// With --test-dir <dir> (test runs of a development build, launched with -pokiVoiceLink "poki://voice?test=1-20"):
 //   GET  utterance?n=01  recorded speech <dir>/u01.24k.pcm (24 kHz mono PCM16)
 //   POST report          one finished test turn, appended to voice-test-report.jsonl in the state directory
 import http from 'node:http';

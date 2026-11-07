@@ -10,8 +10,9 @@ public struct SensitivityRules: Sendable, Equatable {
     /// Apps where every input needs approval (banking, wallets).
     public var guardedApps: [String] = ["com.apple.Passbook"]
     /// Words that place a call wherever they are tapped.
-    public var calling: [String] = ["call", "facetime", "拨打", "呼叫"]
-    /// Apps where tapping anything can place a call (a contact in Favorites or Recents rings it).
+    public var calling: [String] = ["call", "拨打", "呼叫"]
+    /// Apps where tapping anything can place a call (a contact in Favorites or Recents rings it). FaceTime is
+    /// here rather than a word: Settings lists a "FaceTime" row that places no call.
     public var callingApps: [String] = ["com.apple.mobilephone", "com.apple.facetime"]
     /// Apps where tapping a sending word needs approval.
     public var messagingApps: [String] = ["com.apple.MobileSMS", "com.apple.mobilemail", "com.tencent.xin", "net.whatsapp.WhatsApp", "ph.telegra.Telegraph", "com.burbn.instagram", "com.atebits.Tweetie2", "com.facebook.Messenger", "com.hammerandchisel.discord", "com.tinyspeck.chatlyio"]

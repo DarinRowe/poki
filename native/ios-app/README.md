@@ -86,7 +86,7 @@ the bridge runs the tools that move the phone (`open_settings`, `read_screen`, `
 - Each function call runs once, keyed by its `call_id`, in the app and again in the bridge.
 - `tap_text` is held by Poki's approvals, like an agent's `do`: the bridge first says what it would tap
   and in which app, without tapping; the phone checks that with PokiCore's rules (payments, deleting,
-  sending messages, calls) and, when they ask for it, waits up to a minute for Allow (in Voice, on Home
+  sending messages, calls) and, when they ask for it, waits up to two minutes for Allow (in Voice, on Home
   or from the notification). Only then does the bridge tap that element, matched exactly, in that app.
 - A dropped connection sends nothing again. A call outlives the session that asked for it; the next
   session is told how it ended instead of asking for it again.
