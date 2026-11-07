@@ -88,24 +88,55 @@ final class InProcessProbe: ObservableObject {
              ["step": "read_back", "same": same, "characters": value.count, "clipboard_unchanged": UIPasteboard.general.changeCount == pasteboard, "type_delivery": typed.delivery.rawValue])
     }
 
-    /// For another app in front: waits, then taps the point and types the sample there.
+    /// For another app in front: waits, then taps the point (or, with x "field", the first text or
+    /// search field in the front app's tree) and types the sample there, then reads the focused
+    /// field back through the in-process tree.
     func later() async {
         guard begin("tap and type later") else { return }
         defer { end() }
         guard await prepare() else { return }
         let seconds = Double(delay) ?? 8
-        let point = CGPoint(x: Double(x) ?? 201, y: Double(y) ?? 437)
         let background = UIApplication.shared.beginBackgroundTask(withName: "In-process probe")
         defer { UIApplication.shared.endBackgroundTask(background) }
         note("waiting \(Int(seconds)) s; bring the app to try to the front", ["step": "wait", "seconds": seconds])
         try? await Task.sleep(for: .seconds(seconds))
         note("app state: \(UIApplication.shared.applicationState == .active ? "Poki in front" : "Poki in the background")", ["step": "state", "active": UIApplication.shared.applicationState == .active])
+        var point = CGPoint(x: Double(x) ?? 201, y: Double(y) ?? 437)
+        if x == "field" {
+            guard let found = await frontField() else { note("no text or search field in the front app's tree", ["step": "field_missing"]); return }
+            point = found
+        }
         let tap = await touch([[PKTouchPoint.at(point, offset: 0), PKTouchPoint.at(point, offset: 0.05)]], "tap at [\(Int(point.x)), \(Int(point.y))]")
         guard tap.delivery == .sent else { return }
-        try? await Task.sleep(for: .seconds(0.8))
+        try? await Task.sleep(for: .seconds(1.0))
         _ = await type(Self.sample)
         try? await Task.sleep(for: .seconds(0.8))
+        let value = await focusedValue()
+        note("read back in the front app: \(value == Self.sample ? "same as sent" : value.map { "differs (\($0.count) characters)" } ?? "no focused field")", ["step": "read_back_front", "same": value == Self.sample])
         await read()
+    }
+
+    private func frontField() async -> CGPoint? {
+        await withCheckedContinuation { (c: CheckedContinuation<CGPoint?, Never>) in
+            queue.async {
+                var code: NSString?
+                guard let xml = PKInProcess.shared().sourceXML(nil, code: &code),
+                      let match = xml.firstMatch(of: /<XCUIElementType(?:SearchField|TextField|TextView)\b[^>]*? x="(-?\d+)" y="(-?\d+)" width="(\d+)" height="(\d+)"/),
+                      let fx = Double(match.1), let fy = Double(match.2), let w = Double(match.3), let h = Double(match.4), w > 0, h > 0 else { c.resume(returning: nil); return }
+                c.resume(returning: CGPoint(x: fx + w / 2, y: fy + h / 2))
+            }
+        }
+    }
+
+    private func focusedValue() async -> String? {
+        await withCheckedContinuation { (c: CheckedContinuation<String?, Never>) in
+            queue.async {
+                var code: NSString?
+                var focus: NSDictionary?
+                _ = PKInProcess.shared().sourceXML(&focus, code: &code)
+                c.resume(returning: focus?["value"] as? String)
+            }
+        }
     }
 
     // MARK: Steps
