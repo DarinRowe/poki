@@ -27,7 +27,7 @@ Three interfaces, each owned by one side:
 | 3. PokiLauncher C ABI | PokiLauncher (`native/launcher`); used by the app |
 | 4. What the launcher needs from the loopback | PokiTunnel (`native/ios-app/PokiTunnel`), or the user's external VPN |
 
-Version: 1.2 (2026-11-07: built-in loopback and separate external-connection build in §4; 2026-11-06: on-device pairing in §3, ToolFacts on toolFinished in §2, tunnel facts in §4, keep-alive). Every change to a section below bumps its version and is announced to the other threads.
+Version: 1.2 (2026-11-07: built-in loopback and separate external-connection build in section 4; 2026-11-06: on-device pairing in section 3, ToolFacts on toolFinished in section 2, tunnel facts in section 4, keep-alive). Every change to a section below bumps its version and is announced to the other threads.
 
 ## 1. Relay frames, v1
 
