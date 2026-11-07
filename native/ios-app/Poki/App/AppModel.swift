@@ -25,6 +25,8 @@ final class AppModel {
     private(set) var problem: String?
     /// The agent's recent actions, newest last, for the home screen.
     private(set) var recentSteps: [RecentStep] = []
+    /// The app the agent is in, from its last step.
+    private(set) var currentApp: String?
     /// The runner is stopped until the next agent request (idle, or the owner tapped Stop runner).
     private(set) var runnerPaused = false
     /// Stop the runner after this long without agent activity; 0 never stops it.
@@ -111,7 +113,7 @@ final class AppModel {
         }
         loopback.onChange = { [weak self] old, new in self?.loopbackChanged(from: old, to: new) }
         if !diskImage.isReady { Task { await diskImage.download() } }
-        if UserDefaults.standard.bool(forKey: "pokiSample") { loadSample() }
+        if UserDefaults.standard.string(forKey: "pokiSample") != nil { loadSample() }
         NotificationCenter.default.addObserver(forName: UIApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.appWillTerminate() }
         }
@@ -162,17 +164,46 @@ final class AppModel {
 
     var deviceName: String { UIDevice.current.name }
 
-    /// `-pokiSample YES`: sample steps and an approval, only for the build's screenshots of the home
-    /// screen. Nothing is started.
+    /// `-pokiSample B` (YES is B), `C` or `PIN`: the home screen states of ESP-139 board 01 with sample
+    /// steps and an approval, only for the build's screenshots. Nothing is started: B and D look like a
+    /// session at work, C like one standing by (the loopback check stays live, so a simulator shows it
+    /// off). A sample relay address (not saved) and, on a simulator, two agents are added when there are none.
     private func loadSample() {
+        let scene = UserDefaults.standard.string(forKey: "pokiSample")?.uppercased() ?? "B"
+        // PIN: setup's pairing page with a sample code, as if Settings had asked for one.
+        if scene == "PIN" { pairing = .pin("482913"); return }
         let now = Date()
+        let messages = String(localized: "Messages")
+        // The sample relay is not saved. Sample agents go into the keychain, so only a simulator gets them.
+        if relayAddress == nil { relayAddress = RelayAddress("https://your-relay.example") }
+        #if targetEnvironment(simulator)
+        if identity.secrets.isEmpty {
+            _ = addConnector(name: "Claude")
+            _ = addConnector(name: "Codex")
+        }
+        #endif
+        Thumbnail.previewImage = ActivityPreview.sampleScreen()
+        sessionOn = true
+        relayStatus = .ready
+        currentApp = messages
+        if scene == "C" {
+            runnerPaused = true
+            runner = RunnerStatus(state: "standby", detail: "It starts when an agent asks.")
+            recentSteps = (0..<12).map { i in
+                RecentStep(text: String(localized: "Tap “Send”"), app: messages, at: now.addingTimeInterval(Double(i - 11) * 84 / 11 - 300))
+            }
+            return
+        }
+        runner = RunnerStatus(state: "running")
         recentSteps = [
-            RecentStep(text: "Open WeChat", detail: "In WeChat", ok: true, at: now.addingTimeInterval(-70)),
-            RecentStep(text: "Tap “Search”, then type “Mom”", detail: "In WeChat", ok: true, at: now.addingTimeInterval(-52)),
-            RecentStep(text: "Tap at 212, 640", detail: "In WeChat · Didn't go through", ok: false, at: now.addingTimeInterval(-30)),
-            RecentStep(text: "Type “On my way”", detail: "In WeChat", ok: true, at: now.addingTimeInterval(-12)),
+            RecentStep(text: String(localized: "Open Messages"), app: String(localized: "Home Screen"), at: now.addingTimeInterval(-70)),
+            RecentStep(text: String(localized: "Tap the chat with Mom"), app: messages, at: now.addingTimeInterval(-52)),
+            RecentStep(text: String(localized: "Type “On my way”"), app: messages, at: now.addingTimeInterval(-41)),
+            RecentStep(text: "Tap at 212, 640", app: messages, failure: "failed: nothing changed", at: now.addingTimeInterval(-30)),
         ]
-        approvals = [PendingApproval(id: "sample", app: "WeChat", summary: "Tap “Send”", reason: "sending a message (\"send\")", expires: now.addingTimeInterval(45))]
+        activityText = String(localized: "Tap “Send”")
+        approvals = [PendingApproval(id: "sample", app: messages, summary: String(localized: "Send “On my way” to Mom"),
+                                     reason: "sending a message (\"send\")", expires: now.addingTimeInterval(25))]
     }
 
     // MARK: Session
@@ -327,7 +358,7 @@ final class AppModel {
         host.update(runner: .starting("starting the runner"))
         host.setPaused(true)
         activityText = "Idle"
-        activity.update { $0.runnerPaused = true; $0.phase = .idle; $0.headline = "Waiting for an agent"; $0.since = nil }
+        activity.update { $0.runnerPaused = true; $0.phase = .idle; $0.headline = "Runner asleep"; $0.since = nil }
     }
 
     /// Starts a paused runner again (the next agent request, or the owner).
@@ -355,7 +386,7 @@ final class AppModel {
     private func loopbackChanged(from old: LoopbackMonitor.State, to new: LoopbackMonitor.State) {
         let wasWorking = { if case .working = old { true } else { false } }()
         if wasWorking, !loopback.isWorking {
-            log.add("loopback", "dropped: 10.7.0.1 stopped answering (\(loopback.text)); the runner cannot survive this")
+            log.add("loopback", "dropped: 10.7.0.1 stopped answering (\(loopback.state)); the runner cannot survive this")
         } else if !wasWorking, loopback.isWorking, old != .checking {
             log.add("loopback", "back: 10.7.0.1 answers again" + (sessionOn && !runner.isRunning && !runnerPaused ? "; starting the runner now" : ""))
             if sessionOn, !runner.isRunning, !runnerPaused { launcher.restart() }
@@ -400,12 +431,12 @@ final class AppModel {
         runner = status
         host.update(runner: coreState(of: status))
         if status.state == "failed" {
-            let (title, hint) = Self.problemText(status.fix ?? status.detail ?? "The runner stopped")
-            activity.update { $0.phase = .problem; $0.label = "Runner Stopped"; $0.headline = title; $0.hint = hint }
+            let title = Self.problemText(status.fix ?? status.detail ?? "The runner stopped")
+            activity.update { $0.phase = .problem; $0.label = "Runner Stopped"; $0.headline = title }
         } else if !status.isRunning {
             activity.update { $0.phase = .idle; $0.headline = status.title }
         } else if activity.state.phase == .problem || activity.state.phase == .idle || activity.state.headline == "Starting the runner" {
-            activity.update { $0.phase = .idle; $0.headline = "Ready for the agent" }
+            activity.update { $0.phase = .idle; $0.headline = "Waiting for agent" }
         }
     }
 
@@ -436,9 +467,8 @@ final class AppModel {
             activityText = "Idle"
             let failed = delivery.hasPrefix("failed")
             log.add("agent", "\(failed ? "failed" : "done"): \(summary) · \(delivery.prefix(160))")
-            let place = app.map { "In \($0)" }
-            let detail = failed ? ([place, "Didn't go through"].compactMap { $0 }.joined(separator: " · ")) : (place ?? "Done")
-            recentSteps.append(RecentStep(text: summary, detail: detail, ok: !failed, at: Date()))
+            if let app { currentApp = app }
+            recentSteps.append(RecentStep(text: summary, app: app, failure: failed ? delivery : nil, at: Date()))
             if recentSteps.count > 20 { recentSteps.removeFirst(recentSteps.count - 20) }
             activity.record(step: summary, ok: !failed)
             activity.update { state in state.app = app ?? state.app }
@@ -455,7 +485,7 @@ final class AppModel {
             if approved == nil { problem = "An approval ran out before you answered, so that step was not done. The agent can ask again." }
             ApprovalNotice.clear(id)
             activity.update { state in
-                if state.approval?.id == id { state.approval = nil; state.phase = .working; state.headline = approved == true ? "Approved. Continuing" : "Not allowed" }
+                if state.approval?.id == id { state.approval = nil; state.phase = .working; state.headline = approved == true ? "Continuing" : "Step skipped" }
             }
         }
     }
@@ -509,33 +539,29 @@ final class AppModel {
     /// How long the expanded island takes to fold after a tap on its button.
     static let islandCollapse: TimeInterval = 1.5
 
-    /// The launcher's fix as the Live Activity's title and the line under it. The fixes the launcher
-    /// sends (native/launcher/src/device.rs, launch.rs) have short forms that fit one line each; any
-    /// other text is split at its first colon or the end of its first sentence.
-    nonisolated static func problemText(_ fix: String) -> (String, String?) {
-        let short: [(String, String, String)] = [
-            ("Turn on the loopback", "Turn On Loopback", "In your proxy app, or connect LocalDevVPN."),
-            ("Poki needs the internet", "Connect to the Internet", "Poki needs it once after each restart, then tries again."),
-            ("Mounting the developer disk image timed out", "Connect to the Internet", "Poki needs it once after each restart, then tries again."),
-            ("This iOS version needs a newer", "Update the Disk Image", "Open Poki's setup to download the latest one."),
-            ("The developer disk image did not install", "Downloading the Disk Image", "Poki downloads it again by itself."),
-            ("Pair again", "Pair Again", "In Poki's setup."),
-            ("Turn on Developer Mode", "Turn On Developer Mode", "Privacy & Security › Developer Mode, then restart."),
-            ("Install Poki Runner", "Install Poki Runner", "With the same signing tool and Apple ID as Poki."),
+    /// The launcher's fix as the Live Activity's content line, in English (the face words it in the
+    /// system's language). The fixes the launcher sends (native/launcher/src/device.rs, launch.rs) have
+    /// names of a few words; any other text gives its first part. What to do is in the app, which shows
+    /// the whole fix.
+    nonisolated static func problemText(_ fix: String) -> String {
+        let short: [(String, String)] = [
+            ("Turn on the loopback", "Loopback Off"),
+            ("Poki needs the internet", "No Internet"),
+            ("Mounting the developer disk image timed out", "No Internet"),
+            ("This iOS version needs a newer", "Disk Image Outdated"),
+            ("The developer disk image did not install", "Fetching Disk Image"),
+            ("Pair again", "Pairing Refused"),
+            ("Turn on Developer Mode", "Developer Mode Off"),
+            ("Install Poki Runner", "Poki Runner Missing"),
         ]
-        if let (_, title, hint) = short.first(where: { fix.hasPrefix($0.0) }) { return (title, hint) }
-        return split(fix)
+        return short.first { fix.hasPrefix($0.0) }?.1 ?? firstPart(fix)
     }
 
-    /// A text as a title and the line under it: split at the first colon or the end of the first
-    /// sentence.
-    nonisolated static func split(_ text: String) -> (String, String?) {
-        let marks = [": ", ". "].compactMap { text.range(of: $0) }.min { $0.lowerBound < $1.lowerBound }
-        guard let mark = marks else { return (text, nil) }
-        let title = String(text[..<mark.lowerBound])
-        let rest = text[mark.upperBound...].trimmingCharacters(in: .whitespaces)
-        guard !rest.isEmpty else { return (title, nil) }
-        return (title.prefix(1).uppercased() + title.dropFirst(), rest.prefix(1).uppercased() + rest.dropFirst())
+    /// A text up to its first colon or the end of its first sentence, capitalised.
+    nonisolated static func firstPart(_ text: String) -> String {
+        let mark = [": ", ". "].compactMap { text.range(of: $0) }.min { $0.lowerBound < $1.lowerBound }
+        let part = mark.map { String(text[..<$0.lowerBound]) } ?? text
+        return part.prefix(1).uppercased() + part.dropFirst()
     }
 
     // MARK: Pairing
@@ -615,8 +641,7 @@ final class AppModel {
             if !sessionOn { Task { try? await Task.sleep(for: .seconds(4)); if !self.sessionOn { self.activity.end() } } }
         case .failed(let why):
             pairingKeepAlive.stop()
-            let (title, hint) = Self.split(why)
-            activity.update { $0.phase = .problem; $0.pin = nil; $0.label = "Pairing Failed"; $0.headline = title; $0.hint = hint }
+            activity.update { $0.phase = .problem; $0.pin = nil; $0.label = "Pairing Failed"; $0.headline = Self.firstPart(why) }
             if !sessionOn { Task { try? await Task.sleep(for: .seconds(8)); if !self.sessionOn { self.activity.end() } } }
         case .advertising: break
         }
@@ -634,7 +659,7 @@ final class AppModel {
         activity.update {
             $0.phase = .setup
             $0.headline = "Setting up Poki"
-            $0.guide = .init(number: (steps.firstIndex(of: step) ?? 0) + 1, count: steps.count, title: step.activityTitle, hint: step.activityHint)
+            $0.guide = .init(number: (steps.firstIndex(of: step) ?? 0) + 1, count: steps.count, title: step.activityTitle)
         }
     }
 
@@ -659,10 +684,11 @@ final class AppModel {
     var setupComplete: Bool { SetupStep.allCases.allSatisfy(isDone) }
 
     var activityProblem: String? { activity.lastError }
+    var activitiesEnabled: Bool { activity.enabled }
 
     // MARK: Relay and connectors
 
-    static let noRelay = "Enter your relay's address first (Connect). Poki has no default relay."
+    static let noRelay = "Enter your relay's address first (Settings › Relay). Poki has no default relay."
 
     /// Saves the relay address the person entered; false when it is not one. A running session moves
     /// to the new relay at once.

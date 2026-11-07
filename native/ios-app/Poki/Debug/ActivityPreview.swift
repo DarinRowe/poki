@@ -56,33 +56,34 @@ struct ActivityPreview: View {
 
         var step = working
         step.event = nil
-        step.headline = "Scroll down the chat list"
+        step.headline = "Tap “Search”, then type “Mom”"
         step.stepCount = 7
         step.outcomes.append(true)
 
         var approval = PokiState(phase: .approval, headline: "Allow this step?", thumbnailVersion: 1)
         approval.app = "Messages"
-        approval.approval = PendingApproval(id: "a", app: "Messages", summary: "Send “On my way” to Mom", reason: "sending a message (\"send\")", expires: now.addingTimeInterval(25))
+        // What PokiCore asks for when the agent taps Send in Messages.
+        approval.approval = PendingApproval(id: "a", app: "Messages", summary: "Tap “Send”", reason: "sending a message (\"send\")", expires: now.addingTimeInterval(25))
         approval.since = now.addingTimeInterval(-61)
         approval.stepCount = 4; approval.outcomes = [true, true, true, true]
 
         var deciding = approval
         deciding.phase = .deciding; deciding.decision = true
 
-        var done = PokiState(phase: .done, headline: "Finished in Messages", thumbnailVersion: 1)
+        var done = PokiState(phase: .done, headline: "Finished", thumbnailVersion: 1)
         done.app = "Messages"
         done.since = now.addingTimeInterval(-84); done.endedAt = now
         done.stepCount = 12; done.failedCount = 1
         done.outcomes = [true, true, false, true, true, true, true, true, true, true, true, true]
 
-        var ready = PokiState(phase: .idle, headline: "Ready for the agent", thumbnailVersion: 0)
-        var idle = PokiState(phase: .idle, headline: "Waiting for an agent", thumbnailVersion: 0)
+        var ready = PokiState(phase: .idle, headline: "Waiting for agent", thumbnailVersion: 0)
+        var idle = PokiState(phase: .idle, headline: "Runner asleep", thumbnailVersion: 0)
         idle.runnerPaused = true
         ready.runnerPaused = false
 
-        let (title, hint) = AppModel.problemText("Turn on the loopback in your proxy app: the Poki module in Surge or Loon.")
+        let title = AppModel.problemText("Turn on the loopback in your proxy app: the Poki module in Surge or Loon.")
         var problem = PokiState(phase: .problem, headline: title, thumbnailVersion: 0)
-        problem.label = "Runner Stopped"; problem.hint = hint
+        problem.label = "Runner Stopped"
         problem.stepCount = 6
 
         let pairWait = PokiState(phase: .pairing, headline: "Pair in Settings", thumbnailVersion: 0)
@@ -90,7 +91,7 @@ struct ActivityPreview: View {
         pairCode.pin = "482913"
 
         var setup = PokiState(phase: .setup, headline: "Setting up Poki", thumbnailVersion: 0)
-        setup.guide = .init(number: 2, count: 6, title: SetupStep.developerMode.activityTitle, hint: SetupStep.developerMode.activityHint)
+        setup.guide = .init(number: 2, count: 6, title: SetupStep.developerMode.activityTitle)
 
         return [("start", start), ("working", working), ("step", step), ("approval", approval), ("deciding", deciding), ("done", done),
                 ("ready", ready), ("idle", idle), ("problem", problem), ("pairing", pairWait), ("code", pairCode), ("setup", setup)]
@@ -167,7 +168,7 @@ private struct IslandCompactFrame: View {
             HStack(spacing: 0) {
                 CompactLeading(state: state).frame(width: 44, alignment: .leading)
                 Color.clear.frame(width: 120)
-                CompactTrailing(state: state).frame(width: 52, alignment: .trailing)
+                CompactTrailing(state: state).frame(width: 60, alignment: .trailing)
             }
             .padding(.horizontal, 8).frame(height: 37)
             .background(.black, in: .capsule)

@@ -33,6 +33,13 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         PokiAppGroup: $(POKI_APP_GROUP)
+        # English and Simplified Chinese (Shared/Localizable.xcstrings, Poki/InfoPlist.xcstrings); Poki
+        # follows the iPhone's language.
+        CFBundleDevelopmentRegion: en
+        CFBundleLocalizations: [en, zh-Hans]
+        # Every page is the website's blue (or the night blue): white status bar text throughout.
+        UIStatusBarStyle: UIStatusBarStyleLightContent
+        UIViewControllerBasedStatusBarAppearance: false
         UILaunchScreen:
           UIColorName: AccentColor
           UIImageName: Bear
@@ -43,7 +50,7 @@ targets:
         NSSupportsLiveActivitiesFrequentUpdates: true
         # Geist (SIL OFL 1.1, Shared/Fonts) for the Live Activity, in both bundles: the widget
         # extension draws the island and falls back to SF Pro without its own copy.
-        UIAppFonts: [Geist-Regular.ttf, Geist-SemiBold.ttf, Geist-Bold.ttf, Geist-Black.ttf]
+        UIAppFonts: [Geist-Regular.ttf, Geist-Medium.ttf, Geist-SemiBold.ttf, Geist-Bold.ttf, Geist-Black.ttf]
         # While Poki is on, background location (with the blue location pill) keeps the app, and with it
         # the relay connection and the launcher, running; silent audio is the fallback. Poki never reads
         # or sends the location itself.
@@ -89,9 +96,11 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         PokiAppGroup: $(POKI_APP_GROUP)
+        CFBundleDevelopmentRegion: en
+        CFBundleLocalizations: [en, zh-Hans]
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
-        UIAppFonts: [Geist-Regular.ttf, Geist-SemiBold.ttf, Geist-Bold.ttf, Geist-Black.ttf]
+        UIAppFonts: [Geist-Regular.ttf, Geist-Medium.ttf, Geist-SemiBold.ttf, Geist-Bold.ttf, Geist-Black.ttf]
     entitlements:
       path: PokiWidgets/PokiWidgets.entitlements
       properties:

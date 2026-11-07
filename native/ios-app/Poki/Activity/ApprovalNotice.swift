@@ -13,8 +13,8 @@ enum ApprovalNotice {
 
     static func post(_ approval: PendingApproval) {
         let content = UNMutableNotificationContent()
-        content.title = "Poki needs your OK"
-        content.body = "\(approval.summary) in \(approval.app). Open Poki to allow or deny."
+        content.title = String(localized: "Poki needs your OK")
+        content.body = String(localized: "\(approval.summary) in \(approval.app). Open Poki to allow or deny.")
         content.sound = .default
         content.interruptionLevel = .timeSensitive
         content.threadIdentifier = "approvals"

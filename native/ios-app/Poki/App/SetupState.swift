@@ -99,27 +99,16 @@ enum SetupStep: String, CaseIterable, Identifiable {
 }
 
 extension SetupStep {
-    /// The step as the Live Activity's title (ESP-139 board 02: title case, one line).
+    /// The step as the Live Activity's content line, in English (the face words it in the system's
+    /// language): a name, not what to do, which the setup screen says.
     var activityTitle: String {
         switch self {
-        case .runner: "Install Poki Runner"
-        case .developerMode: "Turn On Developer Mode"
-        case .loopback: "Turn On Loopback"
-        case .pairing: "Pair This iPhone"
-        case .automation: "Allow UI Automation"
-        case .background: "Let Poki Stay On"
-        }
-    }
-
-    /// Where to go in Settings, at most two lines under the title.
-    var activityHint: String {
-        switch self {
-        case .runner: "General › VPN & Device Management. Trust Poki Runner's developer."
-        case .developerMode: "Privacy & Security › Developer Mode. Restart, then tap Turn On."
-        case .loopback: "In your proxy app, or connect LocalDevVPN. Then come back to Poki."
-        case .pairing: "Privacy & Security › Developer Mode › Pair with Poki."
-        case .automation: "Developer › Enable UI Automation."
-        case .background: "Allow location While Using the App, and keep Live Activities on."
+        case .runner: "Poki Runner"
+        case .developerMode: "Developer Mode"
+        case .loopback: "Loopback"
+        case .pairing: "Pairing"
+        case .automation: "UI Automation"
+        case .background: "Background"
         }
     }
 }
@@ -128,7 +117,10 @@ extension SetupStep {
 struct RecentStep: Identifiable, Equatable {
     let id = UUID()
     var text: String
-    var detail: String
-    var ok: Bool
+    /// The app it happened in, as PokiCore names it.
+    var app: String?
+    /// Why it did not go through: PokiCore's delivery, "failed: nothing changed".
+    var failure: String?
+    var ok: Bool { failure == nil }
     var at: Date
 }

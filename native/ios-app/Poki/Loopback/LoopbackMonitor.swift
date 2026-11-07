@@ -81,19 +81,19 @@ final class LoopbackMonitor {
 
     var text: String {
         switch state {
-        case .checking: "Checking…"
-        case .working: "Working"
-        case .noAnswer: "Tunnel on, no answer"
-        case .off: "Off"
+        case .checking: String(localized: "Checking…")
+        case .working: String(localized: "Working")
+        case .noAnswer: String(localized: "Tunnel on, no answer")
+        case .off: String(localized: "Off")
         }
     }
 
     var detail: String {
         switch state {
-        case .checking: "Looking for this iPhone at 10.7.0.1."
-        case .working(let ms): "This iPhone answers at 10.7.0.1 (\(ms) ms)." + (onWiFi ? "" : " Connect to Wi-Fi: the developer services need it.")
-        case .noAnswer: "The local interface is present, but this iPhone's developer services do not answer. Check Developer Mode and Wi-Fi, then reconnect the local connection."
-        case .off: "This iPhone does not answer yet. Enable Poki's local connection, or choose an external connection in Setup."
+        case .checking: String(localized: "Looking for this iPhone at 10.7.0.1.")
+        case .working(let ms): String(localized: "This iPhone answers at 10.7.0.1 (\(ms) ms).") + (onWiFi ? "" : " " + String(localized: "Connect to Wi-Fi: the developer services need it."))
+        case .noAnswer: String(localized: "The local interface is present, but this iPhone's developer services do not answer. Check Developer Mode and Wi-Fi, then reconnect the local connection.")
+        case .off: String(localized: "This iPhone does not answer yet. Enable Poki's local connection, or choose an external connection in Setup.")
         }
     }
 }

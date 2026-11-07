@@ -4,12 +4,8 @@
 // THIRD_PARTY_NOTICES.md.
 import SwiftUI
 
-/// Poki's brand colours, used by the app's screens.
-enum Brand {
-    static let blue = Color(red: 0x20 / 255, green: 0x84 / 255, blue: 0xFD / 255)
-}
-
-/// The website's colours (poki-site, ESP-139's token table and its final board 02).
+/// The website's colours (poki-site, ESP-139's token table and its final boards 01 to 05): the one
+/// table the app's screens and the Live Activity both draw with.
 enum Site {
     static let blue = Color(hex: 0x0077FD)
     /// Blue text on white: the text of a white capsule button.
@@ -18,18 +14,36 @@ enum Site {
     static let sky = Color(hex: 0x5AA7FF)
     static let ok = Color(hex: 0x5BE37A)
     static let bad = Color(hex: 0xFF5F57)
+    /// The page in dark mode (the docs site's blue); the boards draw light mode only.
+    static let night = Color(hex: 0x0A2F6B)
+    /// White text on blue, second and third level (--site-c3, --site-c4).
+    static let c3 = Color.white.opacity(0.84)
+    static let c4 = Color.white.opacity(0.72)
+    /// Glass on blue: the card, the capsule and badge fill, the edge (with a brighter top line).
+    static let glass = Color.white.opacity(0.08)
+    static let glass2 = Color.white.opacity(0.16)
+    static let edge = Color.white.opacity(0.28)
+    static let edgeTop = Color.white.opacity(0.55)
+    /// Inside the white cards: text, secondary text, placeholder and values, dividers.
+    static let text = Color(hex: 0x111111)
+    static let text2 = Color(hex: 0x6B6B70)
+    static let text3 = Color(hex: 0x8A8A8E)
+    static let hair = Color(hex: 0xE0E1E9)
+    /// Light blue: tags, secondary buttons and the countdown on white.
+    static let tint = Color(hex: 0xE5F1FF)
+    /// Green and red text on white.
+    static let okInk = Color(hex: 0x12A150)
+    static let danger = Color(hex: 0xD93A32)
 }
 
 /// What a piece of the Live Activity is coloured by. Each face picks one; the surface's palette says
 /// what it is, so the blue card and the black island can colour the same word differently.
 enum ActivityTone: Hashable {
-    /// Secondary: the app's name while working, the meta values, most subtitles.
+    /// Secondary: the app's name while working, the meta values.
     case quiet
     /// The text colour itself.
     case plain
     case accent, approval, done, problem
-    /// The approval's reason line: white on the card, dimmed on the island.
-    case reason
 }
 
 /// The Lock Screen card is the website's blue with glass on it; the Dynamic Island is always black.
@@ -42,8 +56,7 @@ struct ActivityPalette {
     var approval: Color
     var done: Color
     var problem: Color
-    var reason: Color
-    /// Secondary buttons (Stop, Don't Allow) and the answer on its way.
+    /// Secondary buttons (Stop, Deny).
     var buttonFill = Color.white.opacity(0.16)
     /// The setup steps already done, and those still to do.
     var segmentDone: Color
@@ -62,7 +75,6 @@ struct ActivityPalette {
         case .approval: approval
         case .done: done
         case .problem: problem
-        case .reason: reason
         }
     }
 }
@@ -72,10 +84,10 @@ struct ActivityTheme {
     /// White words on the blue card: the status word itself says which phase it is.
     var lock = ActivityPalette(
         quiet: .white.opacity(0.72), accent: .white, approval: .white, done: .white,
-        problem: .white, reason: .white, segmentDone: .white, track: .white.opacity(0.28), finished: .white)
+        problem: .white, segmentDone: .white, track: .white.opacity(0.28), finished: .white)
     var island = ActivityPalette(
         quiet: Color(hex: 0x9A9A96), accent: Site.sky, approval: Site.sky, done: Site.ok,
-        problem: Color(hex: 0xFF6961), reason: .white.opacity(0.72), segmentDone: Site.ok, track: Color(hex: 0x3A3A3A),
+        problem: Color(hex: 0xFF6961), segmentDone: Site.ok, track: Color(hex: 0x3A3A3A),
         finished: Color(hex: 0x3CCF7A))
     var lockBackground = Site.blue
     /// The glass edge on the blue card: a 1 pt white line, brighter along the top.
@@ -91,23 +103,28 @@ struct ActivityTheme {
     /// The Face ID glyph on Allow.
     var primaryIcon = Color.black
 
-    var status = Font.custom("Geist-SemiBold", size: 15)
-    var meta = Font.custom("Geist-Regular", size: 13)
-    var title = Font.custom("Geist-Bold", size: 20)
-    var titleTracking: CGFloat = -0.2
-    var subtitle = Font.custom("Geist-Regular", size: 13)
-    var button = Font.custom("Geist-SemiBold", size: 15)
+    /// Two text sizes and no more (ESP-162): `contentSize` only for the content line, the one thing
+    /// that matters in a state; `textSize` for everything else.
+    static let textSize: CGFloat = 15
+    static let contentSize: CGFloat = 20
+    /// Geist for English, as on the board; the system font for Chinese. Geist has no Chinese
+    /// characters, and with it the Lock Screen and the island laid Chinese lines out narrower than
+    /// they drew them, cutting off their ends (seen on the iPhone 17 Pro simulator).
+    static let usesGeist = Bundle.main.preferredLocalizations.first?.hasPrefix("zh") != true
+    private static func font(_ name: String, _ weight: Font.Weight, _ size: CGFloat) -> Font {
+        usesGeist ? .custom(name, size: size) : .system(size: size, weight: weight)
+    }
+    var status = font("Geist-SemiBold", .semibold, textSize)
+    var meta = font("Geist-Regular", .regular, textSize)
+    var button = font("Geist-SemiBold", .semibold, textSize)
     /// Words in the compact island ("Step 7", "2/6").
-    var compact = Font.custom("Geist-SemiBold", size: 13)
+    var compact = font("Geist-SemiBold", .semibold, textSize)
     /// The pairing code in the compact island, with tabular digits.
-    var compactCode = Font.custom("Geist-Bold", size: 13).monospacedDigit()
-    /// The compact island's "!".
-    var compactMark = Font.custom("Geist-Bold", size: 17)
+    var compactCode = font("Geist-Bold", .bold, textSize).monospacedDigit()
     /// Countdowns are SF Mono.
-    var countdown = Font.system(size: 13, weight: .semibold, design: .monospaced)
-    /// The pairing code, large.
-    var code = Font.custom("Geist-Black", size: 46).monospacedDigit()
-    var codeTracking: CGFloat = -0.92
+    var countdown = Font.system(size: textSize, weight: .semibold, design: .monospaced)
+    var content = font("Geist-Bold", .bold, contentSize)
+    var contentTracking: CGFloat = usesGeist ? -0.2 : 0
 
     func palette(_ surface: ActivitySurface) -> ActivityPalette { surface == .lockScreen ? lock : island }
 

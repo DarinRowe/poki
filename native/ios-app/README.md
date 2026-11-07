@@ -37,7 +37,9 @@ xcodegen generate --spec native/ios-app/project.yml
 open native/ios-app/Poki.xcodeproj
 ```
 
-`-pokiScreen home|setup|connect|debug|activity` opens that screen at launch.
+`-pokiScreen home|setup|connect|debug|activity|steps|status|connector` opens that screen at launch (setup as its full-screen flow, connect as the Settings sheet, debug as Diagnostics inside it); `-pokiSetupStep N` opens setup at step N, and `-pokiSample B|C` fills Home with sample steps and an approval, and `-pokiSample PIN` shows a sample pairing code, for screenshots only.
+
+Poki is in English and Simplified Chinese and follows the iPhone's language. The app's screens use the String Catalog `Shared/Localizable.xcstrings`, the Live Activity its own table `Shared/LiveActivity.xcstrings` (see `Shared/ActivityWords.swift`), and the permission prompts `Poki/InfoPlist.xcstrings`. Poki's own status words stay in English inside the app (the code compares them and the agent reads them) and are looked up where they reach the screen; the launcher's fix sentences have entries too. Steps an agent reports, logs and diagnostics output stay as they come. Add `-AppleLanguages '(zh-Hans)'` to a launch to see Chinese without changing the simulator's language.
 
 ## How it runs
 
