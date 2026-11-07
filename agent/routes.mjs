@@ -131,6 +131,17 @@ function conditions(observation, preferStates = true) {
   const states = candidates.filter(condition => /Heading|StaticText|TextField|TextView|TextArea|SearchField/.test(condition.role ?? '') || typeof condition.checked === 'boolean');
   return (preferStates && states.length ? states : candidates).slice(0, 20);
 }
+// Counts, times, percentages and capacities change between runs, so step conditions avoid them when the page has other text.
+function stable(list) {
+  const kept = list.filter(condition => !/\d/.test(`${condition.label}${condition.value ?? ''}`));
+  return kept.length ? kept : list;
+}
+// A scroll changes which rows are on screen, not the headings, so it is confirmed by a few rows it brought into view.
+function revealed(before, after) {
+  const shown = stable(conditions(after, false)).filter(condition => !matching(before.elements, condition).length);
+  const middle = Math.max(0, Math.floor(shown.length / 2) - 1);
+  return shown.slice(middle, middle + 3);
+}
 function resultMatches(observation, details) {
   const candidates = conditions(observation, false);
   const selected = [];
@@ -201,7 +212,7 @@ function compile(trace) {
     if (entry.tool === 'hide_keyboard' && entry.result?.hidden === true && entry.result?.already_hidden === true) continue;
     if (observationTools.has(entry.tool) && entry.result?.elements?.length) {
       if (pending) {
-        const complete = conditions(entry.result);
+        const complete = ['scroll', 'swipe'].includes(pending.action.op) ? revealed(pending.before, entry.result) : stable(conditions(entry.result));
         if (!complete.length) return null;
         const { before, ...step } = pending;
         if (!conditionsMatch(step.when, entry.result) || !conditionsMatch(complete, before)) steps.push({ ...step, complete, before, after: entry.result });
@@ -212,7 +223,7 @@ function compile(trace) {
     }
     if (!current || pending) return null;
     const action = actionFor(entry, current, `step_${steps.length + 1}`);
-    const when = conditions(current).slice(0, 10);
+    const when = stable(conditions(current)).slice(0, 10);
     if (!action || !when.length) return null;
     pending = { before: current, when, action };
     current = null;
