@@ -96,6 +96,8 @@ that no answer may halt the agent and from the first Poki Gym runs (`native/ios-
     launch works under a system alert.
 19. Key `"\n"` taps the keyboard's own Go/Search/Done key when one is up; `scroll_to` drags 84 % of
     the region with a 0.2 s rest.
+20. A large element (a third of the screen or more) with no parts in the tree, such as Photos'
+    Library grid, is listed with a note to tap a point on the picture.
 
 Still not done: a `collect` or `expect` field, a `recover` action, and redaction of sensitive text
 (Zhehan: out of scope for now).

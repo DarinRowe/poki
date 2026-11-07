@@ -1132,6 +1132,16 @@ final class GymTests: XCTestCase {
         XCTAssertTrue(result.text.contains("its centre is off the screen, so the centre of its visible part was tapped"), result.text)
     }
 
+    /// Photos' home: the Library grid is one Button of 402x586 with the photos nowhere in the tree
+    /// (the gym's raw XML), so its centre is one photo among many. The line says so.
+    func testAnElementCoveringTheScreenAloneSaysItsPartsAreNotInTheTree() async {
+        let (core, wda, _) = makeCore()
+        wda.tree([Node("Button", "Library", [0, 0, 390, 586]), Node("Button", "Albums", [0, 600, 390, 60]), Node("Button", "Search", [300, 800, 80, 40])], app: "Photos")
+        let result = await core.call("look", [:])
+        XCTAssertTrue(result.text.contains("1 Button \"Library\" [0,0,390,586] (one element covering 69 % of the screen with no parts in the tree: tap a point on the picture, not its number)"), result.text)
+        XCTAssertFalse(result.text.contains("\"Albums\" [0,600,390,60] (one element"), result.text)
+    }
+
     /// Photos' What's New sheet: back (an edge swipe) did nothing. The answer now says a sheet is up
     /// and names its buttons.
     func testBackOnASheetSaysWhatDismissesIt() async {

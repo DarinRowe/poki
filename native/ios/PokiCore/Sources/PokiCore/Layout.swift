@@ -145,6 +145,15 @@ func isCollapsed(_ e: Element, in all: [Element]) -> Bool {
     return !all.contains { e.contains($0) && !$0.text.isEmpty }
 }
 
+/// One element with no part in the tree that covers a third of the screen or more: Photos' Library
+/// grid is one Button of 402x586 with the photos nowhere in the tree, so its centre is one photo
+/// among many. The listing says so, and that a point on the picture is the way in.
+func coversScreenAlone(_ e: Element, in all: [Element], screen: ScreenSize) -> Bool {
+    guard !e.fromPicture, ["Button", "Cell", "Image", "Link", "Other"].contains(e.type), screen.width < 10_000 else { return false }
+    guard e.frame.width * e.frame.height >= screen.width * screen.height / 3 else { return false }
+    return !all.contains { e.contains($0) }
+}
+
 /// FNV-1a: the same bytes give the same number, so an unchanged screenshot is seen as unchanged.
 func fingerprint(_ data: Data) -> UInt64 {
     var hash: UInt64 = 0xcbf29ce484222325

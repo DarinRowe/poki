@@ -256,7 +256,10 @@ final class Computer: @unchecked Sendable {
         func line(_ ref: Int, _ e: Element, _ mark: String) -> String {
             var text = e.text.isEmpty && e.type == "WebView" ? "web page (its parts are not in the tree yet: read again in a second)" : e.text
             if !full, text.count > Self.textLimit { text = "\(text.prefix(Self.textLimit - 10))… (+\(text.count - Self.textLimit + 10) characters)" }
-            let tag = e.fromPicture ? " (read from the picture)" : collapsed.contains(e.node) ? " [collapsed]" : ""
+            var tag = e.fromPicture ? " (read from the picture)" : collapsed.contains(e.node) ? " [collapsed]" : ""
+            if tag.isEmpty, let size, coversScreenAlone(e, in: reading.elements, screen: size) {
+                tag = " (one element covering \(Int((e.frame.width * e.frame.height * 100 / (size.width * size.height)).rounded())) % of the screen with no parts in the tree: tap a point on the picture, not its number)"
+            }
             return "\(mark)\(ref) \(e.type) \"\(text)\" \(e.frame.described)\(tag)"
         }
         var body: [String] = []
