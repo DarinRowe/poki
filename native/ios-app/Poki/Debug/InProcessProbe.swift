@@ -37,6 +37,8 @@ final class InProcessProbe: ObservableObject {
             case "self": await selfTest()
             case "later": await later()
             case "read": await readOnly()
+            case "separate": await separateTrial()
+            case "port": await portCheck()
             case "bench": await benchmark(model: model, rounds: defaults.integer(forKey: "pokiBenchRounds") > 0 ? defaults.integer(forKey: "pokiBenchRounds") : 5)
             default: await prepareOnly()
             }
@@ -139,6 +141,30 @@ final class InProcessProbe: ObservableObject {
         }
     }
 
+    /// Whether ending a session ends the Automation Running banner: a session of its own (not the
+    /// shared one), one tap, a hold, then its connection closed. Only meaningful in a fresh process.
+    func separateTrial() async {
+        guard begin("separate session trial") else { return }
+        defer { end() }
+        let point = CGPoint(x: Double(x) ?? 201, y: Double(y) ?? 437)
+        let hold = Double(delay) ?? 8
+        note("separate session: open, Automation Mode, tap [\(Int(point.x)), \(Int(point.y))], hold \(Int(hold)) s, close", ["step": "separate_start"])
+        let result = await withCheckedContinuation { (c: CheckedContinuation<[String: Any], Never>) in
+            queue.async { c.resume(returning: PKInProcess.shared().separateSessionTrial(at: point, hold: hold)) }
+        }
+        let line = result.keys.sorted().map { "\($0)=\(result[$0].map { "\($0)" } ?? "")" }.joined(separator: " ")
+        note("separate session: \(line); watch whether the banner goes now", (["step": "separate_result"] as [String: Any]).merging(result) { a, _ in a })
+    }
+
+    /// Nothing in Poki may listen on WebDriverAgent's port on the in-process path: a connection to
+    /// 127.0.0.1:8100 from inside the app has to be refused.
+    func portCheck() async {
+        guard begin("port 8100") else { return }
+        defer { end() }
+        let result = await probe(label: "8100", host: "127.0.0.1", port: 8100, timeout: 2)
+        note("127.0.0.1:8100: \(result.outcome) \(result.detail) after \(result.milliseconds) ms", ["step": "port_8100", "outcome": result.outcome, "detail": result.detail])
+    }
+
     // MARK: Steps
 
     func prepare() async -> Bool {
@@ -219,6 +245,10 @@ struct InProcessSection: View {
                 Text("Takes effect when Poki starts again.").font(.caption).foregroundStyle(.orange)
             }
             ProbeField(probe: probe).frame(height: 44)
+            HStack {
+                Button("Port 8100") { Task { await probe.portCheck() } }
+                Button("Separate session") { Task { await probe.separateTrial() } }
+            }.disabled(probe.running)
             Button("Compare both paths (5 rounds)") { Task { await probe.benchmark(model: model, rounds: 5) } }.disabled(probe.running)
             HStack {
                 Button("Prepare") { Task { await probe.prepareOnly() } }

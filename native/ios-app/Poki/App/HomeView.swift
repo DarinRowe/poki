@@ -226,8 +226,8 @@ private struct SetupCard: View {
     var openSetup: () -> Void
 
     var body: some View {
-        let done = SetupStep.allCases.filter(model.isDone).count
-        let total = SetupStep.allCases.count
+        let done = SetupStep.shown.filter(model.isDone).count
+        let total = SetupStep.shown.count
         Button(action: openSetup) {
             Card {
                 HStack(spacing: 14) {
@@ -247,7 +247,7 @@ private struct SetupCard: View {
         .buttonStyle(.plain)
     }
 
-    private var next: SetupStep? { SetupStep.allCases.first { !model.isDone($0) } }
+    private var next: SetupStep? { SetupStep.shown.first { !model.isDone($0) } }
 }
 
 /// Something that keeps agents from using the phone, with the one thing the person has to do.

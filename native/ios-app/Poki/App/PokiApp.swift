@@ -33,7 +33,7 @@ struct RootView: View {
         TabView(selection: $tab) {
             Tab("Poki", systemImage: "pawprint.fill", value: Tabs.home) { HomeView(openSetup: { tab = .setup }) }
             Tab("Setup", systemImage: "checklist", value: Tabs.setup) { SetupView() }
-                .badge(model.setupComplete ? 0 : SetupStep.allCases.filter { !model.isDone($0) }.count)
+                .badge(model.setupComplete ? 0 : SetupStep.shown.filter { !model.isDone($0) }.count)
             Tab("Connect", systemImage: "qrcode", value: Tabs.connect) { ConnectView() }
             Tab("Debug", systemImage: "stethoscope", value: Tabs.debug) { ProbeView() }
             if tab == .activity {

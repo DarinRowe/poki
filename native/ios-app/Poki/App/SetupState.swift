@@ -52,6 +52,9 @@ enum SetupStep: String, CaseIterable, Identifiable {
     case runner, developerMode, loopback, pairing, automation, background
     var id: String { rawValue }
 
+    /// The steps this launch shows: the in-process path has no Poki Runner to install.
+    static var shown: [SetupStep] { AutomationPath.current == .inProcess ? allCases.filter { $0 != .runner } : Array(allCases) }
+
     var title: String {
         switch self {
         case .runner: "Install Poki Runner"

@@ -238,12 +238,14 @@ final class AppModel {
             return
         }
         if !inFront { loopback.pause() }
-        log.add("session", "turned off: ending the runner")
+        log.add("session", automationPath == .inProcess ? "turned off; the in-process session stays open until Poki exits" : "turned off: ending the runner")
         core.stop()
-        Task { await RunnerProbe.shutdown() }
         launcher.stop()
         if setup.loopback == .builtIn { tunnel.disconnect() }
-        confirmRunnerEnded()
+        if automationPath == .runner {
+            Task { await RunnerProbe.shutdown() }
+            confirmRunnerEnded()
+        }
         idleTimer?.invalidate(); idleTimer = nil
         runnerPaused = false; host.setPaused(false)
         background.stop()
@@ -267,6 +269,14 @@ final class AppModel {
     /// next agent request starts it again. From the Stop runner button, the Live Activity, or idle.
     func pauseRunner(reason: String = "Stopped") {
         guard sessionOn, !runnerPaused, approvals.isEmpty else { return }
+        if automationPath == .inProcess {
+            // XCTest keeps one shared session per process and cannot open a second one, so the
+            // in-process session stays open (and with it the banner) until Poki exits.
+            log.add("runner", "standing by: \(reason); the in-process session stays open, and the banner with it, until Poki exits")
+            launcher.stop()
+            standBy(reason: reason)
+            return
+        }
         log.add("runner", "stopping: \(reason)")
         // The runner is asked to shut itself down (it ends its test and exits) and the launcher's
         // session is closed; the launcher also ends the process through the developer services.
@@ -584,7 +594,7 @@ final class AppModel {
         guiding = step
         guard !sessionOn else { return }
         activity.start(deviceName: deviceName)
-        let steps = SetupStep.allCases
+        let steps = SetupStep.shown
         activity.update {
             $0.phase = .setup
             $0.headline = "Setting up Poki"
@@ -610,7 +620,7 @@ final class AppModel {
         }
     }
 
-    var setupComplete: Bool { SetupStep.allCases.allSatisfy(isDone) }
+    var setupComplete: Bool { SetupStep.shown.allSatisfy(isDone) }
 
     var activityProblem: String? { activity.lastError }
 

@@ -38,6 +38,12 @@
 - (void)terminate;
 - (void)pressButton:(long long)button;
 - (void)pressLockButton;
++ (id)connectionForInitiatingSharedSession;
++ (void)sessionWithConnection:(id)connection completion:(void (^)(id, NSError *))completion;
+- (BOOL)enableAutomationModeWithError:(NSError **)error;
+- (id)registerInvalidationHandler:(void (^)(void))handler;
+- (id)connection;
+- (void)invalidate;
 @end
 
 /// XCUIElementType's names, by value (XCUIElementTypes.h).
@@ -442,6 +448,59 @@ static BOOL PKInstanceSignature(Class cls, SEL selector, const char *result, NSA
         out[@"picture_error"] = [NSString stringWithFormat:@"%@: %@", e.name, e.reason];
     }
     out[@"picture_seconds"] = @(NSProcessInfo.processInfo.systemUptime - t);
+    return out;
+}
+
+- (NSDictionary<NSString *, id> *)separateSessionTrialAt:(CGPoint)point hold:(double)hold {
+    NSMutableDictionary *out = [NSMutableDictionary new];
+    NSTimeInterval t0 = NSProcessInfo.processInfo.systemUptime;
+    double (^now)(void) = ^{ return NSProcessInfo.processInfo.systemUptime - t0; };
+    for (NSString *path in @[@"/System/Developer/Library/PrivateFrameworks/XCTestSupport.framework/XCTestSupport",
+                             @"/System/Developer/usr/lib/lib_TestingInterop.dylib",
+                             @"/System/Developer/Library/PrivateFrameworks/XCTestCore.framework/XCTestCore",
+                             @"/System/Developer/Library/Frameworks/XCUIAutomation.framework/XCUIAutomation"]) {
+        if (!dlopen(path.UTF8String, RTLD_NOW | RTLD_GLOBAL)) { out[@"code"] = @"developer_framework_unavailable"; return out; }
+    }
+    Class cls = NSClassFromString(@"XCTRunnerDaemonSession");
+    if (![cls respondsToSelector:@selector(connectionForInitiatingSharedSession)] || ![cls respondsToSelector:@selector(sessionWithConnection:completion:)]) {
+        out[@"code"] = @"session_api_unavailable"; return out;
+    }
+    id connection = [cls connectionForInitiatingSharedSession];
+    __block id session; __block NSError *opened;
+    dispatch_semaphore_t ready = dispatch_semaphore_create(0);
+    [cls sessionWithConnection:connection completion:^(id s, NSError *e) { session = s; opened = e; dispatch_semaphore_signal(ready); }];
+    if (dispatch_semaphore_wait(ready, dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC))) { out[@"code"] = @"session_timeout"; return out; }
+    out[@"opened_s"] = @(now());
+    if (!session) { out[@"code"] = @"session_failed"; out[@"detail"] = opened.localizedDescription ?: @""; return out; }
+    __block double invalidatedAt = -1;
+    dispatch_semaphore_t gone = dispatch_semaphore_create(0);
+    if ([session respondsToSelector:@selector(registerInvalidationHandler:)])
+        [session registerInvalidationHandler:^{ invalidatedAt = now(); dispatch_semaphore_signal(gone); }];
+    NSError *error;
+    BOOL enabled = [session respondsToSelector:@selector(enableAutomationModeWithError:)] && [session enableAutomationModeWithError:&error];
+    out[@"enabled"] = @(enabled); out[@"enabled_s"] = @(now());
+    if (!enabled) { out[@"code"] = @"enable_failed"; out[@"detail"] = error.localizedDescription ?: @""; return out; }
+    Class pathClass = NSClassFromString(@"XCPointerEventPath"), recordClass = NSClassFromString(@"XCSynthesizedEventRecord");
+    id record = [recordClass instancesRespondToSelector:@selector(initWithName:interfaceOrientation:)]
+        ? [[recordClass alloc] initWithName:@"Poki trial" interfaceOrientation:1] : [[recordClass alloc] initWithName:@"Poki trial"];
+    id path = [[pathClass alloc] initForTouchAtPoint:point offset:0];
+    [path liftUpAtOffset:0.05];
+    [record addPointerEventPath:path];
+    __block NSString *tap = @"no_reply";
+    dispatch_semaphore_t tapped = dispatch_semaphore_create(0);
+    [[session daemonProxy] _XCT_synthesizeEvent:record implicitConfirmationInterval:0 completion:^(NSError *e) {
+        tap = e ? (e.localizedDescription ?: @"error") : @"accepted"; dispatch_semaphore_signal(tapped);
+    }];
+    dispatch_semaphore_wait(tapped, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC));
+    out[@"tap"] = tap; out[@"tap_s"] = @(now());
+    [NSThread sleepForTimeInterval:hold];
+    id link = [session respondsToSelector:@selector(connection)] ? [session connection] : connection;
+    [link invalidate];
+    out[@"closed_s"] = @(now());
+    BOOL handler = dispatch_semaphore_wait(gone, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC)) == 0;
+    out[@"invalidation_handler"] = @(handler);
+    if (handler) out[@"invalidated_s"] = @(invalidatedAt);
+    out[@"code"] = @"done";
     return out;
 }
 

@@ -13,7 +13,7 @@ struct SetupView: View {
         NavigationStack {
             List {
                 Section { progress }
-                ForEach(Array(SetupStep.allCases.enumerated()), id: \.element) { index, step in
+                ForEach(Array(SetupStep.shown.enumerated()), id: \.element) { index, step in
                     Section {
                         StepHeader(number: index + 1, step: step, done: model.isDone(step), expanded: isOpen(step)) {
                             withAnimation(.snappy) { open = isOpen(step) ? .none : step }
@@ -37,12 +37,12 @@ struct SetupView: View {
     /// The first step not done is open unless the person opened another.
     private func isOpen(_ step: SetupStep) -> Bool {
         if let open { return open == step }
-        return SetupStep.allCases.first { !model.isDone($0) } == step
+        return SetupStep.shown.first { !model.isDone($0) } == step
     }
 
     private var progress: some View {
-        let done = SetupStep.allCases.filter(model.isDone).count
-        let total = SetupStep.allCases.count
+        let done = SetupStep.shown.filter(model.isDone).count
+        let total = SetupStep.shown.count
         return HStack(spacing: 16) {
             Gauge(value: Double(done), in: 0...Double(total)) {
                 EmptyView()
