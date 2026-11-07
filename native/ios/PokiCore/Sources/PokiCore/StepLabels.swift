@@ -6,6 +6,7 @@ extension Computer {
     /// "Tap “Send”", "Type “hello”", "Swipe up". Waits are not steps a person needs to see: nil.
     func label(_ action: JSON) -> String? {
         if action["wait"] != nil || action["wait_until"] != nil, action.object?.count == 1 { return nil }
+        if let spec = action["run"] { return "Run “\(Self.short(spec.string ?? spec["name"]?.string ?? "a routine", 28))”" }
         for (key, verb) in [("tap", "Tap"), ("long_press", "Press and hold")] {
             if let spec = action[key] {
                 if let e = target(spec), let name = Self.name(of: e) { return "\(verb) “\(name)”" }

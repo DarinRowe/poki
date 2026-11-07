@@ -189,6 +189,7 @@ The computer-use profile, ported from `src/cua.mjs` and `src/cua-wda.mjs`:
 
 - `look {full?}`: read the screen now.
 - `do {actions: [...], full?, finish?}`: run actions in order, then read the screen.
+- `routines {action, ...}`: the phone's saved routines and the owner's notes (see below), without touching the device.
 - `status`: the relay, the runner and pending approvals, without touching the device.
 
 Each answer is facts only: the app in front, numbered elements, what each action did (`sent`,
@@ -322,6 +323,31 @@ Each answer is facts only: the app in front, numbered elements, what each action
   `{wait_until: {settled: true, ms}}` reads the tree every 250 ms until the text appears or goes, or
   two reads match (default 3 s, at most 10 s, within the action time). Not seeing it is reported, not
   an error. There is no "paused" line after a wait.
+
+### Routines and notes (memory shared by every agent)
+
+Every `do` action of a task is recorded by what it touched (role, label, identifier and the point),
+never by its number. `routines {action: "save", name, description, read?, expect?}` keeps that path
+on the phone; the next first `look` of a task in that app names the saved routines, and
+`do {actions: [{run: "name"}]}` (or `{run: {name, with: {text_1: "…"}}}`) repeats it in one call.
+
+- **A run waits for each target and never guesses.** Each step reads the tree until exactly one
+  element matches (or the nearest of several is within 40 points of the recorded one and the next
+  is twice as far); a screen that differs stops the run before anything more is sent, and the answer
+  says which step and why, with the screen as usual. A sensitive step stops and hands back.
+- **The end check** is up to three labels new on the last screen (or `expect`); `read: ["label"]`
+  answers `label = value` from the last screen, so a lookup is one call.
+- **Typed text becomes a parameter** (`{{text_1}}`); text typed into a secure field is never kept.
+- **Self-learning**: runs, successes and the last stop are counted; two stops in a row mark a routine
+  stale and it is no longer offered until it is saved again. `finish` offers to save a task of two or
+  more steps that no routine ran. Any MCP client can list, show, save, edit, rename, forget, export and
+  import routines, and `remember`/`forget_note` the owner's notes (`PokiCore.memoryBrief(for:)` gives
+  the on-device chat the same brief).
+- **Moving and backing up**: `export` answers the whole memory as JSON (schema
+  `poki.agent-backup/1`); `import {data}` merges one in (newer wins). The app keeps a copy at
+  `Documents/AgentBackup/poki-agent-backup.json`, which Poki Setup copies off and puts back; a copy put
+  back is merged in at launch. Maintainers get `debugBundle()` (schema `poki.agent-debug/1`, with the
+  run log) from Settings › Memory › Advanced.
 
 ### Deadlines (no hangs)
 
