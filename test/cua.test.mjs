@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import sharp from 'sharp';
 import { Devices } from '../src/device.mjs';
+import { fixture } from './fixture.mjs';
 
 // "Jot", an app invented for these tests: a home screen with its icon, a note with a title field and
 // a long list that scrolls. Drawn as blocks so a screenshot exists; no live screen, so do waits a fixed
@@ -105,16 +106,17 @@ test('type sends the whole text as key presses in one request, and pastes only w
   assert.match(text(kept), /^app: local.jot/m, 'a failed action still ends with the read');
 });
 
-test('typing that fails part way is unknown, is not pasted on top, and stops the call', { timeout: 20000 }, async () => {
-  const phone = new JotPhone();
-  await phone.call('look', {});
-  const note = await phone.call('do', { actions: [{ tap: [45, 105] }] });
-  phone.keysBreak = true;
-  const broken = await phone.call('do', { actions: [{ type: 'Tea', ref: numberOf(note, 'Title') }, { tap: [170, 105] }] });
-  assert.match(text(broken), /\(unknown, \d+ ms\)/);
-  assert.match(text(broken), /may have been delivered/);
-  assert.equal(phone.sent.filter(op => op === 'type_text').length, 0);
-  assert.equal(phone.sent.filter(op => op === 'type_keys').length, 1, 'never sent again');
+test('typing that fails part way is unknown, is not pasted on top, and stops the call, with or without clear', { timeout: 30000 }, async () => {
+  for (const clear of [false, true]) {
+    const phone = new JotPhone();
+    await phone.call('look', {});
+    const note = await phone.call('do', { actions: [{ tap: [45, 105] }] });
+    phone.keysBreak = true;
+    const broken = await phone.call('do', { actions: [{ type: 'Tea', ref: numberOf(note, 'Title'), clear }, { tap: [170, 105] }] });
+    assert.match(text(broken), /\(unknown, \d+ ms\)/, `clear: ${clear}`);
+    assert.match(text(broken), /may have been delivered/, `clear: ${clear}`);
+    assert.deepEqual(phone.sent, ['tap', 'tap', 'type_keys'], `clear: ${clear}: no paste on top, the keys never sent again, and nothing after them`);
+  }
 });
 
 test('an element number that is not in the latest read is refused with the current list, and nothing is sent', { timeout: 20000 }, async () => {
@@ -167,4 +169,24 @@ test('the actions of one call stop at the action time cap', { timeout: 20000 }, 
   const capped = await phone.call('do', { actions: [{ wait: 2000 }, { wait: 2000 }, { wait: 2000 }] });
   assert.match(text(capped), /the 4000 ms action time ran out/);
   assert.ok(performance.now() - started < 7000);
+});
+
+test('on a simulator, do launches the app with simctl', { timeout: 30000 }, async t => {
+  const f = await fixture(t);
+  await f.set({ simulatorOnly: true, simulatorBooted: true, label: 'Ready' });
+  await f.call('look', {});
+  const launched = await f.call('do', { actions: [{ launch: { bundle: 'local.fixture', fresh: true } }] });
+  assert.notEqual(launched.isError, true, text(launched));
+  assert.match(text(launched), /launch local.fixture \(fresh\) \(sent/);
+  assert.ok((await f.events()).some(e => e.tool === 'xcrun' && e.args.includes('launch') && e.args.includes('--terminate-running-process') && e.args.includes('local.fixture')), 'simctl launched it, ending the running app first');
+});
+
+test('on a simulator, do types with the simulator keyboard', { timeout: 30000 }, async t => {
+  const f = await fixture(t);
+  await f.set({ simulatorOnly: true, simulatorBooted: true, keyboard: 'en_US', label: 'Ready', field: 'old', typed: 'hello' });
+  const looked = await f.call('look', {});
+  const typed = await f.call('do', { actions: [{ type: 'hello', ref: numberOf(looked, 'old'), clear: true }] });
+  assert.notEqual(typed.isError, true, text(typed));
+  assert.match(text(typed), /type "hello" \(keys\) \(sent/);
+  assert.match(text(typed), /TextField "hello"/);
 });
