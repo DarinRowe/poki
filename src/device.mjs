@@ -38,6 +38,8 @@ export function hidPoint(x, y, width, height) {
   return [Math.round(x / (width - 1) * 65535), Math.round(y / (height - 1) * 65535)];
 }
 
+const names = (device, query) => device.id === query || device.name.toLocaleLowerCase() === query.toLocaleLowerCase();
+
 export class Devices {
   selected; requested; frame; size; seen; elements = []; elementsAt = 0; lastInputAt = -Infinity; inBatch = false;
   scales = new Map(); physicalNames = new Map(); backgroundDevices = new Map(); nextRef = 0;
@@ -109,7 +111,7 @@ export class Devices {
     if (this.resolved) { this.access(this.resolved); return this.resolved; }
     const list = await this.inventory(true);
     const query = this.requested ?? this.selected;
-    let matches = query ? list.filter(d => d.id === query || d.name.toLocaleLowerCase() === query.toLocaleLowerCase()) : list.filter(d => d.kind === 'physical' || d.state === 'Booted');
+    let matches = query ? list.filter(d => names(d, query)) : list.filter(d => d.kind === 'physical' || d.state === 'Booted');
     if (query && !matches.length) {
       for (const d of list.filter(d => d.kind === 'physical')) {
         const occupancy = this.coordinator.status(d.id, this);
@@ -135,6 +137,11 @@ export class Devices {
       }
     }
     return target;
+  }
+  // The id a device argument names, matched as target() matches it but without asking a phone for its name.
+  async resolveDevice(query) {
+    const matches = (await this.inventory(true).catch(() => [])).filter(d => names(d, query));
+    return matches.length === 1 ? matches[0].id : undefined;
   }
   async device() { return (await this.target()).id; }
   async native(args, expected, timeout = 45000) {

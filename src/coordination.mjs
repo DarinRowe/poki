@@ -97,6 +97,6 @@ export class Coordination {
   async lockedTurn(ctx, name, args, signal) {
     await (ctx.queue ?? Promise.resolve());
     if (readOnlyTools.has(name)) return this.inputLock.readSlot(signal);
-    return this.inputLock.acquire(deviceKey(ctx, args), { session: ctx.label, tool: name }, signal);
+    return this.inputLock.acquire(await deviceKey(ctx, args), { session: ctx.label, tool: name }, signal);
   }
 }

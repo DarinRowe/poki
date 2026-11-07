@@ -29,12 +29,17 @@ test('input lock is off unless POKI_INPUT_LOCK=1, and reads its limits from the 
   assert.throws(() => inputLockFromEnv({ POKI_INPUT_LOCK: '1', POKI_INPUT_LOCK_WAIT_MS: 'soon' }), /POKI_INPUT_LOCK_WAIT_MS/);
 });
 
-test('device key prefers the explicit device, then a batch device, then the selected device', () => {
-  assert.equal(deviceKey({ selected: 'b' }, { device: 'a' }), 'a');
-  assert.equal(deviceKey({ selected: 'b' }, { commands: [{ tool: 'tap', arguments: { device: 'c' } }] }), 'c');
-  assert.equal(deviceKey({ selected: 'b' }, { commands: [{ arguments: { device: 'c' } }, { arguments: { device: 'd' } }] }), '*');
-  assert.equal(deviceKey({ selected: 'b' }, {}), 'b');
-  assert.equal(deviceKey({}, {}), '*');
+test('the lock is keyed by the id each step resolves to, and covers every device when that is unclear', async () => {
+  const session = { selected: 'b', resolveDevice: async device => ({ 'Phone A': 'a', a: 'a', c: 'c', 'Sim C': 'c' })[device] };
+  assert.equal(await deviceKey(session, { device: 'Phone A' }), 'a');
+  assert.equal(await deviceKey(session, { simulator: 'Sim C' }), 'c');
+  assert.equal(await deviceKey(session, { commands: [{ tool: 'tap', arguments: { device: 'c' } }, { tool: 'tap', arguments: { device: 'Sim C' } }] }), 'c');
+  assert.equal(await deviceKey(session, { commands: [{ arguments: { device: 'c' } }, { arguments: { device: 'a' } }] }), '*');
+  assert.equal(await deviceKey(session, { commands: [{ arguments: { device: 'c' } }, { arguments: {} }] }), '*');
+  assert.equal(await deviceKey(session, { device: 'A phone not seen yet' }), '*');
+  assert.equal(await deviceKey(session, { model: 'iPhone 17' }), '*');
+  assert.equal(await deviceKey(session, {}), 'b');
+  assert.equal(await deviceKey({}, {}), '*');
 });
 
 test('without the lock every session shares one queue, as before', async () => {

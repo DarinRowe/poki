@@ -25,16 +25,19 @@ export function inputLockFromEnv(env = process.env) {
   });
 }
 
-// The device a call will act on: its own device argument, a batch step's device argument, the
-// session's selected device, or ANY when the device is chosen later. ANY excludes every device.
-export function deviceKey(ctx, args) {
-  if (typeof args?.device === 'string' && args.device) return args.device;
-  if (Array.isArray(args?.commands)) {
-    const devices = new Set(args.commands.map(step => step?.arguments?.device).filter(d => typeof d === 'string' && d));
-    if (devices.size === 1) return [...devices][0];
-    if (devices.size > 1) return ANY;
-  }
-  return ctx.selected ?? ANY;
+// The id of the device a call will act on: each step's device or simulator argument as the session
+// resolves it, or the session's selected device for a step that names none. ANY, which excludes
+// every device, when the call creates a simulator, reaches more than one device, or names one the
+// session cannot resolve yet.
+export async function deviceKey(ctx, args) {
+  const steps = Array.isArray(args?.commands) ? args.commands.map(step => step?.arguments ?? {}) : [args ?? {}];
+  const ids = new Set(await Promise.all(steps.map(step => {
+    if (step.model) return ANY;
+    const device = step.device ?? step.simulator;
+    return typeof device === 'string' && device && device !== ctx.selected ? ctx.resolveDevice?.(device) : ctx.selected;
+  })));
+  const [id, ...others] = ids;
+  return others.length === 0 && id ? id : ANY;
 }
 
 export class InputLock {
