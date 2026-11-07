@@ -1,7 +1,8 @@
 # Release hygiene review (production bar item 7)
 
 Reviewed 2026-11-06 against origin/dev/ios-app (ios-app.yml, ios-runner.yml, native/ios-app/project.yml)
-and dev/ios-core. Nothing here was run on the phone.
+and dev/ios-core. Nothing here was run on the phone. Written when every release carried Poki and Poki
+Runner; since ESP-152 Poki ships alone by default (`native/ios-app/README.md`).
 
 ## Local connection update (2026-11-07)
 

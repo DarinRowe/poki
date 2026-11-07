@@ -112,8 +112,11 @@ targets:
       - package: PokiCore
     settings:
       base:
-        # @testable import Poki re-reads the app's bridging header, which includes the launcher's C header.
-        HEADER_SEARCH_PATHS: $(SRCROOT)/../launcher/include
+        PRODUCT_BUNDLE_IDENTIFIER: $(POKI_BUNDLE_ID).tests
+        GENERATE_INFOPLIST_FILE: YES
+        # @testable import Poki re-reads the app's bridging header, which includes the launcher's C
+        # header and Poki/Native's headers.
+        HEADER_SEARCH_PATHS: $(SRCROOT)/../launcher/include $(SRCROOT)/Poki/Native
   PokiWidgets:
     type: app-extension
     platform: iOS

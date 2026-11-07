@@ -12,7 +12,9 @@ import UIKit
 /// `-automationPath runner -pokiInProcess source -pokiProbeDelay 10` waits, then keeps the front app's
 /// tree as read by Poki Runner and by Poki's own process;
 /// `-pokiInProcess apps -pokiProbeApp BUNDLE` launches that app, launches Settings, activates the app,
-/// launches it again and terminates it, noting the front app and its pid after each.
+/// launches it again and terminates it, noting the front app and its pid after each;
+/// `-pokiInProcess tools -pokiProbeApp BUNDLE` runs PokiCore's look and do as an agent would: open
+/// the app, tap its first field and type, open Settings and swipe, press Home, looking after each.
 @MainActor
 final class InProcessProbe: ObservableObject {
     static let shared = InProcessProbe()
@@ -45,6 +47,7 @@ final class InProcessProbe: ObservableObject {
             case "port": await portCheck()
             case "source": await sourceBothPaths(model: model)
             case "apps": await appsCycle(defaults.string(forKey: "pokiProbeApp") ?? "local.pokimcp.fixture")
+            case "tools": await toolsCycle(model: model, app: defaults.string(forKey: "pokiProbeApp") ?? "local.pokimcp.fixture")
             case "bench": await benchmark(model: model, rounds: defaults.integer(forKey: "pokiBenchRounds") > 0 ? defaults.integer(forKey: "pokiBenchRounds") : 5)
             default: await prepareOnly()
             }
@@ -148,6 +151,41 @@ final class InProcessProbe: ObservableObject {
             note("\(action) \(target): \((result["code"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "done"), front \(result["front"] ?? "?") pid \(result["front_pid"] ?? 0)",
                  result.merging(["step": "app", "action": action, "bundle": target]) { a, _ in a })
         }
+    }
+
+    func toolsCycle(model: AppModel, app bundle: String) async {
+        guard begin("look and do through PokiCore") else { return }
+        defer { end() }
+        guard await prepare() else { return }
+        model.inProcessReadyForProbe()
+        let background = UIApplication.shared.beginBackgroundTask(withName: "In-process probe")
+        defer { UIApplication.shared.endBackgroundTask(background) }
+        func call(_ label: String, _ name: String, _ arguments: String) async -> String {
+            let t = ProcessInfo.processInfo.systemUptime
+            let result = await model.phoneTool(name, arguments: arguments)
+            let head = result.text.split(separator: "\n").prefix(3).joined(separator: " | ")
+            note("\(label): \(result.isError ? "failed" : "ok") \(head.prefix(200))",
+                 ["step": "tool", "label": label, "tool": name, "error": result.isError, "seconds": ProcessInfo.processInfo.systemUptime - t, "text": String(result.text.prefix(4000))])
+            return result.text
+        }
+        _ = await call("look first", "look", "{}")
+        _ = await call("open the app", "do", "{\"actions\":[{\"launch\":\"\(bundle)\"}]}")
+        if let field = await frontField() {
+            _ = await call("tap the field and type", "do", "{\"actions\":[{\"tap\":[\(Int(field.x)),\(Int(field.y))]},{\"type\":\"\(Self.sample)\"}]}")
+        } else {
+            note("no field in the app's tree", ["step": "field_missing"])
+        }
+        let typed = await call("look after typing", "look", "{}")
+        note("the typed text \(typed.contains(Self.sample) ? "is" : "is not") on the screen", ["step": "typed_seen", "seen": typed.contains(Self.sample)])
+        _ = await call("open Settings", "do", "{\"actions\":[{\"launch\":\"com.apple.Preferences\"}]}")
+        let before = await call("look before the swipe", "look", "{}")
+        _ = await call("swipe up", "do", "{\"actions\":[{\"swipe\":\"up\"}]}")
+        let after = await call("look after the swipe", "look", "{}")
+        note("the swipe \(before == after ? "did not change" : "changed") the screen", ["step": "swipe_seen", "changed": before != after])
+        _ = await call("press Home", "do", "{\"actions\":[{\"button\":\"home\"}]}")
+        let home = await call("look at Home", "look", "{}")
+        let front = await withCheckedContinuation { (c: CheckedContinuation<[String: Any], Never>) in queue.async { c.resume(returning: PKInProcess.shared().frontApp()) } }
+        note("after Home the front app is \(front["bundleId"] as? String ?? "?")", ["step": "home_seen", "bundle": front["bundleId"] as? String ?? "", "look_mentions_home": home.lowercased().contains("springboard") || home.contains("Home")])
     }
 
     private func frontField() async -> CGPoint? {
@@ -261,6 +299,8 @@ final class InProcessProbe: ObservableObject {
     }
 }
 
+/// Settings > Diagnostics: the automation path switch and the probes (kept in this branch, where
+/// DiagnosticsView hosts it; ESP-152 removed it on a line where it had no caller).
 struct InProcessSection: View {
     @ObservedObject var probe = InProcessProbe.shared
     @Environment(AppModel.self) private var model

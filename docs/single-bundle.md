@@ -4,6 +4,11 @@ Question: instead of the Poki app plus a separate WebDriverAgent runner, could u
 IPA, with the `.xctest` bundle in the Poki app's `PlugIns` and the Poki app launched by
 testmanagerd as the test host?
 
+Update (ESP-152): Poki now opens the XCTest automation session in its own process, as an ordinary
+app with Automation Mode allowed, without being launched as a test host. Poki ships alone by default;
+the two-bundle layout below remains the Runner path. This study is kept as the record of why the
+test-host route was ruled out.
+
 ## Conclusion
 
 Not in one process, and not for v1. Ship two bundles: the Poki app (launcher, MCP, UI) and the Poki

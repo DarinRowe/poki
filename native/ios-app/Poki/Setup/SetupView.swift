@@ -96,7 +96,7 @@ struct SetupView: View {
             ConfirmCard(step: .runner, title: "Poki Runner is installed and trusted", isOn: binding(\.runnerInstalled))
         case .developerMode:
             InstructionsCard(lines: [
-                "Open **Settings › Privacy & Security › Developer Mode**. It appears once Poki Runner is installed.",
+                SetupStep.inProcess ? "Open **Settings › Privacy & Security › Developer Mode**." : "Open **Settings › Privacy & Security › Developer Mode**. It appears once Poki Runner is installed.",
                 "Turn on Developer Mode, then tap **Restart**.",
                 "After restarting, unlock this iPhone and tap **Turn On**.",
             ])
@@ -154,10 +154,10 @@ extension SetupStep {
     var pageSummary: LocalizedStringKey {
         switch self {
         case .runner: "The helper app that taps and types for your agent. Poki starts it; you never open it."
-        case .developerMode: "Allows this iPhone to run Poki Runner."
+        case .developerMode: SetupStep.inProcess ? "Allows Poki to use this iPhone’s developer services." : "Allows this iPhone to run Poki Runner."
         case .loopback: "Allows Poki to reach this iPhone’s developer services through your proxy app."
         case .pairing: "Gives Poki its own key to this iPhone. The key stays on this device."
-        case .automation: "Allows Poki Runner to control other apps."
+        case .automation: SetupStep.inProcess ? "Allows Poki to control other apps." : "Allows Poki Runner to control other apps."
         case .background: "Keeps Poki connected in the background and shows its activity on the Lock Screen."
         }
     }
@@ -663,7 +663,7 @@ private struct BackgroundPage: View {
                  action: model.activitiesEnabled ? nil : ("Open Settings", { openSettings(model, for: .background) }))
         }
         .padding(.horizontal, 20).padding(.top, 24)
-        SetupFootnote(text: "The first time Poki Runner starts after a restart, iOS asks for your passcode to allow automation. Enter it once; Poki never sees it.")
+        SetupFootnote(text: SetupStep.inProcess ? "The first time Poki turns on after a restart, iOS asks for your passcode to allow automation. Enter it once; Poki never sees it." : "The first time Poki Runner starts after a restart, iOS asks for your passcode to allow automation. Enter it once; Poki never sees it.")
             .padding(.top, 8)
     }
 

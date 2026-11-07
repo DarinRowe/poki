@@ -37,6 +37,8 @@
 - (void)_XCT_launchApplicationWithBundleID:(NSString *)bundle arguments:(NSArray *)arguments environment:(NSDictionary *)environment completion:(void (^)(NSError *))completion;
 - (void)_XCT_terminateApplicationWithBundleID:(NSString *)bundle completion:(void (^)(NSError *))completion;
 - (void)pressButton:(long long)button;
++ (id)deviceEventWithPage:(unsigned int)page usage:(unsigned int)usage duration:(double)duration;
+- (BOOL)performDeviceEvent:(id)event error:(NSError **)error;
 - (void)pressLockButton;
 + (id)connectionForInitiatingSharedSession;
 + (void)sessionWithConnection:(id)connection completion:(void (^)(id, NSError *))completion;
@@ -427,7 +429,9 @@ static BOOL PKInstanceSignature(Class cls, SEL selector, const char *result, NSA
         Class client = NSClassFromString(@"XCAXClient_iOS");
         SEL selector = NSSelectorFromString(@"handleAccessibilityNotification:fromElement:payload:");
         Method method = client ? class_getInstanceMethod(client, selector) : NULL;
-        if (method) method_setImplementation(method, imp_implementationWithBlock(^(__unused id me, __unused id a, __unused id b, __unused id c) {}));
+        // The notification is a number, not an object (1021 came in on the simulator): the arguments
+        // are taken as plain pointers so that nothing is retained, or a Debug build crashes on it.
+        if (method) method_setImplementation(method, imp_implementationWithBlock(^(__unused void *me, __unused void *notification, __unused void *element, __unused void *payload) {}));
     });
     id ax = PKAXClient();
     @synchronized (self) {
@@ -525,7 +529,12 @@ static BOOL PKInstanceSignature(Class cls, SEL selector, const char *result, NSA
         }
         NSNumber *button = buttons[name];
         if (!button) return @"unknown_button";
-        [device pressButton:button.longLongValue];
+        // pressButton: drops the answer; the same HID event (consumer page 0x0C: Menu 0x40, volume
+        // 0xE9/0xEA) is sent here so that a refusal comes back instead of a silent nothing.
+        static const uint32_t usages[] = {0, 0x40, 0xE9, 0xEA};
+        id event = [NSClassFromString(@"XCDeviceEvent") deviceEventWithPage:0x0C usage:usages[button.intValue] duration:0.1];
+        NSError *error = nil;
+        if (!event || ![device performDeviceEvent:event error:&error]) return error.localizedDescription ?: @"button_failed";
         return nil;
     } @catch (NSException *e) {
         return [NSString stringWithFormat:@"%@: %@", e.name, e.reason];

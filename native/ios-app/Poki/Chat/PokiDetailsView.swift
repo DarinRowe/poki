@@ -106,8 +106,13 @@ struct PokiDetailsView: View {
         .tint(ChatColor.green)
         .padding(.vertical, 6.5).padding(.horizontal, 16)
         .rowDivider()
-        ValueRow(title: "Relay", health: Health.relay(model))
-        ValueRow(title: "Runner", health: Health.runner(model), divider: model.recentSteps.last != nil || !issues.isEmpty)
+        // The in-process path has no Poki Runner (ESP-152): its row is hidden, the code kept.
+        if model.automationPath == .runner {
+            ValueRow(title: "Relay", health: Health.relay(model))
+            ValueRow(title: "Runner", health: Health.runner(model), divider: model.recentSteps.last != nil || !issues.isEmpty)
+        } else {
+            ValueRow(title: "Relay", health: Health.relay(model), divider: model.recentSteps.last != nil || !issues.isEmpty)
+        }
         if model.recentSteps.last != nil {
             Button { path.append(.history) } label: {
                 HStack {

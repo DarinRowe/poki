@@ -6,8 +6,9 @@ result and the time next to each line.
 
 ## 0. Before
 
-- [ ] Poki and Poki Runner (`ios-app.yml` and `ios-runner.yml` builds) installed with the same signing tool and Apple ID, developer trusted. Open Poki once; opening Poki Runner by hand should show its screen and go back to Poki.
-- [ ] Developer Mode on (Settings → Privacy & Security → Developer Mode).
+- [ ] Poki (`ios-app.yml` build, or an Ad Hoc release) installed, developer trusted. Open Poki once. Poki automates the phone in its own process; Poki Runner is not installed.
+- [ ] Developer Mode on (Settings → Privacy & Security → Developer Mode). On a phone that never had it on, note whether the menu appears with only Poki installed (it used to appear once Poki Runner was installed).
+- [ ] Runner path only (Poki launched with `-automationPath runner`): Poki Runner (`ios-runner.yml` build) installed with the same signing tool and Apple ID as Poki; opening it by hand shows its screen and goes back to Poki. Sections 3 and 4 mark the lines that apply to this path.
 - [ ] Note the iOS version and whether the phone is on Wi-Fi or cellular for each step.
 
 ## 1. Loopback (choose one; no proxy app is required with the built-in connection)
@@ -56,12 +57,14 @@ result and the time next to each line.
 
 ## 3. Launcher
 
-- [ ] States move: connecting → pairing → (mounting_ddi on the first run after a restart) → launching → running. Note the time of each.
+- [ ] States move: connecting → pairing → (mounting_ddi on the first run after a restart) → running, with no launching (the launcher only mounts the disk image). Note the time of each.
 - [ ] Mounting needs the internet: try it once with Wi-Fi and once on cellular.
-- [ ] `running` within 60 s. Then `curl`-equivalent: PokiCore `look` answers.
-- [ ] Kill Poki Runner from the app switcher: within about 10 s the launcher relaunches it (`launching`, then `running`).
-- [ ] Background Poki and use other apps for 5 minutes: the runner stays up (this tests the keep-alive; the runner dies about 30 s after the launcher's connections close).
-- [ ] Lock the phone for 2 minutes, unlock: does the runner survive? If not, how long until it is back?
+- [ ] `running` within 60 s, then the Poki log shows `in-process session ready` (the first time, iOS may ask for the passcode to allow automation). Note the seconds it reports. Then PokiCore `look` answers.
+- [ ] Cancel the passcode prompt on a first open: the log shows `in-process session not ready`, and the agent's next `look` answers at once with `runner: failed` and the reason, not `starting` after 15 s. The call after that opens the session again.
+- [ ] Background Poki and use other apps for 5 minutes: `look` and `do` still answer; if the session ended, the first call opens it again. Note what that first call answers and how long it took.
+- [ ] Lock the phone for 2 minutes, unlock, then `do` once: the action is not sent to the ended session; a new session is opened and the action goes there. Note the time until it is back.
+- [ ] Runner path only: states pass through launching; kill Poki Runner from the app switcher and within about 10 s the launcher relaunches it (`launching`, then `running`).
+- [ ] Runner path only: background Poki for 5 minutes and lock the phone for 2 minutes; the runner stays up (the runner dies about 30 s after the launcher's connections close).
 - [ ] Switch Wi-Fi off and on, and to cellular: does the launcher keep or regain `running`? Earlier tests over Tailscale found new developer connections only on Wi-Fi; record whether the loopback changes that.
 - [ ] Turn the loopback off: the state becomes `waiting_network` with the fix text, and back to `running` after it is turned on again.
 
@@ -71,7 +74,7 @@ result and the time next to each line.
 - [ ] Add it in Claude as a connector; `tools/list` shows look, do, status.
 - [ ] `look` within 2 s, with a screenshot and elements.
 - [ ] A Clock task (World Clock → add a city) and a Notes task, timed from the first call to the last.
-- [ ] Force a hang: background Poki Runner's app during a `do` (or kill it); the call answers within 25 s, says what may have been delivered, and the next `look` answers `runner: starting` at once.
+- [ ] Force a hang: lock the phone during a long `do` (Runner path: background or kill Poki Runner's app); the call answers within 25 s, says what may have been delivered, and the next `look` answers at once.
 - [ ] Phone offline (airplane mode): the MCP client gets the relay's "The phone is offline" error, not a hang.
 
 ## 5. Approvals

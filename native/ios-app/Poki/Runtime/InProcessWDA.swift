@@ -3,13 +3,31 @@ import PokiCore
 import UIKit
 
 /// Which side carries out PokiCore's actions: Poki Runner (WebDriverAgent on port 8100) or Poki's own
-/// process (`InProcessWDA`). Read at launch; a change takes effect when Poki starts again.
+/// process (`InProcessWDA`). Read once per launch (`-automationPath runner` chooses Poki Runner), so
+/// setup, Home and the transport always agree.
 enum AutomationPath: String, CaseIterable, Identifiable {
     case runner
     case inProcess = "in-process"
     var id: String { rawValue }
-    static var current: AutomationPath {
-        UserDefaults.standard.string(forKey: "automationPath").flatMap(AutomationPath.init(rawValue:)) ?? .inProcess
+    static let current: AutomationPath = UserDefaults.standard.string(forKey: "automationPath").flatMap(AutomationPath.init(rawValue:)) ?? .inProcess
+}
+
+/// Poki's own automation session, once the launcher has mounted the disk image (ESP-152).
+enum InProcessSession: Equatable {
+    case opening
+    case open
+    /// prepare answered no: its code and detail.
+    case failed(code: String, detail: String)
+
+    /// What PokiCore reads while the launcher runs. A failure is answered at once, with its fix.
+    var agentState: RunnerState {
+        switch self {
+        case .open: return .running
+        case .opening: return .starting("opening the in-process session; it takes a few seconds the first time")
+        case .failed(let code, let detail):
+            return .failed("the in-process session could not be opened (\(code)\(detail.isEmpty ? "" : ": \(detail)")); Poki tries again on the next call",
+                           fix: "Open Poki and, if iOS asks, enter the passcode to allow automation")
+        }
     }
 }
 
@@ -103,6 +121,26 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
             "POST /wda/apps/launch": { [unowned self] body, _ in try self.done(self.native.app(try Self.bundle(body), action: "launch")) },
             "POST /wda/apps/activate": { [unowned self] body, _ in try self.done(self.native.app(try Self.bundle(body), action: "activate")) },
             "POST /wda/apps/terminate": { [unowned self] body, _ in try self.done(self.native.app(try Self.bundle(body), action: "terminate")) },
+            // The clipboard is Poki's own to read and write here; WDA's wire form is base64 text.
+            // Empty only when it is: no text while it holds something (an image, or a paste the owner
+            // did not allow), or while Poki is in the background and iOS may hide it, is unreadable.
+            "POST /wda/getPasteboard": { _, _ in
+                let (text, items, active) = DispatchQueue.main.sync {
+                    (UIPasteboard.general.string, UIPasteboard.general.numberOfItems, UIApplication.shared.applicationState == .active)
+                }
+                guard let text = text ?? (items == 0 && active ? "" : nil) else {
+                    throw Refusal("unable to read clipboard", items > 0 ? "the clipboard holds no text" : "the clipboard cannot be read while Poki is in the background")
+                }
+                return .string(Data(text.utf8).base64EncodedString())
+            },
+            "POST /wda/setPasteboard": { body, _ in
+                guard let encoded = body?["content"]?.string, let data = Data(base64Encoded: encoded, options: .ignoreUnknownCharacters) else {
+                    throw Refusal("invalid argument", "content must be base64 text")
+                }
+                let text = String(decoding: data, as: UTF8.self)
+                DispatchQueue.main.sync { UIPasteboard.general.string = text }
+                return .null
+            },
         ]
     }
 

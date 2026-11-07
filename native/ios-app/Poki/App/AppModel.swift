@@ -88,6 +88,16 @@ final class AppModel {
         return .proxy
     }
 
+    /// look, do or status run here as a relay call would be (the Debug probe's end-to-end check).
+    /// The probe opened the in-process session itself (on the simulator there is no launcher), so
+    /// PokiCore may act now.
+    func inProcessReadyForProbe() { inProcessSession = .open; host.update(runner: .running) }
+
+    func phoneTool(_ name: String, arguments: String) async -> (text: String, isError: Bool) {
+        let result = await core.tool(name, arguments: arguments)
+        return (result.text, result.isError)
+    }
+
     /// The chat watches the steps and approvals of the task it runs.
     var onShellEvent: ((ShellEvent) -> Void)?
 
@@ -108,7 +118,12 @@ final class AppModel {
         // PokiCore asks for a restart after two silent requests in a row. A slow gesture can be one of
         // them while the runner is fine, so the runner is asked first; only a runner that does not
         // answer is started again (each restart costs seconds and flashes the automation banner).
-        host.onRestart {
+        host.onRestart { [automationPath] in
+            // In-process, XCTest keeps one session per process: there is no runner to ask or restart.
+            guard automationPath == .runner else {
+                Task { @MainActor in AppLog.shared.add("runner", "PokiCore asked for a restart; the in-process session cannot be reopened, so it was kept") }
+                return
+            }
             Task.detached {
                 let answers = await RunnerProbe.answers()
                 await MainActor.run { AppLog.shared.add("runner", answers ? "PokiCore asked for a restart; the runner answers, so it was kept" : "PokiCore asked for a restart; the runner does not answer: restarting it") }
@@ -116,6 +131,10 @@ final class AppModel {
             }
         }
         host.onWake { [weak self] in Task { @MainActor in self?.wakeRunner() } }
+        host.onWarmUp { [weak self] in Task { @MainActor in self?.warmInProcess("an agent connected") } }
+        if automationPath == .inProcess {
+            host.onRetry { [weak self] in Task { @MainActor in self?.warmInProcess("an agent's call after a failed open") } }
+        }
         // Allow and Deny on the Live Activity run in this process and come straight here.
         ApprovalIntentBridge.install { [weak self] decision in
             guard let self else { return false }
@@ -155,10 +174,41 @@ final class AppModel {
         }
     }
 
+    /// The in-process session as prepare last answered it in this process (ESP-152).
+    private var inProcessSession = InProcessSession.opening
+    private var inProcessWarming = false
+
+    /// Opens (or checks) the in-process session off the main thread before an agent needs it: when
+    /// the launcher has mounted the disk image, when Poki comes to the front, when an agent
+    /// connects, and when an agent's call finds the last try failed. prepare is idempotent: a session
+    /// already open answers "reused" in milliseconds.
+    func warmInProcess(_ why: String) {
+        guard automationPath == .inProcess, sessionOn, runner.isRunning, !inProcessWarming else { return }
+        inProcessWarming = true
+        if case .failed = inProcessSession {
+            inProcessSession = .opening
+            host.update(runner: coreState(of: runner))
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = PKInProcess.shared().prepare()
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.inProcessWarming = false
+                let ok = (result["ok"] as? Bool) == true
+                let seconds = String(format: "%.2f", result["seconds"] as? Double ?? 0)
+                self.log.add("runner", ok ? "in-process session ready for \(why) (generation \(result["generation"] ?? 0), \((result["reused"] as? Bool) == true ? "already open" : "opened"), \(seconds) s)"
+                                          : "in-process session not ready for \(why): \(result["code"] ?? "unknown") after \(seconds) s")
+                self.inProcessSession = ok ? .open : .failed(code: "\(result["code"] ?? "unknown")", detail: result["detail"] as? String ?? "")
+                if self.sessionOn { self.host.update(runner: self.coreState(of: self.runner)) }
+            }
+        }
+    }
+
     /// Poki came to the front: turn on again if it was on, check the loopback live, and finish a
     /// setup step the person just did in Settings.
     func becameActive() {
         inFront = true
+        warmInProcess("Poki came to the front")
         loopback.resume()
         // Poki in front while an agent's step is under way: nobody opened it on purpose. A tap near the
         // top of the screen hit the expanded Dynamic Island (iOS opens the activity's app), or the agent
@@ -443,6 +493,9 @@ final class AppModel {
 
     private func checkIdle() {
         passcodeHint = runner.state == "launching" && launchingSince.map { Date().timeIntervalSince($0) > 10 } == true
+        // In-process the session (and its banner) stays open until Poki exits; stopping the launcher
+        // for idle saves nothing and costs the next agent a restart (ESP-152).
+        guard automationPath == .runner else { return }
         guard sessionOn, !runnerPaused, idleStopSeconds > 0, approvals.isEmpty, activityText == "Idle" else { return }
         if Date().timeIntervalSince(lastAgentActivity) >= Double(idleStopSeconds) {
             let reason = "Stopped after \(idleStopSeconds / 60 > 0 ? "\(idleStopSeconds / 60) min" : "\(idleStopSeconds) s") without agent activity"
@@ -475,6 +528,10 @@ final class AppModel {
     /// The runner's state as the agent reads it. While the loopback is down, every pre-launch state
     /// is the same thing: waiting for the tunnel, said with the time it went and what to do.
     func coreState(of status: RunnerStatus) -> RunnerState {
+        // In-process, a running launcher only mounted the disk image; tools wait for the session.
+        if automationPath == .inProcess, status.state == "running", inProcessSession != .open {
+            return inProcessSession.agentState
+        }
         if status.code == "passcode" {
             return .starting("the phone is asking the owner for the passcode (iOS does this once before the first automation after a restart or a force quit); the Live Activity tells the owner; the runner starts the moment it is entered. Call again in about 10 s; nothing is lost and no action is needed from you")
         }
@@ -496,15 +553,6 @@ final class AppModel {
         if status != runner { log.add("runner", "\(status.state)\(status.detail.map { ": \($0)" } ?? "")") }
         // Events from a launcher that was stopped for idle are old news.
         guard !runnerPaused else { return }
-        // On the in-process path the session is opened as soon as the launcher is ready, so the
-        // owner's one-time Automation Mode passcode comes when they turn Poki on, not mid-task.
-        if status.state == "running", automationPath == .inProcess {
-            DispatchQueue.global(qos: .userInitiated).async {
-                let result = PKInProcess.shared().prepare()
-                let ok = (result["ok"] as? Bool) == true
-                Task { @MainActor in AppLog.shared.add("runner", ok ? "in-process session ready (generation \(result["generation"] ?? 0), \(String(format: "%.2f", result["seconds"] as? Double ?? 0)) s)" : "in-process session not ready: \(result["code"] ?? "unknown")") }
-            }
-        }
         switch status.state {
         case "launching", "running":
             // The phone accepted the pairing.
@@ -535,6 +583,10 @@ final class AppModel {
         }
         runner = status
         host.update(runner: coreState(of: status))
+        // On the in-process path the session is opened as soon as the launcher is ready, so the
+        // owner's one-time Automation Mode passcode comes when they turn Poki on, not mid-task, and
+        // the first look finds it open.
+        if status.state == "running" { warmInProcess("the launcher is ready") }
         if status.state == "failed" {
             let title = Self.problemText(status.fix ?? status.detail ?? "The runner stopped")
             activity.update { $0.phase = .problem; $0.label = "Runner Stopped"; $0.headline = title }

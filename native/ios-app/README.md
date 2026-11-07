@@ -5,8 +5,11 @@ Automation, the loopback, the first-session passcode), starting and stopping a s
 Activity with Approve/Deny for sensitive actions, the MCP address for each client (text, QR, copy),
 and a Debug tab (the former Poki Probe). Native SwiftUI on the iOS 26 SDK with Liquid Glass.
 
-The runner (WebDriverAgent, built by `.github/workflows/ios-runner.yml`) is a second bundle for v1;
-`docs/single-bundle.md` explains why.
+Poki automates the phone in its own process: it opens the XCTest automation session itself
+(`Poki/Native/InProcess.m`, answered to PokiCore by `Poki/Runtime/InProcessWDA.swift`), so Poki is
+the only app to install. The older Runner path (WebDriverAgent as a second bundle, built by
+`.github/workflows/ios-runner.yml`; `docs/single-bundle.md` is the earlier study) stays in the code
+and is chosen per launch with `-automationPath runner`.
 
 ## Layout
 
@@ -38,27 +41,32 @@ xcodegen generate --spec native/ios-app/project.yml
 open native/ios-app/Poki.xcodeproj
 ```
 
+`native/ios-app/scripts/app-tests.sh SIMULATOR_UDID` builds `PokiTests` and runs it inside Poki on a booted simulator (the in-process transport's clipboard and session answers).
+
 `-pokiScreen home|setup|connect|debug|activity|steps|status|connector|details|model|voice` opens that screen at launch (home is the chat, setup its full-screen flow, connect the Settings sheet, debug Diagnostics inside it, details Poki's details, steps its history); `-pokiChat empty|working|approved` and `-pokiVoice ready|listening|working` show the ESP-171 boards' sample chat and voice faces; `-pokiSetupStep N` opens setup at step N, and `-pokiSample B|C` fills the status, history and Live Activity with sample steps and an approval, and `-pokiSample PIN` shows a sample pairing code, for screenshots only; on a simulator `-pokiLoopback cellular` forces the cellular-only loopback hint.
 
 Poki is in English and Simplified Chinese and follows the iPhone's language. The app's screens use the String Catalog `Shared/Localizable.xcstrings`, the Live Activity its own table `Shared/LiveActivity.xcstrings` (see `Shared/ActivityWords.swift`), and the permission prompts `Poki/InfoPlist.xcstrings`. Poki's own status words stay in English inside the app (the code compares them and the agent reads them) and are looked up where they reach the screen; the launcher's fix sentences have entries too. Steps an agent reports, logs and diagnostics output stay as they come. Add `-AppleLanguages '(zh-Hans)'` to a launch to see Chinese without changing the simulator's language.
 
 ## How it runs
 
-- Poki stays on once turned on, and turns on again at launch. The runner, and with it iOS's
-  automation banner, starts only when an agent asks. It stops after the idle time (default 60 s),
-  from Stop on the Live Activity or in Poki, or when Poki is closed. The launcher ends the runner's
-  process at once instead of leaving it up for about 30 s.
-- Only Poki starts the runner. Opened by hand, Poki Runner starts no test (PokiRunnerHost,
-  `native/ios-runner/host`) and sends the person to Poki.
+- Poki stays on once turned on, and turns on again at launch. Once the launcher has mounted the
+  disk image, Poki opens its automation session (the log says `in-process session ready`), so the
+  first look does not wait for it. The session, and with it iOS's automation banner, stays open until
+  Poki exits; it is not stopped for idle. If it cannot be opened, an agent's call answers at once with
+  the reason, and the next call, Poki coming to the front, or an agent connecting tries again.
+- Nothing listens on a port: PokiCore's requests are answered inside Poki.
 - The built-in local connection dials itself again when it fails or drops while Poki is on: 1, 2, 4, 8,
   16, 30, 30, 30 s, then it stops until the owner taps Enable Local Connection in Setup. Opening Poki
   dials nothing. It does not dial when the owner ended it (Turn off, Disconnect, Settings > VPN), when
   another VPN took the packet tunnel, or when another VPN is detected at the time of a try: Poki says so and
-  stops. Detection is best effort: a VPN that sets no proxy, such as Tailscale, may not be detected. The runner then starts again by the loopback's own recovery. An external
+  stops. Detection is best effort: a VPN that sets no proxy, such as Tailscale, may not be detected. The automation then comes back by the loopback's own recovery. An external
   connection is never touched.
-- Known issue: while the runner runs, it answers on port 8100 to any device on the same network,
-  with no credentials and without Poki's approvals (`native/ios-runner/README.md`). Turn Poki on only
-  on networks you trust. A pairing code between Poki and the runner is the planned fix.
+- Runner path only (`-automationPath runner`): the runner, and with it the banner, starts only when
+  an agent asks, and stops after the idle time (default 60 s), from Stop on the Live Activity or in
+  Poki, or when Poki is closed. Only Poki starts the runner; opened by hand, Poki Runner starts no
+  test (PokiRunnerHost, `native/ios-runner/host`) and sends the person to Poki. While it runs, it
+  answers on port 8100 to any device on the same network, with no credentials and without Poki's
+  approvals (`native/ios-runner/README.md`).
 - The Live Activity starts from the foreground, because iOS does not allow it from the background:
   when Poki turns on, when pairing starts, and when a setup step opens Settings.
 
@@ -123,9 +131,9 @@ Which build to sign depends on the Apple account:
 | Apple account | Build | Local connection | Signing |
 |---|---|---|---|
 | Paid Apple Developer Program team | `Poki-unsigned.ipa` (`project.yml`) | Built-in, or an external VPN app | App IDs for Poki, `.widgets` and `.tunnel`; the App Group on Poki and `.widgets`; Network Extensions (packet tunnel) on Poki and `.tunnel`; a development or ad-hoc profile for each of the three. |
-| Free Apple ID (Personal Team) | `Poki-external-unsigned.ipa` (`project-external.yml`) | An external VPN app or LocalDevVPN only | The App Group on Poki and `.widgets` (signing tools rewrite it per Apple ID). Apps signed this way expire after 7 days, and only 3 can be installed at a time; Poki and Poki Runner use two. |
+| Free Apple ID (Personal Team) | `Poki-external-unsigned.ipa` (`project-external.yml`) | An external VPN app or LocalDevVPN only | The App Group on Poki and `.widgets` (signing tools rewrite it per Apple ID). Apps signed this way expire after 7 days, and only 3 can be installed at a time; Poki uses one (two with Poki Runner on the Runner path). |
 
-Sign Poki Runner with the same account as Poki in both cases.
+On the Runner path, sign Poki Runner with the same account as Poki in both cases.
 
 The default `project.yml` builds Poki with its local VPN. Use signing that supports Network
 Extensions (including properly provisioned paid-team development/ad-hoc distribution). Free Personal
@@ -145,8 +153,8 @@ xcodegen generate --spec native/ios-app/project-external.yml
 open native/ios-app/PokiExternal.xcodeproj
 ```
 
-CI produces `Poki-unsigned.ipa` and `Poki-external-unsigned.ipa`. Choose one, then install Poki Runner
-with the same signing. The external build retains the App Group requirement for approvals and
+CI produces `Poki-unsigned.ipa` and `Poki-external-unsigned.ipa`. Choose one; on the Runner path,
+also install Poki Runner with the same signing. The external build retains the App Group requirement for approvals and
 thumbnails; it does not solve other free-account signing restrictions.
 
 ## Loopback choices
@@ -178,9 +186,8 @@ checks](../../docs/ios-loopback.md).
 ## Device test checklist
 
 Install and launch
-- [ ] Install `Poki-unsigned.ipa` and the runner IPA with the same signing.
-- [ ] Open Poki Runner by hand: no passcode prompt, no automation banner; it opens Poki (or shows Open Poki).
-- [ ] Launch Poki: the Setup tab shows a badge with the steps left.
+- [ ] Install `Poki-unsigned.ipa`. Runner path only: also install the runner IPA with the same signing, and open Poki Runner by hand: no passcode prompt, no automation banner; it opens Poki (or shows Open Poki).
+- [ ] Launch Poki: the Setup tab shows a badge with the steps left, and no Install Poki Runner step.
 
 Setup
 - [ ] Each step opens in turn; Open Settings starts a Live Activity with the step number and what to tap.
@@ -189,12 +196,10 @@ Setup
 - [ ] Let Poki stay on: Allow location shows iOS's prompt; Live Activities show as on.
 
 Turned on
-- [ ] Turn on: the Live Activity says "On. Waiting for an agent"; no automation banner yet.
-- [ ] An agent's first call starts the runner; its steps show on the Lock Screen and in the chat.
-- [ ] Opening Poki Runner while in use shows "Poki is using this iPhone", not a black screen.
-- [ ] No banner flicker during a run; a slow swipe or drag does not restart the runner.
-- [ ] Stop on the Live Activity or in Poki: the banner goes away within seconds; the next call starts it again.
-- [ ] After the idle time with no calls, the banner goes away by itself.
+- [ ] Turn on: the Live Activity says "On. Waiting for an agent"; once the session opens, the log says `in-process session ready` and the automation banner shows.
+- [ ] An agent's first call finds the session open; its steps show on the Lock Screen and in the chat.
+- [ ] No banner flicker during a run; a slow swipe or drag does not reopen the session.
+- [ ] Runner path only: no banner until an agent's first call starts the runner; opening Poki Runner while in use shows "Poki is using this iPhone"; Stop on the Live Activity or in Poki takes the banner away within seconds and the next call starts it again; after the idle time with no calls, the banner goes away by itself.
 - [ ] Ten minutes in the background: the location pill shows and agents still reach the phone.
 - [ ] Close Poki from the app switcher: the banner goes away within seconds.
 - [ ] A sensitive action shows Approve/Deny in the Live Activity; Approve asks for Face ID.

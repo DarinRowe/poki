@@ -54,7 +54,8 @@ private struct SettingsHome: View {
                         thisIPhone.padding(.top, 4)
                         GroupFootnote(text: "The relay forwards requests to this iPhone while Poki is open or in the background. It stores nothing; when offline, clients receive an error.")
                         agents
-                        runner
+                        // The in-process path has no Poki Runner to start or stop (ESP-152).
+                        if model.automationPath == .runner { runner }
                         phone
                     }
                     .padding(.horizontal, 16).padding(.bottom, 40)

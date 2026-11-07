@@ -80,6 +80,8 @@ final class AppCoreHost: CoreHost, @unchecked Sendable {
     private var restart: (@Sendable () -> Void)?
     private var paused = false
     private var wake: (@Sendable () -> Void)?
+    private var warm: (@Sendable () -> Void)?
+    private var retry: (@Sendable () -> Void)?
 
     func update(key: Curve25519.Signing.PrivateKey?, hashes: [String]) { lock.withLock { self.key = key; self.hashes = hashes } }
     func update(runner: RunnerState) { lock.withLock { self.runner = runner } }
@@ -87,6 +89,14 @@ final class AppCoreHost: CoreHost, @unchecked Sendable {
     var currentRunner: RunnerState { lock.withLock { runner } }
     func onRestart(_ action: @escaping @Sendable () -> Void) { lock.withLock { restart = action } }
     func onWake(_ action: @escaping @Sendable () -> Void) { lock.withLock { wake = action } }
+    func onWarmUp(_ action: @escaping @Sendable () -> Void) { lock.withLock { warm = action } }
+    /// A tool call found automation failed: the app may try again (the in-process session, ESP-152).
+    func onRetry(_ action: @escaping @Sendable () -> Void) { lock.withLock { retry = action } }
+    /// MCP initialize: a paused runner starts now, and the app gets the session ready.
+    func warmUp() {
+        _ = runnerState()
+        lock.withLock { warm }?()
+    }
     /// The runner was stopped while idle (or by the owner): the next tool call starts it again.
     func setPaused(_ value: Bool) { lock.withLock { paused = value } }
 
@@ -96,15 +106,19 @@ final class AppCoreHost: CoreHost, @unchecked Sendable {
     }
     func accessHashes() -> [String] { lock.withLock { hashes } }
     /// PokiCore asks before every device tool. A paused runner is started here, so the call answers
-    /// "starting" and the next one finds it running.
+    /// "starting" and the next one finds it running. A failed one is answered as it is, and the app
+    /// is asked to try again for the next call.
     func runnerState() -> RunnerState {
-        let (state, wake) = lock.withLock { () -> (RunnerState, (@Sendable () -> Void)?) in
-            guard paused else { return (runner, nil) }
+        let (state, then) = lock.withLock { () -> (RunnerState, (@Sendable () -> Void)?) in
+            guard paused else {
+                if case .failed = runner { return (runner, retry) }
+                return (runner, nil)
+            }
             paused = false
             runner = .starting("starting again after being idle; it takes a few seconds")
             return (runner, self.wake)
         }
-        wake?()
+        then?()
         return state
     }
     func restartRunner() {
