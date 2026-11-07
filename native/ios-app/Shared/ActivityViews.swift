@@ -304,11 +304,7 @@ struct CompactTrailing: View {
             case .mark(let mark, let tone):
                 Text(mark).font(theme.compactMark).foregroundStyle(palette.color(tone))
             case .countdown(let until):
-                // No fixedSize on timer text: it blanks the whole card on iOS 26.
-                Text(timerInterval: Countdown.range(until), countsDown: true)
-                    .font(theme.countdown).foregroundStyle(palette.approval)
-                    .multilineTextAlignment(.trailing)
-                    .frame(width: 36, alignment: .trailing)
+                CountdownText(until: until, color: palette.approval, width: 36)
             case .symbol(let name, let tone):
                 Image(systemName: name)
                     .font(.system(size: 14, weight: .bold))
@@ -366,10 +362,7 @@ private struct MetaView: View {
                 .lineLimit(1).minimumScaleFactor(0.8)
                 .contentTransition(.numericText())
         case .countdown(let until):
-            Text(timerInterval: Countdown.range(until), countsDown: true)
-                .font(theme.countdown).foregroundStyle(palette.approval)
-                .multilineTextAlignment(.trailing)
-                .frame(width: 40, alignment: .trailing)
+            CountdownText(until: until, color: palette.approval, width: 40)
         case .clock(let date):
             Text(date, style: .time).font(theme.meta).foregroundStyle(palette.quiet)
                 .lineLimit(1)
@@ -543,6 +536,20 @@ struct StopButton: View {
                 .background(palette.buttonFill, in: .capsule)
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// An approval's time left, counted down by the system between updates.
+private struct CountdownText: View {
+    var until: Date
+    var color: Color
+    var width: CGFloat
+    var body: some View {
+        // No fixedSize on timer text: it blanks the whole card on iOS 26.
+        Text(timerInterval: Countdown.range(until), countsDown: true)
+            .font(ActivityTheme.current.countdown).foregroundStyle(color)
+            .multilineTextAlignment(.trailing)
+            .frame(width: width, alignment: .trailing)
     }
 }
 

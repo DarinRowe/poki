@@ -7,10 +7,6 @@ import SwiftUI
 /// Poki's brand colours, used by the app's screens.
 enum Brand {
     static let blue = Color(red: 0x20 / 255, green: 0x84 / 255, blue: 0xFD / 255)
-    static let night = Color(red: 0.07, green: 0.08, blue: 0.11)
-    static let approval = Color(red: 1.0, green: 0.62, blue: 0.04)
-    static let done = Color(red: 0.19, green: 0.82, blue: 0.35)
-    static let problem = Color(red: 1.0, green: 0.80, blue: 0.0)
 }
 
 /// The website's colours (poki-site, ESP-139's token table and its final board 02).

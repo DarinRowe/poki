@@ -2,7 +2,6 @@
 // (commit ebe19764, AgentLiveActivityWidget/AgentLiveActivityWidget.swift), MIT License, Copyright (c)
 // 2026 Chaofan Li. See THIRD_PARTY_NOTICES.md.
 import ActivityKit
-import AppIntents
 import SwiftUI
 import WidgetKit
 
@@ -40,7 +39,8 @@ struct PokiLiveActivity: Widget {
             }
             // The outline goes blue while an approval waits; otherwise the system's own.
             .keylineTint(state.face.outlined ? ActivityTheme.current.approvalOutline : nil)
-            // Margins concentric with the island's 44 point corners: nothing reaches the curve.
+            // The board's margins. iOS clips the corners tighter, so the rows inside move further in
+            // where they reach them (ActivityMetrics.islandRowInset and the rest).
             .contentMargins(.leading, insets.leading, for: .expanded)
             .contentMargins(.trailing, insets.trailing, for: .expanded)
             .contentMargins(.top, insets.top, for: .expanded)

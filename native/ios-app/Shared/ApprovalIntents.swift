@@ -13,7 +13,7 @@ struct ApprovalDecision: Hashable, Sendable {
 
 /// A LiveActivityIntent runs in the app's process, so the button hands its decision straight to
 /// AppModel through this bridge, which holds no state of its own. In the widget's process, or before
-/// AppModel installed itself, the bridge has no handler and the decision goes through the mailbox.
+/// AppModel installed itself, the bridge has no handler and the decision goes to the mailbox.
 @MainActor
 enum ApprovalIntentBridge {
     typealias Handler = @MainActor @Sendable (ApprovalDecision) -> Bool
@@ -24,8 +24,8 @@ enum ApprovalIntentBridge {
         self.handler = handler
     }
 
-    static func submit(_ decision: ApprovalDecision) -> Bool {
-        handler?(decision) ?? false
+    static func submit(_ decision: ApprovalDecision) {
+        if handler?(decision) != true { ApprovalMailbox.post(decision) }
     }
 }
 
@@ -44,8 +44,7 @@ struct ApproveActionIntent: LiveActivityIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        let decision = ApprovalDecision(approvalID: approvalID, approved: true)
-        if !ApprovalIntentBridge.submit(decision) { ApprovalMailbox.post(decision) }
+        ApprovalIntentBridge.submit(ApprovalDecision(approvalID: approvalID, approved: true))
         return .result()
     }
 }
@@ -63,8 +62,7 @@ struct DenyActionIntent: LiveActivityIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        let decision = ApprovalDecision(approvalID: approvalID, approved: false)
-        if !ApprovalIntentBridge.submit(decision) { ApprovalMailbox.post(decision) }
+        ApprovalIntentBridge.submit(ApprovalDecision(approvalID: approvalID, approved: false))
         return .result()
     }
 }

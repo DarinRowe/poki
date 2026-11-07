@@ -1,4 +1,3 @@
-import ActivityKit
 import PokiCore
 import SwiftUI
 import UIKit
@@ -66,7 +65,7 @@ final class AppModel {
     private var eventsTask: Task<Void, Never>?
 
     init() {
-        ActivityController.endLeftovers()
+        ActivityController.endAll()
         core = LiveCore(host: host)
         let launcher = RustLauncher()
         self.launcher = launcher
@@ -128,10 +127,8 @@ final class AppModel {
     /// Poki is being closed: end the runner now (the launcher kills its process) instead of leaving
     /// iOS's automation banner up for half a minute. iOS gives a few seconds for this.
     private func appWillTerminate() {
-        // The Live Activity goes with the app: nothing would update it after this. Detached, because
-        // the main thread is held below while the runner ends.
-        let activities = Activity<PokiActivityAttributes>.activities
-        Task.detached { for old in activities { await old.end(nil, dismissalPolicy: .immediate) } }
+        // The Live Activity goes with the app; the pause below gives its end time to reach iOS.
+        ActivityController.endAll()
         guard sessionOn else { Thread.sleep(forTimeInterval: 0.5); return }
         log.add("app", "Poki is closing: ending the runner")
         launcher.stop()

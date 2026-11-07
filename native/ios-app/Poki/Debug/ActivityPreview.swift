@@ -169,7 +169,7 @@ private struct IslandCompactFrame: View {
                 Color.clear.frame(width: 120)
                 CompactTrailing(state: state).frame(width: 52, alignment: .trailing)
             }
-            .padding(.leading, 8).padding(.trailing, 8).frame(height: 37)
+            .padding(.horizontal, 8).frame(height: 37)
             .background(.black, in: .capsule)
             .overlay { if state.face.outlined { Capsule().strokeBorder(ActivityTheme.current.approvalOutline, lineWidth: 1.5) } }
             MinimalView(state: state).frame(width: 37, height: 37).background(.black, in: .circle)

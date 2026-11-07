@@ -54,7 +54,6 @@ final class ActivityController {
     private var finishTimer: Task<Void, Never>?
     private var foldTimer: Task<Void, Never>?
     private var eventTimer: Task<Void, Never>?
-    private var alertedApproval: String?
     private var inStep = false
     private var runAnnounced = false
     private var justRecorded = false
@@ -63,12 +62,14 @@ final class ActivityController {
 
     var isRunning: Bool { activity != nil }
 
-    /// Ends every Live Activity a crashed or closed earlier run of Poki left behind. Only this process
-    /// updates its activity, so one it did not start is out of date. Called once, at launch.
-    static func endLeftovers() {
-        let leftovers = Activity<PokiActivityAttributes>.activities
-        guard !leftovers.isEmpty else { return }
-        Task { for old in leftovers { await old.end(nil, dismissalPolicy: .immediate) } }
+    /// Ends every Live Activity of Poki's: at launch, the ones a crashed or closed earlier run left
+    /// behind (only this process updates its activity, so one it did not start is out of date); when
+    /// Poki closes, its own, since nothing would update it after that. Detached, because Poki holds
+    /// the main thread while it closes.
+    nonisolated static func endAll() {
+        let activities = Activity<PokiActivityAttributes>.activities
+        guard !activities.isEmpty else { return }
+        Task.detached { for old in activities { await old.end(nil, dismissalPolicy: .immediate) } }
     }
 
     /// Starts the Live Activity if it is not running. iOS only allows this while Poki is in front, so
@@ -164,7 +165,6 @@ final class ActivityController {
         }
         // Approval: always pops up and lights the screen.
         if let approval = state.approval, approval.id != old.approval?.id {
-            alertedApproval = approval.id
             alert = critical(String(localized: "Allow this step?"), String(localized: "\(approval.summary) in \(approval.app)"))
         }
         if state.approval == nil, let was = old.approval {

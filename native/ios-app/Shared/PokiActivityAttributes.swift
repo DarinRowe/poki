@@ -23,7 +23,7 @@ struct PokiActivityAttributes: ActivityAttributes {
         var headline: String
         /// The second line where a phase has one: a problem's fix, a pairing failure's reason.
         var hint: String?
-        /// The status word in place of the phase's own ("Runner stopped").
+        /// The status word in place of the phase's own ("Runner Stopped").
         var label: String?
         /// The app in front.
         var app: String?
