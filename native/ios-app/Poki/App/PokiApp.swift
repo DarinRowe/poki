@@ -41,7 +41,7 @@ struct RootView: View {
             }
         }
         .tabBarMinimizeBehavior(.onScrollDown)
-        .task { InProcessProbe.shared.startFromLaunchArguments() }
+        .task { InProcessProbe.shared.startFromLaunchArguments(model: model) }
         .tint(Brand.blue)
         .onChange(of: scenePhase, initial: true) { _, phase in
             if phase == .active { model.becameActive() } else if phase == .background { model.wentToBackground() }

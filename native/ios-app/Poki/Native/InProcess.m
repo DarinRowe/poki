@@ -1,6 +1,7 @@
 #import "InProcess.h"
 #import "RecoveredNative.h"
 #import <dlfcn.h>
+#import <notify.h>
 
 @interface NSObject (PKObservedPrivateAPI)
 - (id)initForTouchAtPoint:(CGPoint)point offset:(double)offset;
@@ -24,7 +25,50 @@
 - (id)screenshot;
 - (NSData *)PNGRepresentation;
 - (void)_XCT_requestBundleIDForPID:(int)pid reply:(void (^)(NSString *, NSError *))reply;
+- (NSArray *)children;
+- (long long)elementType;
+- (CGRect)frame;
+- (NSString *)identifier;
+- (NSString *)label;
+- (id)value;
+- (BOOL)hasFocus;
+- (id)initWithBundleIdentifier:(NSString *)bundle;
+- (void)launch;
+- (void)activate;
+- (void)terminate;
+- (void)pressButton:(long long)button;
+- (void)pressLockButton;
 @end
+
+/// XCUIElementType's names, by value (XCUIElementTypes.h).
+static NSString *PKTypeName(long long type) {
+    static NSArray<NSString *> *names;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        names = [@"Any Other Application Group Window Sheet Drawer Alert Dialog Button RadioButton RadioGroup CheckBox DisclosureTriangle PopUpButton ComboBox MenuButton ToolbarButton Popover Keyboard Key NavigationBar TabBar TabGroup Toolbar StatusBar Table TableRow TableColumn Outline OutlineRow Browser CollectionView Slider PageIndicator ProgressIndicator ActivityIndicator SegmentedControl Picker PickerWheel Switch Toggle Link Image Icon SearchField ScrollView ScrollBar StaticText TextField SecureTextField DatePicker TextView Menu MenuItem MenuBar MenuBarItem Map WebView IncrementArrow DecrementArrow Timeline RatingIndicator ValueIndicator SplitGroup Splitter RelevanceIndicator ColorWell HelpTag Matte DockItem Ruler RulerMarker Grid LevelIndicator Cell LayoutArea LayoutItem Handle Stepper Tab TouchBar StatusItem" componentsSeparatedByString:@" "];
+    });
+    return type >= 0 && type < (long long)names.count ? names[type] : @"Other";
+}
+
+static NSString *PKEscape(NSString *s) {
+    NSMutableString *out = [NSMutableString stringWithCapacity:s.length];
+    [s enumerateSubstringsInRange:NSMakeRange(0, s.length) options:NSStringEnumerationByComposedCharacterSequences usingBlock:^(NSString *c, NSRange r, NSRange e, BOOL *stop) {
+        if ([c isEqualToString:@"&"]) [out appendString:@"&amp;"];
+        else if ([c isEqualToString:@"<"]) [out appendString:@"&lt;"];
+        else if ([c isEqualToString:@">"]) [out appendString:@"&gt;"];
+        else if ([c isEqualToString:@"\""]) [out appendString:@"&quot;"];
+        else if ([c isEqualToString:@"\n"]) [out appendString:@"&#10;"];
+        else if (c.length == 1 && [c characterAtIndex:0] < 0x20) {}
+        else [out appendString:c];
+    }];
+    return out;
+}
+
+static NSString *PKText(id value) {
+    if ([value isKindOfClass:NSString.class]) return value;
+    if ([value isKindOfClass:NSNumber.class]) return [value stringValue];
+    return nil;
+}
 
 /// Nodes in a snapshot's dictionary, whatever key holds the children.
 static NSUInteger PKCount(NSDictionary *node) {
@@ -214,6 +258,138 @@ static BOOL PKInstanceSignature(Class cls, SEL selector, const char *result, NSA
         return [PKOutcome delivery:PKDeliveryNotSent code:error.localizedDescription ?: @"text_not_sent" detail:nil];
     }
     return [self await:context timeout:timeout started:started generation:generation];
+}
+
+- (nullable NSData *)screenshot:(NSString **)code {
+    @try {
+        NSData *png = [[[NSClassFromString(@"XCUIScreen") mainScreen] screenshot] PNGRepresentation];
+        if (png.length) return png;
+        if (code) *code = @"no_picture";
+    } @catch (NSException *e) {
+        if (code) *code = [NSString stringWithFormat:@"%@: %@", e.name, e.reason];
+    }
+    return nil;
+}
+
+/// The front app's accessibility element and what it is. With a banner or an alert up, accessibility
+/// lists SpringBoard too; the app under it is the one read, as WebDriverAgent does by default.
+- (id)front:(NSDictionary **)info {
+    PKOutcome *refused;
+    uint64_t generation = 0;
+    id session = [self current:&generation outcome:&refused];
+    if (!session) return nil;
+    id ax = [[NSClassFromString(@"XCUIDevice") sharedDevice] accessibilityInterface];
+    NSArray *apps = [ax activeApplications];
+    id chosen = nil;
+    NSString *chosenBundle = nil;
+    for (id element in apps) {
+        int pid = [element processIdentifier];
+        dispatch_semaphore_t got = dispatch_semaphore_create(0);
+        __block NSString *bundle;
+        [[session daemonProxy] _XCT_requestBundleIDForPID:pid reply:^(NSString *value, NSError *error) {
+            bundle = value; dispatch_semaphore_signal(got);
+        }];
+        dispatch_semaphore_wait(got, dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC));
+        if (!chosen || [chosenBundle isEqualToString:@"com.apple.springboard"]) { chosen = element; chosenBundle = bundle; }
+    }
+    if (!chosen) return nil;
+    int pid = [chosen processIdentifier];
+    id app = [[ax applicationProcessTracker] monitoredApplicationWithProcessIdentifier:pid];
+    if (info) *info = @{@"bundleId": chosenBundle ?: @"", @"pid": @(pid), @"name": PKText([app label]) ?: @""};
+    return app;
+}
+
+- (NSDictionary<NSString *, id> *)frontApp {
+    NSDictionary *info;
+    @try { [self front:&info]; } @catch (NSException *e) { return @{}; }
+    return info ?: @{};
+}
+
+- (nullable NSString *)sourceXML:(NSDictionary **)focused code:(NSString **)code {
+    @try {
+        NSDictionary *info;
+        id app = [self front:&info];
+        if (!app) { if (code) *code = @"no_front_app"; return nil; }
+        NSError *error;
+        id root = [app snapshotWithError:&error];
+        if (!root) { if (code) *code = error.localizedDescription ?: @"no_snapshot"; return nil; }
+        NSMutableString *xml = [NSMutableString stringWithString:@"<?xml version=\"1.0\" encoding=\"UTF-8\"?><AppiumAUT>"];
+        __block NSDictionary *focus = nil;
+        __block void (^walk)(id);
+        __weak __block void (^weakWalk)(id);
+        weakWalk = walk = ^(id node) {
+            NSString *type = [@"XCUIElementType" stringByAppendingString:PKTypeName([node elementType])];
+            CGRect f = [node frame];
+            NSString *identifier = PKText([node identifier]), *label = PKText([node label]), *value = PKText([node value]);
+            NSString *name = identifier.length ? identifier : label;
+            [xml appendFormat:@"<%@ type=\"%@\"", type, type];
+            if (name.length) [xml appendFormat:@" name=\"%@\"", PKEscape(name)];
+            if (label.length) [xml appendFormat:@" label=\"%@\"", PKEscape(label)];
+            if (value.length) [xml appendFormat:@" value=\"%@\"", PKEscape(value)];
+            if (CGRectIsNull(f) || CGRectIsInfinite(f)) f = CGRectZero;
+            [xml appendFormat:@" x=\"%d\" y=\"%d\" width=\"%d\" height=\"%d\"", (int)lround(f.origin.x), (int)lround(f.origin.y), (int)lround(f.size.width), (int)lround(f.size.height)];
+            if (!focus && [node respondsToSelector:@selector(hasFocus)] && [node hasFocus] && ([type hasSuffix:@"Field"] || [type hasSuffix:@"TextView"])) {
+                focus = @{@"value": value ?: @"", @"x": @(f.origin.x), @"y": @(f.origin.y), @"width": @(f.size.width), @"height": @(f.size.height)};
+            }
+            NSArray *children = [node children];
+            if (!children.count) { [xml appendString:@"/>"]; return; }
+            [xml appendString:@">"];
+            for (id child in children) weakWalk(child);
+            [xml appendFormat:@"</%@>", type];
+        };
+        walk(root);
+        [xml appendString:@"</AppiumAUT>"];
+        if (focused) *focused = focus;
+        return xml;
+    } @catch (NSException *e) {
+        if (code) *code = [NSString stringWithFormat:@"%@: %@", e.name, e.reason];
+        return nil;
+    }
+}
+
+- (nullable NSString *)press:(NSString *)name {
+    @try {
+        PKOutcome *refused;
+        uint64_t generation = 0;
+        if (![self current:&generation outcome:&refused]) return refused.code ?: @"no_session";
+        id device = [NSClassFromString(@"XCUIDevice") sharedDevice];
+        NSDictionary *buttons = @{@"home": @1, @"volumeUp": @2, @"volumeDown": @3};
+        if ([name isEqualToString:@"lock"]) {
+            if (![device respondsToSelector:@selector(pressLockButton)]) return @"lock_unavailable";
+            [device pressLockButton];
+            return nil;
+        }
+        NSNumber *button = buttons[name];
+        if (!button) return @"unknown_button";
+        [device pressButton:button.longLongValue];
+        return nil;
+    } @catch (NSException *e) {
+        return [NSString stringWithFormat:@"%@: %@", e.name, e.reason];
+    }
+}
+
+- (nullable NSString *)app:(NSString *)bundle action:(NSString *)action {
+    @try {
+        PKOutcome *refused;
+        uint64_t generation = 0;
+        if (![self current:&generation outcome:&refused]) return refused.code ?: @"no_session";
+        id app = [[NSClassFromString(@"XCUIApplication") alloc] initWithBundleIdentifier:bundle];
+        if ([action isEqualToString:@"launch"]) [app launch];
+        else if ([action isEqualToString:@"activate"]) [app activate];
+        else if ([action isEqualToString:@"terminate"]) [app terminate];
+        else return @"unknown_action";
+        return nil;
+    } @catch (NSException *e) {
+        return [NSString stringWithFormat:@"%@: %@", e.name, e.reason];
+    }
+}
+
+- (BOOL)screenLocked {
+    static int token = -1;
+    if (token == -1 && notify_register_check("com.apple.springboard.lockstate", &token) != NOTIFY_STATUS_OK) return NO;
+    uint64_t state = 0;
+    notify_get_state(token, &state);
+    return state != 0;
 }
 
 - (NSDictionary<NSString *, id> *)readProbe {

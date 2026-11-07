@@ -1,0 +1,214 @@
+import Foundation
+import PokiCore
+import UIKit
+
+/// Which side carries out PokiCore's actions: Poki Runner (WebDriverAgent on port 8100) or Poki's own
+/// process (`InProcessWDA`). Read at launch; a change takes effect when Poki starts again.
+enum AutomationPath: String, CaseIterable, Identifiable {
+    case runner
+    case inProcess = "in-process"
+    var id: String { rawValue }
+    static var current: AutomationPath {
+        UserDefaults.standard.string(forKey: "automationPath").flatMap(AutomationPath.init(rawValue:)) ?? .runner
+    }
+}
+
+/// The WebDriverAgent requests PokiCore sends, answered in Poki's own process by `PKInProcess`: no
+/// runner app, no HTTP, no port. Each request is one table entry, answered in WDA's JSON shape, so
+/// PokiCore's `Runner` (its deadlines, its one session, its retry on a lost session) works unchanged.
+///
+/// The session id carries the daemon session's generation. A request for an older generation is
+/// refused as WDA refuses an unknown session, so an action meant for a session that ended is never
+/// sent; `Runner` opens a new session and sends it there once.
+final class InProcessWDA: HTTPTransport, @unchecked Sendable {
+    private typealias Route = (_ body: JSON?, _ element: String?) throws -> JSON
+    private let native = PKInProcess.shared()
+    /// One action or read at a time, as WDA serves its requests on one thread.
+    private let queue = DispatchQueue(label: "poki.inprocess.wda", qos: .userInitiated)
+    /// Screenshots are answered beside the queue, as WDA does.
+    private let pictures = DispatchQueue(label: "poki.inprocess.screenshot", qos: .userInitiated)
+    private let screen: CGSize
+    private var routes: [String: Route] = [:]
+    /// The focused field from the latest `/element/active`, for the value and frame asked right after.
+    private var focused: [AnyHashable: Any]?
+
+    init(screen: CGSize) {
+        self.screen = screen
+        routes = [
+            "GET /status": { _, _ in ["ready": true, "message": "in-process"] },
+            "POST /session": { [unowned self] _, _ in
+                let prepared = self.native.prepare()
+                guard prepared["ok"] as? Bool == true else {
+                    throw Refusal("session not created", "the automation session could not be opened: \(prepared["code"] ?? "unknown") \(prepared["detail"] ?? "")")
+                }
+                return ["sessionId": .string("inprocess-\(self.native.generation())")]
+            },
+            "DELETE /session": { _, _ in .null },
+            "POST /appium/settings": { _, _ in .null },
+            "GET /wda/screen": { [screen] _, _ in ["screenSize": ["width": .number(screen.width), "height": .number(screen.height)]] },
+            "GET /wda/locked": { [unowned self] _, _ in .bool(self.native.screenLocked()) },
+            "GET /wda/activeAppInfo": { [unowned self] _, _ in
+                let app = self.native.frontApp()
+                return ["bundleId": .string(app["bundleId"] as? String ?? ""), "name": .string(app["name"] as? String ?? ""), "pid": .number(Double(app["pid"] as? Int ?? 0))]
+            },
+            "GET /source": { [unowned self] _, _ in
+                var code: NSString?
+                guard let xml = self.native.sourceXML(nil, code: &code) else { throw Refusal("unknown error", "no element tree: \(code ?? "unknown")") }
+                return .string(xml)
+            },
+            "GET /element/active": { [unowned self] _, _ in
+                var code: NSString?
+                var focus: NSDictionary?
+                guard self.native.sourceXML(&focus, code: &code) != nil else { throw Refusal("unknown error", "no element tree: \(code ?? "unknown")") }
+                guard let focus else { throw Refusal("no such element", "no element has the keyboard focus") }
+                self.focused = focus as? [AnyHashable: Any]
+                return ["ELEMENT": "focused"]
+            },
+            "GET /element/attribute/value": { [unowned self] _, id in
+                guard id == "focused", let value = self.focused?["value"] as? String else { throw Refusal("no such element", "the element is gone") }
+                return .string(value)
+            },
+            "GET /element/rect": { [unowned self] _, id in
+                guard id == "focused", let f = self.focused else { throw Refusal("no such element", "the element is gone") }
+                return ["x": .number(f["x"] as? Double ?? 0), "y": .number(f["y"] as? Double ?? 0), "width": .number(f["width"] as? Double ?? 0), "height": .number(f["height"] as? Double ?? 0)]
+            },
+            "POST /wda/tap": { [unowned self] body, _ in
+                let p = try Self.point(body, "x", "y")
+                return try self.touch([[(p, 0), (p, 0.05)]])
+            },
+            "POST /wda/touchAndHold": { [unowned self] body, _ in
+                let p = try Self.point(body, "x", "y")
+                return try self.touch([[(p, 0), (p, max(0.1, body?["duration"]?.double ?? 1))]])
+            },
+            "POST /wda/pressAndDragWithVelocity": { [unowned self] body, _ in
+                let from = try Self.point(body, "fromX", "fromY"), to = try Self.point(body, "toX", "toY")
+                let press = max(0, body?["pressDuration"]?.double ?? 0), hold = max(0, body?["holdDuration"]?.double ?? 0)
+                let moving = max(0.05, hypot(to.x - from.x, to.y - from.y) / max(1, body?["velocity"]?.double ?? 1000))
+                return try self.touch([[(from, 0), (from, press), (to, press + moving), (to, press + moving + hold)]])
+            },
+            "POST /wda/dragfromtoforduration": { [unowned self] body, _ in
+                let from = try Self.point(body, "fromX", "fromY"), to = try Self.point(body, "toX", "toY")
+                let press = max(0, body?["duration"]?.double ?? 0)
+                return try self.touch([[(from, 0), (from, press), (to, press + 0.3)]])
+            },
+            "POST /actions": { [unowned self] body, _ in try self.touch(try Self.fingers(body)) },
+            "POST /wda/keys": { [unowned self] body, _ in
+                let text = (body?["value"]?.array ?? []).compactMap(\.string).joined()
+                guard !text.isEmpty else { throw Refusal("invalid argument", "no keys given") }
+                return try self.answer(self.native.type(text, timeout: 3 + 0.06 * Double(text.count)))
+            },
+            "POST /wda/homescreen": { [unowned self] _, _ in try self.done(self.native.press("home")) },
+            "POST /wda/lock": { [unowned self] _, _ in try self.done(self.native.press("lock")) },
+            "POST /wda/pressButton": { [unowned self] body, _ in try self.done(self.native.press(body?["name"]?.string ?? "")) },
+            "POST /wda/apps/launch": { [unowned self] body, _ in try self.done(self.native.app(try Self.bundle(body), action: "launch")) },
+            "POST /wda/apps/activate": { [unowned self] body, _ in try self.done(self.native.app(try Self.bundle(body), action: "activate")) },
+            "POST /wda/apps/terminate": { [unowned self] body, _ in try self.done(self.native.app(try Self.bundle(body), action: "terminate")) },
+        ]
+    }
+
+    private struct Refusal: Error {
+        var code: String
+        var message: String
+        init(_ code: String, _ message: String) { self.code = code; self.message = message }
+    }
+
+    func send(method: String, url: URL, body: Data?, timeout: Double) async throws -> (status: Int, body: Data) {
+        // "/session/<id>/wda/tap" -> "POST /wda/tap" for session <id>; "/element/<id>/rect" -> "/element/rect".
+        var parts = url.path.split(separator: "/").map(String.init)
+        var session: String?
+        if parts.first == "session", parts.count >= 2 { session = parts[1]; parts.removeFirst(2) }
+        var element: String?
+        if parts.first == "element", parts.count >= 3 { element = parts[1]; parts.remove(at: 1) }
+        let path = parts.isEmpty ? "/session" : "/" + parts.joined(separator: "/")
+        let key = "\(method) \(path)"
+        let parsed = body.flatMap { try? JSON.parse($0) }
+        let route = routes[key]
+        return await withCheckedContinuation { continuation in
+            (key == "GET /screenshot" ? pictures : queue).async { [self] in
+                continuation.resume(returning: answer(key, session: session, element: element, body: parsed, route: route))
+            }
+        }
+    }
+
+    private func answer(_ key: String, session: String?, element: String?, body: JSON?, route: Route?) -> (status: Int, body: Data) {
+        func refused(_ status: Int, _ code: String, _ message: String) -> (Int, Data) {
+            (status, (["value": ["error": .string(code), "message": .string(message)]] as JSON).data())
+        }
+        if let session, session != "inprocess-\(native.generation())", key != "DELETE /session" {
+            return refused(404, "invalid session id", "the automation session \(session) has ended (now generation \(native.generation()))")
+        }
+        do {
+            if key == "GET /screenshot" {
+                var code: NSString?
+                guard let png = native.screenshot(&code) else { throw Refusal("unable to capture screen", "no screenshot: \(code ?? "unknown")") }
+                return (200, (["value": .string(png.base64EncodedString())] as JSON).data())
+            }
+            guard let route else { return refused(404, "unknown command", "not answered in-process: \(key)") }
+            return (200, (["value": try route(body, element)] as JSON).data())
+        } catch let r as Refusal {
+            return refused(r.code == "invalid session id" ? 404 : 500, r.code, r.message)
+        } catch {
+            return refused(500, "unknown error", "\(error)")
+        }
+    }
+
+    /// The native outcome as WDA's answer: sent is done, not sent is refused, and an unknown outcome is
+    /// a failed exchange (Runner reports it as possibly delivered, and never sends it again).
+    private func answer(_ outcome: PKOutcome) throws -> JSON {
+        switch outcome.delivery {
+        case .sent: return .null
+        case .notSent:
+            if outcome.code == "native_session_invalidated" || outcome.code == "native_action_superseded" {
+                throw Refusal("invalid session id", "the automation session ended before the action was sent (\(outcome.code ?? ""))")
+            }
+            throw Refusal("unknown error", "not sent: \(outcome.code ?? "unknown")\(outcome.detail.map { " (\($0))" } ?? "")")
+        case .unknown: throw TransportError.other("sent, no confirmation: \(outcome.code ?? "unknown")")
+        @unknown default: throw TransportError.other("unknown outcome")
+        }
+    }
+
+    private func done(_ failure: String?) throws -> JSON {
+        guard let failure else { return .null }
+        throw Refusal("unknown error", failure)
+    }
+
+    private func touch(_ fingers: [[(CGPoint, Double)]]) throws -> JSON {
+        let paths = fingers.map { $0.map { PKTouchPoint.at($0.0, offset: $0.1) } }
+        let longest = fingers.compactMap { $0.last?.1 }.max() ?? 0
+        return try answer(native.touch(paths, timeout: longest + 3))
+    }
+
+    private static func point(_ body: JSON?, _ x: String, _ y: String) throws -> CGPoint {
+        guard let px = body?[x]?.double, let py = body?[y]?.double else { throw Refusal("invalid argument", "\(x) and \(y) are needed") }
+        return CGPoint(x: px, y: py)
+    }
+
+    private static func bundle(_ body: JSON?) throws -> String {
+        guard let id = body?["bundleId"]?.string, !id.isEmpty else { throw Refusal("invalid argument", "bundleId is needed") }
+        return id
+    }
+
+    /// W3C pointer actions (PokiCore's pinch): per finger, moves with durations in ms between a down
+    /// and an up.
+    private static func fingers(_ body: JSON?) throws -> [[(CGPoint, Double)]] {
+        var out: [[(CGPoint, Double)]] = []
+        for source in body?["actions"]?.array ?? [] where source["type"]?.string == "pointer" {
+            var t = 0.0, at = CGPoint.zero, path: [(CGPoint, Double)] = [], down = false
+            for step in source["actions"]?.array ?? [] {
+                switch step["type"]?.string {
+                case "pointerMove":
+                    t += (step["duration"]?.double ?? 0) / 1000
+                    at = CGPoint(x: step["x"]?.double ?? at.x, y: step["y"]?.double ?? at.y)
+                    if down { path.append((at, t)) }
+                case "pointerDown": down = true; path.append((at, t))
+                case "pointerUp": down = false
+                case "pause": t += (step["duration"]?.double ?? 0) / 1000; if down { path.append((at, t)) }
+                default: break
+                }
+            }
+            if !path.isEmpty { out.append(path) }
+        }
+        guard !out.isEmpty else { throw Refusal("invalid argument", "no pointer actions") }
+        return out
+    }
+}

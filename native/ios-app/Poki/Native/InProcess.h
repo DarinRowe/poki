@@ -45,6 +45,18 @@ typedef NS_ENUM(NSInteger, PKDelivery) {
 /// Whether the screen can be read from here: the front app (accessibility), its element tree, and a
 /// screenshot, each timed. Keys per part: *_ok, *_seconds, *_error, and counts.
 - (NSDictionary<NSString *, id> *)readProbe;
+/// A PNG of the main screen, or nil and why.
+- (nullable NSData *)screenshot:(NSString *_Nullable *_Nullable)code;
+/// The app in front: bundleId, name, pid. Empty when accessibility gives none.
+- (NSDictionary<NSString *, id> *)frontApp;
+/// The front app's elements in WebDriverAgent's XML source format, and the element with the
+/// keyboard focus (keys value, x, y, width, height) when there is one.
+- (nullable NSString *)sourceXML:(NSDictionary *_Nullable *_Nullable)focused code:(NSString *_Nullable *_Nullable)code;
+/// home, lock, volumeUp or volumeDown. Nil when pressed, else why not.
+- (nullable NSString *)press:(NSString *)name;
+/// launch, activate or terminate an app by its bundle id. Nil when done, else why not.
+- (nullable NSString *)app:(NSString *)bundle action:(NSString *)action;
+- (BOOL)screenLocked;
 /// The current session's generation: it goes up when the daemon session is replaced.
 - (uint64_t)generation;
 @end

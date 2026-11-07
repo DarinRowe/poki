@@ -13,9 +13,9 @@ final class LiveCore: CoreSession {
     private let continuation: AsyncStream<ShellEvent>.Continuation
     private var pump: Task<Void, Never>?
 
-    init(host: AppCoreHost) {
+    init(host: AppCoreHost, transport: HTTPTransport) {
         self.host = host
-        core = PokiCore(config: CoreConfig(), host: host)
+        core = PokiCore(config: CoreConfig(), host: host, transport: transport)
         (events, continuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(64))
         let continuation = self.continuation
         pump = Task { [core] in

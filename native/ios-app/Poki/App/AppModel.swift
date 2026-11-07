@@ -58,6 +58,8 @@ final class AppModel {
     private var launcherConfig: LauncherConfig?
 
     private let host = AppCoreHost()
+    /// Poki Runner or Poki's own process, fixed for this launch (Debug tab).
+    let automationPath = AutomationPath.current
     private let core: LiveCore
     private let launcher: RunnerLauncher
     private let pairer: DevicePairing
@@ -79,7 +81,7 @@ final class AppModel {
     }
 
     init() {
-        core = LiveCore(host: host)
+        core = LiveCore(host: host, transport: automationPath == .inProcess ? InProcessWDA(screen: UIScreen.main.bounds.size) : URLSessionTransport())
         let launcher = RustLauncher()
         self.launcher = launcher
         pairer = RustPairing()
@@ -220,7 +222,7 @@ final class AppModel {
         log.add("activity", activity.isRunning ? "Live Activity started" : "Live Activity not running: \(activity.lastError ?? "unknown reason")")
         sessionOn = true
         wantsOn = true
-        launcherConfig = LauncherConfig(pairing_file: pairing, ddi_dir: AppFiles.ddiDirectory.path)
+        launcherConfig = LauncherConfig(pairing_file: pairing, ddi_dir: AppFiles.ddiDirectory.path, in_process: automationPath == .inProcess)
         lastAgentActivity = Date()
         // The runner (and with it iOS's automation banner) starts only when an agent asks.
         standBy(reason: nil)

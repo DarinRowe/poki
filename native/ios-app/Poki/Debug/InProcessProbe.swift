@@ -21,10 +21,10 @@ final class InProcessProbe: ObservableObject {
     @Published var delay = "8"
     weak var field: UITextField?
 
-    private let queue = DispatchQueue(label: "poki.inprocess.probe", qos: .userInitiated)
+    let queue = DispatchQueue(label: "poki.inprocess.probe", qos: .userInitiated)
     private var record: [[String: Any]] = []
 
-    func startFromLaunchArguments() {
+    func startFromLaunchArguments(model: AppModel) {
         let defaults = UserDefaults.standard
         guard let mode = defaults.string(forKey: "pokiInProcess") else { return }
         if let v = defaults.string(forKey: "pokiProbeX") { x = v }
@@ -37,6 +37,7 @@ final class InProcessProbe: ObservableObject {
             case "self": await selfTest()
             case "later": await later()
             case "read": await readOnly()
+            case "bench": await benchmark(model: model, rounds: defaults.integer(forKey: "pokiBenchRounds") > 0 ? defaults.integer(forKey: "pokiBenchRounds") : 5)
             default: await prepareOnly()
             }
         }
@@ -109,7 +110,7 @@ final class InProcessProbe: ObservableObject {
 
     // MARK: Steps
 
-    private func prepare() async -> Bool {
+    func prepare() async -> Bool {
         note("prepare: opening the daemon session and Automation Mode", ["step": "prepare_start"])
         let result = await withCheckedContinuation { (c: CheckedContinuation<[String: Any], Never>) in
             queue.async { c.resume(returning: PKInProcess.shared().prepare()) }
@@ -146,7 +147,7 @@ final class InProcessProbe: ObservableObject {
 
     // MARK: Record
 
-    private func begin(_ what: String) -> Bool {
+    func begin(_ what: String) -> Bool {
         guard !running else { return false }
         running = true
         record = []
@@ -154,14 +155,14 @@ final class InProcessProbe: ObservableObject {
         return true
     }
 
-    private func end() {
+    func end() {
         running = false
         guard let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first,
               let data = try? JSONSerialization.data(withJSONObject: record, options: [.prettyPrinted]) else { return }
         try? data.write(to: directory.appendingPathComponent("inprocess-probe.json"))
     }
 
-    private func note(_ line: String, _ fields: [String: Any]) {
+    func note(_ line: String, _ fields: [String: Any]) {
         var entry = fields
         entry["uptime"] = ProcessInfo.processInfo.systemUptime
         record.append(entry)
@@ -173,10 +174,21 @@ final class InProcessProbe: ObservableObject {
 
 struct InProcessSection: View {
     @ObservedObject var probe = InProcessProbe.shared
+    @Environment(AppModel.self) private var model
+    @AppStorage("automationPath") private var path = AutomationPath.runner.rawValue
+    private let running = AutomationPath.current
 
     var body: some View {
         Section {
+            Picker("Agents' actions go through", selection: $path) {
+                Text("Poki Runner").tag(AutomationPath.runner.rawValue)
+                Text("Poki itself").tag(AutomationPath.inProcess.rawValue)
+            }
+            if path != running.rawValue {
+                Text("Takes effect when Poki starts again.").font(.caption).foregroundStyle(.orange)
+            }
             ProbeField(probe: probe).frame(height: 44)
+            Button("Compare both paths (5 rounds)") { Task { await probe.benchmark(model: model, rounds: 5) } }.disabled(probe.running)
             HStack {
                 Button("Prepare") { Task { await probe.prepareOnly() } }
                 Spacer()
