@@ -55,3 +55,15 @@ test('a voice tap_text with Poki in front taps nothing, checked or not', async t
   assert.equal(done.state, 'failed', JSON.stringify(done));
   assert.equal(await taps(), 0);
 });
+
+test('a voice tap_text on an element known only by its identifier shows the phone that name', async t => {
+  const f = await fixture(t);
+  await f.set({ elements: [{ role: 'Button', identifier: 'Send', frame: { x: 10, y: 10, width: 40, height: 20 } }] });
+  const tool = await bridge(t, f);
+
+  // The phone checks what it is told the element says: the identifier the tap matches, not nothing.
+  const check = await tool({ call_id: 'c1', name: 'tap_text', arguments: { text: 'Send' } });
+  assert.equal(check.state, 'check', JSON.stringify(check));
+  assert.match(check.target.says, /\bSend\b/);
+  assert.equal((await f.events()).filter(e => e.op === 'tap').length, 0);
+});

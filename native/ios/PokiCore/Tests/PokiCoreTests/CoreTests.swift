@@ -274,6 +274,17 @@ final class ApprovalTests: XCTestCase {
         XCTAssertFalse(sent.mayTap, "\(sent)")
     }
 
+    /// A voice tap on an element with no readable text cannot be checked against the rules, so the owner
+    /// is asked (a Send button known only by its identifier would otherwise go through).
+    func testAVoiceTapWithNoReadableTextAsksTheOwner() async {
+        let (core, _, _) = makeCore()
+        let asked = Task { await eventually { core.pendingApproval != nil } }
+        let tap = await core.clearTap(on: "  ", inApp: "com.apple.MobileSMS", named: "Messages", waiting: 0.3)
+        let wasAsked = await asked.value
+        XCTAssertFalse(tap.mayTap, "\(tap)")
+        XCTAssertTrue(wasAsked, "the owner is asked on the phone")
+    }
+
     /// The relay agent's `do` never taps in Poki either.
     func testDoTapsNothingInPoki() async {
         let wda = FakeWDA()
