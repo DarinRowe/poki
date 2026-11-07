@@ -28,6 +28,10 @@ merge commit per branch.
 The branch also carries 28 commits from `origin/main` (up to 452f4bb) that our branches were based on.
 They are already public.
 
+Our line has its own copy of the iOS history before 0.2.3 (from 0200384 on), next to the copy in
+`dev/ios-standalone`. Both copies hold the same work; the first merge (e05c657) takes 0.2.3 (ebdfdc8)
+as the common base so they meet without conflicts.
+
 Commit messages on this branch are in English. Commits that came from our branches have new ids
 here, because their messages were translated or because an ancestor changed. The full map is at the
 end of this file.
