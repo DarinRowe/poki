@@ -3,6 +3,7 @@
 #import <dlfcn.h>
 #import <notify.h>
 #import <objc/message.h>
+#import <objc/runtime.h>
 
 @interface NSObject (PKObservedPrivateAPI)
 - (id)initForTouchAtPoint:(CGPoint)point offset:(double)offset;
@@ -417,6 +418,17 @@ static BOOL PKInstanceSignature(Class cls, SEL selector, const char *result, NSA
 /// XCUIApplication does when a UI test launches one. Without it a third-party app's tree is
 /// kAXErrorServerNotFound; system apps such as Settings answer either way.
 - (id)accessibilityFor:(uint64_t)generation {
+    // Once accessibility is on, every AX notification (an app activating, for one) reaches
+    // -[XCAXClient_iOS handleAccessibilityNotification:fromElement:payload:], which asks
+    // XCUIApplicationMonitor for an XCUIApplication on the main queue; that throws outside a UI test
+    // and ends Poki (seen on the phone). Poki reads on request and needs none of them.
+    static dispatch_once_t quiet;
+    dispatch_once(&quiet, ^{
+        Class client = NSClassFromString(@"XCAXClient_iOS");
+        SEL selector = NSSelectorFromString(@"handleAccessibilityNotification:fromElement:payload:");
+        Method method = client ? class_getInstanceMethod(client, selector) : NULL;
+        if (method) method_setImplementation(method, imp_implementationWithBlock(^(__unused id me, __unused id a, __unused id b, __unused id c) {}));
+    });
     id ax = PKAXClient();
     @synchronized (self) {
         if (_accessibilityGeneration != generation && [ax respondsToSelector:@selector(loadAccessibility:)]) {
