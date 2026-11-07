@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import PokiCore
 import Security
 
 /// The phone's relay identity (docs/ios-core.md, section 1): an Ed25519 key made once and kept in the
@@ -16,7 +17,6 @@ struct ConnectorSecret: Codable, Identifiable, Hashable {
 @MainActor
 @Observable
 final class RelayIdentity {
-    static let relayBase = URL(string: "https://pokimcp.zheha.nz/v1")!
     private static let keyAccount = "relay.ed25519"
     private static let secretsAccount = "relay.secrets"
 
@@ -31,8 +31,8 @@ final class RelayIdentity {
     var signingKey: Curve25519.Signing.PrivateKey? { key }
     var accessHashes: [String] { secrets.map(\.hash) }
 
-    func url(for secret: ConnectorSecret) -> URL {
-        Self.relayBase.appendingPathComponent(label).appendingPathComponent(secret.secret).appendingPathComponent("mcp")
+    func url(for secret: ConnectorSecret, relay: RelayAddress) -> URL {
+        relay.connectorBase.appendingPathComponent(label).appendingPathComponent(secret.secret).appendingPathComponent("mcp")
     }
 
     func sign(_ message: Data) throws -> Data {
@@ -64,7 +64,7 @@ final class RelayIdentity {
                 key = made
             }
             if let data = try Keychain.read(Self.secretsAccount) { secrets = (try? JSONDecoder().decode([ConnectorSecret].self, from: data)) ?? [] }
-            label = Base32.encode(key!.publicKey.rawRepresentation)
+            label = base32(key!.publicKey.rawRepresentation)
         } catch {
             self.error = "\(error)"
         }
@@ -99,18 +99,11 @@ enum Keychain {
     }
 }
 
-/// RFC 4648 base32, lowercase, no padding.
-enum Base32 {
-    private static let alphabet = Array("abcdefghijklmnopqrstuvwxyz234567")
-    static func encode(_ data: Data) -> String {
-        var out = "", buffer = 0, bits = 0
-        for byte in data {
-            buffer = (buffer << 8) | Int(byte); bits += 8
-            while bits >= 5 { out.append(alphabet[(buffer >> (bits - 5)) & 31]); bits -= 5 }
-            buffer &= (1 << bits) - 1
-        }
-        if bits > 0 { out.append(alphabet[(buffer << (5 - bits)) & 31]) }
-        return out
+extension RelayAddress {
+    /// The relay the person entered in Connect, kept across launches. Poki has no default relay.
+    static var saved: RelayAddress? {
+        get { UserDefaults.standard.string(forKey: "relayAddress").flatMap { RelayAddress($0) } }
+        set { UserDefaults.standard.set(newValue?.origin.absoluteString, forKey: "relayAddress") }
     }
 }
 

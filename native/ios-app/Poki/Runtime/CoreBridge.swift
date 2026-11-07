@@ -1,4 +1,5 @@
 import Foundation
+import PokiCore
 
 // The app shell's view of PokiCore (docs/ios-core.md, section 2) and PokiLauncher (section 3). LiveCore
 // maps PokiCore's events onto ShellEvent; RustLauncher and RustPairing call PokiLauncher's C ABI.
@@ -26,7 +27,7 @@ enum RelayStatus: Sendable, Equatable {
 }
 
 protocol CoreSession: AnyObject {
-    func start()
+    func start(relay: RelayAddress)
     func stop()
     var events: AsyncStream<ShellEvent> { get }
     func resolveApproval(id: String, approved: Bool)

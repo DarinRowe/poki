@@ -25,7 +25,7 @@ final class LiveCore: CoreSession {
 
     deinit { pump?.cancel() }
 
-    func start() { core.start() }
+    func start(relay: RelayAddress) { core.start(relay: relay) }
     func stop() { core.stop(); continuation.yield(.relay(.off)) }
     func resolveApproval(id: String, approved: Bool) { core.resolveApproval(id: id, approved: approved) }
     func accessChanged() { core.accessChanged() }

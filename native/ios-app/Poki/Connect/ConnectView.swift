@@ -8,10 +8,14 @@ struct ConnectView: View {
     @State private var newName = ""
     @State private var shown: ConnectorSecret?
     @State private var copied = false
+    @State private var relayText = ""
+    @State private var editingRelay = false
+    @State private var relayRejected = false
 
     var body: some View {
         NavigationStack {
             List {
+                relaySection
                 Section {
                     LabeledContent("Relay", value: model.relayStatus.text)
                     LabeledContent("Device label") {
@@ -21,18 +25,24 @@ struct ConnectView: View {
                 } footer: {
                     Text("The relay passes requests to this phone while Poki is open or running in the background. It stores nothing; when the phone is offline, clients get a clear error.")
                 }
-                Section("Connectors") {
+                Section {
                     ForEach(model.identity.secrets) { secret in
                         Button { shown = secret } label: {
                             LabeledContent(secret.name) { Text(secret.created, style: .date).foregroundStyle(.secondary) }
                         }
+                        .disabled(model.relayAddress == nil)
                         .swipeActions { Button("Revoke", role: .destructive) { model.revoke(secret) } }
                     }
                     HStack {
                         TextField("Name, such as Claude", text: $newName)
                         Button("Add") { shown = model.addConnector(name: newName); newName = "" }
                             .buttonStyle(.glassProminent)
+                            .disabled(model.relayAddress == nil)
                     }
+                } header: {
+                    Text("Connectors")
+                } footer: {
+                    if model.relayAddress == nil { Text("Set your relay address first: each connector address is on your relay.") }
                 }
                 if let error = model.identity.error {
                     Section {
@@ -45,6 +55,35 @@ struct ConnectView: View {
         }
     }
 
+    /// The person's own relay. There is no default: until it is set, Poki sends nothing anywhere.
+    @ViewBuilder private var relaySection: some View {
+        Section {
+            if let relay = model.relayAddress, !editingRelay {
+                LabeledContent("Relay address") { Text(relay.origin.host() ?? relay.origin.absoluteString).font(.body.monospaced()) }
+                Button("Change relay address") { relayText = relay.origin.absoluteString; relayRejected = false; editingRelay = true }
+            } else {
+                TextField("https://poki-relay.you.workers.dev", text: $relayText)
+                    .keyboardType(.URL).textContentType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    .font(.body.monospaced())
+                    .onSubmit(saveRelay)
+                Button("Save relay address", action: saveRelay).disabled(relayText.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        } header: {
+            Text("Your relay")
+        } footer: {
+            if relayRejected {
+                Text("That is not a relay address. Enter the address deploy.sh printed, such as https://poki-relay.you.workers.dev.").foregroundStyle(.orange)
+            } else if model.relayAddress == nil || editingRelay {
+                Text("Poki has no default relay. Deploy your own to your Cloudflare account with deploy/cf-relay/deploy.sh from the Poki repository, then enter the address it prints. Screenshots and taps pass only through that relay.")
+            }
+        }
+    }
+
+    private func saveRelay() {
+        relayRejected = !model.setRelay(relayText)
+        if !relayRejected { editingRelay = false }
+    }
+
     /// Keychain errors in words. -34018 means the app's signature has no keychain access (an unsigned
     /// or wrongly signed build); everything else shows its code.
     static func friendly(_ error: String) -> String {
@@ -55,7 +94,8 @@ struct ConnectView: View {
     }
 
     private func connector(_ secret: ConnectorSecret) -> some View {
-        let url = model.identity.url(for: secret).absoluteString
+        // Rows and Add open this only once a relay is set, so the address is there.
+        let url = model.connectorURL(for: secret)?.absoluteString ?? ""
         return NavigationStack {
             VStack(spacing: 24) {
                 if let qr = QRCode.image(url) {

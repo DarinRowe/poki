@@ -1,3 +1,4 @@
+import PokiCore
 import SwiftUI
 import UIKit
 
@@ -8,6 +9,8 @@ import UIKit
 final class AppModel {
     var setup = SetupState.load() { didSet { setup.save() } }
     let identity = RelayIdentity()
+    /// The person's own relay (Connect). Poki has no default relay and sends nothing until one is set.
+    private(set) var relayAddress = RelayAddress.saved
     let loopback = LoopbackMonitor()
     let background = BackgroundKeeper()
     let diskImage = DiskImageStore()
@@ -113,6 +116,7 @@ final class AppModel {
         guard !sessionOn else { return }
         problem = nil
         guard let pairing = setup.pairingFile else { problem = "Pair this iPhone first (Setup)."; return }
+        guard let relay = relayAddress else { problem = Self.noRelay; return }
         guard diskImage.isReady, diskImage.recheck() else {
             problem = "The developer disk image is not downloaded yet (Setup > Pair). It is needed once."
             Task { await diskImage.download() }
@@ -129,7 +133,7 @@ final class AppModel {
         lastAgentActivity = Date()
         // The runner (and with it iOS's automation banner) starts only when an agent asks.
         standBy(reason: nil)
-        core.start()
+        core.start(relay: relay)
         idleTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in Task { @MainActor in self?.checkIdle() } }
         eventsTask = Task { [weak self, core] in
             for await event in core.events { self?.handle(event) }
@@ -400,7 +404,30 @@ final class AppModel {
 
     var activityProblem: String? { activity.lastError }
 
-    // MARK: Connectors
+    // MARK: Relay and connectors
+
+    static let noRelay = "Enter your relay's address first (Connect). Poki has no default relay."
+
+    /// Saves the relay address the person entered; false when it is not one. A running session moves
+    /// to the new relay at once.
+    func setRelay(_ text: String) -> Bool {
+        guard let address = RelayAddress(text) else { return false }
+        guard address != relayAddress else { return true }
+        RelayAddress.saved = address
+        relayAddress = address
+        log.add("relay", "address set to \(address.origin.host() ?? "?")")
+        if problem == Self.noRelay { problem = nil }
+        if sessionOn {
+            core.stop()
+            core.start(relay: address)
+        }
+        return true
+    }
+
+    /// The MCP address for a connector, on the person's relay; nil until a relay is set.
+    func connectorURL(for secret: ConnectorSecret) -> URL? {
+        relayAddress.map { identity.url(for: secret, relay: $0) }
+    }
 
     func addConnector(name: String) -> ConnectorSecret {
         let secret = identity.addSecret(name: name)
