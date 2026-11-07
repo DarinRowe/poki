@@ -18,6 +18,7 @@ Open a scenario with `xcrun simctl openurl <udid> pokigym://<scenario>`, or from
 | fullscreen | A WKWebView filling the screen with one link, Open, that sets its title to Opened |
 | nav | Push opens a page with the system back button; back sets "state: popped" |
 | interrupt | 300 rows, and an alert ("Just a moment", Not now) 2 s after the screen opens, in the middle of a scroll |
+| approval | A "Pay now" button (a payment: the agent's tap waits for the owner's approval) and a Cancel order button; the menu row avoids the payment words so only the button itself asks |
 
 Every screen shows "Gym: <scenario>" at the top and "state: <last event>" at the bottom, so an agent
 can tell where it is and what its last action did from the tree alone.
@@ -27,9 +28,18 @@ each screen once.
 
 ## Scorecard
 
-`check/main.swift` is the gym driver: in CI (`.github/workflows/ios-gym.yml`, job `scorecard`) it is
-built as one more executable of the PokiCore package from the same branch (`native/ios/PokiCore`) and drives look/do through
-every scenario and three faults (a look during a long action, the runner killed and restarted, a
-scroll_to for text that is not there). A run fails on any call that hangs, answers without a
-picture, misses its budget, or does not move the screen. The table lands in the job summary and in
-the `gym-scorecard` artifact with every picture the agent would have seen.
+`check/GymScorecard.swift` is the gym driver: it drives look/do through every scenario, the system
+apps (Settings, Contacts or Notes, Safari, Photos), an approval (Pay now), `finish: true` and a few
+faults (a look during a long action, the runner killed and restarted, a scroll_to for text that is
+not there). A run fails on any call that hangs, answers without a picture, misses its budget, or
+does not move the screen. It runs on both automation paths in `.github/workflows/ios-gym.yml`:
+
+- job `scorecard` (the runner path): `check/main.swift` builds it as one more executable of the
+  PokiCore package from the same branch and calls PokiCore's MCP handler against a real
+  WebDriverAgent on the simulator. Table in the job summary and the `gym-scorecard` artifact.
+- job `scorecard-inprocess` (the in-process path, the app's default): Poki itself, built Debug for
+  the simulator, runs it through its own PokiCore and in-process session when launched with
+  `-pokiInProcess gym` (`Poki/Debug/InProcessProbe.swift`); approvals are answered as the owner
+  would on the Live Activity. Table in the job summary and the `gym-scorecard-inprocess` artifact,
+  with `Documents/gym-scorecard.txt` and the pictures. The faults that kill the runner from outside
+  are the runner path's only.

@@ -49,6 +49,9 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
     private var routes: [String: Route] = [:]
     /// The focused field from the latest `/element/active`, for the value and frame asked right after.
     private var focused: [AnyHashable: Any]?
+    /// PokiCore's snapshotMaxDepth and snapshotMaxChildren (POST /appium/settings): a read that took
+    /// too long is followed by a smaller one, in-process as on WebDriverAgent. 0: unbounded.
+    private var maxDepth = 0, maxChildren = 0
 
     init(screen: CGSize) {
         self.screen = screen
@@ -62,7 +65,12 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
                 return ["sessionId": .string("inprocess-\(self.native.generation())")]
             },
             "DELETE /session": { _, _ in .null },
-            "POST /appium/settings": { _, _ in .null },
+            "POST /appium/settings": { [unowned self] body, _ in
+                let settings = body?["settings"]
+                if let depth = settings?["snapshotMaxDepth"]?.double { self.maxDepth = depth >= 50 ? 0 : max(1, Int(depth)) }
+                if let children = settings?["snapshotMaxChildren"]?.double { self.maxChildren = children >= 10_000 ? 0 : max(1, Int(children)) }
+                return .null
+            },
             // Beside another app, the front app's part of the screen is the screen the agent sees (viewport).
             "GET /wda/screen": { [unowned self, screen] _, _ in
                 let viewport = self.native.viewport
@@ -76,13 +84,13 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
             },
             "GET /source": { [unowned self] _, _ in
                 var code: NSString?
-                guard let xml = self.native.sourceXML(nil, code: &code) else { throw Refusal("unknown error", "no element tree: \(code ?? "unknown")") }
+                guard let xml = self.native.sourceXML(nil, maxDepth: self.maxDepth, maxChildren: self.maxChildren, code: &code) else { throw Refusal("unknown error", "no element tree: \(code ?? "unknown")") }
                 return .string(xml)
             },
             "GET /element/active": { [unowned self] _, _ in
                 var code: NSString?
                 var focus: NSDictionary?
-                guard self.native.sourceXML(&focus, code: &code) != nil else { throw Refusal("unknown error", "no element tree: \(code ?? "unknown")") }
+                guard self.native.sourceXML(&focus, maxDepth: self.maxDepth, maxChildren: self.maxChildren, code: &code) != nil else { throw Refusal("unknown error", "no element tree: \(code ?? "unknown")") }
                 guard let focus else { throw Refusal("no such element", "no element has the keyboard focus") }
                 self.focused = focus as? [AnyHashable: Any]
                 return ["ELEMENT": "focused"]
@@ -116,8 +124,15 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
             "POST /wda/pressAndDragWithVelocity": { [unowned self] body, _ in
                 let from = try Self.point(body, "fromX", "fromY"), to = try Self.point(body, "toX", "toY")
                 let press = max(0, body?["pressDuration"]?.double ?? 0), hold = max(0, body?["holdDuration"]?.double ?? 0)
-                let moving = max(0.05, hypot(to.x - from.x, to.y - from.y) / max(1, body?["velocity"]?.double ?? 1000))
-                return try self.touch([[(from, 0), (from, press), (to, press + moving), (to, press + moving + hold)]])
+                let distance = hypot(to.x - from.x, to.y - from.y)
+                let moving = max(0.05, distance / max(1, body?["velocity"]?.double ?? 1000))
+                // The hold at the end is a real touch sample, one point short of the end and then the
+                // end itself, so the scroll view sees a finger that stopped before it lifted and the
+                // list stays where it is (the gym: a 72 % drag moved a whole screen in-process, a
+                // flick, where the same drag on WebDriverAgent moved 72 %).
+                guard hold > 0, distance > 2 else { return try self.touch([[(from, 0), (from, press), (to, press + moving), (to, press + moving + hold)]]) }
+                let near = CGPoint(x: to.x - (to.x - from.x) / distance, y: to.y - (to.y - from.y) / distance)
+                return try self.touch([[(from, 0), (from, press), (near, press + moving), (to, press + moving + hold)]])
             },
             "POST /wda/dragfromtoforduration": { [unowned self] body, _ in
                 let from = try Self.point(body, "fromX", "fromY"), to = try Self.point(body, "toX", "toY")
@@ -128,7 +143,10 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
             "POST /wda/keys": { [unowned self] body, _ in
                 let text = (body?["value"]?.array ?? []).compactMap(\.string).joined()
                 guard !text.isEmpty else { throw Refusal("invalid argument", "no keys given") }
-                return try self.answer(self.native.type(text, timeout: 3 + 0.06 * Double(text.count)))
+                // `frequency`: characters a second for this burst (PokiCore's Humanize types a word at
+                // a time at an uneven pace); without one, the fixed 120 of before.
+                let speed = UInt(max(1, min(240, body?["frequency"]?.int ?? 120)))
+                return try self.answer(self.native.type(text, typingSpeed: speed, timeout: 3 + Double(text.count) / Double(speed) + 0.02 * Double(text.count)))
             },
             "POST /wda/homescreen": { [unowned self] _, _ in try self.done(self.native.press("home")) },
             "POST /wda/lock": { [unowned self] _, _ in try self.done(self.native.press("lock")) },
@@ -176,9 +194,16 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
         let key = "\(method) \(path)"
         let parsed = body.flatMap { try? JSON.parse($0) }
         let route = routes[key]
+        let asked = Date()
         return await withCheckedContinuation { continuation in
             (key == "GET /screenshot" ? pictures : queue).async { [self] in
-                continuation.resume(returning: answer(key, session: session, element: element, body: parsed, route: route))
+                let started = Date()
+                let result = answer(key, session: session, element: element, body: parsed, route: route)
+                // One line per request in the system log (PokiInProcess), with its wait in the queue and
+                // its own time, so a slow call can be traced to the request that took it.
+                let waited = Int(started.timeIntervalSince(asked) * 1000), took = Int(Date().timeIntervalSince(started) * 1000)
+                if waited > 5 || took > 5 { NSLog("PokiInProcess timing: %@ %d ms%@", key, took, waited > 5 ? " (queued \(waited) ms)" : "") }
+                continuation.resume(returning: result)
             }
         }
     }

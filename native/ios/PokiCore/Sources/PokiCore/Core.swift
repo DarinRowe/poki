@@ -34,9 +34,14 @@ public struct CoreConfig: Sendable {
     /// How long without a look or do ends a task that was never finished, so the next call starts
     /// a new one. Well beyond an agent's thinking; the app's idle stop usually ends the task first.
     public var taskGap: Double
+    /// Whether touches and typing are shaped after a person's (`Humanize`): varied press times, a
+    /// point or two of scatter inside the element, minimum-jerk drags, typing in bursts. nil reads
+    /// `POKI_HUMANIZE` (on unless off); false sends the exact legacy schedules.
+    public var humanize: Bool?
 
-    public init(runnerURL: URL = URL(string: "http://127.0.0.1:8100")!, sensitive: SensitivityRules = SensitivityRules(), approvalWait: Double = 115, toolDeadline: Double = 25, actionCap: Double = 6, readTimeout: Double = 4, busyWait: Double = 2, runnerWait: Double = 15, treeFormat: String = "xml", ownApps: [String] = ["nz.zheha.poki"], accessibilityDeadline: Double = 2, taskGap: Double = 300) {
+    public init(runnerURL: URL = URL(string: "http://127.0.0.1:8100")!, sensitive: SensitivityRules = SensitivityRules(), approvalWait: Double = 115, toolDeadline: Double = 25, actionCap: Double = 6, readTimeout: Double = 4, busyWait: Double = 2, runnerWait: Double = 15, treeFormat: String = "xml", ownApps: [String] = ["nz.zheha.poki"], accessibilityDeadline: Double = 2, taskGap: Double = 300, humanize: Bool? = nil) {
         self.accessibilityDeadline = accessibilityDeadline
+        self.humanize = humanize
         self.runnerURL = runnerURL
         self.sensitive = sensitive
         self.approvalWait = approvalWait

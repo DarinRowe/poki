@@ -46,10 +46,12 @@ typedef NS_ENUM(NSInteger, PKDelivery) {
 - (PKOutcome *)touch:(NSArray<NSArray<PKTouchPoint *> *> *)fingers timeout:(double)timeout;
 /// Types into whatever field has the keyboard focus. Does not focus or clear.
 - (PKOutcome *)type:(NSString *)text timeout:(double)timeout;
+/// The same at `speed` characters a second (PokiCore sends a `frequency` per burst; 120 without one).
+- (PKOutcome *)type:(NSString *)text typingSpeed:(NSUInteger)speed timeout:(double)timeout;
 /// Whether the screen can be read from here: the front app (accessibility), its element tree, and a
 /// screenshot, each timed. Keys per part: *_ok, *_seconds, *_error, and counts.
 - (NSDictionary<NSString *, id> *)readProbe;
-/// A PNG of the main screen, or nil and why.
+/// A picture of the main screen (a JPEG through XCTest's quality API where it exists, else a PNG), or nil and why.
 - (nullable NSData *)screenshot:(NSString *_Nullable *_Nullable)code;
 /// The app in front: bundleId, name, pid. Empty when accessibility gives none.
 - (NSDictionary<NSString *, id> *)frontApp;
@@ -61,6 +63,9 @@ typedef NS_ENUM(NSInteger, PKDelivery) {
 /// The front app's elements in WebDriverAgent's XML source format, and the element with the
 /// keyboard focus (keys value, x, y, width, height) when there is one.
 - (nullable NSString *)sourceXML:(NSDictionary *_Nullable *_Nullable)focused code:(NSString *_Nullable *_Nullable)code;
+/// The same, bounded as WebDriverAgent's snapshotMaxDepth and snapshotMaxChildren settings bound
+/// it (0 for either: no bound beyond the AX server's own), so a dense screen reads in time.
+- (nullable NSString *)sourceXML:(NSDictionary *_Nullable *_Nullable)focused maxDepth:(NSInteger)maxDepth maxChildren:(NSInteger)maxChildren code:(NSString *_Nullable *_Nullable)code;
 /// home, lock, volumeUp or volumeDown. Nil when pressed, else why not.
 - (nullable NSString *)press:(NSString *)name;
 /// launch, activate or terminate an app by its bundle id. Nil when done, else why not.

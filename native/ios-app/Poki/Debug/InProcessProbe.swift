@@ -1,3 +1,4 @@
+import PokiCore
 import SwiftUI
 import UIKit
 
@@ -14,7 +15,10 @@ import UIKit
 /// `-pokiInProcess apps -pokiProbeApp BUNDLE` launches that app, launches Settings, activates the app,
 /// launches it again and terminates it, noting the front app and its pid after each;
 /// `-pokiInProcess tools -pokiProbeApp BUNDLE` runs PokiCore's look and do as an agent would: open
-/// the app, tap its first field and type, open Settings and swipe, press Home, looking after each.
+/// the app, tap its first field and type, open Settings and swipe, press Home, looking after each;
+/// `-pokiInProcess gym` runs the whole Poki Gym scorecard (native/ios-gym/check) through PokiCore on
+/// this path, answering approvals as the owner would, into Documents/gym-scorecard.txt and
+/// Documents/gym-pictures (the gym workflow's scorecard-inprocess job).
 @MainActor
 final class InProcessProbe: ObservableObject {
     static let shared = InProcessProbe()
@@ -48,6 +52,7 @@ final class InProcessProbe: ObservableObject {
             case "source": await sourceBothPaths(model: model)
             case "apps": await appsCycle(defaults.string(forKey: "pokiProbeApp") ?? "local.pokimcp.fixture")
             case "tools": await toolsCycle(model: model, app: defaults.string(forKey: "pokiProbeApp") ?? "local.pokimcp.fixture")
+            case "gym": await gymScorecard(model: model)
             case "bench": await benchmark(model: model, rounds: defaults.integer(forKey: "pokiBenchRounds") > 0 ? defaults.integer(forKey: "pokiBenchRounds") : 5)
             default: await prepareOnly()
             }
@@ -234,6 +239,56 @@ final class InProcessProbe: ObservableObject {
         let result = await probe(label: "8100", host: "127.0.0.1", port: 8100, timeout: 2)
         note("127.0.0.1:8100: \(result.outcome) \(result.detail) after \(result.milliseconds) ms", ["step": "port_8100", "outcome": result.outcome, "detail": result.detail])
     }
+
+    /// The gym scorecard on the in-process path: the same scenarios and checks as the runner path's
+    /// executable, through this app's PokiCore and InProcessWDA. Approvals are answered the way the
+    /// owner would on the Live Activity (the scorecard says when and how).
+    func gymScorecard(model: AppModel) async {
+        guard begin("gym scorecard") else { return }
+        defer { end() }
+        guard await prepare() else { return }
+        model.inProcessReadyForProbe()
+        let background = UIApplication.shared.beginBackgroundTask(withName: "Gym scorecard")
+        defer { UIApplication.shared.endBackgroundTask(background) }
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
+        let transcript = GymTranscript()
+        let approver = GymApprover { id, approved in
+            if let approval = model.approvals.first(where: { $0.id == id }) { model.resolve(approval, approved: approved) }
+        }
+        // The owner's side of approvals: the app's list grows when PokiCore asks.
+        let watch = Task { @MainActor in
+            var seen: Set<String> = []
+            while !Task.isCancelled {
+                for approval in model.approvals where !seen.contains(approval.id) {
+                    seen.insert(approval.id)
+                    NSLog("PokiGym approval asked: %@ (%@)", approval.summary, approval.reason)
+                    approver.requested(id: approval.id)
+                }
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+        }
+        defer { watch.cancel() }
+        var env = GymEnvironment(call: { name, args in
+            let answer = await model.phoneToolWithPicture(name, arguments: args.serialized())
+            return (answer.text, answer.jpeg.map { [$0] } ?? [])
+        }, log: { line in
+            transcript.lines.append(line)
+            NSLog("PokiGym %@", String(line.prefix(900)))
+        })
+        env.pictures = documents.appendingPathComponent("gym-pictures")
+        env.approveNext = { approver.next($0) }
+        env.path = "in-process"
+        let scorecard = GymScorecard(env: env)
+        await scorecard.run()
+        let report = scorecard.report
+        transcript.lines.append(report)
+        NSLog("PokiGym %@", report)
+        note("gym scorecard: \(scorecard.rows.filter { $0.ms > 0 }.count) calls, \(scorecard.failures.count) failures", ["step": "gym", "failures": scorecard.failures])
+        try? transcript.lines.joined(separator: "\n").write(to: documents.appendingPathComponent("gym-scorecard.txt"), atomically: true, encoding: .utf8)
+    }
+
+    /// The scorecard's log, kept for Documents/gym-scorecard.txt.
+    private final class GymTranscript { var lines: [String] = [] }
 
     // MARK: Steps
 

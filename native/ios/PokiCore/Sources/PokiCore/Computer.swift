@@ -58,6 +58,8 @@ final class Computer: @unchecked Sendable {
     /// The element the last scroll_to found, so the read after it can give its number (it may be
     /// past the listing's limit: the gym's 1,507-element grid had its button at 1506).
     var scrollFound: Element?
+    /// Shapes touches and typing after a person's (see `Humanize`); off sends the legacy schedules.
+    var humanize: Humanize
     /// The element the last type went to and its text, so the read after it can say which number the
     /// field has now when the app replaced it (Settings' search field is a new element in search mode).
     var typedInto: (ref: Int, text: String)?
@@ -78,6 +80,7 @@ final class Computer: @unchecked Sendable {
         self.runner = runner
         self.host = host
         self.config = config
+        self.humanize = Humanize(enabled: config.humanize ?? Humanize.envEnabled)
         self.approvals = approvals
     }
 
@@ -105,6 +108,7 @@ final class Computer: @unchecked Sendable {
         if size == nil { _ = try? await screenSize(until: now() + 1.5) }
         let screen = size ?? ScreenSize(width: 10_000, height: 10_000)
         var notes = reading.notes
+        if let modal = modalOnly(reading.elements) { notes.append(modal) }
         if reading.png == nil && reading.elements.isEmpty {
             // Nothing came back: say what was sent and what the runner is doing, and nothing else.
             let state = host.runnerState()
@@ -695,6 +699,17 @@ final class Computer: @unchecked Sendable {
     static func seconds(_ t: Double) -> String { String(format: "%.1f", max(0, t)) }
 
     /// An alert in the latest tree, as its text and buttons ("Just a moment: Not now, Allow"), or nil.
+    /// The tree holds an alert or a sheet and nothing named outside it: the in-process path snapshots
+    /// the front layer alone (the alert's accessibility is modal), where WebDriverAgent's source keeps
+    /// the screen behind. Said, so the model does not take the screen for gone (gym, in-process: a
+    /// look under an alert listed the alert's three elements and nothing of the app).
+    func modalOnly(_ all: [Element]) -> String? {
+        guard let modal = all.first(where: { ($0.type == "Alert" || $0.type == "Sheet") && !$0.fromPicture }) else { return nil }
+        let outside = all.filter { !$0.text.isEmpty && !modal.contains($0) && $0.node != modal.node && !Self.containers.contains($0.type) }
+        guard outside.isEmpty else { return nil }
+        return "the tree lists the \(modal.type == "Alert" ? "alert" : "sheet") only, not the screen behind it (it is still there, under the picture's dimming): answer or dismiss it to list the screen again"
+    }
+
     func alertOnScreen() -> String? {
         guard let alert = lastAll.first(where: { $0.type == "Alert" && !$0.fromPicture }) else { return nil }
         let inside = lastAll.filter { alert.contains($0) }

@@ -190,7 +190,9 @@ func eventually(_ seconds: Double = 2, _ condition: () -> Bool) async -> Bool {
 let testRelay = RelayAddress("https://relay.example.com")!
 
 func makeCore(_ wda: FakeWDA = FakeWDA(), host: FakeHost = FakeHost(), configure: (inout CoreConfig) -> Void = { _ in }) -> (PokiCore, FakeWDA, FakeHost) {
-    var config = CoreConfig(approvalWait: 0.3, toolDeadline: 6, actionCap: 3, readTimeout: 1, busyWait: 0.2, treeFormat: "json") // the fake speaks JSON
+    // The fake speaks JSON. Touches go unshaped (the legacy endpoints, exact points and times) so the
+    // tests can assert on them; HumanizeTests turn shaping on.
+    var config = CoreConfig(approvalWait: 0.3, toolDeadline: 6, actionCap: 3, readTimeout: 1, busyWait: 0.2, treeFormat: "json", humanize: false)
     configure(&config)
     return (PokiCore(config: config, host: host, transport: wda), wda, host)
 }

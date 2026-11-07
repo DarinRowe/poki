@@ -1413,6 +1413,39 @@ final class GymTests: XCTestCase {
         XCTAssertFalse(result.text.contains("stopped moving"), result.text)
     }
 
+    /// The in-process path moved a whole screen on a 72 % drag (gym: 2x slower scroll_to, a drag back
+    /// after every swipe). Every scroll_to answer now says how far the list moved on each swipe, from
+    /// the rows the reads share, so the path's drag can be measured without a probe.
+    func testScrollToSaysHowFarEachSwipeMovedTheList() async {
+        let (core, wda, _) = makeCore()
+        let shift = LockedBox(0.0)
+        @Sendable func rows() -> [Node] { [Node("Table", nil, [0, 100, 390, 744], (0..<60).map { Node("Cell", "Row \($0)", [16, Double(100 + $0 * 44) - shift.value, 358, 44]) })] }
+        wda.tree(rows(), app: "Gym")
+        wda.set("POST /wda/pressAndDragWithVelocity") { _ in
+            shift.update { $0 += 400 }
+            wda.tree(rows(), app: "Gym")
+            return (200, ["value": .null])
+        }
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["scroll_to": "Row 30"]]])
+        XCTAssertTrue(result.text.contains("2 swipes, found at"), result.text)
+        XCTAssertTrue(result.text.contains("(the list moved 400, 400 pt on the swipes)"), result.text)
+        XCTAssertFalse(result.text.contains("more than a screen"), result.text)
+    }
+
+    /// In-process, the snapshot under an alert holds the alert alone (its accessibility is modal; the
+    /// gym's look listed three elements and nothing of the app), where WebDriverAgent lists the
+    /// screen behind too. The read says so, so the model does not take the app for gone.
+    func testALookAtAnAlertAloneSaysTheScreenBehindItIsNotListed() async {
+        let (core, wda, _) = makeCore()
+        wda.tree([Node("Alert", nil, [20, 300, 350, 200], [Node("StaticText", "Just a moment", [40, 320, 310, 40]), Node("Button", "Not now", [40, 440, 150, 44]), Node("Button", "OK", [200, 440, 150, 44])])], app: "Gym")
+        let alone = await core.call("look", [:])
+        XCTAssertTrue(alone.text.contains("note: the tree lists the alert only, not the screen behind it (it is still there, under the picture's dimming): answer or dismiss it to list the screen again"), alone.text)
+        wda.tree([Node("Table", nil, [0, 100, 390, 700], (0..<10).map { Node("Cell", "Row \($0)", [16, Double(100 + $0 * 44), 358, 44]) }), Node("Alert", nil, [20, 300, 350, 200], [Node("StaticText", "Just a moment", [40, 320, 310, 40]), Node("Button", "Not now", [40, 440, 150, 44])])], app: "Gym")
+        let behind = await core.call("look", [:])
+        XCTAssertFalse(behind.text.contains("lists the alert only"), behind.text)
+    }
+
     /// Photos' home: the Library grid is one Button of 402x586 with the photos nowhere in the tree
     /// (the gym's raw XML), so its centre is one photo among many. The line says so.
     func testAnElementCoveringTheScreenAloneSaysItsPartsAreNotInTheTree() async {
