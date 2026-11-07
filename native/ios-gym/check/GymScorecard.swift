@@ -443,6 +443,44 @@ public final class GymScorecard {
             }
         } else { check(false, "the Settings search field is listed") }
 
+        // 13b. Routines: Settings → General → About by hand, saved, then repeated in one call; a run from a
+        // screen where its first target is missing stops before it sends anything. The calls and time of
+        // each way are in the rows ("by hand" against "run").
+        scenario = "routine"
+        _ = await call("finish the earlier task", "do", ["actions": [], "finish": true], budget: 20)
+        let byHandFrom = rows.count
+        a = await launchApp("Settings", "com.apple.Preferences")
+        scenario = "routine"
+        a = await tap("General", in: a, expect: "About")
+        a = await tap("About", in: a, expect: "Model Name", or: ["iOS Version", "Software Version", "Name"])
+        let byHand = rows[byHandFrom...].filter { $0.ms > 0 }
+        let byHandMs = byHand.reduce(0) { $0 + $1.ms }
+        let saved = await call("save the routine", "routines", ["action": "save", "name": "gym about", "description": "Settings, General, About", "read": ["iOS Version", "Model Name"]])
+        check(saved.contains("saved \"gym about\""), "a task done by hand is saved as a routine (\(saved.prefix(90)))")
+        let shown = await call("show the routine", "routines", ["action": "show", "name": "gym about"])
+        check(shown.contains("General") && shown.contains("About"), "the routine keeps what was tapped by label")
+        _ = await call("finish (back where it began)", "do", ["actions": [], "finish": true], budget: 20)
+        let taskLook = await call("look (a new task)", "look")
+        check(taskLook.contains("gym about") || frontApp(taskLook) != "Settings", "the first look of a task in Settings names its routines (or another app is in front)")
+        let runFrom = rows.count
+        let ran = await call("run the routine", "do", ["actions": [["run": "gym about"]]], budget: 30)
+        let runMs = rows[runFrom...].reduce(0) { $0 + $1.ms }
+        check(ran.contains("run \"gym about\"") && ran.contains("end check passed"), "the routine runs whole in one call and its end check passes (\(ran.split(separator: "\n").first(where: { $0.contains("run \"") }) ?? ran.prefix(120)))")
+        log("ROUTINE by hand: \(byHand.count) calls, \(byHandMs) ms; run: 1 call, \(runMs) ms")
+        rows.append(GymRow(scenario: "routine", step: "by hand \(byHand.count) calls \(byHandMs) ms, run 1 call \(runMs) ms", ms: 0, ok: true, note: "timing"))
+        // The same path without its launch steps, run from the About screen: General is not there.
+        _ = await call("save a copy", "routines", ["action": "save", "name": "gym about no launch"])
+        if let r = shown.range(of: "steps as JSON (edit takes this shape): "),
+           let steps = try? JSON.parse(String(shown[r.upperBound...]).split(separator: "\n").first.map(String.init) ?? ""),
+           case .array(let all) = steps {
+            let kept = all.filter { $0["action"]?["launch"] == nil && $0["action"]?["wait_until"] == nil }
+            _ = await call("edit the copy", "routines", ["action": "edit", "name": "gym about no launch", "steps": .string(JSON.array(kept).serialized())])
+            let stopped = await call("run where the first target is missing", "do", ["actions": [["run": "gym about no launch"]]], budget: 30)
+            check(stopped.contains("stopped at step 1"), "a run whose first target is not on screen stops before sending anything (\(stopped.split(separator: "\n").first(where: { $0.contains("stopped") }) ?? stopped.prefix(120)))")
+        } else { check(false, "show gives the steps as JSON") }
+        _ = await call("forget the copy", "routines", ["action": "forget", "name": "gym about no launch"])
+        _ = await call("forget the routine", "routines", ["action": "forget", "name": "gym about"])
+
         // 14. Notes: a new note, typing, a clear and a second type. The CI simulator runtime has no Notes;
         // then Contacts, with a new contact's First name field, stands in (the same typing path).
         if !(await env.installed("com.apple.mobilenotes")) {
