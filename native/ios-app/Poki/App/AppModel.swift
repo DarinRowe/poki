@@ -507,10 +507,12 @@ final class AppModel {
         // iOS no longer lets Poki start a Live Activity.
         activity.start(deviceName: deviceName)
         activity.update { $0.phase = .pairing; $0.pin = nil; $0.headline = "Pair in Settings" }
+        // The person completes pairing in Settings. Keep the listener and Bonjour publication alive
+        // there, before a regular Poki session can be started. Without it (audio can be busy, as in a
+        // call) pairing still starts, as it did before the keep-alive.
+        do { try pairingKeepAlive.start() }
+        catch { log.add("pairing", "keep-alive did not start (\(error.localizedDescription)); iOS may stop the pairing while Settings is open") }
         do {
-            // The person completes pairing in Settings. Keep the listener and Bonjour publication
-            // alive there, before a regular Poki session can be started.
-            try pairingKeepAlive.start()
             try pairer.start(hostName: "Poki", saveTo: AppFiles.pairingFile) { [weak self] event in
                 Task { @MainActor in self?.pairingChanged(event) }
             }
