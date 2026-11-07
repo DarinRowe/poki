@@ -24,6 +24,19 @@ test('run_code runs several steps in one call and returns a value derived from a
   assert.match(summary.calls[0].receipt, /"label":\s*"First"/);
 });
 
+// The run_code description promises that each tools.<name> call returns what a direct call returns.
+// A script that scrolls and then reads the screen from the receipt relies on that readback.
+test('run_code returns an action with the screen it produced, as a direct call does', async t => {
+  const f = await fixture(t);
+  await f.set({ label: 'Row 1', afterInput: { label: 'Row 9' } });
+  const result = await runCode(f, `
+    const moved = await tools.scroll({ direction: 'down' });
+    return { verified: moved.screen_change_verified, changed: moved.screen_changed, shows: moved.screen.text.includes('Button: Row 9') };
+  `);
+  assert.ok(!result.isError, JSON.stringify(result));
+  assert.deepEqual(summaryOf(result).result, { verified: true, changed: true, shows: true });
+});
+
 // ESP-151 acceptance 2: require, a bare file-system module, fetch, process and dynamic import are all
 // absent in the sandbox; each throws inside the script and the daemon keeps serving afterwards.
 test('run_code denies require, fetch, process and dynamic import, and the daemon keeps serving', async t => {
