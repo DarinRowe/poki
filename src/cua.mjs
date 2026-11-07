@@ -32,6 +32,7 @@
 import sharp from 'sharp';
 import { pause, stopped } from './work.mjs';
 import { wdaContext } from './cua-wda.mjs';
+import { platformTool } from './platform.mjs';
 
 const settleAfterMs = { tap: 450, type: 250, key: 300, swipe: 600, drag: 600, button: 700, launch: 900, wait: 0 };
 const imageWidth = 300, lineLimit = 120;
@@ -179,11 +180,14 @@ async function restoreClipboard(ctx, saved) {
 // Text into the field being edited: the whole string as hardware key presses in one request; the
 // pasteboard only when the keyboard cannot type it, with the user's clipboard saved first and put
 // back afterwards. A clipboard that cannot be read back exactly is never pasted over.
+// A simulator types with its own type_text instead: key presses, and a paste through the
+// simulator's pasteboard for text the keyboard has no key for.
 async function typeText(ctx, text, clear = false) {
-  const typed = await ctx.input({ op: 'type_keys', text, clear });
-  if (!typed?.isError && typed?.sent !== false) return 'keys';
-  // A backend that types every character (WebDriverAgent) has no paste to fall back on.
-  if (ctx.typesEverything) { const e = new Error(`typing failed: ${typed?.error ?? 'no answer'}`); e.delivery = typed?.outcome === 'not_sent' ? 'not_sent' : 'unknown'; throw e; }
+  const simulator = (await ctx.target()).kind === 'simulator';
+  const typed = await ctx.input(simulator ? { op: 'type_text', text, clear, submit: false } : { op: 'type_keys', text, clear });
+  if (!typed?.isError && typed?.sent !== false) return typed?.clipboard_changed ? "pasted; the simulator's clipboard keeps the text" : 'keys';
+  // A backend that types every character in one request (WebDriverAgent, a simulator) has no paste to fall back on.
+  if (ctx.typesEverything || simulator) { const e = new Error(`typing failed: ${typed?.error ?? typed?.instruction ?? 'no answer'}`); e.delivery = typed?.outcome === 'not_sent' ? 'not_sent' : 'unknown'; throw e; }
   // Only a request the bridge refused before sending (a character with no key, an older bridge) may
   // be pasted instead: after a failure part way, some keys may have reached the field, and what
   // they did (a return that submitted, a field that moved on) a paste cannot undo, clear or not.
@@ -271,7 +275,9 @@ async function perform(ctx, action, size, until) {
     // {launch: "id"} brings the app to the front as it was; {launch: {bundle, fresh: true}} starts it anew.
     const spec = typeof action.launch === 'string' ? { bundle: action.launch } : action.launch ?? {};
     if (!spec.bundle) throw new NotSent('launch takes a bundle id');
-    await ctx.bridge({ op: 'launch_app', bundle_id: String(spec.bundle), ...(spec.fresh ? { terminate_existing: true } : {}) });
+    // A simulator has no bridge op for it; launch_app starts it with simctl and waits for its interface.
+    if ((await ctx.target()).kind === 'simulator') await platformTool(ctx, 'launch_app', { bundle_id: String(spec.bundle), fresh: Boolean(spec.fresh) });
+    else await ctx.bridge({ op: 'launch_app', bundle_id: String(spec.bundle), ...(spec.fresh ? { terminate_existing: true } : {}) });
     return ['launch', `launch ${spec.bundle}${spec.fresh ? ' (fresh)' : ''}`];
   }
   if ('wait' in action) { await pause(Math.min(Number(action.wait) || 0, 3000)); return ['wait', `wait ${action.wait} ms`]; }
