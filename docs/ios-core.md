@@ -554,6 +554,20 @@ Each answer is facts only: the app in front, numbered elements, what each action
   in-process gym (run 42411678488) netted 190 pt a swipe on a 72 % drag of 550 pt, with "more
   than a screen" and a drag back after every forward swipe, where WebDriverAgent moved 72 %: the
   figure tells which path moves what, without a probe.
+- **A scroll's drag ends with a slow tail, on both paths.** The gym's WebDriverAgent run on
+  dc53779 showed the same 1.5x on the runner path: a 482 pt press-drag moved the list 762 pt (17
+  rows for 15 on screen, so 2 rows passed unread on every swipe), and the "moved" figure read 0
+  because the title and the status line inside the area are listed in every read. XCTest's hold at
+  the end of pressAndDragWithVelocity is a move to the same point, which synthesis can drop, so the
+  lift is a flick. scroll_to now sends its drag as W3C pointer actions (`scrollDrag`): the finger
+  moves for 0.4 s, then the last 12 points over 0.25 s, and lifts almost still; a runner without
+  /actions gets the press-drag. The movement figure and the overshoot check now set aside what
+  stood still between the reads (`fixedBetween`): the moving elements' median shift is the
+  figure, "a screen or more" when the reads share nothing that moved, 0 when the same elements
+  stood where they were.
+- **A declined answer carries the picture.** "not_sent from action 1: the owner declined on the
+  phone ... Nothing was sent." is followed by a read of the screen it was refused on (the gym: the
+  one answer without a picture).
 - **The in-process drag holds still before it lifts.** InProcessWDA's pressAndDragWithVelocity
   ends with a move to one point short of the end, then to the end over the hold time, so the
   scroll view sees a finger that stopped before it lifted (a hold given as a move to the same

@@ -327,8 +327,11 @@ final class ApprovalTests: XCTestCase {
             if let p = core.pendingApproval { core.resolveApproval(id: p.id, approved: false) }
         }
         let result = await core.call("do", ["actions": [["tap": 1]]])
-        XCTAssertTrue(result.text.contains("declined"), result.text)
+        XCTAssertTrue(result.text.hasPrefix("not_sent from action 1: the owner declined on the phone"), result.text)
         XCTAssertTrue(wda.bodies("POST /wda/tap").isEmpty)
+        // The screen it was refused on comes with the answer (the gym: the one answer without a picture).
+        XCTAssertNotNil(result.jpeg, result.text)
+        XCTAssertTrue(result.text.contains("Nothing was sent.\napp: "), result.text)
     }
 
     func testOtherActionsWithdrawThePendingRequestSoTheAutomationCannotApproveIt() async {
