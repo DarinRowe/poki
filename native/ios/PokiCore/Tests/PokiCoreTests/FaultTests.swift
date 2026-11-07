@@ -52,6 +52,83 @@ final class FaultTests: XCTestCase {
         XCTAssertEqual(wda.bodies("POST /wda/getPasteboard").count, 0, "typing never touches the clipboard")
     }
 
+    /// The runner's /wda/keys, scripted per call: (typed before it answers, answer).
+    private func keys(_ wda: FakeWDA, _ field: Field, _ script: [(typed: String, ok: Bool)]) {
+        let call = LockedBox(0)
+        wda.set("POST /wda/keys") { body in
+            let n = call.value; call.update { $0 += 1 }
+            let step = script[min(n, script.count - 1)]
+            field.value.update { $0 += step.typed }
+            if step.ok { return (200, ["value": .null]) }
+            return (500, ["value": ["error": "unknown error", "message": .string("could not type \(body?["value"]?.array?.compactMap(\.string).joined() ?? "")")]])
+        }
+    }
+
+    func testAFailedStepLogsItsErrorLineWithoutTheTypedText() async {
+        let (core, wda, _) = makeCore()
+        let field = Field()
+        field.install(wda)
+        keys(wda, field, [("", false)])
+        let events = LockedBox<[CoreEvent]>([])
+        Task { for await e in core.events { events.update { $0.append(e) } } }
+        _ = await core.call("look", [:])
+        _ = await core.call("do", ["actions": [["type": "door code 4412"]]])
+        let finished = await eventually { events.value.contains { if case .toolFinished(let a, _, _) = $0 { return a.name == "do" }; return false } }
+        XCTAssertTrue(finished)
+        guard case .toolFinished(_, .failed, let facts)? = events.value.last else { return XCTFail("\(events.value)") }
+        XCTAssertTrue(facts.error?.hasPrefix("error: action 1") == true, "\(facts.error ?? "no error line")")
+        XCTAssertFalse(facts.error?.contains("4412") ?? false, "the typed text stays out of the log")
+    }
+
+    func testATypeThatLandedButAnsweredWithAFailureCountsAsTyped() async {
+        let (core, wda, _) = makeCore()
+        let field = Field()
+        field.install(wda)
+        keys(wda, field, [("hello", false)])
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["type": "hello"]]])
+        XCTAssertFalse(result.isError, result.text)
+        XCTAssertEqual(field.value.value, "hello")
+        XCTAssertEqual(wda.bodies("POST /wda/keys").count, 1, "typed once: the field already held the text")
+        XCTAssertTrue(result.text.contains("the field now reads \"hello\""), result.text)
+    }
+
+    func testATypeThatDidNotLandIsSentAgainOnce() async {
+        let (core, wda, _) = makeCore()
+        let field = Field()
+        field.install(wda)
+        keys(wda, field, [("", false), ("hello", true)])
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["type": "hello"]]])
+        XCTAssertFalse(result.isError, result.text)
+        XCTAssertEqual(field.value.value, "hello")
+        XCTAssertEqual(wda.bodies("POST /wda/keys").count, 2)
+    }
+
+    func testAFailingTypeIsSentAgainOnlyOnce() async {
+        let (core, wda, _) = makeCore()
+        let field = Field()
+        field.install(wda)
+        keys(wda, field, [("", false)])
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["type": "hello"]]])
+        XCTAssertTrue(result.isError, result.text)
+        XCTAssertEqual(wda.bodies("POST /wda/keys").count, 2)
+    }
+
+    func testAHalfTypedFieldIsNotTypedIntoAgain() async {
+        let (core, wda, _) = makeCore()
+        let field = Field()
+        field.install(wda)
+        keys(wda, field, [("hel", false), ("hello", true)])
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["type": "hello"]]])
+        XCTAssertTrue(result.isError, result.text)
+        XCTAssertEqual(field.value.value, "hel", "a second try would have made it helhello")
+        XCTAssertEqual(wda.bodies("POST /wda/keys").count, 1)
+        XCTAssertTrue(result.text.contains("the field holds \"hel\""), result.text)
+    }
+
     func testPasteIsTheBackupAndPutsTheOwnersClipboardBack() async {
         let (core, wda, _) = makeCore()
         let field = Field()

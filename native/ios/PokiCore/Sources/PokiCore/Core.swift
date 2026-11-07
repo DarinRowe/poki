@@ -137,6 +137,8 @@ public enum ToolOutcome: Sendable, Equatable {
 public struct ToolFacts: Sendable, Equatable {
     public var app: String?
     public var thumbnail: Data?
+    /// The answer's `error:` line when the call failed, with the text it typed taken out. For the log.
+    public var error: String? = nil
 }
 
 public enum CoreEvent: Sendable, Equatable {
