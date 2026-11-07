@@ -91,6 +91,17 @@ that no answer may halt the agent and from the first Poki Gym runs (`native/ios-
     a refused launch is one plain line.
 17. A launch reads again until the app is in front; `wait_until` gets its own time; long calls
     carry a `took:` line.
+18. Gestures get time to be confirmed; a note when an alert sits over a list; a stale picture is
+    marked as such when no new one comes; the host's screenshot is offered beside the runner's; a
+    launch works under a system alert.
+19. Key `"\n"` taps the keyboard's own Go/Search/Done key when one is up; `scroll_to` drags 84 % of
+    the region with a 0.2 s rest.
+20. A large element (a third of the screen or more) with no parts in the tree, such as Photos'
+    Library grid, is listed with a note to tap a point on the picture.
+21. `scroll_to` drags 72 % of the region and checks overlap by element frames before any drag back;
+    a call whose time at the MCP exceeds the tool's own by over 2 s ends with an `at the MCP:` line.
+22. A Safari hint to add the scheme to a bare host; scroll drags stay clear of the bottom chrome and
+    stop when a swipe changed the screen; the host screenshot beside a busy runner is capped at 6 s.
 
 Still not done: a `collect` or `expect` field, a `recover` action, and redaction of sensitive text
 (Zhehan: out of scope for now).

@@ -457,6 +457,8 @@ public final class PokiCore: @unchecked Sendable {
     func call(_ name: String, _ args: JSON, session: String? = nil, answerBy: Double? = nil) async -> ToolResult {
         if name == "status" { return status() }
         guard name == "look" || name == "do" else { return ToolResult(text: "unknown tool \(name); the tools are look, do and status", jpeg: nil, isError: true) }
+        let received = now()
+        computer.lastCallTook = nil
         let activity = ToolActivity(id: UUID().uuidString, name: name, summary: name == "do" ? computer.labels(args["actions"]?.array ?? []) : "Look at the screen", started: Date())
         // One tool call at a time per phone; a second waits briefly, then says what the first is doing.
         guard await gate.enter(waiting: config.busyWait) else {
@@ -464,6 +466,7 @@ public final class PokiCore: @unchecked Sendable {
             // the screen (the owner's rule: every answer carries the picture while the runner is up).
             return await computer.withPicture("busy: another call is still running (\(gate.current ?? "a tool")); nothing was sent. Call again in a moment.", timeout: 3, remember: false, isErrorWithoutPicture: false)
         }
+        let gateWaited = now() - received
         gate.current = "\(name): \(activity.summary)"
         emit(.toolStarted(activity))
         // The owner's time on an approval, and the runner's start, come on top of the tool's own time.
@@ -480,6 +483,14 @@ public final class PokiCore: @unchecked Sendable {
         }
         gate.current = nil
         gate.leave()
+        // The MCP's own time around the tool (gym: a call measured 25.5 s outside against 9.2 s
+        // inside): the wait for the call before, and the answer's making after.
+        if let inside = computer.lastCallTook, now() - received - inside > 2 {
+            let after = now() - received - inside - gateWaited
+            do {
+                output.text += "\nat the MCP: \(Computer.seconds(now() - received)) s from the request to this answer, \(Computer.seconds(inside)) s of it the tool's own\(gateWaited > 0.5 ? ", \(Computer.seconds(gateWaited)) s waiting for the call before to finish" : "")\(after > 0.5 ? ", \(Computer.seconds(after)) s making the answer" : "")"
+            }
+        }
         let earlier = lost.update { l -> [String] in defer { l = [] }; return l }
         if !earlier.isEmpty {
             output.text = "earlier, never delivered to you: " + earlier.joined(separator: "\n\n") + "\n\nnow:\n" + output.text

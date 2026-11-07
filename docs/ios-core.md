@@ -497,6 +497,56 @@ Each answer is facts only: the app in front, numbered elements, what each action
   action cap). A call that took 8 s or more, or over 2 s more than its parts, ends with "took:
   29.8 s in all: 0.1 s before the actions (runner start, busy wait, lock check), 4.9 s actions,
   0.2 s read, 24.6 s elsewhere".
+- **A drag gets its confirmation time, and an alert over the list is named.** A gesture's answer
+  is waited for its own time plus 1.5 s (a 0.7 s drag given 1 s near the end of a scroll came back
+  "not confirmed"); `scroll_to` starts a drag only with 2.8 s left (drag, confirmation and a read).
+  The drag is 0.4 s with a 0.3 s rest. When an alert is over the list, the scroll's answer ends with
+  "; an alert is over the list ("Just a moment": Not now): answer it first".
+- **No picture at all: the read before's stands in, marked stale.** When neither the runner nor the
+  host gives a picture (a restart under load), the answer carries the picture of the read before
+  with "the screenshot is the one of the read before, 14 s old (no newer one came)". The host's
+  own path gets up to 15 s of the call's remaining time, and starts beside the runner's screenshot
+  when the runner is already busy at the read's start, so the two are not in series.
+- **A launch under a system alert names the alert.** When the read after a launch shows the Home
+  screen with an alert (a permission prompt), the answer ends with "a system alert is in front
+  (""Photos" Would Like to Send You Notifications": Don't Allow, Allow); the launched app is behind
+  it: answer the alert first" instead of reading again for the app.
+- **Return is the keyboard's own key when one is up.** `{key: "return"}` taps the keyboard's
+  Go/Return/Search/Done/Send/Next key when the tree lists one ("key return: tapped the keyboard's
+  "Go" key at [340, 820]"); without a keyboard it is sent as a key event and the answer says so
+  (Safari's address bar kept its suggestions after the key event on one gym run). The scroll drag
+  is 72 % of the area with a 0.2 s rest: with no momentum, two rows of overlap are enough (60 %
+  took 6 calls and 64 s for 250 rows; 84 % left one row, under the navigation bar, and the
+  drag-back check fired on every call: 8 calls and 83 s). The check now counts every element
+  whose frame meets the list's area, not only those whose centre does, and needs four on each
+  side with nothing shared before it drags back.
+- **The MCP accounts for its own time around the tool.** A call measured 25.5 s at the driver
+  against a "took:" line of 9.2 s. When the time from the request to the answer is over 2 s more
+  than the tool's own, the answer ends with "at the MCP: 12.1 s from the request to this answer,
+  9.2 s of it the tool's own, 2.5 s waiting for the call before to finish, 0.4 s making the
+  answer". What is left is the relay and the network, outside PokiCore.
+- **A scroll's drag starts above the bottom chrome and stops when a swipe changed the screen.**
+  A drag that started on Safari's address capsule opened the tab overview, and four more swipes
+  "stopped moving" on it. Anything wide in the screen's bottom 160 points, whatever its type,
+  now counts as a bar for the swipe area, a bar in the list's bottom third cuts the area at its
+  top, and the scroll's drag runs from 80 % to 8 % of the area instead of around its centre. When
+  the read after a swipe shows another app in front, or everything around the list and
+  everything in it is gone and replaced, the scroll ends with "the last swipe changed the screen
+  (it shows TextView "TabOverview", …): the list is gone, so the scroll stopped".
+- **A bare host typed into Safari's address field gets a hint.** "example.com" and the Go key
+  never navigated in the gym (3 of 3: the suggestions stayed), "https://example.com/" loaded in
+  2 s. A type into a Safari text field of a dotted word with no scheme adds "; a bare host in
+  Safari's address field: the Go key did not open it in tests, so type it with its scheme
+  ("https://example.com") before the key".
+- **The host's screenshot beside a busy runner gets 6 s, not 15.** A look under a wedged runner
+  waited 18 s before it fell back; an answer at 6 s with the picture and the runner's state keeps
+  the model moving. The 15 s stay for the path taken after a runner that was free gave none.
+- **One element covering the screen with no parts in the tree says so.** Photos' home has its
+  Library grid as one Button of 402x586 with the photos nowhere in WDA's XML (the SwiftUI grid is
+  one accessibility element), so its centre is one photo among many. A Button, Cell, Image, Link
+  or Other that covers a third of the screen or more with nothing inside it is listed with
+  "(one element covering 69 % of the screen with no parts in the tree: tap a point on the
+  picture, not its number)". Nothing is dropped from the listing: the parts are not there to list.
 - **Typing has 9 s and never leaves the keys in doubt.** A type is a tap, a wait for the focus and
   the keys, plus a wait for a busy runner, so it has 9 s (the action cap otherwise). When under
   1.2 s is left for the keys they are not sent: `nothing was typed … send the type again`.

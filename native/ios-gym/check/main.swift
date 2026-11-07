@@ -139,12 +139,41 @@ func ref(in answer: String, _ text: String, type: String? = nil, last: Bool = fa
     return Int(head)
 }
 
+/// A system permission alert ("X Would Like to Send You Notifications") sits over every app until
+/// it is answered; an agent taps Don't Allow. Returns the read after it, or the answer as it was.
+@MainActor func dismissSystemAlert(_ answer: String) async -> String {
+    guard answer.contains("Would Like") || answer.contains("Don’t Allow") || answer.contains("Don't Allow") else { return answer }
+    guard let no = ref(in: answer, "Don’t Allow", type: "Button") ?? ref(in: answer, "Don't Allow", type: "Button") else { return answer }
+    return await call("tap Don't Allow on the system alert", "do", ["actions": [["tap": .number(Double(no))], ["wait_until": ["settled": true, "ms": 2000]]]])
+}
+
+/// While the runner is down (killed, or restarted by PokiCore's watchdog), every answer says so
+/// and a tree read is impossible; an agent keeps looking until one comes. Up to 45 s.
+@MainActor func awaitRunner(_ answer: String) async -> String {
+    var answer = answer
+    for i in 1...15 where answer.contains("it is being restarted") || answer.contains("no element tree") || answer.contains("read: failed") {
+        try? await Task.sleep(nanoseconds: 3_000_000_000)
+        answer = await call("look while the runner comes back (\(i))", "look", budget: 30)
+    }
+    return answer
+}
+
+/// The frame [x, y, w, h] of the first listed element whose line holds `text`.
+func frame(in answer: String, _ text: String, type: String? = nil) -> [Double]? {
+    guard let n = ref(in: answer, text, type: type),
+          let line = answer.split(separator: "\n").first(where: { $0.trimmingCharacters(in: CharacterSet(charactersIn: "+~ ")).hasPrefix("\(n) ") }),
+          let r = line.range(of: #"\[(-?[0-9]+), ?(-?[0-9]+), ?([0-9]+), ?([0-9]+)\]$"#, options: .regularExpression) else { return nil }
+    let v = line[r].split(whereSeparator: { !$0.isNumber && $0 != "-" }).compactMap { Double($0) }
+    return v.count == 4 ? v : nil
+}
+
 /// Opens a Gym scenario the way an agent would: back to the menu (the Menu button, or a fresh
 /// launch), tap the scenario's row, and read; the title "Gym: <name>" must be on screen. (simctl
 /// openurl is not used: from outside the app it raises an "Open in Poki Gym?" system alert.)
 @MainActor func open(_ name: String) async -> String {
     scenario = name
-    var answer = await call("look", "look")
+    var answer = await awaitRunner(await call("look", "look"))
+    answer = await dismissSystemAlert(answer)
     if !answer.contains("Gym: menu") {
         if let menu = ref(in: answer, "\"Menu\"", type: "Button") {
             answer = await call("tap Menu", "do", ["actions": [["tap": .number(Double(menu))]]])
@@ -152,7 +181,7 @@ func ref(in answer: String, _ text: String, type: String? = nil, last: Bool = fa
             answer = await call("launch Poki Gym fresh", "do", ["actions": [["launch": ["bundle": .string(gymBundle), "fresh": true]]]])
         }
     }
-    if ref(in: answer, "\"\(name)", type: "Button") == nil { answer = await call("look at the menu", "look") }
+    if ref(in: answer, "\"\(name)", type: "Button") == nil { answer = await awaitRunner(await call("look at the menu", "look")) }
     guard let row = ref(in: answer, "\"\(name)", type: "Button") else {
         check(false, "the \(name) row is on the menu"); return answer
     }
@@ -221,7 +250,13 @@ a = await tap("OK", in: a, type: "Button", expect: "OK tapped")
 // 3. Typing into an empty field (direct typing; the paste prompt never comes up).
 a = await open("paste")
 if let field = ref(in: a, "Paste here") {
-    let typed = await call("type into the field", "do", ["actions": [["type": "hello gym 123", "ref": .number(Double(field))]]])
+    var typed = await call("type into the field", "do", ["actions": [["type": "hello gym 123", "ref": .number(Double(field))]]])
+    if typed.contains("not_sent") {
+        // The keyboard's first use can stall the CI simulator's runner; PokiCore restarts it and
+        // says to send the type again, which an agent does.
+        typed = await awaitRunner(typed)
+        if let again = ref(in: typed, "Paste here") { typed = await call("type into the field (again)", "do", ["actions": [["type": "hello gym 123", "ref": .number(Double(again))]]]) }
+    }
     let shown = typed.contains("hello gym 123") ? typed : await call("look at the field", "look")
     check(shown.contains("hello gym 123"), "typed text is read back from the field")
     check(!shown.lowercased().contains("paste prompt") || shown.contains("hello gym 123"), "no paste prompt stops the typing")
@@ -305,6 +340,206 @@ if let back = ref(in: a, "Gym: nav\"", type: "Button") ?? ref(in: a, "Back", typ
     let home = popped.contains("Gym: nav\n") || popped.contains("Gym: nav\"") && !popped.contains("Pushed page") ? popped : await call("look after back", "look")
     check(!home.contains("Pushed page"), "the system back button pops the page")
 } else { check(false, "a back button is listed on the pushed page") }
+
+// 11. An alert that pops up in the middle of a scroll: scroll_to must answer, the alert must be
+// dismissable, and the scroll must go on afterwards.
+a = await open("interrupt")
+let interrupted = await scrollTo("Item 150", step: "scroll_to Item 150 while an alert comes up", budget: 30, max: 4)
+check(!interrupted.contains("HUNG"), "scroll_to answers while an alert comes up")
+a = await call("look for the alert", "look")
+if ref(in: a, "Not now", type: "Button") != nil {
+    a = await tap("Not now", in: a, type: "Button", expect: "Not now tapped")
+} else {
+    check(a.contains("interrupted") || a.contains("Not now tapped"), "the alert in the middle of the scroll is seen (state interrupted)")
+}
+let resumed = await scrollTo("Item 150", step: "scroll_to Item 150 after the alert", budget: 30)
+check(resumed.contains("found at") || resumed.contains("found by scroll_to"), "scroll_to finds Item 150 after the alert")
+
+// 12. The app relaunches while a wait_until runs (a crash, or a process killed under memory
+// pressure): the wait must answer, and the next read must be a tree read of the new process.
+_ = await open("animation")
+scenario = "relaunch in wait_until"
+async let waiting: String = call("wait_until a text that never comes (8 s)", "do", ["actions": [["wait_until": ["text": "Never shown", "ms": 8000]]]], budget: 15)
+try? await Task.sleep(nanoseconds: 1_500_000_000)
+print(sh(["xcrun", "simctl", "terminate", udid, gymBundle]))
+print(sh(["xcrun", "simctl", "launch", udid, gymBundle]))
+let waited = await waiting
+check(!waited.contains("HUNG"), "wait_until answers while the app relaunches under it")
+var relaunched = ""
+for i in 1...3 {
+    relaunched = await call("look after the relaunch (\(i))", "look")
+    if relaunched.contains("app: Poki Gym") && relaunched.contains("Gym: menu") { break }
+}
+check(relaunched.contains("app: Poki Gym") && relaunched.contains("Gym: menu"), "the relaunched app's tree is read (menu in front)")
+
+// System apps, as the owner's tasks use them. Each is launched fresh, and a first-run sheet with
+// Continue is dismissed as an agent would.
+@MainActor func launchApp(_ name: String, _ bundle: String) async -> String {
+    scenario = name
+    // A first-run sheet (What's New, Continue) can slide up a few seconds after the launch (Photos:
+    // 3 s), so the screen is read again once it holds still, and Continue tapped when it is there.
+    var answer = await call("launch \(name) fresh", "do", ["actions": [["launch": ["bundle": .string(bundle), "fresh": true]], ["wait_until": ["settled": true, "ms": 3000]]]], budget: 25)
+    for i in 1...3 {
+        if ref(in: answer, "Continue", type: "Button") == nil, i == 1 || !answer.contains("app: \(name)") {
+            answer = await call("look at \(name) (\(i))", "look", ["full": true])
+        }
+        answer = await dismissSystemAlert(answer)
+        if let cont = ref(in: answer, "Continue", type: "Button") {
+            answer = await call("tap Continue on the first-run sheet (\(i))", "do", ["actions": [["tap": .number(Double(cont))], ["wait_until": ["settled": true, "ms": 2000]]]])
+        } else if answer.contains("app: \(name)") { break }
+    }
+    check(answer.contains("app: \(name)"), "\(name) is in front after launch")
+    return answer
+}
+
+/// Whether the simulator has an app (the CI runtime ships without Notes, Mail and Messages).
+func installed(_ bundle: String) -> Bool { sh(["xcrun", "simctl", "listapps", udid]).contains("\"\(bundle)\"") }
+
+/// What the type action read back ("the field now reads \"...\"").
+func readBack(_ answer: String) -> String? {
+    guard let r = answer.range(of: #"the field now reads "([^\n]*)""#, options: .regularExpression) else { return nil }
+    return String(answer[r])
+}
+
+// 13. Settings: search with mixed Latin and CJK text, then the field cleared and searched again.
+a = await launchApp("Settings", "com.apple.Preferences")
+if ref(in: a, "Search", type: "SearchField") == nil { a = await call("look (full) for the search field", "look", ["full": true]) }
+if let field = ref(in: a, "Search", type: "SearchField") {
+    let mixed = await call("type mixed text into Search", "do", ["actions": [["type": "Wi-Fi 网络 ok", "ref": .number(Double(field))]]])
+    let shown = mixed.contains("Wi-Fi 网络 ok") ? mixed : await call("look at the search field", "look")
+    check(shown.contains("Wi-Fi"), "the Latin part of the search text is read back")
+    check(shown.contains("网络"), "the CJK part of the search text is read back (mixed text typed as keys)")
+    // Search mode replaces the field (the answer says the old number is gone and lists the new one),
+    // so the field is found again before the second type, as an agent reading the answer would.
+    var fieldAgain = ref(in: shown, "Search", type: "SearchField") ?? ref(in: mixed, "Search", type: "SearchField")
+    if fieldAgain == nil { fieldAgain = ref(in: await call("look (full) for the search field again", "look", ["full": true]), "Search", type: "SearchField") }
+    let cleared = await call("type General with clear", "do", ["actions": [["type": "General", "ref": .number(Double(fieldAgain ?? field)), "clear": true]]])
+    let after = readBack(cleared) ?? ""
+    check(after.contains("General") && !after.contains("Wi-Fi"), "clear removes the earlier search text before the new one (read back: \(after.prefix(60)))")
+    var cancelIn = cleared
+    if ref(in: cancelIn, "Cancel", type: "Button") == nil { cancelIn = await call("look for Cancel", "look") }
+    if let cancel = ref(in: cancelIn, "Cancel", type: "Button") {
+        _ = await call("tap Cancel", "do", ["actions": [["tap": .number(Double(cancel))]]])
+    }
+} else { check(false, "the Settings search field is listed") }
+
+// 14. Notes: a new note, typing, a clear and a second type. The CI simulator runtime has no Notes;
+// then Contacts, with a new contact's First name field, stands in (the same typing path).
+if !installed("com.apple.mobilenotes") {
+    a = await launchApp("Contacts", "com.apple.MobileAddressBook")
+    if ref(in: a, "Add", type: "Button") == nil { a = await call("look (full) for Add", "look", ["full": true]) }
+    if let add = ref(in: a, "Add", type: "Button") {
+        a = await call("tap Add", "do", ["actions": [["tap": .number(Double(add))], ["wait_until": ["settled": true, "ms": 2000]]]])
+        if ref(in: a, "First name") == nil { a = await call("look (full) for First name", "look", ["full": true]) }
+        if let first = ref(in: a, "First name") {
+            let typed = await call("type the first name", "do", ["actions": [["type": "Firstname", "ref": .number(Double(first))]]])
+            check((readBack(typed) ?? "").contains("Firstname"), "typing lands in the First name field (read back: \((readBack(typed) ?? "").prefix(50)))")
+            // Typing replaces the field element (the answer lists the new number and says the old is
+            // gone), so it is found again before each later type.
+            let field2 = ref(in: typed, "First name", type: "TextField") ?? first
+            let replaced = await call("type a second name with clear", "do", ["actions": [["type": "Second", "ref": .number(Double(field2)), "clear": true]]])
+            let rb = readBack(replaced) ?? ""
+            check(rb.contains("Second") && !rb.contains("Firstname"), "clear empties the field before the second text (read back: \(rb.prefix(50)))")
+            let field3 = ref(in: replaced, "First name", type: "TextField") ?? field2
+            let more = await call("type more without clear", "do", ["actions": [["type": " more", "ref": .number(Double(field3))]]])
+            let rb2 = readBack(more) ?? ""
+            check(rb2.contains("Second more"), "a second type appends (read back: \(rb2.prefix(50)))")
+        } else { check(false, "the First name field is listed") }
+        let cancelIn = await call("look for Cancel", "look")
+        if let cancel = ref(in: cancelIn, "Cancel", type: "Button") { _ = await call("tap Cancel", "do", ["actions": [["tap": .number(Double(cancel))]]]) }
+    } else { check(false, "the Add button is listed") }
+} else {
+a = await launchApp("Notes", "com.apple.mobilenotes")
+if ref(in: a, "New Note") == nil && ref(in: a, "New note") == nil { a = await call("look (full) for New Note", "look", ["full": true]) }
+if let compose = ref(in: a, "New Note", type: "Button") ?? ref(in: a, "New note", type: "Button") ?? ref(in: a, "Compose", type: "Button") {
+    a = await call("tap New Note", "do", ["actions": [["tap": .number(Double(compose))]]])
+    let typed = await call("type the first line (no ref: the note has focus)", "do", ["actions": [["wait_until": ["settled": true, "ms": 1500]], ["type": "First line of the note"]]])
+    let first = typed.contains("First line of the note") ? typed : await call("look at the note", "look")
+    check(first.contains("First line of the note"), "typing without a ref lands in the new note")
+    if let body = ref(in: first, "First line of the note") ?? ref(in: first, "First line of the note", type: "TextView") {
+        let replaced = await call("type a second text with clear", "do", ["actions": [["type": "Second text", "ref": .number(Double(body)), "clear": true]]])
+        var rb = readBack(replaced) ?? ""
+        if rb.isEmpty { rb = await call("look at the note after clear", "look") }
+        check(rb.contains("Second text") && !rb.contains("First line"), "clear empties the note before the second text (read back: \(rb.prefix(60)))")
+        let more = await call("type more without clear", "do", ["actions": [["type": " and more", "ref": .number(Double(body))]]])
+        var rb2 = readBack(more) ?? ""
+        if rb2.isEmpty { rb2 = await call("look at the note after the second type", "look") }
+        check(rb2.contains("Second text and more"), "a second type appends to the note (read back: \(rb2.prefix(60)))")
+    } else { check(false, "the note's text is listed as an element") }
+    let doneIn = await call("look for Done", "look")
+    if let done = ref(in: doneIn, "Done", type: "Button") { _ = await call("tap Done", "do", ["actions": [["tap": .number(Double(done))]]]) }
+} else { check(false, "the New Note button is listed") }
+}
+
+// 15. Safari: a page with links, scroll_to on page text, a link tapped.
+a = await launchApp("Safari", "com.apple.mobilesafari")
+if ref(in: a, "Address") == nil { a = await call("look (full) for the address bar", "look", ["full": true]) }
+if let address = ref(in: a, "Address") {
+    // With the scheme, Safari's first suggestion is the site itself (a bare host's first suggestion
+    // is a Google search on this runtime, and Go did not load it on 3 of 4 runs).
+    let opened = await call("type a URL and return", "do", ["actions": [["type": "https://example.com/", "ref": .number(Double(address))], ["key": "return"], ["wait_until": ["text": "Example Domain", "ms": 12000]]]], budget: 25)
+    // The page's title as an element (not the wait_until's wording); when the return key did not
+    // submit (seen once: the suggestions stayed), the suggestion row with the URL is tapped.
+    var loaded = ref(in: opened, "Example Domain") != nil ? opened : await call("look at the page", "look")
+    // (A suggestion row runs a search instead; the keyboard's Go key loads the URL.)
+    if ref(in: loaded, "Example Domain") == nil, let go = ref(in: loaded, "Go", type: "Button") ?? ref(in: loaded, "go", type: "Button") ?? ref(in: loaded, "Go", type: "Key") ?? ref(in: loaded, "example.com", type: "StaticText") {
+        loaded = await call("tap Go, or the site's suggestion row (return did not submit)", "do", ["actions": [["tap": .number(Double(go))], ["wait_until": ["text": "Example Domain", "ms": 12000]]]], budget: 25)
+        if ref(in: loaded, "Example Domain") == nil { loaded = await call("look at the page (after the suggestion)", "look") }
+    }
+    if ref(in: loaded, "Example Domain") != nil {
+        check(true, "the page loads and its text is in the tree")
+        let link = await scrollTo("Learn more", step: "scroll_to the link's text", budget: 30, max: 3)
+        check(link.contains("found at") || link.contains("found by scroll_to") || ref(in: link, "Learn more") != nil, "scroll_to finds page text in Safari")
+        var page = link
+        if ref(in: page, "Learn more") == nil { page = await call("look (full) for the link", "look", ["full": true]) }
+        if let l = ref(in: page, "Learn more", type: "Link") ?? ref(in: page, "Learn more") {
+            let followed = await call("tap the link and wait for the next page", "do", ["actions": [["tap": .number(Double(l))], ["wait_until": ["text": "Reserved Domains", "ms": 12000]]]], budget: 25)
+            let next = followed.contains("Reserved Domains") ? followed : await call("look at the next page", "look")
+            check(next.contains("Reserved Domains") || next.contains("screen_changed: true"), "tapping a link in Safari opens the next page")
+            let back = await call("back", "do", ["actions": [["back": true], ["wait_until": ["text": "Example Domain", "ms": 8000]]]], budget: 20)
+            check(back.contains("Example Domain") || back.contains("did: back"), "back returns to the first page")
+        } else { check(false, "the link is listed in the tree") }
+    } else { check(false, "the page loads (example.com over the runner's network)") }
+} else { check(false, "the Safari address bar is listed") }
+
+// 16. Photos: a grid cell tapped, then back to the grid.
+a = await launchApp("Photos", "com.apple.mobileslideshow")
+// The new Photos app's home shows the grid as one Button "Library" with no cells in the tree; the
+// cells are in the tree once Library is open.
+// The What's New sheet can arrive 5 s after the launch, on top of Library; Continue first then.
+for i in 1...2 where ref(in: a, "Photo,", type: "Image") == nil {
+    a = await dismissSystemAlert(a)
+    if let cont = ref(in: a, "Continue", type: "Button") {
+        a = await call("tap Continue on What's New (\(i))", "do", ["actions": [["tap": .number(Double(cont))], ["wait_until": ["settled": true, "ms": 2500]]]])
+    } else if let library = ref(in: a, "Library", type: "Button") {
+        a = await call("open Library (\(i))", "do", ["actions": [["tap": .number(Double(library))], ["wait_until": ["settled": true, "ms": 2500]]]])
+    }
+    if ref(in: a, "Photo,", type: "Image") == nil { a = await call("look (full) for a photo (\(i))", "look", ["full": true]) }
+}
+// Diagnostic: does WDA's raw tree hold the grid's cells at all?
+if let raw = try? await URLSession.shared.data(from: url.appendingPathComponent("source").appending(queryItems: [URLQueryItem(name: "format", value: "xml")])).0,
+   let xml = (try? JSON.parse(raw))?["value"]?.string {
+    func count(_ needle: String) -> Int { xml.components(separatedBy: needle).count - 1 }
+    print("diag: Photos raw XML \(xml.count) characters; Image nodes \(count("<XCUIElementTypeImage")), Cell nodes \(count("<XCUIElementTypeCell")), 'Photo,' \(count("Photo,")), Button nodes \(count("<XCUIElementTypeButton"))")
+    if let r = xml.range(of: "label=\"Library\"") { print("diag: Library node: " + xml[r.lowerBound...].prefix(700) + "\n") }
+}
+var cellRef = ref(in: a, "Photo,", type: "Image")
+var openedPhoto = ""
+if let cell = cellRef {
+    openedPhoto = await call("tap a photo", "do", ["actions": [["tap": .number(Double(cell))], ["wait_until": ["settled": true, "ms": 2500]]]])
+} else if let f = frame(in: a, "Library", type: "Button") {
+    // The grid's cells are not in the tree (the whole grid is one button): an agent taps a
+    // thumbnail on the picture; the newest row sits at the bottom of the grid's frame.
+    let point: JSON = [.number(f[0] + f[2] / 2), .number(f[1] + f[3] - 50)]
+    openedPhoto = await call("tap a thumbnail on the picture (the cells are not in the tree)", "do", ["actions": [["tap": point], ["wait_until": ["settled": true, "ms": 2500]]]])
+    cellRef = -1
+}
+if cellRef != nil {
+    check(openedPhoto.contains("screen_changed: true"), "tapping a grid cell opens the photo (screen changed)")
+    let backToGrid = await call("back to the grid", "do", ["actions": [["back": true], ["wait_until": ["settled": true, "ms": 2500]]]])
+    let grid = (ref(in: backToGrid, "Photo,", type: "Image") ?? ref(in: backToGrid, "Library", type: "Button")) != nil ? backToGrid : await call("look (full) at the grid", "look", ["full": true])
+    check((ref(in: grid, "Photo,", type: "Image") ?? ref(in: grid, "Library", type: "Button")) != nil, "back returns to the photo grid")
+} else { check(false, "a photo cell or the Library grid is listed") }
 
 // Faults. A. A look while the runner is busy with a long action: it must answer, not queue forever.
 scenario = "busy runner"

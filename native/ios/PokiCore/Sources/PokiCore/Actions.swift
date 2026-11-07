@@ -108,8 +108,16 @@ extension Computer {
         case "right": d = (1, 0)
         default: throw ActionFailure(message: "swipe must be up, down, left or right", delivery: .notSent)
         }
-        let half = (d.0 != 0 ? area.width : area.height) * (distance == "short" ? 0.2 : distance == "scroll" ? 0.3 : 0.35)
-        let (cx, cy) = area.centre
+        let half = (d.0 != 0 ? area.width : area.height) * (distance == "short" ? 0.2 : distance == "scroll" ? 0.36 : 0.35)
+        var (cx, cy) = area.centre
+        // A scroll's drag runs from 8 % to 80 % of the area, not around its centre: a finger put
+        // down low grabs what sits at the bottom (gym: Safari's address capsule, and the drag up
+        // from it opened the tab overview).
+        if distance == "scroll" {
+            let shift = (d.0 != 0 ? area.width : area.height) * 0.06
+            cx += d.0 * shift
+            cy += d.1 * shift
+        }
         return (cx - d.0 * half, cy - d.1 * half, cx + d.0 * half, cy + d.1 * half)
     }
 
@@ -122,7 +130,9 @@ extension Computer {
         let distance = max(1, hypot(path.2 - path.0, path.3 - path.1))
         let velocity = distance / max(0.05, seconds)
         let expected = hold + distance / velocity + rest
-        let timeout = max(1, min(expected + 5, until - now() - 0.2))
+        // The runner's answer needs the gesture's own time and a margin for XCTest's own wait after
+        // it (gym: a 0.85 s drag given 1 s near the end of a scroll came back unconfirmed).
+        let timeout = max(expected + 1.5, min(expected + 5, until - now() - 0.2))
         do {
             _ = try await runner.call("POST", "/wda/pressAndDragWithVelocity", ["fromX": .number(path.0), "fromY": .number(path.1), "toX": .number(path.2), "toY": .number(path.3), "pressDuration": .number(hold), "holdDuration": .number(rest), "velocity": .number(velocity.rounded())], timeout: timeout, countsAsMiss: false)
             swipeUnread = true
@@ -135,6 +145,15 @@ extension Computer {
             swipeUnread = true
             throw e
         }
+    }
+
+    /// A bare host typed into Safari's address field: the Go key did not navigate on it in the gym
+    /// (3 of 3; the suggestions stayed), while the same with a scheme loaded the page in 2 s.
+    func safariAddressNote(_ target: Element?, _ text: String) -> String {
+        guard lastForeground?.bundleID == "com.apple.mobilesafari", let target, ["TextField", "SearchField"].contains(target.type) else { return "" }
+        let t = text.trimmingCharacters(in: .whitespaces)
+        guard !t.contains("://"), !t.contains(" "), t.contains("."), !t.hasSuffix(".") else { return "" }
+        return "; a bare host in Safari's address field: the Go key did not open it in tests, so type it with its scheme (\"https://\(t)\") before the key"
     }
 
     func tap(_ p: (x: Double, y: Double)) async throws {
@@ -175,7 +194,7 @@ extension Computer {
             let readBack = reads.map { hidden ? "; the field now holds \($0.count) characters" : "; the field now reads \"\($0.count > 200 ? String($0.prefix(190)) + "…" : $0)\"" }
                 ?? "; the field could not be read back (no focused field answered in time), so check the elements or the picture"
             if let ref = action["ref"]?.int { typedInto = (ref, text) }
-            return ("type", "\(describe(action)) (\(via))\(readBack)\(focusNote(reads.map { $0.contains(text) } ?? false))\(note)")
+            return ("type", "\(describe(action)) (\(via))\(readBack)\(focusNote(reads.map { $0.contains(text) } ?? false))\(note)\(safariAddressNote(target, text))")
         }
         if action["back"] != nil {
             return ("back", try await back(until: until))
@@ -201,8 +220,14 @@ extension Computer {
             guard let text = Self.keyText[k] ?? (key.count == 1 ? key : nil) else {
                 throw ActionFailure(message: "key \(key) has no equivalent; use return, delete, tab, space, escape or one character", delivery: .notSent)
             }
+            // Return as the keyboard's own key when one is up: the "\n" key event left Safari's
+            // address bar with its suggestions on one gym run (the keyboard's Go key submits).
+            if text == "\n", let go = await keyboardReturnKey(timeout: min(1, max(0.3, until - now() - 1))) {
+                try await tap(go.frame.centre)
+                return ("key", "key \(key): tapped the keyboard's \"\(go.text)\" key at [\(Int(go.frame.centre.x)), \(Int(go.frame.centre.y))]")
+            }
             _ = try await runner.call("POST", "/wda/keys", ["value": [.string(text)]], timeout: 3)
-            return ("key", "key \(key)")
+            return ("key", "key \(key)\(text == "\n" ? " (sent as a key event; no keyboard key was listed to tap)" : "")")
         }
         if let spec = action["swipe"] {
             let direction = spec.string ?? spec["direction"]?.string ?? ""
@@ -352,6 +377,18 @@ extension Computer {
     }
 
     static let fieldTypes: Set<String> = ["TextField", "SecureTextField", "SearchField", "TextView"]
+
+    /// Labels of the keyboard's return key in the languages iOS ships most.
+    static let returnKeyLabels: Set<String> = ["return", "go", "search", "done", "send", "next", "join", "continue", "route", "enter", "换行", "前往", "搜索", "完成", "发送", "下一个", "加入", "繼續", "換行", "前往", "搜尋", "完成", "傳送", "改行", "開く", "検索", "完了", "送信", "次へ", "실행", "검색", "완료", "다음"]
+
+    /// The keyboard's return key as the tree lists it (a Button inside the Keyboard whose label is
+    /// one of `returnKeyLabels`), or nil when no keyboard is up or the read did not come.
+    func keyboardReturnKey(timeout: Double) async -> Element? {
+        guard let seen = try? await runner.tree(timeout: timeout, format: config.treeFormat) else { return nil }
+        let all = seen.elements
+        guard let keyboard = all.first(where: { $0.type == "Keyboard" }) else { return nil }
+        return all.last { $0.type == "Button" && keyboard.contains($0) && Self.returnKeyLabels.contains($0.text.lowercased()) && $0.frame.width >= 2 }
+    }
 
     /// Whether a field took the focus (the keyboard is up), waiting up to `seconds` (a tree read
     /// every 150 ms). Focus is read from the tree, never asked of the runner: WDA's focus query
@@ -570,8 +607,11 @@ extension Computer {
         // screen), the next swipe is a short one back, so nothing is passed unread.
         var corrective = false, corrected = false, overshoots = 0
         func overshot() -> String { overshoots == 0 ? "" : " (the list moved more than a screen after \(overshoots) swipe\(overshoots == 1 ? "" : "s"), so a short drag back followed each)" }
+        // An alert over the list takes the drags (gym: "the list stopped moving" under a permission
+        // prompt): the answer names it.
+        func alertNote() -> String { alertOnScreen().map { "; an alert is over the list (\($0)): answer it first" } ?? "" }
         func found(_ e: Element) -> String { scrollFound = e; return "\(swipes) swipes, found at \(e.frame.described) (its number is in the list below)\(overshot())" }
-        func notYet(_ why: String) -> String { "\(swipes) swipes, \(wanted) not seen yet; \(why): call scroll_to again to go on from here\(overshot())" }
+        func notYet(_ why: String) -> String { "\(swipes) swipes, \(wanted) not seen yet; \(why): call scroll_to again to go on from here\(overshot())\(alertNote())" }
         // A swipe sent while the runner is still serving the read after the last one would only
         // queue behind it and time out, and the whole scroll would come back unknown (seen in
         // the gym on 300 rows): the runner is waited for, and a swipe the runner did not confirm
@@ -592,6 +632,10 @@ extension Computer {
                     return notYet("the read after the last swipe did not come; nothing is swiped again until it has")
                 }
                 swipeUnread = false
+                if let what = swipeChangedTheScreen(from: all, to: seen.elements, in: region, now: seen.foreground) {
+                    all = seen.elements
+                    return "\(swipes) swipes, \(wanted) not found: the last swipe changed the screen (\(what)): the list is gone, so the scroll stopped; what is on screen now is listed below"
+                }
                 corrective = !corrected && scrolledPastAScreen(from: all, to: seen.elements, in: region)
                 if corrective { overshoots += 1 }
                 let signature = seen.elements.map { "\($0.key)@\(Int($0.frame.y))" }.joined(separator: ";")
@@ -601,7 +645,7 @@ extension Computer {
                     // busy runner may not have moved the list (the app's main loop was serving the
                     // snapshot; seen in the gym: a false end at row 180 of 300), so it does not count.
                     still += 1
-                    if still >= 2 { return "\(swipes) swipes, \(wanted) not found: the list stopped moving (its end, or the text is not in it)" }
+                    if still >= 2 { return "\(swipes) swipes, \(wanted) not found: the list stopped moving (its end, or the text is not in it)\(alertNote())" }
                 } else {
                     still = 0
                 }
@@ -612,15 +656,18 @@ extension Computer {
             }
             if let e = hit(all) { return found(e) }
             guard swipes < max else { return notYet("that is \(max) swipes (max_swipes takes up to 15)") }
-            guard until - now() > 1.6 else { return notYet("the action's time ran out before the list was through (\(Int(Self.scrollCap)) s)") }
-            guard await runnerFree(margin: 1.6) else { return notYet("the runner is still finishing the read after the last swipe") }
-            // A resting drag of 60 % of the area, not a flick: a flick's momentum carried the gym's
+            // A drag (0.7 s) needs its confirmation (1.5 s more) and a read after it.
+            guard until - now() > 2.8 else { return notYet("the action's time ran out before the list was through (\(Int(Self.scrollCap)) s)") }
+            guard await runnerFree(margin: 2.8) else { return notYet("the runner is still finishing the read after the last swipe") }
+            // A resting drag of 72 % of the area, not a flick: a flick's momentum carried the gym's
             // list 26 rows past a 15-row screen (the 70 % held for the finger, not the list), and
             // the tree read while a list decelerates waits for it to stop. The drag ends with the
-            // finger held still, so the list stops where it is.
+            // finger held still, so the list stops where it is, and two reads overlap by two rows
+            // or more (60 % took 6 calls and 64 s for 250 rows in the gym; 84 % left one row of
+            // overlap, under the navigation bar, and the drag back fired on every call: 8 calls).
             let path = corrective ? try swipePath(region, ["up": "down", "down": "up", "left": "right", "right": "left"][fingerGoes] ?? "down", "short") : try swipePath(region, fingerGoes, "scroll")
             do {
-                try await gesture(path, seconds: 0.5, rest: 0.35, until: until - 0.8)
+                try await gesture(path, seconds: 0.4, rest: 0.2, until: until - 0.8)
             } catch let e as RunnerError where e.delivery == .unknown {
                 return notYet("the runner did not confirm the last swipe in time (\(e.message)), so it may still land")
             }
@@ -633,9 +680,32 @@ extension Computer {
     /// Whether a read after a swipe shares nothing with the read before within the scroll area: the
     /// list moved more than a screen, and what was between may have been passed.
     func scrolledPastAScreen(from before: [Element], to after: [Element], in region: Rect) -> Bool {
-        func inside(_ es: [Element]) -> Set<String> { Set(es.filter { region.contains($0.frame.centre) && !$0.text.isEmpty && !Self.containers.contains($0.type) }.map(\.key)) }
+        // Every element whose frame meets the region counts, a row half under the navigation bar
+        // too (the gym's 84 % drag left only that row shared, and a check on centres missed it).
+        func inside(_ es: [Element]) -> Set<String> {
+            Set(es.filter { e in
+                let f = e.frame
+                return f.x < region.maxX && f.maxX > region.x && f.y < region.maxY && f.maxY > region.y && !e.text.isEmpty && !Self.containers.contains(e.type)
+            }.map(\.key))
+        }
         let a = inside(before), b = inside(after)
-        return a.count >= 3 && b.count >= 3 && a.isDisjoint(with: b)
+        return a.count >= 4 && b.count >= 4 && a.isDisjoint(with: b)
+    }
+
+    /// A swipe that did something other than scroll (gym: a drag that started on Safari's address
+    /// capsule opened the tab overview, and four more swipes "stopped moving" on it): the app in
+    /// front changed, or everything around the list (the bars, the chrome) is gone and replaced.
+    func swipeChangedTheScreen(from before: [Element], to after: [Element], in region: Rect, now: Foreground?) -> String? {
+        if let was = lastForeground?.bundleID, let is_ = now?.bundleID, was != is_ { return "\(now?.describe ?? is_) is in front now" }
+        func named(_ es: [Element]) -> [Element] { es.filter { !$0.text.isEmpty && !Self.containers.contains($0.type) } }
+        func meets(_ f: Rect) -> Bool { f.x < region.maxX && f.maxX > region.x && f.y < region.maxY && f.maxY > region.y }
+        // What stood around the list (the bars, the chrome) is all gone, and nothing in the list's
+        // area stayed either: a scroll keeps the chrome and overlaps its reads.
+        let chrome = Set(named(before).filter { !meets($0.frame) }.map(\.key))
+        let inside = Set(named(before).filter { meets($0.frame) }.map(\.key))
+        let afterKeys = Set(named(after).map(\.key))
+        guard chrome.count >= 2, inside.count >= 2, afterKeys.count >= 3, chrome.isDisjoint(with: afterKeys), inside.isDisjoint(with: afterKeys) else { return nil }
+        return "it shows " + named(after).prefix(3).map { "\($0.type) \"\($0.text.prefix(30))\"" }.joined(separator: ", ")
     }
 
     /// The time one scroll_to may take: more than an action, since it reports where it got to.

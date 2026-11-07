@@ -1207,7 +1207,7 @@ final class GymTests: XCTestCase {
         XCTAssertTrue(result.text.contains("scroll_to \"Row 45\": 4 swipes, found at [16,320,358,44]"), result.text)
         XCTAssertTrue(result.text.contains("found by scroll_to:") && result.text.contains("Cell \"Row 45\" [16,320,358,44] (tap "), result.text)
         XCTAssertGreaterThan(Date().timeIntervalSince(started), 3.5, "four 1 s swipes outlast the 3 s action cap: scroll_to has 12 s")
-        XCTAssertTrue(wda.bodies("POST /wda/pressAndDragWithVelocity").allSatisfy { $0["holdDuration"]?.double == 0.35 }, "a resting drag")
+        XCTAssertTrue(wda.bodies("POST /wda/pressAndDragWithVelocity").allSatisfy { $0["holdDuration"]?.double == 0.2 }, "a resting drag")
     }
 
     /// 300 rows in the gym: a swipe sent while the runner was still serving the read after the last
@@ -1309,7 +1309,8 @@ final class GymTests: XCTestCase {
         XCTAssertGreaterThan(sent[1].3, sent[1].1, "the corrective drag goes down")
         XCTAssertLessThan(abs(sent[1].3 - sent[1].1), abs(sent[0].3 - sent[0].1), "the drag back is the shorter")
         let bodies = wda.bodies("POST /wda/pressAndDragWithVelocity")
-        XCTAssertEqual(bodies.first?["holdDuration"]?.double, 0.35, "a resting drag, not a flick")
+        XCTAssertEqual(bodies.first?["holdDuration"]?.double, 0.2, "a resting drag, not a flick")
+        XCTAssertGreaterThan(abs((bodies.first?["toY"]?.double ?? 0) - (bodies.first?["fromY"]?.double ?? 0)), 500, "a long drag (72 % of the list's area), not 60 %")
     }
 
     /// Settings' search field: the keyboard came after the focus wait, and the text had landed, but
@@ -1353,6 +1354,73 @@ final class GymTests: XCTestCase {
         XCTAssertEqual(body?["x"]?.double, 195, result.text)
         XCTAssertEqual(body?["y"]?.double, 772, result.text)
         XCTAssertTrue(result.text.contains("its centre is off the screen, so the centre of its visible part was tapped"), result.text)
+    }
+
+    /// Gym: a call measured 25.5 s at the driver against a took: line of 9.2 s. The MCP now
+    /// accounts for its own time around the tool: here a look that waited for a do to finish.
+    func testTheMCPAccountsForTheTimeAroundTheTool() async {
+        let (core, wda, _) = makeCore { $0.busyWait = 6 }
+        wda.tree([Node("StaticText", "Hello", [20, 100, 200, 40])], app: "Notes")
+        _ = await core.call("look", [:])
+        async let first = core.call("do", ["actions": [["wait_until": ["text": "Never", "ms": 3000]]]])
+        await sleep(seconds: 0.3)
+        let second = await core.call("look", [:])
+        _ = await first
+        XCTAssertTrue(second.text.contains("at the MCP: "), second.text)
+        XCTAssertTrue(second.text.contains("s waiting for the call before to finish"), second.text)
+        XCTAssertFalse(second.text.contains("busy: another call"), second.text)
+    }
+
+    /// Gym: "example.com" + the Go key never navigated in Safari (3/3), "https://example.com/" did.
+    func testATypeOfABareHostIntoSafarisAddressFieldSaysToAddTheScheme() async {
+        let (core, wda, _) = makeCore()
+        wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": "com.apple.mobilesafari", "name": "Safari"]]) }
+        let field = FaultTests.Field()
+        field.install(wda)
+        _ = await core.call("look", [:])
+        let bare = await core.call("do", ["actions": [["type": "example.com", "ref": 1]]])
+        XCTAssertTrue(bare.text.contains("a bare host in Safari's address field: the Go key did not open it in tests, so type it with its scheme (\"https://example.com\")"), bare.text)
+        let full = await core.call("do", ["actions": [["type": "https://example.com/", "ref": 1, "clear": true]]])
+        XCTAssertFalse(full.text.contains("a bare host"), full.text)
+    }
+
+    /// Gym: a scroll's drag started on Safari's address capsule and opened the tab overview; four
+    /// more swipes then "stopped moving". The drag now starts above anything wide at the bottom,
+    /// and a swipe whose read shows another screen ends the scroll and says so.
+    func testScrollToStartsAboveTheBottomChromeAndStopsWhenASwipeChangedTheScreen() async {
+        let (core, wda, _) = makeCore()
+        wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": "com.apple.mobilesafari", "name": "Safari"]]) }
+        let page: [Node] = [
+            Node("WebView", nil, [0, 100, 390, 744], (0..<6).map { Node("StaticText", "Paragraph \($0)", [20, Double(120 + $0 * 90), 350, 60]) }),
+            Node("Image", "capsule_with_toolbar_shadow", [-30, 689, 462, 163]),
+            Node("Other", "CapsuleNavigationBar", [28, 748, 346, 45], [Node("Button", "Tabs", [320, 752, 40, 40])]),
+            Node("Button", "Back", [20, 800, 40, 40]), Node("Button", "Share", [180, 800, 40, 40]), Node("Button", "Bookmarks", [260, 800, 40, 40]),
+        ]
+        let overview: [Node] = [Node("TextView", "TabOverview", [0, 60, 390, 700]), Node("Button", "Example Domain", [67, 62, 268, 401]), Node("Button", "Close", [320, 70, 40, 40]), Node("Button", "Done", [330, 790, 50, 40]), Node("Button", "New Tab", [170, 790, 50, 40])]
+        wda.tree(page, app: "Safari")
+        let drags = LockedBox<[(Double, Double)]>([])
+        wda.set("POST /wda/pressAndDragWithVelocity") { body in
+            drags.update { $0.append((body?["fromY"]?.double ?? 0, body?["toY"]?.double ?? 0)) }
+            wda.tree(overview, app: "Safari")
+            return (200, ["value": .null])
+        }
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["scroll_to": "Learn more"]]])
+        XCTAssertEqual(drags.value.count, 1, result.text)
+        XCTAssertLessThan(drags.value.first?.0 ?? 999, 689, "the drag starts above the capsule's shadow: \(result.text)")
+        XCTAssertGreaterThan(drags.value.first?.0 ?? 0, 400, "and still low in the page: \(result.text)")
+        XCTAssertTrue(result.text.contains("1 swipes, \"Learn more\" not found: the last swipe changed the screen (it shows TextView \"TabOverview\", Button \"Example Domain\", Button \"Close\"): the list is gone, so the scroll stopped"), result.text)
+        XCTAssertFalse(result.text.contains("stopped moving"), result.text)
+    }
+
+    /// Photos' home: the Library grid is one Button of 402x586 with the photos nowhere in the tree
+    /// (the gym's raw XML), so its centre is one photo among many. The line says so.
+    func testAnElementCoveringTheScreenAloneSaysItsPartsAreNotInTheTree() async {
+        let (core, wda, _) = makeCore()
+        wda.tree([Node("Button", "Library", [0, 0, 390, 586]), Node("Button", "Albums", [0, 600, 390, 60]), Node("Button", "Search", [300, 800, 80, 40])], app: "Photos")
+        let result = await core.call("look", [:])
+        XCTAssertTrue(result.text.contains("1 Button \"Library\" [0,0,390,586] (one element covering 69 % of the screen with no parts in the tree: tap a point on the picture, not its number)"), result.text)
+        XCTAssertFalse(result.text.contains("\"Albums\" [0,600,390,60] (one element"), result.text)
     }
 
     /// Photos' What's New sheet: back (an edge swipe) did nothing. The answer now says a sheet is up
@@ -1410,6 +1478,62 @@ final class GymTests: XCTestCase {
         XCTAssertTrue(result.text.contains("not seen within 8000 ms"), result.text)
         XCTAssertGreaterThan(Date().timeIntervalSince(started), 7.5)
         XCTAssertTrue(result.text.contains("took: ") && result.text.contains(" s actions, "), result.text)
+    }
+
+    /// Three calls during a 32 s restart had no picture at all (the runner gone, simctl over 10 s).
+    /// The picture of the read before, marked with its age, stands in.
+    func testThePictureOfTheReadBeforeStandsInWhenNoneComes() async {
+        let (core, wda, _) = makeCore { $0.readTimeout = 0.5; $0.toolDeadline = 6 }
+        let first = await core.call("look", [:])
+        XCTAssertNotNil(first.jpeg)
+        wda.delay("GET /screenshot", 30)
+        wda.delay("GET /source", 30)
+        wda.delay("GET /wda/activeAppInfo", 30)
+        let blind = await core.call("look", [:])
+        XCTAssertNotNil(blind.jpeg, blind.text)
+        XCTAssertTrue(blind.text.contains("the screenshot is the one of the read before, ") && blind.text.contains(" s old (no newer one came)"), blind.text)
+    }
+
+    /// Photos' notification-permission alert sat over the launched app: the read after the launch
+    /// said Home screen and the agent took a wrong turn. The answer now names the alert instead of
+    /// reading again for the app.
+    func testALaunchUnderASystemAlertNamesTheAlert() async {
+        let (core, wda, _) = makeCore()
+        _ = await core.call("look", [:])
+        wda.set("POST /wda/apps/activate") { [wda] _ in
+            wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": "com.apple.springboard", "name": "SpringBoard"]]) }
+            wda.tree([Node("Alert", nil, [20, 300, 350, 200], [Node("StaticText", "\"Photos\" Would Like to Send You Notifications", [40, 320, 310, 40]), Node("Button", "Don't Allow", [40, 440, 150, 44]), Node("Button", "Allow", [200, 440, 150, 44])])], app: "SpringBoard")
+            return (200, ["value": .null])
+        }
+        let result = await core.call("do", ["actions": [["launch": "com.apple.mobileslideshow"]]])
+        XCTAssertTrue(result.text.contains("a system alert is in front (\"\"Photos\" Would Like to Send You Notifications\": Don't Allow, Allow); the launched app is behind it: answer the alert first"), result.text)
+        XCTAssertFalse(result.text.contains("read again (2)"), result.text)
+    }
+
+    /// A scroll under an alert "stopped moving" (true: the alert took the drags); the answer names it.
+    func testAScrollUnderAnAlertNamesIt() async {
+        let (core, wda, _) = makeCore()
+        wda.tree([Node("Table", nil, [0, 100, 390, 700], (0..<10).map { Node("Cell", "Row \($0)", [16, Double(100 + $0 * 44), 358, 44]) }), Node("Alert", nil, [20, 300, 350, 200], [Node("StaticText", "Just a moment", [40, 320, 310, 40]), Node("Button", "Not now", [40, 440, 150, 44])])], app: "Gym")
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["scroll_to": "Row 99"]]])
+        XCTAssertTrue(result.text.contains("not found: the list stopped moving (its end, or the text is not in it); an alert is over the list (\"Just a moment\": Not now): answer it first"), result.text)
+    }
+
+    /// Safari's address bar: {key: "return"} as a key event left the suggestions up once. With a
+    /// keyboard up, return is a tap on its own Go/Return key; without one, the key event, and the
+    /// answer says which.
+    func testReturnIsTheKeyboardsOwnKeyWhenOneIsUp() async {
+        let (core, wda, _) = makeCore()
+        wda.tree([Node("TextField", "Address", [16, 64, 306, 37], value: "example.com"), Node("Keyboard", nil, [0, 500, 390, 344], [Node("Button", "space", [100, 800, 190, 40]), Node("Button", "Go", [300, 800, 80, 40])])], app: "Safari")
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["key": "return"]]])
+        XCTAssertTrue(result.text.contains("key return: tapped the keyboard's \"Go\" key at [340, 820]"), result.text)
+        XCTAssertEqual(wda.bodies("POST /wda/tap").last?["y"]?.double, 820)
+        XCTAssertTrue(wda.bodies("POST /wda/keys").isEmpty)
+        wda.tree([Node("TextField", "Address", [16, 64, 306, 37], value: "example.com")], app: "Safari")
+        let event = await core.call("do", ["actions": [["key": "return"]]])
+        XCTAssertTrue(event.text.contains("key return (sent as a key event; no keyboard key was listed to tap)"), event.text)
+        XCTAssertEqual(wda.bodies("POST /wda/keys").count, 1)
     }
 
     /// CI simulator, the keyboard's first use: the runner stood still for seconds, the focus reads
