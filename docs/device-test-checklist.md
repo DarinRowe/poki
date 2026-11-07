@@ -1,17 +1,31 @@
 # Device test checklist (PokiCore and PokiLauncher)
 
-Everything in dev/ios-core is tested on Linux and macOS only (Swift tests, Rust tests, iOS builds).
+PokiCore, the relay and the launcher are tested on Linux and macOS only (Swift tests, Rust tests, iOS builds).
 These checks need the phone. Run them in order: each step relies on the one before. Write the
 result and the time next to each line.
 
 ## 0. Before
 
-- [ ] Poki and Poki Runner (dev/ios-app CI builds) installed with the same signing tool and Apple ID, developer trusted. Open Poki once; opening Poki Runner by hand should show its screen and go back to Poki.
+- [ ] Poki and Poki Runner (`ios-app.yml` and `ios-runner.yml` builds) installed with the same signing tool and Apple ID, developer trusted. Open Poki once; opening Poki Runner by hand should show its screen and go back to Poki.
 - [ ] Developer Mode on (Settings → Privacy & Security → Developer Mode).
 - [ ] Note the iOS version and whether the phone is on Wi-Fi or cellular for each step.
 
-## 1. Loopback (one of these)
+## 1. Loopback (choose one; no proxy app is required with the built-in connection)
 
+- [ ] Built-in: install the local-VPN build with Network Extensions provisioned for both Poki and
+  PokiTunnel. In Setup > Connect to this iPhone, tap Enable local connection and approve iOS's VPN
+  prompt. The developer-service check passes; neither a saved profile nor VPN Connected alone counts.
+- [ ] Built-in: a normal web page still loads; no DNS or internet default route is installed by Poki.
+- [ ] Built-in: disconnect/reconnect, lock/unlock, and reboot recover after an explicit reconnect.
+  Opening Poki alone must not replace another active VPN. Choosing External app stops only Poki's VPN.
+- [ ] Built-in, with Poki on: turn Poki's VPN off in Settings > VPN. The agent's runner status says to
+  open Poki and tap Enable local connection, and names no proxy app. Tapping it while Poki is on brings
+  the runner back within seconds.
+- [ ] Installed over 0.2.3 with a proxy app that was set up only in the proxy app (no connection
+  chosen in Poki): Turn on says to choose a local connection first, and Setup > External app > Use
+  the current VPN brings it back. Say this in the release notes for 0.2.3 users.
+- [ ] External build: no PokiTunnel is embedded and no built-in enable button is offered. Continue
+  with an external option below. Use this build when Network Extension signing is unavailable.
 - [ ] Or LocalDevVPN (App Store) on, for people without a proxy app.
 - [ ] Or Shadowrocket "Include route 10.7.0.1/32" on, with Shadowrocket connected.
 - [ ] Or Surge Enhanced Mode with the Poki module (`10.7.0.1 = reflect`), or Loon's plugin, or sing-box `loopback_address`.
@@ -22,6 +36,9 @@ result and the time next to each line.
 - [ ] Start pairing in Poki: the launcher emits `advertise`, and Poki appears in Settings' list of computers to pair with.
 - [ ] Pick it: a PIN appears in Poki's Live Activity; type it on the phone.
 - [ ] `paired` arrives with a path; the file is in the app's container (never print its contents).
+- [ ] Start pairing, then leave Settings without pairing: after 10 minutes Poki stops waiting (Try again
+  shows), the Live Activity ends, and Poki no longer keeps itself running. Switching to another tab, or
+  opening another Setup step, while pairing cancels it at once.
 - [ ] Older iOS, or if this fails: use a pairing file made on a Mac (RPPairing or lockdown plist) and note which kind worked.
 
 ## 3. Launcher
@@ -37,7 +54,7 @@ result and the time next to each line.
 
 ## 4. PokiCore through the relay
 
-- [ ] The relay state reaches `ready`; the connector URL (`https://pokimcp.zheha.nz/v1/<label>/<secret>/mcp`) is shown in Poki.
+- [ ] Deploy your relay (`deploy/cf-relay/deploy.sh`) and enter its address in Connect. The relay state reaches `ready`; the connector URL (`https://<relay host>/v1/<label>/<secret>/mcp`) is shown in Poki.
 - [ ] Add it in Claude as a connector; `tools/list` shows look, do, status.
 - [ ] `look` within 2 s, with a screenshot and elements.
 - [ ] A Clock task (World Clock → add a city) and a Notes task, timed from the first call to the last.

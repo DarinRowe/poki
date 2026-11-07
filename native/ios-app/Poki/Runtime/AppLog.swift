@@ -1,10 +1,11 @@
 import Foundation
+import PokiCore
 import UIKit
 
 /// What Poki did and why, for the Debug tab's Copy log: runner starts, stops and restarts (with the
 /// reason), agent steps, approvals, relay and Live Activity changes. Kept in memory (the last 600
 /// lines) and in a file in Caches so a log survives Poki being closed. Never holds typed text or
-/// keys: steps are logged with their plain labels, which hide what is typed into password fields.
+/// keys: each line passes through PokiCore's `StepLabels.withoutTypedText` before it is kept.
 @MainActor
 @Observable
 final class AppLog {
@@ -28,7 +29,7 @@ final class AppLog {
     }
 
     func add(_ area: String, _ message: String) {
-        let line = "\(stamp.string(from: Date())) [\(area)] \(message)"
+        let line = "\(stamp.string(from: Date())) [\(area)] \(StepLabels.withoutTypedText(message))"
         lines.append(line)
         if lines.count > limit { lines.removeFirst(lines.count - limit) }
         save()
@@ -45,7 +46,7 @@ final class AppLog {
         let header = [
             "Poki log, \(ISO8601DateFormatter().string(from: Date()))",
             "Poki \(info["CFBundleShortVersionString"] as? String ?? "?") (\(info["CFBundleVersion"] as? String ?? "?")), \(UIDevice.current.model), iOS \(UIDevice.current.systemVersion)",
-            "Relay \(RelayIdentity.relayBase.host() ?? "?")",
+            "Relay \(RelayAddress.saved?.origin.host() ?? "not set")",
         ].joined(separator: "\n")
         return ([header] + lines).joined(separator: "\n")
     }

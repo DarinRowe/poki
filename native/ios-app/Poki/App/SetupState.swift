@@ -11,8 +11,6 @@ struct SetupState: Codable, Equatable {
     var proxyApp: String?
     var runnerInstalled = false
 
-    var loopbackChosen: Bool { loopback == .proxy }
-
     init() {}
     // Field by field, so a setup saved by an older version keeps what it has.
     init(from decoder: Decoder) throws {
@@ -22,7 +20,6 @@ struct SetupState: Codable, Equatable {
         uiAutomation = try c.decodeIfPresent(Bool.self, forKey: .uiAutomation) ?? false
         passcodeNoted = try c.decodeIfPresent(Bool.self, forKey: .passcodeNoted) ?? false
         loopback = (try? c.decodeIfPresent(Loopback.self, forKey: .loopback)) ?? Loopback.none
-        if loopback == .builtIn { loopback = .none }
         proxyApp = try c.decodeIfPresent(String.self, forKey: .proxyApp)
         runnerInstalled = try c.decodeIfPresent(Bool.self, forKey: .runnerInstalled) ?? (pairingFile != nil)
     }
@@ -59,7 +56,7 @@ enum SetupStep: String, CaseIterable, Identifiable {
         switch self {
         case .runner: "Install Poki Runner"
         case .developerMode: "Turn on Developer Mode"
-        case .loopback: "Turn on the loopback"
+        case .loopback: "Connect to this iPhone"
         case .pairing: "Pair this iPhone"
         case .automation: "Allow UI Automation"
         case .background: "Let Poki stay on"
@@ -81,7 +78,7 @@ enum SetupStep: String, CaseIterable, Identifiable {
         switch self {
         case .runner: "The helper app that taps and types for your agent. Poki starts it; you never open it."
         case .developerMode: "Lets this iPhone run Poki Runner."
-        case .loopback: "Lets Poki reach this iPhone's developer services at 10.7.0.1, through the proxy app you already use."
+        case .loopback: "Use Poki's local connection, or a compatible VPN app you already have."
         case .pairing: "Gives Poki its own key to this iPhone. Made and kept on the phone, no computer needed."
         case .automation: "Lets Poki Runner use other apps."
         case .background: "Keeps Poki connected while it is in the background, and shows what it does on the Lock Screen."
@@ -93,10 +90,25 @@ enum SetupStep: String, CaseIterable, Identifiable {
         switch self {
         case .runner: "Install Poki Runner, then trust it: Settings > General > VPN & Device Management."
         case .developerMode: "Settings > Privacy & Security > Developer Mode. Turn it on, restart, then tap Turn On."
-        case .loopback: "Turn on the Poki module in your proxy app, or connect LocalDevVPN. Then come back to Poki."
+        case .loopback: "In Poki's Setup, enable the local connection or choose an external connection."
         case .pairing: "Settings > Privacy & Security > Developer Mode > Pair with Poki, then type the code shown here."
         case .automation: "Settings > Developer > Enable UI Automation."
         case .background: "Allow location While Using the App, and keep Live Activities on."
+        }
+    }
+}
+
+extension SetupStep {
+    /// The step as the Live Activity's content line, in English (the face words it in the system's
+    /// language): a name, not what to do, which the setup screen says.
+    var activityTitle: String {
+        switch self {
+        case .runner: "Poki Runner"
+        case .developerMode: "Developer Mode"
+        case .loopback: "Loopback"
+        case .pairing: "Pairing"
+        case .automation: "UI Automation"
+        case .background: "Background"
         }
     }
 }
@@ -105,7 +117,10 @@ enum SetupStep: String, CaseIterable, Identifiable {
 struct RecentStep: Identifiable, Equatable {
     let id = UUID()
     var text: String
-    var detail: String
-    var ok: Bool
+    /// The app it happened in, as PokiCore names it.
+    var app: String?
+    /// Why it did not go through: PokiCore's delivery, "failed: nothing changed".
+    var failure: String?
+    var ok: Bool { failure == nil }
     var at: Date
 }

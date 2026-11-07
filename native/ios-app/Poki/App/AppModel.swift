@@ -9,9 +9,13 @@ import UIKit
 final class AppModel {
     var setup = SetupState.load() { didSet { setup.save() } }
     let identity = RelayIdentity()
+    /// The person's own relay (Connect). Poki has no default relay and sends nothing until one is set.
+    private(set) var relayAddress = RelayAddress.saved
     let loopback = LoopbackMonitor()
+    let tunnel = LoopbackTunnel()
     let background = BackgroundKeeper()
     let diskImage = DiskImageStore()
+    let voice: VoiceModel
     private(set) var runner = RunnerStatus.idle
     private(set) var relayStatus = RelayStatus.off
     private(set) var sessionOn = false
@@ -22,6 +26,8 @@ final class AppModel {
     private(set) var problem: String?
     /// The agent's recent actions, newest last, for the home screen.
     private(set) var recentSteps: [RecentStep] = []
+    /// The app the agent is in, from its last step.
+    private(set) var currentApp: String?
     /// The runner is stopped until the next agent request (idle, or the owner tapped Stop runner).
     private(set) var runnerPaused = false
     /// Stop the runner after this long without agent activity; 0 never stops it.
@@ -60,12 +66,35 @@ final class AppModel {
     private let core: LiveCore
     private let launcher: RunnerLauncher
     private let pairer: DevicePairing
+    private let pairingKeepAlive = KeepAlive()
     private let activity = ActivityController()
     let log = AppLog.shared
     private var eventsTask: Task<Void, Never>?
+    private var sessionStartTask: Task<Void, Never>?
+    private(set) var sessionStarting = false
+
+    var connectionInUse: Bool {
+        if sessionOn || sessionStarting { return true }
+        return pairingUnderWay
+    }
+
+    var connectionMethod: SetupState.Loopback {
+        if setup.loopback != .none { return setup.loopback }
+        // The external app is the way (ESP-168); the built-in connection is only ever chosen.
+        return .proxy
+    }
 
     init(launcher: RunnerLauncher = RustLauncher(), pairer: DevicePairing = RustPairing()) {
-        core = LiveCore(host: host)
+        ActivityController.endAll()
+        let core = LiveCore(host: host)
+        self.core = core
+        // Voice taps get the same rules and approval card as an agent's `do`.
+        voice = VoiceModel(clearTap: { text, bundle, name in await core.clearTap(on: text, inApp: bundle, named: name, waiting: VoiceModel.approvalWait) },
+                           phoneTool: { name, arguments in
+                               let result = await core.tool(name, arguments: arguments)
+                               return (result.text, result.isError)
+                           },
+                           holdMicrophone: { [background] on in on ? background.pauseAudio() : background.resumeAudio() })
         self.launcher = launcher
         self.pairer = pairer
         host.update(key: identity.signingKey, hashes: identity.accessHashes)
@@ -80,6 +109,12 @@ final class AppModel {
             }
         }
         host.onWake { [weak self] in Task { @MainActor in self?.wakeRunner() } }
+        // Allow and Deny on the Live Activity run in this process and come straight here.
+        ApprovalIntentBridge.install { [weak self] decision in
+            guard let self else { return false }
+            self.decide(decision)
+            return true
+        }
         listenForApprovals()
         // One pump for the app's whole life. Cancelling a task that reads an AsyncStream ends the
         // stream for good, so a pump per session would go silent after the first Turn off (no steps,
@@ -89,9 +124,17 @@ final class AppModel {
         }
         loopback.onChange = { [weak self] old, new in self?.loopbackChanged(from: old, to: new) }
         if !diskImage.isReady { Task { await diskImage.download() } }
-        if UserDefaults.standard.bool(forKey: "pokiSample") { loadSample() }
+        if UserDefaults.standard.string(forKey: "pokiSample") != nil { loadSample() }
         NotificationCenter.default.addObserver(forName: UIApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.appWillTerminate() }
+        }
+        // Installed over the local-VPN build (both use one bundle ID): this build has only external
+        // connections, so a saved built-in choice becomes the external one. Otherwise Setup showed the
+        // step done while Turn on said this build has no local VPN.
+        if setup.loopback == .builtIn, !tunnel.available {
+            setup.loopback = .proxy
+            setup.save()
+            log.add("loopback", "this build has no built-in connection: the saved choice is now an external one")
         }
     }
 
@@ -107,7 +150,10 @@ final class AppModel {
         if sessionOn, let step = stepUnderWay, Date().timeIntervalSince(step.started) < 20 {
             log.add("app", "Poki came to the front during a step (\(step.summary)): a tap hit the Live Activity")
         }
-        if wantsOn, !sessionOn, pairingPath != nil, diskImage.isReady { startSession() }
+        Task {
+            await tunnel.refresh()
+            if wantsOn, !sessionOn, pairingPath != nil, diskImage.isReady { startSession(reconnectLocal: false) }
+        }
         if let step = guiding, isDone(step) { stopGuide() }
     }
 
@@ -119,7 +165,9 @@ final class AppModel {
     /// Poki is being closed: end the runner now (the launcher kills its process) instead of leaving
     /// iOS's automation banner up for half a minute. iOS gives a few seconds for this.
     private func appWillTerminate() {
-        guard sessionOn else { return }
+        // The Live Activity goes with the app; the pause below gives its end time to reach iOS.
+        ActivityController.endAll()
+        guard sessionOn else { Thread.sleep(forTimeInterval: 0.5); return }
         log.add("app", "Poki is closing: ending the runner")
         launcher.stop()
         Thread.sleep(forTimeInterval: 2.5)
@@ -127,25 +175,88 @@ final class AppModel {
 
     var deviceName: String { UIDevice.current.name }
 
-    /// `-pokiSample YES`: sample steps and an approval, only for the build's screenshots of the home
-    /// screen. Nothing is started.
+    /// `-pokiSample B` (YES is B), `C` or `PIN`: the home screen states of ESP-139 board 01 with sample
+    /// steps and an approval, only for the build's screenshots. Nothing is started: B and D look like a
+    /// session at work, C like one standing by (the loopback check stays live, so a simulator shows it
+    /// off). A sample relay address (not saved) and, on a simulator, two agents are added when there are none.
     private func loadSample() {
+        let scene = UserDefaults.standard.string(forKey: "pokiSample")?.uppercased() ?? "B"
+        // PIN: setup's pairing page with a sample code, as if Settings had asked for one.
+        if scene == "PIN" { pairing = .pin("482913"); return }
         let now = Date()
+        let messages = String(localized: "Messages")
+        // The sample relay is not saved. Sample agents go into the keychain, so only a simulator gets them.
+        if relayAddress == nil { relayAddress = RelayAddress("https://your-relay.example") }
+        #if targetEnvironment(simulator)
+        if identity.secrets.isEmpty {
+            _ = addConnector(name: "Claude")
+            _ = addConnector(name: "Codex")
+        }
+        #endif
+        Thumbnail.previewImage = ActivityPreview.sampleScreen()
+        sessionOn = true
+        relayStatus = .ready
+        currentApp = messages
+        if scene == "C" {
+            runnerPaused = true
+            runner = RunnerStatus(state: "standby", detail: "It starts when an agent asks.")
+            recentSteps = (0..<12).map { i in
+                RecentStep(text: String(localized: "Tap “Send”"), app: messages, at: now.addingTimeInterval(Double(i - 11) * 84 / 11 - 300))
+            }
+            return
+        }
+        runner = RunnerStatus(state: "running")
         recentSteps = [
-            RecentStep(text: "Open WeChat", detail: "In WeChat", ok: true, at: now.addingTimeInterval(-70)),
-            RecentStep(text: "Tap “Search”, then type “Mom”", detail: "In WeChat", ok: true, at: now.addingTimeInterval(-52)),
-            RecentStep(text: "Tap at 212, 640", detail: "In WeChat · Didn't go through", ok: false, at: now.addingTimeInterval(-30)),
-            RecentStep(text: "Type “On my way”", detail: "In WeChat", ok: true, at: now.addingTimeInterval(-12)),
+            RecentStep(text: String(localized: "Open Messages"), app: String(localized: "Home Screen"), at: now.addingTimeInterval(-70)),
+            RecentStep(text: String(localized: "Tap the chat with Mom"), app: messages, at: now.addingTimeInterval(-52)),
+            RecentStep(text: String(localized: "Type “On my way”"), app: messages, at: now.addingTimeInterval(-41)),
+            RecentStep(text: "Tap at 212, 640", app: messages, failure: "failed: nothing changed", at: now.addingTimeInterval(-30)),
         ]
-        approvals = [PendingApproval(id: "sample", app: "WeChat", summary: "Tap “Send”", expires: now.addingTimeInterval(45))]
+        activityText = String(localized: "Tap “Send”")
+        approvals = [PendingApproval(id: "sample", app: messages, summary: String(localized: "Send “On my way” to Mom"),
+                                     reason: "sending a message (\"send\")", expires: now.addingTimeInterval(25))]
     }
 
     // MARK: Session
 
-    func startSession() {
+    func chooseConnection(_ method: SetupState.Loopback) {
+        guard !connectionInUse, !tunnel.busy else { return }
+        if method == .proxy { tunnel.disconnect() }
+        setup.loopback = method
+        setup.proxyApp = nil
+        loopback.check()
+    }
+
+    func startSession(reconnectLocal: Bool = true) {
+        guard !sessionOn, !sessionStarting else { return }
+        if setup.loopback == .none {
+            problem = "Choose and enable a local connection first (Setup)."
+            return
+        }
+        if setup.loopback == .builtIn, !tunnel.connected {
+            guard reconnectLocal else {
+                problem = "The local connection is off. Turn Poki on to reconnect, or choose an external connection in Setup."
+                return
+            }
+            sessionStarting = true
+            sessionStartTask = Task {
+                defer { sessionStarting = false; sessionStartTask = nil }
+                do {
+                    try await tunnel.connect()
+                    try Task.checkCancellation()
+                    loopback.check()
+                    beginSession()
+                } catch is CancellationError { }
+                catch { problem = error.localizedDescription }
+            }
+        } else { beginSession() }
+    }
+
+    private func beginSession() {
         guard !sessionOn else { return }
         problem = nil
         guard let pairing = pairingPath else { problem = "Pair this iPhone first (Setup)."; return }
+        guard let relay = relayAddress else { problem = Self.noRelay; return }
         if !inFront { loopback.resume(every: 6) }
         guard diskImage.isReady, diskImage.recheck() else {
             problem = "The developer disk image is not downloaded yet (Setup > Pair). It is needed once."
@@ -164,18 +275,23 @@ final class AppModel {
         lastAgentActivity = Date()
         // The runner (and with it iOS's automation banner) starts only when an agent asks.
         standBy(reason: nil)
-        core.start()
+        core.start(relay: relay)
         idleTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in Task { @MainActor in self?.checkIdle() } }
     }
 
     func stopSession() {
-        guard sessionOn else { return }
+        sessionStartTask?.cancel()
         wantsOn = false
+        guard sessionOn else {
+            if setup.loopback == .builtIn { tunnel.disconnect() }
+            return
+        }
         if !inFront { loopback.pause() }
         log.add("session", "turned off: ending the runner")
         core.stop()
         Task { await RunnerProbe.shutdown() }
         launcher.stop()
+        if setup.loopback == .builtIn { tunnel.disconnect() }
         confirmRunnerEnded()
         idleTimer?.invalidate(); idleTimer = nil
         runnerPaused = false; host.setPaused(false)
@@ -253,7 +369,7 @@ final class AppModel {
         host.update(runner: .starting("starting the runner"))
         host.setPaused(true)
         activityText = "Idle"
-        activity.update { $0.runnerPaused = true; $0.phase = .idle; $0.headline = "Waiting for an agent"; $0.since = nil }
+        activity.update { $0.runnerPaused = true; $0.phase = .idle; $0.headline = "Runner asleep"; $0.since = nil }
     }
 
     /// Starts a paused runner again (the next agent request, or the owner).
@@ -281,7 +397,7 @@ final class AppModel {
     func loopbackChanged(from old: LoopbackMonitor.State, to new: LoopbackMonitor.State) {
         let wasWorking = { if case .working = old { true } else { false } }()
         if wasWorking, !loopback.isWorking {
-            log.add("loopback", "dropped: 10.7.0.1 stopped answering (\(loopback.text)); the runner cannot survive this")
+            log.add("loopback", "dropped: 10.7.0.1 stopped answering (\(loopback.state)); the runner cannot survive this")
         } else if !wasWorking, loopback.isWorking, old != .checking {
             log.add("loopback", "back: 10.7.0.1 answers again" + (sessionOn && !runner.isRunning && !runnerPaused ? "; starting the runner now" : ""))
             if sessionOn, !runner.isRunning, !runnerPaused { launcher.restart() }
@@ -297,9 +413,13 @@ final class AppModel {
         }
         let preLaunch = ["connecting", "pairing", "tunnel", "waiting_network", "standby", "idle"].contains(status.state)
         if preLaunch, !loopback.isWorking, loopback.state != .checking || status.state == "waiting_network" {
-            let since = loopback.droppedAt.map { " since \(Self.clock.string(from: $0))" } ?? ""
-            let why = loopback.state == .noAnswer ? "the proxy app's tunnel is on but does not reflect 10.7.0.1" : "the loopback at 10.7.0.1 is not answering"
-            return .starting("waiting for the loopback\(since): \(why). The owner turns the proxy app's tunnel (Surge, Loon, Shadowrocket or sing-box) back on; the runner starts again by itself within seconds of that. Nothing on the phone changes meanwhile")
+            if loopback.cellularRefused {
+                let since = loopback.droppedAt.map { " since \(Self.clock.string(from: $0))" } ?? ""
+                return .starting("waiting for Wi-Fi\(since): the phone has only cellular, and iOS refuses the developer services' loopback there. The owner connects Wi-Fi and opens Poki; the runner starts by itself, and once it runs the phone can switch back to cellular. Nothing on the phone changes meanwhile")
+            }
+            return .waitingForLoopback(since: loopback.droppedAt.map(Self.clock.string(from:)),
+                                       tunnelWithoutAnswer: loopback.state == .noAnswer,
+                                       connection: setup.loopback == .builtIn ? .builtIn : .external)
         }
         return status.coreState
     }
@@ -340,11 +460,12 @@ final class AppModel {
         runner = status
         host.update(runner: coreState(of: status))
         if status.state == "failed" {
-            activity.update { $0.phase = .problem; $0.headline = status.fix ?? status.detail ?? "The runner stopped" }
+            let title = Self.problemText(status.fix ?? status.detail ?? "The runner stopped")
+            activity.update { $0.phase = .problem; $0.label = "Runner Stopped"; $0.headline = title }
         } else if !status.isRunning {
             activity.update { $0.phase = .idle; $0.headline = status.title }
         } else if activity.state.phase == .problem || activity.state.phase == .idle || activity.state.headline == "Starting the runner" {
-            activity.update { $0.phase = .idle; $0.headline = "Ready for the agent" }
+            activity.update { $0.phase = .idle; $0.headline = "Waiting for agent" }
         }
     }
 
@@ -375,16 +496,11 @@ final class AppModel {
             activityText = "Idle"
             let failed = delivery.hasPrefix("failed")
             log.add("agent", "\(failed ? "failed" : "done"): \(summary) · \(delivery.prefix(160))")
-            let place = app.map { "In \($0)" }
-            let detail = failed ? ([place, "Didn't go through"].compactMap { $0 }.joined(separator: " · ")) : (place ?? "Done")
-            recentSteps.append(RecentStep(text: summary, detail: detail, ok: !failed, at: Date()))
+            if let app { currentApp = app }
+            recentSteps.append(RecentStep(text: summary, app: app, failure: failed ? delivery : nil, at: Date()))
             if recentSteps.count > 20 { recentSteps.removeFirst(recentSteps.count - 20) }
             activity.record(step: summary, ok: !failed)
-            activity.update { state in
-                state.lastAction = summary
-                state.app = app ?? state.app
-                if state.approval == nil { state.headline = "Waiting for the agent's next step" }
-            }
+            activity.update { state in state.app = app ?? state.app }
             activity.setThumbnail(thumbnail)
         case .approvalRequested(let approval):
             approvals.append(approval)
@@ -398,7 +514,7 @@ final class AppModel {
             if approved == nil { problem = "An approval ran out before you answered, so that step was not done. The agent can ask again." }
             ApprovalNotice.clear(id)
             activity.update { state in
-                if state.approval?.id == id { state.approval = nil; state.phase = .working; state.headline = approved == true ? "Approved. Continuing" : "Not allowed" }
+                if state.approval?.id == id { state.approval = nil; state.phase = .working; state.headline = approved == true ? "Continuing" : "Step skipped" }
             }
         case .handoffRequested(let id, let kind, let text, let app):
             lastAgentActivity = Date()
@@ -478,20 +594,57 @@ final class AppModel {
         }
     }
 
-    /// A decision from the Live Activity. Allow is tapped on the expanded Dynamic Island, which takes
-    /// about a second to collapse; input sent at once can land on it (iOS then opens Poki). So the
-    /// Live Activity's decisions reach PokiCore after a short pause, the app's own buttons at once.
+    /// Decisions an intent left in the App Group mailbox because it ran outside the app.
     func drainApprovals() {
-        let decisions = ApprovalMailbox.drain().filter { id, _ in approvals.contains(where: { $0.id == id }) }
-        guard !decisions.isEmpty else { return }
+        for decision in ApprovalMailbox.drain() { decide(decision) }
+    }
+
+    /// A decision from the Live Activity. The card shows the answer at once (Allowing, Denying).
+    /// Allow is tapped on the expanded Dynamic Island, which takes about a second to collapse; input
+    /// sent at once can land on it (iOS then opens Poki). So the Live Activity's decisions reach
+    /// PokiCore after a short pause, the app's own buttons at once.
+    func decide(_ decision: ApprovalDecision) {
+        // A tap on an approval that already ended (answered in the app, or timed out) does nothing.
+        guard approvals.contains(where: { $0.id == decision.approvalID }) else { return }
+        log.add("approval", "\(decision.approved ? "allowed" : "denied") \(decision.approvalID) on the Live Activity")
+        activity.update { state in
+            guard state.approval?.id == decision.approvalID else { return }
+            state.phase = .deciding
+            state.decision = decision.approved
+        }
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(Self.islandCollapse))
-            for (id, approved) in decisions { core.resolveApproval(id: id, approved: approved) }
+            core.resolveApproval(id: decision.approvalID, approved: decision.approved)
         }
     }
 
     /// How long the expanded island takes to fold after a tap on its button.
     static let islandCollapse: TimeInterval = 1.5
+
+    /// The launcher's fix as the Live Activity's content line, in English (the face words it in the
+    /// system's language). The fixes the launcher sends (native/launcher/src/device.rs, launch.rs) have
+    /// names of a few words; any other text gives its first part. What to do is in the app, which shows
+    /// the whole fix.
+    nonisolated static func problemText(_ fix: String) -> String {
+        let short: [(String, String)] = [
+            ("Turn on the loopback", "Loopback Off"),
+            ("Poki needs the internet", "No Internet"),
+            ("Mounting the developer disk image timed out", "No Internet"),
+            ("This iOS version needs a newer", "Disk Image Outdated"),
+            ("The developer disk image did not install", "Fetching Disk Image"),
+            ("Pair again", "Pairing Refused"),
+            ("Turn on Developer Mode", "Developer Mode Off"),
+            ("Install Poki Runner", "Poki Runner Missing"),
+        ]
+        return short.first { fix.hasPrefix($0.0) }?.1 ?? firstPart(fix)
+    }
+
+    /// A text up to its first colon or the end of its first sentence, capitalised.
+    nonisolated static func firstPart(_ text: String) -> String {
+        let mark = [": ", ". "].compactMap { text.range(of: $0) }.min { $0.lowerBound < $1.lowerBound }
+        let part = mark.map { String(text[..<$0.lowerBound]) } ?? text
+        return part.prefix(1).uppercased() + part.dropFirst()
+    }
 
     // MARK: Pairing
 
@@ -508,19 +661,50 @@ final class AppModel {
     }
 
     func startPairing() {
+        guard loopback.isWorking else {
+            pairing = .failed("Enable a local connection in Setup and wait for the connection check to pass, then try pairing again.")
+            return
+        }
         pairing = .advertising
         // Started now, while Poki is in front: the PIN arrives while the person is in Settings, when
         // iOS no longer lets Poki start a Live Activity.
         activity.start(deviceName: deviceName)
         activity.update { $0.phase = .pairing; $0.pin = nil; $0.headline = "Pair in Settings" }
+        // The person completes pairing in Settings. Keep the listener and Bonjour publication alive
+        // there, before a regular Poki session can be started. Without it (audio can be busy, as in a
+        // call) pairing still starts, as it did before the keep-alive.
+        do { try pairingKeepAlive.start() }
+        catch { log.add("pairing", "keep-alive did not start (\(error.localizedDescription)); iOS may stop the pairing while Settings is open") }
         do {
             try pairer.start(hostName: "Poki", saveTo: AppFiles.pairingFile) { [weak self] event in
                 Task { @MainActor in self?.pairingChanged(event) }
             }
-        } catch { pairing = .failed("\(error)") }
+        } catch { pairingChanged(.failed("\(error)")) }
     }
 
-    func cancelPairing() { pairer.cancel(); pairing = nil; activity.update { $0.pin = nil } }
+    func cancelPairing() {
+        pairer.cancel()
+        pairingKeepAlive.stop()
+        pairing = nil
+        activity.update { $0.pin = nil }
+        if !sessionOn { stopGuide(); activity.end() }
+    }
+
+    /// Waiting for Settings or showing a PIN: the listener, Bonjour and the keep-alive are running.
+    var pairingUnderWay: Bool {
+        switch pairing {
+        case .advertising?, .pin?: true
+        default: false
+        }
+    }
+
+    /// The person left the pairing step in Poki (another tab, or another step): the pairing stops at
+    /// once, and with it the background keep-alive. Going to Settings is not leaving.
+    func leftPairing() {
+        guard pairingUnderWay else { return }
+        log.add("pairing", "cancelled: the pairing step was left")
+        cancelPairing()
+    }
 
     private func pairingChanged(_ event: PairingEvent) {
         pairing = event
@@ -530,6 +714,7 @@ final class AppModel {
             activity.start(deviceName: deviceName)
             activity.update { $0.phase = .pairing; $0.pin = pin; $0.headline = "Pairing code" }
         case .paired(let url):
+            pairingKeepAlive.stop()
             try? (url as NSURL).setResourceValue(URLFileProtection.completeUntilFirstUserAuthentication, forKey: .fileProtectionKey)
             setup.pairingFile = url.path
             pairingTrouble = nil; pairingVerifiedAt = nil
@@ -537,7 +722,8 @@ final class AppModel {
             activity.update { $0.phase = .idle; $0.pin = nil; $0.headline = "Paired" }
             if !sessionOn { Task { try? await Task.sleep(for: .seconds(4)); if !self.sessionOn { self.activity.end() } } }
         case .failed(let why):
-            activity.update { $0.phase = .problem; $0.pin = nil; $0.headline = "Pairing failed: \(why)" }
+            pairingKeepAlive.stop()
+            activity.update { $0.phase = .problem; $0.pin = nil; $0.label = "Pairing Failed"; $0.headline = Self.firstPart(why) }
             if !sessionOn { Task { try? await Task.sleep(for: .seconds(8)); if !self.sessionOn { self.activity.end() } } }
         case .advertising: break
         }
@@ -555,7 +741,7 @@ final class AppModel {
         activity.update {
             $0.phase = .setup
             $0.headline = "Setting up Poki"
-            $0.guide = .init(number: (steps.firstIndex(of: step) ?? 0) + 1, count: steps.count, title: step.title, hint: step.hint)
+            $0.guide = .init(number: (steps.firstIndex(of: step) ?? 0) + 1, count: steps.count, title: step.activityTitle)
         }
     }
 
@@ -570,7 +756,7 @@ final class AppModel {
         switch step {
         case .runner: setup.runnerInstalled
         case .developerMode: setup.developerMode
-        case .loopback: loopback.isWorking || setup.loopbackChosen
+        case .loopback: setup.loopback != .none && loopback.isWorking
         case .pairing: pairingPath != nil && pairingTrouble == nil && diskImage.isReady
         case .automation: setup.uiAutomation
         case .background: background.allowed && activity.enabled
@@ -580,8 +766,32 @@ final class AppModel {
     var setupComplete: Bool { SetupStep.allCases.allSatisfy(isDone) }
 
     var activityProblem: String? { activity.lastError }
+    var activitiesEnabled: Bool { activity.enabled }
 
-    // MARK: Connectors
+    // MARK: Relay and connectors
+
+    static let noRelay = "Enter your relay's address first (Settings › Relay). Poki has no default relay."
+
+    /// Saves the relay address the person entered; false when it is not one. A running session moves
+    /// to the new relay at once.
+    func setRelay(_ text: String) -> Bool {
+        guard let address = RelayAddress(text) else { return false }
+        guard address != relayAddress else { return true }
+        RelayAddress.saved = address
+        relayAddress = address
+        log.add("relay", "address set to \(address.origin.host() ?? "?")")
+        if problem == Self.noRelay { problem = nil }
+        if sessionOn {
+            core.stop()
+            core.start(relay: address)
+        }
+        return true
+    }
+
+    /// The MCP address for a connector, on the person's relay; nil until a relay is set.
+    func connectorURL(for secret: ConnectorSecret) -> URL? {
+        relayAddress.map { identity.url(for: secret, relay: $0) }
+    }
 
     func addConnector(name: String) -> ConnectorSecret {
         let secret = identity.addSecret(name: name)

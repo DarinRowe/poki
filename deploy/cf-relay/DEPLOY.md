@@ -1,18 +1,33 @@
-# Deploying the Poki relay Worker
+# Deploying your own Poki relay
 
-`worker.js` is the bundled Worker, one ES module built from `src/index.js` with `npm run build`. Its only import is `cloudflare:workers`. `wrangler.toml` describes the same deployment for Wrangler. This file gives the same settings for an upload through the Cloudflare API or MCP.
+Poki has no default relay. Each person deploys this Worker to their own Cloudflare account and enters its address in Poki on the iPhone, so screenshots and taps pass only through a Worker they control ([PRIVACY.md](PRIVACY.md)).
+
+## Deploy with the script
+
+You need Node.js 22 or later and a Cloudflare account.
+
+```sh
+cd deploy/cf-relay
+npx wrangler login                        # once; or set CLOUDFLARE_API_TOKEN
+./deploy.sh                               # https://poki-relay.<your subdomain>.workers.dev
+./deploy.sh --domain relay.example.com    # or a hostname on a zone in your account
+```
+
+The script installs Wrangler from `package-lock.json`, makes `TOKEN_SECRET` on the first deploy (a later deploy keeps it, because changing it signs every MCP client out), deploys, and prints the relay address. In Poki, open **Connect**, tap **Relay address** and enter that address. `./deploy.sh --dry-run` builds and checks the Worker without uploading anything. After a deploy, `node test/phone-sim.mjs <relay address> --check` runs OAuth and an MCP call through it with a simulated phone.
+
+The rest of this file describes what the Worker serves and the same settings for an upload through the Cloudflare API. `worker.js` is the bundled Worker, one ES module built from `src/index.js` with `npm run build`. Its only import is `cloudflare:workers`. `wrangler.toml` describes the same deployment for Wrangler.
 
 ## What it serves
 
 | Path | Who | What |
 |---|---|---|
-| `wss://pokimcp.zheha.nz/v1/<label>/connect` | the phone | relay frames v1 (docs/ios-core.md on dev/ios-core) |
-| `https://pokimcp.zheha.nz/v1/<label>/<secret>/mcp` | Claude, ChatGPT | Streamable HTTP MCP (POST; GET and DELETE are passed to the phone) |
+| `wss://<relay host>/v1/<label>/connect` | the phone | relay frames v1 (docs/ios-core.md) |
+| `https://<relay host>/v1/<label>/<secret>/mcp` | Claude, ChatGPT | Streamable HTTP MCP (POST; GET and DELETE are passed to the phone) |
 | `/.well-known/oauth-protected-resource/v1/<label>/<secret>/mcp` | MCP client | RFC 9728 metadata |
 | `/.well-known/oauth-authorization-server/v1/<label>/<secret>` | MCP client | RFC 8414 metadata (also under `<base>/.well-known/...`) |
 | `<base>/register`, `<base>/authorize`, `<base>/token` | MCP client | dynamic registration, authorization code + PKCE (S256), refresh |
 
-Routing is by path on one hostname. A free zone's Universal SSL covers only one level of subdomain, so `<label>.pokimcp.zheha.nz` would need Advanced Certificate Manager.
+Routing is by path on one hostname, so the relay works on a `workers.dev` address or on one custom hostname without wildcard certificates.
 
 ## OAuth design
 
@@ -42,7 +57,6 @@ Setting `ALLOW_SECRET_ONLY=1` also accepts MCP requests with no `Authorization` 
 | Plain text | `LABEL_DAILY` | `5000` (per label per UTC day) |
 | Plain text | `GLOBAL_DAILY` | `8000` (all labels per UTC day) |
 | Plain text | `GLOBAL_DAILY_SECONDS` | `80000` (estimated Durable Object awake seconds per UTC day) |
-| Plain text | `ORIGIN_FALLBACK` | unset. Set `1` only while the Worker sits on zone routes in front of the old tunnel: paths that are not `/v1/...` (including `/.well-known/...` that is not followed by `/v1/`) are then passed to the origin. |
 | Plain text | `REDIRECT_HOSTS` | `claude.ai,claude.com,chatgpt.com,chat.openai.com,localhost,127.0.0.1` |
 
 **Migration:** tag `v1`, `new_sqlite_classes = ["DeviceRelay", "Budget"]`.
@@ -75,7 +89,7 @@ Script upload metadata for the API (`PUT /accounts/{account}/workers/scripts/pok
 
 ## Hostname
 
-Attach a Workers Custom Domain (for example `relay.example.com`) to the Worker, or add the routes `<host>/v1/*` and `<host>/.well-known/*` on a zone you control. The second route is needed because OAuth metadata lives at the origin root, for example `/.well-known/oauth-protected-resource/v1/<label>/<secret>/mcp`. Set `ORIGIN_FALLBACK=1` only when another origin on the same hostname must keep serving its own `/.well-known/` documents. The phone's relay address is set in PokiCore (`relayURL`) and the app (`RelayIdentity.relayBase`).
+`wrangler.toml` turns on the Worker's `workers.dev` address and names no hostname. `./deploy.sh --domain relay.example.com` attaches a Workers Custom Domain on a zone in your account instead. With routes on a zone you control, add both `<host>/v1/*` and `<host>/.well-known/*`, because OAuth metadata lives at the origin root, for example `/.well-known/oauth-protected-resource/v1/<label>/<secret>/mcp`. Anything that is not a relay path gets 404. The phone learns the address from the person, in Poki's **Connect** tab, and PokiCore dials it (`PokiCore.start(relay:)`).
 
 ## Cost model (Workers Paid)
 
@@ -109,7 +123,9 @@ These are the included amounts per month, from [Durable Objects pricing](https:/
 
 ```sh
 cd deploy/cf-relay
-npm install --legacy-peer-deps   # the vitest peer graph needs it with npm 10
+npm ci                           # the versions in package-lock.json
 npm test                         # vitest + @cloudflare/vitest-plugin (Miniflare/workerd)
 npm run build                    # wrangler deploy --dry-run; writes dist/ and worker.js
+echo "TOKEN_SECRET=$(openssl rand -hex 32)" > .dev.vars
+npx wrangler dev --port 8787     # a local relay; then node test/phone-sim.mjs http://127.0.0.1:8787 --check
 ```

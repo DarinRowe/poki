@@ -60,8 +60,10 @@ jobs:
           set -euo pipefail
           mkdir release
           cp app/Poki-unsigned.ipa "release/Poki-$VERSION-$BUILD.ipa"
+          cp app/Poki-external-unsigned.ipa "release/Poki-external-$VERSION-$BUILD.ipa"
+          cp app/Poki-signing.zip release/
           # Only the runner without Xcode's frameworks: the one the launcher is tested with.
           cp runner/poki-runner-unsigned.ipa "release/PokiRunner-$VERSION-$BUILD.ipa"
           (cd release && sha256sum *.ipa > SHA256SUMS && cat SHA256SUMS)
-          notes="Poki $VERSION ($BUILD). Install both with the same signing tool and Apple ID. See native/ios-app/CHANGELOG-round.md."
+          notes="Poki $VERSION ($BUILD). Choose Poki for the built-in local VPN (Network Extensions signing required), or Poki-external for an external VPN such as LocalDevVPN. Install your chosen app and Poki Runner with the same signing tool and Apple ID. Entitlements are in Poki-signing.zip. See native/ios-app/README.md."
           gh release create "$GITHUB_REF_NAME" release/* --title "Poki $VERSION" --notes "$notes" --prerelease

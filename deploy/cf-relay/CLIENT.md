@@ -1,15 +1,15 @@
 # The phone's side of the relay
 
-This is how the Poki app talks to the relay Worker. The normative spec is relay frames v1 in `docs/ios-core.md` on dev/ios-core; this guide is the practical version. `test/phone-sim.mjs` is a working reference in about 150 lines.
+This is how the Poki app talks to the relay Worker. The normative spec is relay frames v1 in `docs/ios-core.md`; this guide is the practical version. `test/phone-sim.mjs` is a working reference in about 150 lines.
 
 ## 1. Identity and connector secrets (made once, on the phone)
 
 - **Identity key.** An Ed25519 key pair; the private key stays in the keychain. `label` = RFC 4648 base32 of the raw 32-byte public key, lowercase, no padding: 52 characters of `a-z2-7`.
-- **Connector secrets.** One per MCP client: 32 random bytes as base64url without padding, 43 characters. The phone shows the user the connector URL `https://pokimcp.zheha.nz/v1/<label>/<secret>/mcp` and keeps the secret. The relay only ever receives `sha256(secret)` as hex.
+- **Connector secrets.** One per MCP client: 32 random bytes as base64url without padding, 43 characters. The phone shows the user the connector URL `https://<relay host>/v1/<label>/<secret>/mcp` and keeps the secret. The relay host is the person's own Worker ([DEPLOY.md](DEPLOY.md)); there is no default. The relay only ever receives `sha256(secret)` as hex.
 
 ## 2. Connect
 
-Open `wss://pokimcp.zheha.nz/v1/<label>/connect`.
+Open `wss://<relay host>/v1/<label>/connect`.
 
 1. The relay sends `{"t":"challenge","nonce":"<base64>"}`.
 2. Sign the bytes `poki-relay-v1:<label>:` followed by the decoded nonce, and send:
@@ -17,7 +17,7 @@ Open `wss://pokimcp.zheha.nz/v1/<label>/connect`.
    `access` holds at most 8 hashes, one per secret that is not revoked.
 3. The relay answers `{"t":"ready","max_body":4194304,"req_timeout_ms":60000}`. Use these numbers rather than assuming them.
 
-If the upgrade itself is refused, nothing reached the phone's relay: a well-formed label that no phone holds gets `404` on the MCP path. While `ORIGIN_FALLBACK=1` is set on pokimcp.zheha.nz, a malformed label (not 52 lowercase base32 characters) is not the Worker's, so it falls through to the old tunnel's Access check and gets a bare `403`. Treat 403, 404 and 401 as "wrong URL or wrong host" and do not retry quickly.
+If the upgrade itself is refused, nothing reached the phone's relay: a well-formed label that no phone holds gets `404` on the MCP path, and so does a malformed label (not 52 lowercase base32 characters). Treat 403, 404 and 401 as "wrong URL or wrong host" and do not retry quickly.
 
 Close codes:
 - `4401`: the key does not match the label, or the signature is wrong.
@@ -60,8 +60,8 @@ Approving each new client on the phone, with a prompt that names the client, wou
 ## Trying it without a phone
 
 ```sh
-node test/phone-sim.mjs https://pokimcp.zheha.nz           # acts as a phone; prints the connector URL
-node test/phone-sim.mjs https://pokimcp.zheha.nz --check   # also runs OAuth + initialize + tools/call; exit 0 = OK
+node test/phone-sim.mjs https://poki-relay.you.workers.dev           # acts as a phone; prints the connector URL
+node test/phone-sim.mjs https://poki-relay.you.workers.dev --check   # also runs OAuth + initialize + tools/call; exit 0 = OK
 ```
 
 The simulator keeps its key and secret in `./phone-sim.json`, or the file named by `PHONE_SIM_STATE`, so its URL stays the same between runs. It needs Node 22 or later. Locally, run it against `wrangler dev` with `TOKEN_SECRET` set in `.dev.vars`: `node test/phone-sim.mjs http://127.0.0.1:8787 --check`.

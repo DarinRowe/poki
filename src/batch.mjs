@@ -2,6 +2,7 @@ import { checkWork, phase, stopped, stoppingReason } from './work.mjs';
 import { managementTools } from './coordination.mjs';
 import { definitions } from './tools.mjs';
 import { closestTo } from './interaction.mjs';
+import { flagOn } from './element-flags.mjs';
 
 const json = value => ({ type: 'text', text: JSON.stringify(value) });
 const receipt = value => ({ type: 'text', text: JSON.stringify(value, null, 2) });
@@ -94,7 +95,7 @@ export async function runBatch(ctx, args) {
     if (failure) {
       Object.assign(summary, { failed_step: failure, remaining_steps: commands.slice(failure.step - 1), next: advice(stopReason, failure.step) });
       if (failure.tool === 'fill' && /No visible element matches|Requested field is not visible/.test(failure.error ?? '')) {
-        const fields = (ctx.seen?.elements ?? []).filter(element => element.visible !== false && element.visible !== 0 && /^(?:AX|XCUIElementType)?(?:Secure)?(?:TextField|TextArea|TextView|SearchField)$/i.test(element.type ?? element.role ?? ''))
+        const fields = (ctx.seen?.elements ?? []).filter(element => flagOn(element.visible) && /^(?:AX|XCUIElementType)?(?:Secure)?(?:TextField|TextArea|TextView|SearchField)$/i.test(element.type ?? element.role ?? ''))
           .map(element => element.identifier || element.label || element.placeholder);
         if (fields.length === 1 && fields[0]) {
           const { field: _field, ref: _ref, x: _x, y: _y, ...rest } = failure.arguments ?? {};

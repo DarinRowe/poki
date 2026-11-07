@@ -1,6 +1,8 @@
 #[cfg(not(test))]
 use super::connect_device;
-use super::{InputMedia, NotSent, Request, Result, close_input, execute, execute_connected};
+use super::{
+    InputMedia, NoDisplayService, NotSent, Request, Result, close_input, execute, execute_connected,
+};
 use idevice::{
     remote_pairing::{
         RemotePairingClient, RpPairingFile, RpPairingSocket, connect_tls_psk_tunnel_native,
@@ -34,6 +36,7 @@ enum Transport {
 struct Connection {
     adapter: AdapterHandle,
     rsd: RsdHandshake,
+    rsd_port: u16,
     provider: Option<idevice::provider::UsbmuxdProvider>,
     media: Option<InputMedia>,
 }
@@ -53,10 +56,11 @@ impl Session {
                 let connection = tests::connect_local(udid).await?;
                 #[cfg(not(test))]
                 let connection = {
-                    let (adapter, rsd, provider) = connect_device(udid).await?;
+                    let (adapter, rsd, rsd_port, provider) = connect_device(udid).await?;
                     Connection {
                         adapter,
                         rsd,
+                        rsd_port,
                         provider: Some(provider),
                         media: None,
                     }
@@ -108,6 +112,7 @@ impl Session {
         self.connection = Some(Connection {
             adapter,
             rsd,
+            rsd_port: info.server_rsd_port,
             provider: None,
             media: None,
         });
@@ -168,6 +173,7 @@ impl Session {
             let Connection {
                 adapter,
                 rsd,
+                rsd_port,
                 provider,
                 media,
             } = self.connection.as_mut().unwrap();
@@ -192,9 +198,12 @@ impl Session {
             let _ = close_input(media).await;
             // A service or file error does not imply the shared tunnel died.
             // bind_udp checks the adapter task locally without opening a phone service.
-            let closed = adapter.bind_udp(0).await.is_err();
+            // A phone that vanished without a reset leaves the adapter running, so a socket error also
+            // asks the phone for its RSD port.
+            let closed = adapter.bind_udp(0).await.is_err()
+                || (socket_failure(error.as_ref()) && adapter.connect(*rsd_port).await.is_err());
             let not_sent = error.is::<NotSent>();
-            // Only a closed adapter is a dead tunnel. A live one stays, since a cellular replacement may be refused.
+            // Only a dead tunnel is replaced. A live one stays, since a cellular replacement may be refused.
             if closed {
                 self.connection = None;
                 if (not_sent || action.read_only()) && !fresh {
@@ -227,6 +236,19 @@ impl Session {
     }
 }
 
+fn socket_failure(error: &(dyn std::error::Error + Send + Sync + 'static)) -> bool {
+    match error.downcast_ref::<NotSent>() {
+        Some(NotSent(error)) => socket_failure(error.as_ref()),
+        None => {
+            error.is::<std::io::Error>()
+                || matches!(
+                    error.downcast_ref::<idevice::IdeviceError>(),
+                    Some(idevice::IdeviceError::Socket(_))
+                )
+        }
+    }
+}
+
 // The reply for a request whose input never reached the phone.
 fn unsent_reply(
     action: &Request,
@@ -236,9 +258,16 @@ fn unsent_reply(
         Request::LaunchApp(_) => Ok(super::apps::not_sent(error)),
         Request::Configuration { .. } => Err(error),
         action if action.read_only() => Err(error),
-        _ => Ok(
-            json!({"isError":true,"outcome":"not_sent","stop_reason":"error","sent":false,"screen_change_verified":false,"error":error.to_string(),"instruction":"Nothing reached the iPhone. Keep it connected and unlocked, then retry."}),
-        ),
+        _ => {
+            let mut reply = json!({"isError":true,"outcome":"not_sent","stop_reason":"error","sent":false,"screen_change_verified":false,"error":error.to_string(),"instruction":"Nothing reached the iPhone. Keep it connected and unlocked, then retry."});
+            if error
+                .downcast_ref::<NotSent>()
+                .is_some_and(|error| error.0.is::<NoDisplayService>())
+            {
+                reply["reason"] = "display_service_missing".into();
+            }
+            Ok(reply)
+        }
     }
 }
 
@@ -382,10 +411,15 @@ mod tests {
         ReadWrite, RsdService as _,
         core_device::{AppServiceClient, DisplayServiceClient},
         rsd::RsdService,
+        tcp::packets::{Ipv6Packet, ProtocolNumber, TcpFlags, TcpPacket},
     };
-    use std::{cell::RefCell, collections::HashMap};
+    use std::{
+        cell::RefCell,
+        collections::HashMap,
+        net::{IpAddr, Ipv6Addr},
+    };
     use tokio::{
-        io::{AsyncReadExt, DuplexStream},
+        io::{AsyncReadExt, AsyncWriteExt, DuplexStream},
         sync::mpsc,
     };
 
@@ -406,6 +440,7 @@ mod tests {
             DisplayServiceClient::<Box<dyn ReadWrite>>::rsd_service_name().to_string(),
             AppServiceClient::<Box<dyn ReadWrite>>::rsd_service_name().to_string(),
             "com.apple.accessibility.axAuditDaemon.remoteAXService".to_string(),
+            crate::Touch::rsd_service_name().to_string(),
         ]
         .into_iter()
         .zip(50000u16..)
@@ -429,6 +464,7 @@ mod tests {
         let connection = Connection {
             adapter,
             rsd,
+            rsd_port: 58783,
             provider: None,
             media: None,
         };
@@ -447,6 +483,78 @@ mod tests {
         drop(phone);
         while connection.adapter.bind_udp(0).await.is_ok() {}
         connection
+    }
+
+    // A phone that answers: it accepts connections to `open` ports, resets the others and acknowledges
+    // every segment. It hangs up once a connection has carried `hang_up_on`, and reports whether it did.
+    async fn answer(mut wire: DuplexStream, open: Vec<u16>, hang_up_on: Option<&[u8]>) -> bool {
+        let host: Ipv6Addr = "fd00::1".parse().unwrap();
+        let phone: Ipv6Addr = "fd00::2".parse().unwrap();
+        let mut carried: HashMap<u16, Vec<u8>> = HashMap::new();
+        loop {
+            let mut header = [0u8; 40];
+            if wire.read_exact(&mut header).await.is_err() {
+                return false;
+            }
+            let mut packet = vec![0u8; u16::from_be_bytes([header[4], header[5]]) as usize];
+            if wire.read_exact(&mut packet).await.is_err() {
+                return false;
+            }
+            if header[6] != ProtocolNumber::Tcp as u8 {
+                continue;
+            }
+            let segment = TcpPacket::parse(&packet).unwrap();
+            let (seq, flags) = match segment.flags {
+                TcpFlags { syn: true, .. } if open.contains(&segment.destination_port) => (
+                    0,
+                    TcpFlags {
+                        syn: true,
+                        ack: true,
+                        ..Default::default()
+                    },
+                ),
+                TcpFlags { syn: true, .. } => (
+                    0,
+                    TcpFlags {
+                        rst: true,
+                        ack: true,
+                        ..Default::default()
+                    },
+                ),
+                _ if segment.payload.is_empty() => continue,
+                _ => (
+                    1,
+                    TcpFlags {
+                        ack: true,
+                        ..Default::default()
+                    },
+                ),
+            };
+            let ack = segment
+                .sequence_number
+                .wrapping_add(segment.payload.len().max(segment.flags.syn as usize) as u32);
+            let reply = TcpPacket::create(
+                IpAddr::V6(phone),
+                IpAddr::V6(host),
+                segment.destination_port,
+                segment.source_port,
+                seq,
+                ack,
+                flags,
+                u16::MAX,
+                &[],
+                &[],
+            );
+            let reply = Ipv6Packet::create(phone, host, ProtocolNumber::Tcp, 64, &reply);
+            if wire.write_all(&reply).await.is_err() {
+                return false;
+            }
+            let carried = carried.entry(segment.source_port).or_default();
+            carried.extend(&segment.payload);
+            if hang_up_on.is_some_and(|marker| carried.windows(marker.len()).any(|w| w == marker)) {
+                return true;
+            }
+        }
     }
 
     #[tokio::test]
@@ -497,6 +605,46 @@ mod tests {
         assert!(failures.is_empty(), "{}", failures.join("\n"));
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn a_tunnel_whose_phone_stops_answering_is_rebuilt() {
+        let mut failures = Vec::new();
+        for request in [json!({"op":"ax_tree"}), json!({"op":"tap","x":100,"y":200})] {
+            let (sender, mut phones) = mpsc::unbounded_channel();
+            PHONE.with(|slot| *slot.borrow_mut() = Some(sender));
+            // The adapter task keeps running, but the phone never answers: Wi-Fi dropped without a reset.
+            let (mut silent, _phone) = tunnel();
+            silent.rsd.uuid = "silent tunnel".into();
+            let mut session = Session {
+                transport: Transport::Local("fixture-phone".into()),
+                control: None,
+                connection: Some(silent),
+            };
+            let reply = session.request(request.clone()).await;
+            PHONE.with(|slot| slot.borrow_mut().take());
+            if phones.recv().await.is_none() {
+                failures.push(format!(
+                    "{request}: a silent tunnel was kept; reply: {reply:?}"
+                ));
+            }
+            if session.connection.as_ref().map(|c| c.rsd.uuid.as_str()) == Some("silent tunnel") {
+                failures.push(format!("{request}: the silent tunnel is still in use"));
+            }
+            let reported = match (request["op"].as_str().unwrap(), &reply) {
+                ("ax_tree", Err(error)) => !error.to_string().contains("delivered"),
+                ("tap", Ok(reply)) => {
+                    reply["outcome"] == "not_sent" && reply["stop_reason"] == "error"
+                }
+                _ => false,
+            };
+            if !reported {
+                failures.push(format!(
+                    "{request}: nothing was sent, but the reply is {reply:?}"
+                ));
+            }
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
     #[tokio::test]
     async fn a_service_refused_on_a_live_tunnel_keeps_that_tunnel() {
         let (sender, mut phones) = mpsc::unbounded_channel();
@@ -515,6 +663,7 @@ mod tests {
         let reply = reply.expect("a refused service is a reply, not a transport error");
         assert_eq!(reply["outcome"], "not_sent", "{reply}");
         assert_eq!(reply["stop_reason"], "error", "{reply}");
+        assert_eq!(reply["reason"], "display_service_missing", "{reply}");
         assert!(phones.recv().await.is_none(), "a live tunnel was rebuilt");
         let kept = session
             .connection
@@ -522,5 +671,75 @@ mod tests {
             .expect("the live tunnel was dropped");
         assert_eq!(kept.rsd.uuid, "live tunnel");
         assert!(kept.adapter.bind_udp(0).await.is_ok());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_tap_cut_off_after_it_reached_the_phone_is_not_repeated() {
+        let (sender, mut phones) = mpsc::unbounded_channel();
+        PHONE.with(|slot| *slot.borrow_mut() = Some(sender));
+        // An earlier input left the media session open, so the tap goes straight to the touch service.
+        let (display, _display_phone) = tokio::io::duplex(1 << 16);
+        let media = InputMedia {
+            client: DisplayServiceClient::from_stream(Box::new(display))
+                .await
+                .unwrap(),
+            receivers: tokio::task::JoinSet::new(),
+            ready_at: tokio::time::Instant::now(),
+        };
+        let (mut connection, phone) = tunnel();
+        connection.media = Some(media);
+        let touch = connection.rsd.services[crate::Touch::rsd_service_name().as_ref()].port;
+        // The touch report reaches the phone; the tunnel goes down before the release.
+        let phone = tokio::spawn(async move { answer(phone, vec![touch], Some(b"send\0")).await });
+        let mut session = Session {
+            transport: Transport::Local("fixture-phone".into()),
+            control: None,
+            connection: Some(connection),
+        };
+        let reply = session.request(json!({"op":"tap","x":100,"y":200})).await;
+        PHONE.with(|slot| slot.borrow_mut().take());
+        assert!(
+            phone.await.unwrap(),
+            "the touch never reached the phone; reply: {reply:?}"
+        );
+        let error = reply.expect_err("a tap that may have landed was reported as a reply");
+        assert!(
+            error.to_string().contains("Input may have been delivered"),
+            "{error}"
+        );
+        assert!(
+            phones.recv().await.is_none(),
+            "the tap was repeated on a new tunnel"
+        );
+        assert!(session.connection.is_none(), "the dead tunnel was kept");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_socket_error_on_a_tunnel_whose_phone_still_answers_keeps_that_tunnel() {
+        let (sender, mut phones) = mpsc::unbounded_channel();
+        PHONE.with(|slot| *slot.borrow_mut() = Some(sender));
+        // The phone resets the display service connection but still accepts its RSD port.
+        let (mut live, phone) = tunnel();
+        live.rsd.uuid = "live tunnel".into();
+        tokio::spawn(answer(phone, vec![live.rsd_port], None));
+        let mut session = Session {
+            transport: Transport::Local("fixture-phone".into()),
+            control: None,
+            connection: Some(live),
+        };
+        let reply = session.request(json!({"op":"tap","x":100,"y":200})).await;
+        PHONE.with(|slot| slot.borrow_mut().take());
+        let reply = reply.expect("a reset service is a reply, not a transport error");
+        assert_eq!(reply["outcome"], "not_sent", "{reply}");
+        assert_eq!(reply["stop_reason"], "error", "{reply}");
+        assert!(
+            phones.recv().await.is_none(),
+            "a tunnel whose phone answers was rebuilt"
+        );
+        let kept = session
+            .connection
+            .as_ref()
+            .expect("the live tunnel was dropped");
+        assert_eq!(kept.rsd.uuid, "live tunnel");
     }
 }

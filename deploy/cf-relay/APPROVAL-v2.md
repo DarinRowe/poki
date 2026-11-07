@@ -1,6 +1,6 @@
 # Proposal: phone-side approval of new clients (relay frames v2)
 
-Status: proposal only. Nothing here is implemented. Relay frames v1 (docs/ios-core.md on dev/ios-core) stay as they are.
+Status: proposal only. Nothing here is implemented. Relay frames v1 (docs/ios-core.md) stay as they are.
 
 ## Why
 

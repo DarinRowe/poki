@@ -2,12 +2,13 @@ import { remoteDevices, nativeRequest } from './remote.mjs';
 import { execute, checkWork, deadline, pause, phase, stopped, stoppingReason } from './work.mjs';
 import { Coordination, managementTools } from './coordination.mjs';
 import { runBatch } from './batch.mjs';
+import { flagOn } from './element-flags.mjs';
 import { mkdir, readFile, writeFile, unlink, stat } from 'node:fs/promises';
 import { join, extname, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import sharp from 'sharp';
-import { root, stateDir, idevice } from './config.mjs';
+import { root, stateDir, idevice, noUsbDevice } from './config.mjs';
 import { definitions } from './tools.mjs';
 import { platformTool, inventorySimulators, simulatorModels, readSettings, closePlatform } from './platform.mjs';
 import { interaction, promptWarning, readScreen, screenChanged, justReadMs } from './interaction.mjs';
@@ -203,11 +204,25 @@ export class Devices {
     return frame.ocr ??= phase('ocr', () => this.readOCR(frame));
   }
   async readOCR(frame) {
+    if (this.ocrUnavailable) throw new Error(this.ocrUnavailable);
     const file = join(stateDir, 'frames', `${randomUUID()}-ocr.png`);
+    const binary = join(root, 'build/ocr');
     try {
       await writeFile(file, frame.data, { mode: 0o600 });
-      const { stdout } = await this.run(join(root, 'build/ocr'), [file]);
+      const { stdout } = await this.run(binary, [file]);
       return JSON.parse(stdout).map(e => ({ ...e, label: e.text, type: 'StaticText', frame: { x:e.x,y:e.y,width:e.width,height:e.height } }));
+    } catch (error) {
+      // A caller's deadline is not a broken recognizer; it must not be remembered as one.
+      if (stopped(error)) throw error;
+      // The recognizer is a host binary (Vision on macOS, tesseract on Linux). Only the binary being
+      // absent is permanent: a run that failed once - a frame it could not decode, a crashed Vision
+      // process - must not switch recognition off for the rest of the daemon's life.
+      const absent = error.code === 'ENOENT' || error.code === 'EACCES' || /\b(ENOENT|EACCES)\b/.test(error.message ?? '');
+      const message = absent
+        ? `Screen text recognition is unavailable on this host: ${binary} is missing or not executable. Only the accessibility tree can be read here.`
+        : `Screen text recognition failed on this frame: ${error.message}`;
+      if (absent) this.ocrUnavailable = message;
+      throw new Error(message);
     } finally { await unlink(file).catch(() => {}); }
   }
   async recognize(args = {}, existingFrame) {
@@ -241,7 +256,7 @@ export class Devices {
     const tree = await phase('accessibility', () => this.bridge({ op: 'ax', include_offscreen: false }));
     const elements = (tree.elements ?? []).filter(onScreen(this.size?.device === target.id ? this.size : await this.capture()));
     // A tree that leaves a state out compares equal to one that gives its default.
-    const signature = JSON.stringify(elements.map(e => { const box = e.frame ?? e; return [e.type ?? e.role, e.label, e.text, e.value, e.focused, Boolean(e.selected), Boolean(e.enabled ?? true), box.x, box.y, box.width, box.height]; }));
+    const signature = JSON.stringify(elements.map(e => { const box = e.frame ?? e; return [e.type ?? e.role, e.label, e.text, e.value, e.focused, Boolean(e.selected), flagOn(e.enabled), box.x, box.y, box.width, box.height]; }));
     return this.seen = { device: target.id, foreground: tree.foreground, elements, signature, at: performance.now() };
   }
   // A simulator's size only changes when it rotates. A physical device maps touches through its
@@ -306,6 +321,7 @@ export class Devices {
     let result;
     try { result = await phase('input', () => this.bridge(command)); }
     catch (error) { result = { outcome: 'unknown', error: error.message, stopped: Boolean(stopped(error)), stop_reason: stopped(error) ? stoppingReason(error) : 'unknown', instruction: 'Input may have been delivered. Inspect the screen before retrying.', isError: true }; }
+    if (result.reason === 'display_service_missing') result = { ...result, instruction: `No input was sent. This iPhone does not provide com.apple.coredevice.displayservice, which touch and text input need. Screenshots and accessibility work without it, so they do not show whether input is available. Run node bin/prepare-device.mjs ${target.id} from the Poki checkout to install a developer disk image that provides it. See docs/physical-iphone.md#touch-and-text-input-fail.` };
     this.lastInputAt = performance.now();
     if (target.kind === 'physical') {
       try { await phase('recording_recovery', () => resumeRecordings(this, target)); }
@@ -340,7 +356,10 @@ export class Devices {
       switch (name) {
         case 'acquire_device': return text(await this.coordinator.acquire(this, await this.target(false), args.ttl_seconds ?? 120));
         case 'poki_mcp_status': return text({ update: await updateNotice(), implementation: `Poki MCP ${version}`, ...await buildInfo(), registered_device_tools: 50, observation_tools: 1, management_tools: 4, transport_tools: 2, total_tools: definitions.length, devices: (await this.inventory()).length, selected: this.selected ?? null, approval_mode: process.env.POKI_MCP_APPROVAL_MODE === 'allow' ? 'operator-preapproved' : 'ask-human' });
-        case 'list_devices': return text({ devices: await this.describeDevices(args.include_all_simulators), ...(args.include_all_simulators ? { simulator_models: await simulatorModels() } : {}) });
+        case 'list_devices': {
+          const devices = await this.describeDevices(args.include_all_simulators);
+          return text({ devices, ...(devices.some(d => d.kind === 'physical') ? {} : { notice: noUsbDevice }), ...(args.include_all_simulators ? { simulator_models: await simulatorModels() } : {}) });
+        }
         case 'disconnect_device':
         case 'reconnect_device': {
           const target = await this.target();

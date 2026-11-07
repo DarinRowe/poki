@@ -41,6 +41,34 @@ final class URLSessionSocket: WebSocketConnection, @unchecked Sendable {
     }
 }
 
+/// The person's own relay, as they enter it: the origin of the Worker they deployed, such as
+/// `https://poki-relay.you.workers.dev`. Poki has no default relay.
+public struct RelayAddress: Sendable, Equatable {
+    /// `scheme://host[:port]`, no path.
+    public let origin: URL
+
+    /// Accepts `host`, `https://host`, `https://host/` and `https://host/v1`; `http` only for a local
+    /// relay such as `wrangler dev`. Anything else, such as another path, is nil.
+    public init?(_ text: String) {
+        var text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !text.contains("://") { text = "https://" + text }
+        guard let parts = URLComponents(string: text), let scheme = parts.scheme?.lowercased(), ["https", "http"].contains(scheme),
+              let host = parts.host?.lowercased(), !host.isEmpty, parts.query == nil, parts.fragment == nil, parts.user == nil,
+              ["", "/", "/v1", "/v1/"].contains(parts.path) else { return nil }
+        var origin = URLComponents()
+        origin.scheme = scheme
+        origin.host = host
+        origin.port = parts.port
+        guard let url = origin.url else { return nil }
+        self.origin = url
+    }
+
+    /// Where the phone dials: `wss://host/v1` (`ws` for a local `http` relay).
+    public var phoneURL: URL { URL(string: origin.absoluteString.replacingOccurrences(of: "http", with: "ws", options: .anchored) + "/v1")! }
+    /// The base of each connector URL: `https://host/v1`.
+    public var connectorBase: URL { origin.appendingPathComponent("v1") }
+}
+
 /// RFC 4648 base32, lowercase, no padding: the relay label of a public key.
 public func base32(_ data: Data) -> String {
     let alphabet = Array("abcdefghijklmnopqrstuvwxyz234567")

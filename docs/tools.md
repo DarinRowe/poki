@@ -67,7 +67,7 @@ Three tools handle most interactions:
 
 - `batch_commands` runs a known multi-step task in a single call and returns the visible on-screen text at the end, saving a screenshot round trip.
 - `fill` focuses an input field, replaces its text, and verifies the new value.
-- `tap_text` waits up to five seconds for its target to appear. If the target is not found, it aborts without tapping and returns what is currently on screen.
+- `tap_text` looks for five seconds. If the target is not found, it aborts without tapping and returns what is currently on screen. A screen accessibility cannot read gets a few more seconds for screen text recognition to answer, because that read has already started; nothing new begins after the five seconds.
 
 Installing apps, opening URLs, and reading the clipboard trigger a macOS approval dialog on your Mac. See [Approval & Clipboard Behavior](#approval--clipboard-behavior).
 
@@ -107,7 +107,7 @@ Accessibility can miss changes that affect only pixels, such as Calculator's dis
 | Screen | `wait_for` | Poll visible text until it appears, or disappears when gone=true. |
 | Screen | `wait` | Pause for seconds without interacting with a device. |
 | Touch | `tap` | Tap at x/y in screen points or at the center of a current element ref. |
-| Touch | `tap_text` | Find one visible element matching text, waiting up to five seconds for it to appear and hold still, trying OCR when needed, and tap it. |
+| Touch | `tap_text` | Find one visible element matching text, waiting for it to appear and hold still (five seconds on a screen accessibility can read, longer when only screen text recognition can find it), trying OCR when needed, and tap it. |
 | Touch | `double_tap` | Send two taps at x/y in logical screen points or at a current element ref. |
 | Touch | `long_press` | Hold one touch at x/y or an element ref. |
 | Touch | `swipe` | Move a touch from from_x/from_y to to_x/to_y in logical screen points. |
@@ -129,7 +129,7 @@ Accessibility can miss changes that affect only pixels, such as Calculator's dis
 | System | `set_accessibility` | Change supported text-size or accessibility display settings. |
 | System | `set_location` | Start a simulated latitude/longitude for the selected device. |
 | System | `clear_location` | Stop the location simulation owned by this service for the selected device. |
-| System | `handle_alert` | Choose a visible alert button by text or accept/dismiss action, waiting up to five seconds for it to appear. |
+| System | `handle_alert` | Choose a visible alert button by text or accept/dismiss action, looking for five seconds; recognition already running on an unreadable screen may finish after that. |
 | System | `request_human_action` | Show a macOS dialog asking the user to complete a step on the device. |
 | Apps | `list_apps` | List installed applications, excluding system apps unless include_system=true. |
 | Apps | `launch_app` | Launch an application by bundle_id or unambiguous name. |
@@ -195,7 +195,7 @@ Tool responses include `_meta.timing.stages` with queue, capture, AX, OCR, input
 
 ## Efficient short workflows
 
-- **Put the whole known task in one batch:** When the request already names what to do, send `launch_app` and every step in one `batch_commands` call. `launch_app` on a simulator returns once the interface is readable; `tap_text`, `fill` and `handle_alert` wait up to five seconds for their target to appear and hold still, so a batch can cross screens; the reply ends with the visible text, so a closing `take_screenshot` is only needed for pixels. Leave out a step when whether to do it depends on what an earlier step shows, or when it needs the user's decision. A wrong target stops the batch without tapping and reports the closest text on screen. Each step result reports `elapsed_ms`, which reflects server-side execution time only and excludes model reasoning and client round-trip overhead.
+- **Put the whole known task in one batch:** When the request already names what to do, send `launch_app` and every step in one `batch_commands` call. `launch_app` on a simulator returns once the interface is readable; `tap_text`, `fill` and `handle_alert` wait five seconds for their target to appear and hold still (a recognition already running on a screen accessibility cannot read may finish a few seconds later), so a batch can cross screens; the reply ends with the visible text, so a closing `take_screenshot` is only needed for pixels. Leave out a step when whether to do it depends on what an earlier step shows, or when it needs the user's decision. A wrong target stops the batch without tapping and reports the closest text on screen. Each step result reports `elapsed_ms`, which reflects server-side execution time only and excludes model reasoning and client round-trip overhead.
 - **Use `fill` for known input fields:** Call `fill` directly instead of chaining `tap` and `type_text`; `field` can be left out when one text field is visible. On physical devices, `fill` focuses, replaces, and verifies text within a single native input session to avoid an extra connection wait. On simulators it taps, waits for focus and types, and a verified mismatch is an error. Plain text typed on a simulator first switches its keyboard to `en_US` (`simctl keyboard`), because a simulator created on a Chinese Mac types through Pinyin and rewrites Latin text and punctuation; the setting stays on that simulator. Because `fill` replaces existing field content, review your draft beforehand; reserve `type_text` for appending to an already-focused field.
 - **Review and submit with `return`:** To inspect text before sending, `fill` and read the `screen` it returns. After verifying the draft, submit using `press_key` with `return` and inspect the resulting screen. Do not re-enter the full text or call `type_text` with an empty string to submit. Note that `text_verified` only confirms text entry into the field and `sent` only confirms the action was dispatched; neither guarantees application-level delivery.
 - **Handle `CoreDeviceError` 4016 via observed UI:** If launching an app fails with `CoreDeviceError` 4016, inspect the current screen and continue through an observed Home Screen or App Switcher entry point. Do not repeatedly retry the same launch path unless device conditions change. This serves as invocation guidance and does not permanently mark the app as unavailable after a single failure.

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Poki relay on Cloudflare Workers (relay frames v1, docs/ios-core.md on dev/ios-core).
+// Poki relay on Cloudflare Workers (relay frames v1, docs/ios-core.md).
 //
 // MCP clients POST to https://<host>/v1/<label>/<secret>/mcp. The phone keeps an outbound
 // WebSocket to /v1/<label>/connect, held by one Durable Object per label with the Hibernation
@@ -94,6 +94,7 @@ const notFound = () => json(404, { error: 'not found' });
 const oauthError = (status, error, description) => json(status, { error, ...(description ? { error_description: description } : {}) });
 export const RPC_ERRORS = {
   offline: [503, -32001, 'The phone is offline: open Poki on the phone, or check its network.'],
+  dropped: [502, -32004, 'The phone disconnected after it received the request, so the request may have run. Call look before trying again.'],
   timeout: [504, -32002, 'The phone did not answer in time.'],
   limited: [429, -32003, 'Too many requests: wait a little and try again.'],
 };
@@ -226,11 +227,7 @@ export default {
     const prefix = path.match(/^\/\.well-known\/(oauth-protected-resource|oauth-authorization-server|openid-configuration)(\/.*)$/);
     if (prefix) { wellKnown = prefix[1]; path = prefix[2]; }
     const parts = path.split('/').filter(Boolean);
-    if (parts[0] !== 'v1' || !LABEL.test(parts[1] ?? '')) {
-      // On a zone route during a migration (ORIGIN_FALLBACK=1), what is not ours goes to the
-      // origin behind the route (e.g. the old tunnel's own /.well-known/ documents).
-      return env.ORIGIN_FALLBACK === '1' ? fetch(request) : notFound();
-    }
+    if (parts[0] !== 'v1' || !LABEL.test(parts[1] ?? '')) return notFound();
     const label = parts[1];
     const device = env.DEVICE.get(env.DEVICE.idFromName(label));
 
@@ -361,7 +358,7 @@ export class DeviceRelay extends DurableObject {
   }
 
   webSocketClose(ws) {
-    for (const [id, waiter] of this.pending) if (waiter.ws === ws) waiter.resolve(undefined);
+    for (const [id, waiter] of this.pending) if (waiter.ws === ws) waiter.resolve('dropped');
   }
 
   webSocketError(ws) {
@@ -414,6 +411,7 @@ export class DeviceRelay extends DurableObject {
       return rpcError('timeout', body);
     }
     if (reply === 'cancelled') return new Response(null, { status: 499 });
+    if (reply === 'dropped') return rpcError('dropped', body);
     if (!reply) return rpcError('offline', body);
     const out = { ...CORS };
     for (const name of RETURNED_HEADERS) if (typeof reply.headers?.[name] === 'string') out[name] = reply.headers[name];

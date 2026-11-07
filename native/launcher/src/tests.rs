@@ -103,6 +103,20 @@ fn pairing_advertises_what_bonjour_needs() {
     let _ = std::fs::remove_file(temp("identity"));
 }
 
+/// The person starts pairing, then gives up in Settings: the pairing ends by itself, so the app stops
+/// its silent-audio keep-alive and its Bonjour service instead of running in the background for good.
+#[tokio::test(start_paused = true)]
+async fn an_abandoned_pairing_ends_by_itself_within_ten_minutes() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let sink = events.clone();
+    let config = pair::PairConfig { host_name: "Poki".into(), out_path: temp("abandoned.plist"), identity_path: None };
+    let ended = tokio::time::timeout(Duration::from_secs(10 * 60 + 1), pair::run(config, move |e| sink.lock().unwrap().push(e))).await;
+    assert!(ended.is_ok(), "the pairing was still waiting for the phone after ten minutes");
+    let events = events.lock().unwrap();
+    assert_eq!(events.first().unwrap()["event"], "advertise");
+    assert_eq!(events.last().unwrap()["event"], "failed");
+}
+
 #[test]
 fn an_unreadable_config_gives_null() {
     extern "C" fn ignore(_: *mut c_void, _: *const c_char) {}

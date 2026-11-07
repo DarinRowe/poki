@@ -115,6 +115,15 @@ test('cancel interrupts the human dialog process and never executes the approved
 });
 
 
+test('list_devices sends the user to Finder when usbmuxd answers with no device',async t=>{
+ const f=await fixture(t);await f.set({simulatorOnly:true,simulatorBooted:true});
+ const listed=value(await f.call('list_devices'));
+ assert.deepEqual(listed.devices.map(d=>d.id),['fixture-sim']);
+ assert.match(listed.notice,/Finder sidebar/);assert.match(listed.notice,/devicectl reaches only over the network/);
+ await f.set({simulatorOnly:false});
+ assert.equal(value(await f.call('list_devices')).notice,undefined);
+});
+
 test('an occupied simulator cannot be booted through explicit, selected or batch paths',async t=>{
  const f=await fixture(t);await f.set({simulatorOnly:true});
  assert.ok(value(await f.call('acquire_device',{device:'fixture-sim'})).lease_id);
@@ -764,6 +773,19 @@ for(const [tool,args] of Object.entries(locating)){
   assert.equal(inputSent(await f.events()),false);
  });
 }
+test('a recognition that began inside the five seconds still finishes and is used',async t=>{
+ const f=await fixture(t);await f.set({axEmpty:true,ocrDelayMs:8000});
+ const started=Date.now();
+ const result=await f.call('tap_text',{text:'First'});
+ const elapsed=Date.now()-started;
+ // Nothing new may start after five seconds, but this recognition started at once on a screen
+ // accessibility could not read, so its answer counts even though it arrives later.
+ assert.ok(!result.isError);
+ assert.ok(elapsed>=6500,'the recognition was not allowed to finish: '+elapsed+'ms');
+ assert.ok(elapsed<18000,'the search outlasted its window: '+elapsed+'ms');
+ assert.equal(inputSent(await f.events()),true);
+});
+
 test('no new look starts after the five seconds, so a late empty read never reaches OCR',async t=>{
  const f=await fixture(t);await f.set({axDelayMs:6000,axEmpty:true});
  const result=await f.call('tap_text',{text:'First'});

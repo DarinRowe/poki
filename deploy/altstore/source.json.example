@@ -3,18 +3,18 @@
   "identifier": "nz.zheha.poki.source",
   "subtitle": "Let an AI agent use your iPhone, with your approval.",
   "description": "Poki and Poki Runner. Install both with the same Apple ID; Poki starts and stops the runner by itself.",
-  "iconURL": "https://raw.githubusercontent.com/ZhehanZhang/poki-remote/main/docs/images/poki-icon.png",
-  "website": "https://github.com/ZhehanZhang/poki-remote",
+  "iconURL": "https://raw.githubusercontent.com/JosssphZhou/poki/main/docs/images/poki-icon.png",
+  "website": "https://github.com/JosssphZhou/poki",
   "tintColor": "#2084FD",
-  "sourceURL": "https://raw.githubusercontent.com/ZhehanZhang/poki-remote/altstore/source.json",
+  "sourceURL": "https://raw.githubusercontent.com/JosssphZhou/poki/main/deploy/altstore/source.json",
   "apps": [
     {
-      "name": "Poki",
+      "name": "Poki (external connection)",
       "bundleIdentifier": "nz.zheha.poki",
       "developerName": "Poki",
       "subtitle": "Your iPhone, for your AI agent.",
       "localizedDescription": "Pairs with the phone it runs on, keeps the runner up, carries MCP requests through the relay, and asks you on the Lock Screen before payments, deletes, messages and passwords.",
-      "iconURL": "https://raw.githubusercontent.com/ZhehanZhang/poki-remote/main/docs/images/poki-icon.png",
+      "iconURL": "https://raw.githubusercontent.com/JosssphZhou/poki/main/docs/images/poki-icon.png",
       "tintColor": "#2084FD",
       "category": "utilities",
       "screenshots": [],
@@ -24,7 +24,7 @@
           "buildVersion": "RUN_NUMBER",
           "date": "2026-11-06T00:00:00Z",
           "localizedDescription": "See CHANGELOG.md.",
-          "downloadURL": "https://github.com/ZhehanZhang/poki-remote/releases/download/v0.1.0/Poki-0.1.0-RUN_NUMBER.ipa",
+          "downloadURL": "https://github.com/JosssphZhou/poki/releases/download/ios-v0.1.0/Poki-external-0.1.0-RUN_NUMBER.ipa",
           "size": 0,
           "minOSVersion": "26.0"
         }
@@ -43,7 +43,7 @@
       "developerName": "Poki",
       "subtitle": "Poki's automation runner. Poki opens it; you never need to.",
       "localizedDescription": "The on-phone runner Poki starts and stops. Built from Appium WebDriverAgent with Poki's patches.",
-      "iconURL": "https://raw.githubusercontent.com/ZhehanZhang/poki-remote/main/docs/images/runner/AppIcon-1024.png",
+      "iconURL": "https://raw.githubusercontent.com/JosssphZhou/poki/main/docs/images/runner/AppIcon-1024.png",
       "tintColor": "#2084FD",
       "category": "utilities",
       "screenshots": [],
@@ -53,7 +53,7 @@
           "buildVersion": "RUN_NUMBER",
           "date": "2026-11-06T00:00:00Z",
           "localizedDescription": "Released together with Poki 0.1.0.",
-          "downloadURL": "https://github.com/ZhehanZhang/poki-remote/releases/download/v0.1.0/PokiRunner-0.1.0-RUN_NUMBER.ipa",
+          "downloadURL": "https://github.com/JosssphZhou/poki/releases/download/ios-v0.1.0/PokiRunner-0.1.0-RUN_NUMBER.ipa",
           "size": 0,
           "minOSVersion": "26.0"
         }

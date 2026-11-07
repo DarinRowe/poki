@@ -1,6 +1,6 @@
 # What the Poki relay can see
 
-The relay is a Cloudflare Worker between an MCP client (Claude, ChatGPT) and the Poki app on your phone. It is not end-to-end encrypted. TLS from the MCP client ends at Cloudflare, and the phone's WebSocket also ends there. So the Worker handles your MCP traffic in plaintext, in memory, while it passes it on: tool calls, their arguments, and their results, which include screenshots and text from your screen.
+The relay is a Cloudflare Worker between an MCP client (Claude, ChatGPT) and the Poki app on your phone. You deploy it to your own Cloudflare account ([DEPLOY.md](DEPLOY.md)); Poki has no default relay and sends nothing until you enter your relay's address. It is not end-to-end encrypted. TLS from the MCP client ends at Cloudflare, and the phone's WebSocket also ends there. So the Worker handles your MCP traffic in plaintext, in memory, while it passes it on: tool calls, their arguments, and their results, which include screenshots and text from your screen.
 
 ## What it keeps
 

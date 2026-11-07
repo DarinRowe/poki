@@ -2,10 +2,15 @@ import Crypto
 import Foundation
 import PokiCore
 
-// relay-check [wss://relay/v1] [seconds]: connects as a phone, prints the connector URL on one line
-// ("connector: …"), the relay states, and each tool call, then exits after `seconds`.
+// relay-check <relay address> [seconds]: connects as a phone, prints the connector URL on one line
+// ("connector: …"), the relay states, and each tool call, then exits after `seconds`. The address is
+// the one entered in Poki, such as https://poki-relay.you.workers.dev, or http://127.0.0.1:8787 for
+// wrangler dev.
 let args = CommandLine.arguments
-let relay = URL(string: args.count > 1 ? args[1] : "wss://pokimcp.zheha.nz/v1")!
+guard args.count > 1, let relay = RelayAddress(args[1]) else {
+    FileHandle.standardError.write(Data("usage: relay-check <relay address, such as https://poki-relay.you.workers.dev> [seconds]\n".utf8))
+    exit(2)
+}
 let seconds = args.count > 2 ? Double(args[2]) ?? 60 : 60
 
 struct Key: RelayKey {
@@ -30,10 +35,9 @@ final class Host: CoreHost, @unchecked Sendable {
 
 let host = Host()
 // Nothing listens on port 1: the runner calls are refused at once.
-let core = PokiCore(config: CoreConfig(relayURL: relay, runnerURL: URL(string: "http://127.0.0.1:1")!), host: host)
+let core = PokiCore(config: CoreConfig(runnerURL: URL(string: "http://127.0.0.1:1")!), host: host)
 let label = base32(host.key.publicKey)
-let https = relay.absoluteString.replacingOccurrences(of: "wss://", with: "https://").replacingOccurrences(of: "ws://", with: "http://")
-print("connector: \(https)/\(label)/\(host.secret)/mcp")
+print("connector: \(relay.connectorBase.absoluteString)/\(label)/\(host.secret)/mcp")
 fflush(stdout)
 Task {
     for await event in core.events {
@@ -47,9 +51,9 @@ Task {
     }
 }
 #if os(Linux)
-core.start(socketFactory: NodeSocketFactory(node: ProcessInfo.processInfo.environment["NODE"] ?? "/usr/local/bin/node", bridge: ProcessInfo.processInfo.environment["WS_BRIDGE"] ?? "ws-bridge.mjs"))
+core.start(relay: relay, socketFactory: NodeSocketFactory(node: ProcessInfo.processInfo.environment["NODE"] ?? "/usr/local/bin/node", bridge: ProcessInfo.processInfo.environment["WS_BRIDGE"] ?? "ws-bridge.mjs"))
 #else
-core.start()
+core.start(relay: relay)
 #endif
 Thread.sleep(forTimeInterval: seconds)
 core.stop()

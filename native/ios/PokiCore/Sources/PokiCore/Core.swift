@@ -1,7 +1,6 @@
 import Foundation
 
 public struct CoreConfig: Sendable {
-    public var relayURL: URL
     public var runnerURL: URL
     public var sensitive: SensitivityRules
     /// How long `do` holds for an approval before answering approval_required.
@@ -25,13 +24,14 @@ public struct CoreConfig: Sendable {
     /// WDA's `accessibilityDeadline`: how long the app's main loop may take to answer before a tree
     /// read is refused (0 turns the check off). 2 s on the phone; the gym compares both.
     public var accessibilityDeadline: Double
-    /// Poki's own bundle id: a tap that lands on its Live Activity (the Dynamic Island) brings it to the
-    /// front; `do` brings the app it was working in back and says so, rather than act inside Poki.
-    public var ownBundleID: String
+    /// Poki's own bundle ids (and the ids under them, like a development build's). The approval card is
+    /// in Poki, so `do` and a voice tap refuse to tap there when they can tell Poki is in front. A tap
+    /// that lands on its Live Activity (the Dynamic Island) brings Poki to the front; `do` brings the app
+    /// it was working in back and says so, rather than act inside Poki.
+    public var ownApps: [String]
 
-    public init(relayURL: URL = URL(string: "wss://pokimcp.zheha.nz/v1")!, runnerURL: URL = URL(string: "http://127.0.0.1:8100")!, sensitive: SensitivityRules = SensitivityRules(), approvalWait: Double = 20, toolDeadline: Double = 25, actionCap: Double = 6, readTimeout: Double = 4, busyWait: Double = 2, runnerWait: Double = 15, treeFormat: String = "xml", ownBundleID: String = "nz.zheha.poki", accessibilityDeadline: Double = 2) {
+    public init(runnerURL: URL = URL(string: "http://127.0.0.1:8100")!, sensitive: SensitivityRules = SensitivityRules(), approvalWait: Double = 20, toolDeadline: Double = 25, actionCap: Double = 6, readTimeout: Double = 4, busyWait: Double = 2, runnerWait: Double = 15, treeFormat: String = "xml", ownApps: [String] = ["nz.zheha.poki"], accessibilityDeadline: Double = 2) {
         self.accessibilityDeadline = accessibilityDeadline
-        self.relayURL = relayURL
         self.runnerURL = runnerURL
         self.sensitive = sensitive
         self.approvalWait = approvalWait
@@ -41,8 +41,18 @@ public struct CoreConfig: Sendable {
         self.busyWait = busyWait
         self.runnerWait = runnerWait
         self.treeFormat = treeFormat
-        self.ownBundleID = ownBundleID
+        self.ownApps = ownApps
     }
+
+    /// Whether `app` is Poki itself. An app known only by name counts when it is named Poki.
+    func isPoki(_ app: Foreground?) -> Bool {
+        guard let app else { return false }
+        guard let bundle = app.bundleID, !bundle.isEmpty else { return app.name?.caseInsensitiveCompare("Poki") == .orderedSame }
+        return ownApps.contains { bundle == $0 || bundle.hasPrefix($0 + ".") }
+    }
+
+    /// What `do` and a voice tap answer when the tap would land in Poki.
+    static let ownAppRefusal = "only the phone's owner can approve, by tapping it on the phone themselves; Poki takes no taps or typing inside the Poki app"
 }
 
 /// The launcher's view of the runner, as the app shell reports it (from PokiLauncher's events).
@@ -58,6 +68,33 @@ public enum RunnerState: Sendable, Equatable {
         case .starting(let detail): return "starting (\(detail))"
         case .failed(let detail, let fix): return "failed: \(detail)" + (fix.map { ". Fix on the phone: \($0)" } ?? "")
         }
+    }
+}
+
+/// How the phone reaches its own developer services at 10.7.0.1.
+public enum LocalConnection: Sendable, Equatable {
+    /// Poki's own packet tunnel, in the local-VPN build. It does not reconnect by itself.
+    case builtIn
+    /// The owner's proxy app (or a loopback app) reflects 10.7.0.1.
+    case external
+}
+
+extension RunnerState {
+    /// The runner is waiting for the loopback: what the agent reads, with when it stopped answering
+    /// (`since`, a clock time) and how the owner brings it back on this connection. `tunnelWithoutAnswer`:
+    /// a 10.7.0.x interface is up, but nothing answers through it.
+    public static func waitingForLoopback(since: String?, tunnelWithoutAnswer: Bool, connection: LocalConnection) -> RunnerState {
+        let since = since.map { " since \($0)" } ?? ""
+        let why: String, fix: String
+        switch connection {
+        case .builtIn:
+            why = tunnelWithoutAnswer ? "Poki's local connection is on, but this iPhone's developer services do not answer at 10.7.0.1" : "Poki's local connection is off, or another VPN app replaced it"
+            fix = "The owner opens Poki and taps Enable local connection in Setup, or turns Poki's VPN back on in iOS Settings > VPN"
+        case .external:
+            why = tunnelWithoutAnswer ? "the proxy app's tunnel is on but does not reflect 10.7.0.1" : "the loopback at 10.7.0.1 is not answering"
+            fix = "The owner turns the proxy app's tunnel (Surge, Loon, Shadowrocket or sing-box) back on"
+        }
+        return .starting("waiting for the loopback\(since): \(why). \(fix); the runner starts again by itself within seconds of that. Nothing on the phone changes meanwhile")
     }
 }
 
@@ -202,9 +239,11 @@ public final class PokiCore: @unchecked Sendable {
 
     func emit(_ event: CoreEvent) { continuation.yield(event) }
 
-    public func start(socketFactory: WebSocketFactory = URLSessionWebSocketFactory()) {
+    /// Connects to the person's own relay and keeps it connected. There is no default relay: the app
+    /// passes the address the person entered.
+    public func start(relay address: RelayAddress, socketFactory: WebSocketFactory = URLSessionWebSocketFactory()) {
         guard relay == nil, let host else { return }
-        let client = RelayClient(baseURL: config.relayURL, host: host, factory: socketFactory, handler: { [weak self] request in
+        let client = RelayClient(baseURL: address.phoneURL, host: host, factory: socketFactory, handler: { [weak self] request in
             await self?.handle(request) ?? RelayResponse(id: request.id, status: 503, headers: [:], body: "")
         }, emit: { [weak self] in self?.emit(.relay($0)) })
         client.undelivered = { [weak self] request, response in self?.keepLost(request, response) }
@@ -238,6 +277,45 @@ public final class PokiCore: @unchecked Sendable {
     public var handoff: Handoff? { computer.handoff.value.flatMap { $0.done == nil ? $0 : nil } }
 
     public var pendingApproval: Approval? { approvals.pending }
+
+    /// A tap another part of the app sends without `do` (the Voice tab taps through the Mac's Poki MCP),
+    /// on the element that reads `text` in the app in front. It is checked with the rules `do` uses and,
+    /// when they say so, waits for the owner's OK on the phone, with the same approval (card, Live
+    /// Activity, notification). A request still open after `seconds` is withdrawn. A tap in Poki itself
+    /// is refused.
+    public func clearTap(on text: String, inApp bundleID: String?, named name: String?, waiting seconds: Double) async -> TapClearance {
+        let app = Foreground(bundleID: bundleID, name: name)
+        // The approval card is in Poki: a tap there is refused, and the request waiting stays for the owner.
+        if config.isPoki(app) { return .refused(CoreConfig.ownAppRefusal) }
+        // Like `do`: a tap withdraws the request still waiting, so two taps never wait side by side.
+        if let pending = approvals.pending { approvals.withdraw(id: pending.id) }
+        let element = Element(type: "Other", label: text, value: nil, identifier: nil, frame: Rect(x: 0, y: 0, width: 0, height: 0), depth: 0)
+        // No readable text: the rules cannot tell what it does, so the owner is asked.
+        let unreadable = text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard let reason = unreadable && config.sensitive.enabled ? "a tap on something with no readable text" : config.sensitive.reason(touching: element, typing: false, app: app, secureOnScreen: false) else { return .clear }
+        let approval = approvals.request(app: app.describe, summary: unreadable ? "Tap something with no text" : "Tap “\(text)”", reason: reason, fingerprint: "tap:\(UUID().uuidString)")
+        switch await approvals.wait(id: approval.id, seconds: seconds) {
+        case .approved?:
+            _ = approvals.consumeGrant(fingerprint: approval.fingerprint)
+            return .approved(reason)
+        case .declined?:
+            return .declined(reason)
+        case .expired?:
+            return .unanswered(reason)
+        case nil:
+            approvals.withdraw(id: approval.id)
+            return .unanswered(reason)
+        }
+    }
+
+    /// look, do or status for another part of the app (the Voice tab), run here on the phone exactly as a
+    /// relay call: same gate, approvals, Live Activity and deadlines. `arguments` is the call's JSON object.
+    public func tool(_ name: String, arguments: String) async -> ToolResult {
+        guard let args = try? JSON.parse(arguments.isEmpty ? "{}" : arguments) else {
+            return ToolResult(text: "error: the arguments are not JSON; nothing was sent", jpeg: nil, isError: true)
+        }
+        return await call(name, args)
+    }
 
     // MARK: MCP over HTTP (Streamable HTTP, JSON answers only)
 
@@ -310,7 +388,7 @@ public final class PokiCore: @unchecked Sendable {
 
     // MARK: Tools
 
-    static let instructions = "look reads the iPhone's screen; do runs actions and then reads it. Both return the app in front, numbered elements and a screenshot whose pixels are screen points. Use the numbers from the latest answer; an element that stays on screen keeps its number, and do lists only what changed. Decide what happened from the elements, the screen_changed line and the picture. To reach something further down a list, use scroll_to with its text before trying swipes. Some actions (payments, deleting, sending messages, passwords) need the owner's approval on the phone; do says so instead of sending them. When the tree is late the elements come from the picture and a tap on a point of the picture always works: there is always a way on. A step that is the owner's to do (a password, a verification, a checkout you will not make) is handed to them with {handoff: {kind, text}}; keep polling look while they do it, then go on."
+    static let instructions = "look reads the iPhone's screen; do runs actions and then reads it. Both return the app in front, numbered elements and a screenshot whose pixels are screen points. Use the numbers from the latest answer; an element that stays on screen keeps its number, and do lists only what changed. Decide what happened from the elements, the screen_changed line and the picture. To reach something further down a list, use scroll_to with its text before trying swipes. Some actions (payments, deleting, sending messages, calls, passwords) need the owner's approval on the phone; do says so instead of sending them. Only the owner approves, by hand: do takes no input inside the Poki app. When the tree is late the elements come from the picture and a tap on a point of the picture always works: there is always a way on. A step that is the owner's to do (a password, a verification, a checkout you will not make) is handed to them with {handoff: {kind, text}}; keep polling look while they do it, then go on."
 
     static let tools: [JSON] = [
         ["name": "look", "description": "Read the screen now: the app in front, the numbered elements (role, \"label = value\", [x,y,w,h] in screen points; + marks elements new since the last read, ~ moved ones) and a screenshot that is one pixel per screen point, so a point on the picture is a point to tap. Repeated text, scroll bars and empty containers are left out and long labels are cut; full=true lists every element as the tree has it and adds the text read from the picture inside [collapsed] elements (an app showed a whole cell, buttons and all, as one element). Numbers stay the same while an element stays on screen.",

@@ -1,7 +1,8 @@
 # Poki on the phone: interfaces
 
-Poki runs entirely on the iPhone. Nothing at runtime depends on a server of ours except a relay that
-carries MCP requests to the phone and stores nothing.
+Poki runs entirely on the iPhone. Nothing at runtime depends on a server of ours. The only server is a
+relay that carries MCP requests to the phone and stores nothing, and each person deploys it to their own
+Cloudflare account (`deploy/cf-relay/DEPLOY.md`). Poki has no default relay.
 
 ```
 MCP client ──HTTPS──▶ Cloudflare Worker (relay) ──WebSocket (phone dialed out)──▶ Poki app
@@ -11,16 +12,22 @@ MCP client ──HTTPS──▶ Cloudflare Worker (relay) ──WebSocket (phone
 Poki app ──TCP 10.7.0.1:* (loopback tunnel)──▶ the phone's own developer services ──▶ WebDriverAgent runner (127.0.0.1:8100)
 ```
 
+Known issue: PokiCore reaches the runner at 127.0.0.1:8100, but the runner listens on port 8100 on
+every network interface of the phone and asks for no credentials. While it runs, any device on the
+same network can take screenshots and tap, and PokiCore's approvals do not apply to those requests.
+Turn Poki on only on networks you trust. The planned fix is a pairing code between Poki and the
+runner (`native/ios-runner/README.md`).
+
 Three interfaces, each owned by one side:
 
 | Interface | Defined here, implemented by |
 |---|---|
-| 1. Relay frames (Worker ⇄ phone) | dev/cf-relay (Worker), PokiCore (phone) |
-| 2. PokiCore Swift API | PokiCore; used by dev/ios-app |
-| 3. PokiLauncher C ABI | PokiLauncher; used by PokiCore and dev/ios-app |
-| 4. What the launcher needs from the loopback | dev/ios-app's packet tunnel, or the user's proxy module |
+| 1. Relay frames (Worker ⇄ phone) | `deploy/cf-relay` (Worker), PokiCore (phone) |
+| 2. PokiCore Swift API | PokiCore; used by the app (`native/ios-app`) |
+| 3. PokiLauncher C ABI | PokiLauncher (`native/launcher`); used by the app |
+| 4. What the launcher needs from the loopback | PokiTunnel (`native/ios-app/PokiTunnel`), or the user's external VPN |
 
-Version: 1.1 (2026-11-06: on-device pairing in §3, ToolFacts on toolFinished in §2, tunnel facts in §4, keep-alive). Every change to a section below bumps its version and is announced to the other threads.
+Version: 1.2 (2026-11-07: built-in loopback and separate external-connection build in section 4; 2026-11-06: on-device pairing in section 3, ToolFacts on toolFinished in section 2, tunnel facts in section 4, keep-alive). Every change to a section below bumps its version and is announced to the other threads.
 
 ## 1. Relay frames, v1
 
@@ -29,17 +36,16 @@ Version: 1.1 (2026-11-06: on-device pairing in §3, ToolFacts on toolFinished in
 - The phone makes an Ed25519 key pair once and keeps the private key in the keychain
   (`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`).
 - `label` = RFC 4648 base32 of the raw 32-byte public key, lowercase, no padding (52 characters).
-  The same label scheme as dev/relay, so either relay can serve a phone.
 - The phone makes a **connector secret**: 32 random bytes, base64url without padding (43 characters).
   Several may exist (one per MCP client); each can be revoked on the phone.
 - The MCP client's URL is
-  `https://pokimcp.zheha.nz/v1/<label>/<secret>/mcp`.
+  `https://<relay host>/v1/<label>/<secret>/mcp`, where the relay host is the person's own Worker.
   The Worker never stores the secret. The phone sends only `sha256(secret)` (hex), and only on a live
   connection, so when the phone is offline the Worker knows nothing about it.
 
 ### Phone ⇄ Worker (WebSocket)
 
-The phone opens `wss://pokimcp.zheha.nz/v1/<label>/connect`. All frames are UTF-8 JSON text frames
+The phone opens `wss://<relay host>/v1/<label>/connect`. All frames are UTF-8 JSON text frames
 except the keepalive.
 
 1. Worker → `{"t":"challenge","nonce":"<base64 32 bytes>"}` immediately after the upgrade.
@@ -86,14 +92,15 @@ reconnects with backoff (1, 2, 4 … 30 s, jittered) when no `pong` arrives for 
 |---|---|
 | Unknown label, or secret hash not in `access` (indistinguishable) | 404 `{"error":"not found"}` |
 | Phone not connected | 503 with a JSON-RPC error body: `{"jsonrpc":"2.0","id":<request id or null>,"error":{"code":-32001,"message":"The phone is offline: open Poki on the phone, or check its network."}}` |
+| The phone disconnects after the `req` was sent, before its `res` | 502 with the same JSON-RPC shape, code -32004. The request may have run on the phone, so the client should look before it retries. |
 | No `res` within `req_timeout_ms` | 504 with the same JSON-RPC shape, code -32002 |
 | Rate limit | 429 with the JSON-RPC shape, code -32003 |
 | Body over `max_body` | 413 |
 
 ### Limits (cost)
 
-The account is on Workers Paid, so overage can bill. The Worker keeps hard caps (exact numbers are
-dev/cf-relay's): requests per label per minute, concurrent requests per label (PokiCore handles one tool
+The cost model in `deploy/cf-relay/DEPLOY.md` assumes Workers Paid, where overage can bill. The Worker
+keeps hard caps (exact numbers are in `deploy/cf-relay/wrangler.toml`): requests per label per minute, concurrent requests per label (PokiCore handles one tool
 call at a time; 4 in flight is plenty), body size, and connections per label (one). The Worker stores
 nothing: no KV, no D1, no Durable Object storage writes, and no logs of headers, bodies or IPs. The
 Durable Object keeps only the hello's `access` list and label in the WebSocket attachment.
@@ -105,11 +112,20 @@ Linux; iOS-only parts (JPEG encoding, keychain) come from the host protocol.
 
 ```swift
 public struct CoreConfig: Sendable {
-    public var relayURL: URL                 // wss://pokimcp.zheha.nz/v1
     public var runnerURL: URL                // http://127.0.0.1:8100
     public var sensitive: SensitivityRules   // what needs approval; see below
     public var approvalWait: Duration        // how long do() holds for an approval before answering (default 20 s)
     public var toolDeadline: Duration        // hard cap per tool call (default 25 s)
+}
+
+/// The relay the person deployed, as entered in the app: https://poki-relay.you.workers.dev.
+/// There is no default. The phone dials phoneURL (wss://<host>/v1); connector URLs start with
+/// connectorBase (https://<host>/v1).
+public struct RelayAddress: Sendable, Equatable {
+    public init?(_ text: String)
+    public let origin: URL
+    public var phoneURL: URL
+    public var connectorBase: URL
 }
 
 public protocol CoreHost: AnyObject, Sendable {
@@ -132,7 +148,7 @@ public protocol CoreHost: AnyObject, Sendable {
 
 public final class PokiCore: Sendable {
     public init(config: CoreConfig, host: CoreHost)
-    public func start()                       // connect to the relay, keep it connected
+    public func start(relay: RelayAddress)    // the person's own relay; connect and keep it connected
     public func stop()
     public var events: AsyncStream<CoreEvent> { get }
     public func resolveApproval(id: String, approved: Bool)
@@ -628,8 +644,16 @@ destination swapped. The phone needs nothing else from it: no UDP, no IPv6, no D
 no other addresses. The ports used are 49152 or 62078, plus one dynamic tunnel port per session that
 the phone picks.
 
-- The built-in packet tunnel (dev/ios-app): interface address 10.7.0.2/24, includedRoutes 10.7.0.1/32
-  only, IPv4 only, no DNS settings, no IPv6, MTU 1500. Every packet to 10.7.0.1 goes back with source
-  and destination swapped.
+- The built-in `PokiTunnel` uses interface `10.7.0.2/32`, includes only `10.7.0.1/32`, excludes
+  the default route, and sets MTU 1500. No DNS, IPv6 or proxy settings are installed. `PokiLoopback`
+  validates IPv4/TCP packets from `10.7.0.2` to `10.7.0.1`, rejects fragments and malformed headers,
+  and swaps addresses without changing ports, payload or checksums. It has no external socket.
+- The owner enables it in Setup and approves iOS's VPN prompt. `LoopbackTunnel` manages only the
+  profile whose provider identifier matches the embedded extension (including rewritten signing
+  identifiers). It never auto-starts on app foregrounding. An explicit Turn Poki on can reconnect a
+  previously selected built-in connection; Stop turns off only Poki's own tunnel.
+- Both the app and extension require provisioned Network Extension entitlements. The separate
+  `project-external.yml` omits the tunnel and that entitlement. See `docs/ios-loopback.md` for signing,
+  coexistence, and device acceptance.
 - Surge / Loon: `10.7.0.1 = reflect` with the route included and IPv6 VIF off. sing-box:
   `loopback_address: ["10.7.0.1"]`. Shadowrocket: "Include route 10.7.0.1/32".

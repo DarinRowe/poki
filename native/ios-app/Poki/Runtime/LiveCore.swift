@@ -15,7 +15,10 @@ final class LiveCore: CoreSession {
 
     init(host: AppCoreHost) {
         self.host = host
-        core = PokiCore(config: CoreConfig(), host: host)
+        var config = CoreConfig()
+        // Signing tools may rename the app; its own id is Poki too.
+        if let own = Bundle.main.bundleIdentifier { config.ownApps.append(own) }
+        core = PokiCore(config: config, host: host)
         (events, continuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(64))
         let continuation = self.continuation
         pump = Task { [core] in
@@ -25,12 +28,16 @@ final class LiveCore: CoreSession {
 
     deinit { pump?.cancel() }
 
-    func start() { core.start() }
+    func start(relay: RelayAddress) { core.start(relay: relay) }
     func stop() { core.stop(); continuation.yield(.relay(.off)) }
     func resolveApproval(id: String, approved: Bool) { core.resolveApproval(id: id, approved: approved) }
     /// The person finished a handed-off screen (Done on the Live Activity): PokiCore lets inputs through again.
     func handoffDone(id: String) { core.handoffDone(id: id) }
+    func clearTap(on text: String, inApp bundleID: String?, named name: String?, waiting seconds: Double) async -> TapClearance {
+        await core.clearTap(on: text, inApp: bundleID, named: name, waiting: seconds)
+    }
     func accessChanged() { core.accessChanged() }
+    func tool(_ name: String, arguments: String) async -> ToolResult { await core.tool(name, arguments: arguments) }
 
     private static func map(_ event: CoreEvent) -> ShellEvent {
         switch event {
@@ -43,7 +50,7 @@ final class LiveCore: CoreSession {
             switch outcome { case .done(let text): delivery = text; case .failed(let text): delivery = "failed: \(text)" }
             return .toolFinished(summary: activity.summary, delivery: delivery, app: facts.app, thumbnail: facts.thumbnail)
         case .approvalRequested(let approval):
-            return .approvalRequested(PendingApproval(id: approval.id, app: approval.app, summary: approval.summary, expires: approval.expires))
+            return .approvalRequested(PendingApproval(id: approval.id, app: approval.app, summary: approval.summary, reason: approval.reason, expires: approval.expires))
         case .approvalEnded(let id, let approved): return .approvalEnded(id: id, approved: approved)
         case .handoffRequested(let id, let kind, let text, let app): return .handoffRequested(id: id, kind: kind, text: text, app: app)
         case .handoffEnded(let id, let how): return .handoffEnded(id: id, how: how)

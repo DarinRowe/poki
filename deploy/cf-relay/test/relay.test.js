@@ -3,7 +3,7 @@ import { SELF, env } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import { base32 } from '../src/index.js';
 
-const HOST = 'https://pokimcp.zheha.nz';
+const HOST = 'https://relay.example.com';
 const enc = new TextEncoder();
 const b64 = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes)));
 const b64u = bytes => b64(bytes).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -172,6 +172,17 @@ describe('OAuth and MCP', () => {
     const limited = await call(busy.mcp, busy.token, { jsonrpc: '2.0', id: 9, method: 'tools/list' });
     expect(limited.status).toBe(429);
     expect((await limited.json()).error.code).toBe(-32003);
+  });
+
+  it('a phone that drops after it got the request is not reported as offline, since the request may have run', async () => {
+    let p;
+    const c = await connected(async () => { p.ws.close(1011, 'dropped'); return undefined; });
+    p = c.p;
+    const dropped = await call(c.mcp, c.token, { jsonrpc: '2.0', id: 'd', method: 'tools/call', params: { name: 'do' } });
+    expect(dropped.status).toBe(502);
+    const body = await dropped.json();
+    expect(body).toMatchObject({ jsonrpc: '2.0', id: 'd', error: { code: -32004 } });
+    expect(body.error.message).toMatch(/may have run/);
   });
 
   it('the access list can change on the live connection', async () => {

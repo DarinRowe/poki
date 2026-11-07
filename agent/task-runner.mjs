@@ -47,23 +47,28 @@ function modelContent(content) {
   });
 }
 
-function batchTrace(args, result) {
+function batchSteps(args, blocks) {
   const steps = [];
-  let current, summary;
-  for (const block of result.content) {
+  for (const block of blocks) {
     const value = resultData({ content: [block] });
     if (Number.isInteger(value?.step) && typeof value.tool === 'string' && typeof value.isError === 'boolean') {
       const command = args.commands[value.step - 1];
-      if (value.step !== steps.length + 1 || command?.tool !== value.tool) return null;
-      current = { tool: value.tool, args: command.arguments ?? {}, content: [], error: value.isError, elapsedMilliseconds: value.elapsed_ms };
-      steps.push(current);
-    } else if (Number.isInteger(value?.completed_steps)) {
-      summary = value;
-      current = null;
-    } else if (current) current.content.push(block);
+      if (value.step !== steps.length + 1 || command?.tool !== value.tool) return [];
+      steps.push({ tool: value.tool, args: command.arguments ?? {}, content: [], error: value.isError, elapsedMilliseconds: value.elapsed_ms });
+    } else steps.at(-1)?.content.push(block);
   }
-  if (!summary || summary.stop_reason !== null || summary.completed_steps !== args.commands.length || steps.length !== args.commands.length) return null;
   return steps.map(({ content, ...step }) => ({ ...step, result: resultData({ content }) ?? resultText({ content }), at: new Date().toISOString() }));
+}
+
+// Each step that ran is traced as if called alone. A batch that did not finish cleanly also gets its own
+// entry, so the trace keeps the failure, the steps that did not run and the screen the batch ended on.
+function batchTrace(args, result, elapsed) {
+  const summary = resultData({ content: result.content.slice(-1) });
+  if (!Number.isInteger(summary?.completed_steps)) return null;
+  let steps = batchSteps(args, result.content.slice(0, -1));
+  if (steps.length !== summary.completed_steps) steps = [];
+  if (!result.isError && steps.length === args.commands.length) return steps;
+  return [...steps, { tool: 'batch_commands', args, result: summary, error: !!result.isError, elapsedMilliseconds: elapsed, at: new Date().toISOString() }];
 }
 
 export class PhoneTask extends EventEmitter {
@@ -300,7 +305,7 @@ export class PhoneTask extends EventEmitter {
       this.snapshot.execution.verification = await verifyResult({
         prompt: [this.snapshot.prompt, this.snapshot.context].filter(Boolean).join('\n\n'), success, summary: this.finishClaim.summary, details: this.finishClaim.details, answer: this.finishClaim.answer,
         trace: this.trace, finalObservation: this.completionEvidence,
-        interactions: [],
+        interactions: this.snapshot.conversation.filter(entry => entry.role === 'user' && entry.state === 'taken' && entry !== this.snapshot.conversation[0]).map(({ at, text }) => ({ at, text })),
         modelConfig: this.modelConfig, signal: this.abort.signal,
         onWarning: warning => this.emit('warning', warning),
         onRequest: request => this.snapshot.metrics.requests.push({ ...request, purpose: 'verification' }),
@@ -480,8 +485,8 @@ export class PhoneTask extends EventEmitter {
     if (!observations.has(name) && !tracePassive.has(name)) {
       this.actionSincePage = !result.isError && value?.sent !== false ? { tool: name, arguments: args } : null;
     }
-    const steps = name === 'batch_commands' && !result.isError ? batchTrace(args, result) : null;
-    for (const step of steps ?? []) {
+    const steps = name === 'batch_commands' ? batchTrace(args, result, elapsed) : null;
+    if (!result.isError) for (const step of steps ?? []) {
       if (!step.error && ['scroll', 'swipe'].includes(step.tool)) this.deadline.observe(step.result, { tool: step.tool });
     }
     if (this.deadline.observe(result, !result.isError && this.actionSincePage)) this.actionSincePage = null;

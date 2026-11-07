@@ -87,8 +87,28 @@ The daemon uses `poki-native --local-server ID SOCKET` for USB and local Wi-Fi d
 
 The input media session waits for its initial one-second warmup once. Each input still holds its touch connection for 300 milliseconds. `release_input` closes the media session before screen recording starts or resumes. Input errors and cancelled input requests discard that media session. A request is never replayed after its input may have been written.
 
-A kept tunnel can die while the helper idles, for example when the cable is pulled or the phone restarts; its adapter then reports `adapter closed`. A request that fails while connecting or opening a phone service has written no input. When the adapter is closed, the helper discards the tunnel, builds a new one, and runs that request once more; a read that fails on a closed adapter is retried the same way. A live tunnel is kept, because a cellular replacement may be refused, and the request fails at once. A failure without a retry, or after it, returns `outcome=not_sent` with `stop_reason=error` for an input or launch, and its error for a read. Both transports share this rule.
+A kept tunnel can die while the helper idles, for example when the cable is pulled or the phone restarts; its adapter then reports `adapter closed`. A request that fails while connecting or opening a phone service has written no input. A phone that leaves Wi-Fi without resetting the connection keeps the adapter running, so after a socket-level failure the helper also opens the tunnel's RSD port; when that fails too, the tunnel counts as closed. When the tunnel is closed, the helper discards it, builds a new one, and runs that request once more; a read that fails on a closed tunnel is retried the same way. An input that may have been written is never run again: its tunnel is discarded and rebuilt by the next request, and the error says to inspect the screen. A live tunnel is kept, because a cellular replacement may be refused, and the request fails at once. A failure without a retry, or after it, returns `outcome=not_sent` with `stop_reason=error` for an input or launch, and its error for a read. Both transports share this rule.
 
 Local helpers belong to one daemon and stop when its stdin pipe closes. The daemon also terminates its local helpers during shutdown. Remote helpers remain detached across daemon restarts and close through `disconnect_device`, preserving the existing remote reconnection behavior. A new local request can recreate a crashed helper; the interrupted request remains failed. A local helper finishes a read before it serves the next request, so when the daemon cancels or times out a local read, it terminates that helper and waits for it to exit, as it used to end a one-shot read process. The next request starts a new helper. A cancelled local input keeps the helper, discards its media session, and reports an unknown outcome without replay. A launch or input whose helper cannot reach the device returns `outcome=not_sent`.
 
-`POKI_MCP_NATIVE_TRACE=1` includes helper startup and native media stages in the isolated daemon's stderr. `node bin/verify-native-session.mjs` checks the compiled helper's PID greeting, unsent launch and tap, owner-exit handling, and socket cleanup without connecting to a phone. `cargo test` in `native/bridge` simulates a pulled cable on a real tunnel adapter.
+`POKI_MCP_NATIVE_TRACE=1` includes helper startup and native media stages in the isolated daemon's stderr. `node bin/verify-native-session.mjs` checks the compiled helper's PID greeting, unsent launch and tap, owner-exit handling, and socket cleanup without connecting to a phone. `cargo test` in `native/bridge` runs a real tunnel adapter against a simulated phone: a pulled cable, a phone that stops answering, a reset service on a phone that still answers, and a tunnel that dies after a touch reached the phone.
+
+## Screen text recognition
+
+`native/ocr.swift` is a host binary, not part of the bridge: it prints recognized text as JSON boxes, and `src/device.mjs` runs `build/ocr` whenever the accessibility tree cannot describe a screen. It links Vision, so a host without Vision has no recognizer at all, and until now that surfaced as `spawn build/ocr ENOENT` in the middle of a tap.
+
+`native/ocr-linux.py` is the same contract built on tesseract: it prints `text`, `confidence`, `x`, `y`, `width`, `height` in pixels of the image it was given. Nothing above it changes when it replaces the Swift helper. A host with neither keeps working from the accessibility tree: recognition reports itself unavailable once, and that is remembered only for a missing or unexecutable binary - a run that failed once is reported for that frame and retried on the next.
+
+```sh
+# Debian/Ubuntu host or image
+apt-get install -y tesseract-ocr tesseract-ocr-chi-sim tesseract-ocr-eng python3-pil
+install -m 755 native/ocr-linux.py build/ocr
+```
+
+It recognizes a doubled copy of the frame when the screenshot is narrow, because a 390-pixel-wide Chinese label is otherwise unreadable. On a 390×844 capture of a home screen that reads 20 confident lines in about 8 seconds on a 4-core ARM board, against about 5 without the doubling; the labels it loses at native size are the small ones. Recognition stays a fallback for that reason: a search still ends at five seconds, no recognition starts after that, and only one that began inside them is allowed to finish and be used.
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `POKI_OCR_LANGS` | `chi_sim+eng` | tesseract language packs |
+| `POKI_OCR_PSM` | `11` | tesseract page mode; `11` is sparse text, which is what a screen is |
+| `POKI_OCR_UPSCALE` | `2` | recognize a doubled copy and halve the boxes; `1` is faster and blinder |

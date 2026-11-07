@@ -427,6 +427,11 @@ final class Computer: @unchecked Sendable {
             return await readAndReply(until: until, full: true, error: "element \(stale.map(String.init).joined(separator: ", ")) is not in the latest read; nothing was sent. The current elements are below.")
         }
 
+        // The approval card is in Poki: no input lands there, and the request waiting stays for the owner.
+        if landsInPoki(actions) {
+            return ToolResult(text: "not_sent: \(CoreConfig.ownAppRefusal). Nothing was sent. Leave Poki first ({button: \"home\"} or {launch: \"bundle id\"}).", jpeg: nil, isError: true)
+        }
+
         // The runner's start and the checks above are not the actions' time (seen on the phone: a
         // launch sent while the runner was starting had its 9 s used up before it went). The call's
         // backstop allows `runnerWait` for that, so the shift stops there: a runner that was waited
@@ -506,7 +511,7 @@ final class Computer: @unchecked Sendable {
         // The read shows Poki in front where another app was being worked in: a tap at the top of
         // the screen landed on Poki's Live Activity in the Dynamic Island. The app comes back and
         // the read is made again, so the model never sees (or acts in) Poki's own screen.
-        if lastForeground?.bundleID == config.ownBundleID, !toRun.contains(where: { $0["launch"] != nil }), until - now() > config.readTimeout + 1,
+        if config.isPoki(lastForeground), !toRun.contains(where: { $0["launch"] != nil }), until - now() > config.readTimeout + 1,
            let back = await bringBack(from: before, why: "after the actions (a tap near the top of the screen lands on Poki's Live Activity in the Dynamic Island)", check: false) {
             return await readAndReply(until: until, full: full, changes: true, did: did, error: error, extra: (approvedNote.map { [$0] } ?? []) + extra + [back])
         }
@@ -516,9 +521,9 @@ final class Computer: @unchecked Sendable {
     /// When Poki itself is in front although the model was working in another app, that app is
     /// activated again, and the line says so. nil when nothing had to be done.
     func bringBack(from before: Foreground?, why: String, check: Bool) async -> String? {
-        guard let app = before?.bundleID, app != config.ownBundleID else { return nil }
+        guard let app = before?.bundleID, !config.isPoki(before) else { return nil }
         if check {
-            guard let front = try? await runner.call("GET", "/wda/activeAppInfo", timeout: 1.5), front["bundleId"]?.string == config.ownBundleID else { return nil }
+            guard let front = try? await runner.call("GET", "/wda/activeAppInfo", timeout: 1.5), config.isPoki(Foreground(bundleID: front["bundleId"]?.string, name: nil)) else { return nil }
         }
         do {
             _ = try await runner.call("POST", "/wda/apps/activate", ["bundleId": .string(app)], timeout: 4)
@@ -589,6 +594,24 @@ final class Computer: @unchecked Sendable {
     }
 
     // MARK: Sensitivity
+
+    /// Whether an input action would run with Poki in front: the app of the latest read, followed through
+    /// the launches and Home presses before it.
+    func landsInPoki(_ actions: [JSON]) -> Bool {
+        var front = lastForeground
+        for action in actions {
+            if let spec = action["launch"] {
+                front = Foreground(bundleID: spec.string ?? spec["bundle"]?.string, name: nil)
+            } else if let button = action["button"]?.text {
+                if button.lowercased() == "home" { front = nil }
+            } else if action["wait"] != nil || action["wait_until"] != nil {
+                continue
+            } else if config.isPoki(front) {
+                return true
+            }
+        }
+        return false
+    }
 
     func element(at point: (x: Double, y: Double)) -> Element? {
         lastElements.filter { f in f.frame.x <= point.x && point.x <= f.frame.x + f.frame.width && f.frame.y <= point.y && point.y <= f.frame.y + f.frame.height }

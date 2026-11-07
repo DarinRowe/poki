@@ -5,7 +5,7 @@
 
 use idevice::remote_pairing::{PAIRABLE_HOST_SERVICE_TYPE, PairableHost, PairableHostInfo, RpPairingFile, RpPairingSocket};
 use serde_json::{Value, json};
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 use tokio::net::TcpListener;
 
 pub struct PairConfig {
@@ -15,12 +15,20 @@ pub struct PairConfig {
     pub identity_path: Option<PathBuf>,
 }
 
+/// How long a pairing may wait for the person. On the phone, finding Poki in Settings and typing the
+/// PIN took about three minutes; ten leave room for someone who gets lost in Settings. The app keeps
+/// itself running with silent audio while it waits, so a pairing the person gave up on must end.
+pub const PAIRING_LIMIT: Duration = Duration::from_secs(10 * 60);
+
 /// Runs one pairing: `emit` gets `advertise` (what to publish over Bonjour), `pin`, then `paired` or
-/// `failed`. Ends after one pairing or on error.
+/// `failed`. Ends after one pairing, on error, or after `PAIRING_LIMIT`.
 pub async fn run(config: PairConfig, emit: impl Fn(Value) + Send + Sync + 'static) {
-    if let Err(detail) = pair(&config, &emit).await {
-        emit(json!({"event": "failed", "detail": detail}));
-    }
+    let detail = match tokio::time::timeout(PAIRING_LIMIT, pair(&config, &emit)).await {
+        Ok(Ok(())) => return,
+        Ok(Err(detail)) => detail,
+        Err(_) => "Pairing was not finished in Settings within 10 minutes, so Poki stopped waiting. Tap Try again to pair.".into(),
+    };
+    emit(json!({"event": "failed", "detail": detail}));
 }
 
 async fn pair(config: &PairConfig, emit: &(impl Fn(Value) + Send + Sync)) -> Result<(), String> {

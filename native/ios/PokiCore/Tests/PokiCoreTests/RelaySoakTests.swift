@@ -28,7 +28,7 @@ final class RelaySoakTests: XCTestCase {
         }
         let (core, _, _) = makeCore(wda) { $0.busyWait = 3 }
         let sockets = FakeSockets()
-        core.start(socketFactory: sockets)
+        core.start(relay: testRelay, socketFactory: sockets)
         core.relay?.maxBackoff = 0.05
 
         var plan: [(socket: Int, id: String, cancelled: Bool)] = []

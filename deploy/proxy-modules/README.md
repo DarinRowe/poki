@@ -2,9 +2,10 @@
 
 Poki on the phone talks to the phone's own developer services (lockdown on 62078, RemotePairing on
 49152) at 10.7.0.1. Something on the phone has to send connections to 10.7.0.1 straight back to the
-phone. iOS allows only one VPN at a time, so instead of Poki taking that slot, the proxy app the user
-already runs does it. Keep the address at 10.7.0.1: Shadowrocket hard-codes it, and SideStore-style
-tools use the same one.
+phone. Poki's built-in connection does that with a VPN of its own. iOS allows only one VPN at a time,
+so someone who already runs a proxy app can let it do the same instead, with the setups below, and keep
+their VPN. Keep the address at 10.7.0.1: Shadowrocket hard-codes it, and SideStore-style tools use the
+same one.
 
 The reflect swaps the addresses only, not the ports: a connection to 10.7.0.1:49152 arrives at the
 phone's own port 49152. Each setup below also keeps IPv6 off on the proxy's tunnel interface,
@@ -39,3 +40,16 @@ handles TCP only, which is all Poki needs. Reference:
 
 No file is needed: turn on Settings > Other > "Include route 10.7.0.1/32". (Taken from the app's
 settings as reported to us; not checked against Shadowrocket documentation.)
+
+## Karing
+
+Use Karing's existing VPN rather than enabling Poki's built-in local VPN. In Karing's TUN settings,
+set **Loopback address** (`loopback_address`) to `10.7.0.1` and reconnect Karing. In Poki select
+**External app**. This adds no second VPN configuration for Poki. Keep the existing subscription,
+nodes and routing rules; the developer-service check in Poki must pass before continuing.
+
+Karing's maintainer marked iOS loopback support complete in
+[issue 899](https://github.com/KaringX/karing/issues/899), pointing to version `1.2.4.862`.
+Source support does not replace device verification of the installed version, its route exclusions,
+normal proxy access and Poki's launcher. Do not claim all VPN apps are compatible: those without
+local reflection cannot share this path with Poki's packet-tunnel VPN.
