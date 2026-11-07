@@ -4,7 +4,7 @@ import { readFile, writeFile, mkdtemp, rm, symlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { RouteStore } from '../routes.mjs';
-import { conditionsMatch } from '../fast/task.mjs';
+import { conditionsMatch, candidatesFor } from '../fast/task.mjs';
 
 test('A repeated city label preserves the verified header when learning and reading a route', async t => {
   const sample = JSON.parse(await readFile(new URL('./fixtures/luma-route.json', import.meta.url), 'utf8'));
@@ -80,4 +80,15 @@ test('An oversized matching task never mislabels a healthy route as a broken cac
     'An incompatible bound prompt should not be reported as corrupt stored data');
   assert.ok(messages.every(message => !message.includes('invalid learned-route cache')));
   assert.ok(await store.find(sample.prompt, context), 'Skipping a long prompt must not alter the healthy route');
+});
+
+test('A disabled or hidden control is never a tap candidate, whether its flag is false or 0', () => {
+  const save = { label: 'Save', role: 'Button' };
+  const task = { allowed: [{ id: 'save', op: 'tap', ...save }] };
+  const candidates = element => candidatesFor(task, { elements: [{ ...save, ref: 'e1', ...element }] });
+  assert.equal(candidates({}).length, 1, 'A control without enabled or visible flags stays tappable');
+  for (const off of [false, 0]) {
+    assert.deepEqual(candidates({ enabled: off, visible: true }), [], `enabled: ${off} must not be tappable`);
+    assert.deepEqual(candidates({ enabled: true, visible: off }), [], `visible: ${off} must not be tappable`);
+  }
 });
