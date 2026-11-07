@@ -6,7 +6,7 @@ Activity with Approve/Deny for sensitive actions, the MCP address for each clien
 and a Debug tab (the former Poki Probe). Native SwiftUI on the iOS 26 SDK with Liquid Glass.
 
 The runner (WebDriverAgent, built by `.github/workflows/ios-runner.yml`) is a second bundle for v1;
-dev/ios-core `docs/single-bundle.md` explains why.
+`docs/single-bundle.md` explains why.
 
 ## Layout
 
@@ -22,12 +22,12 @@ dev/ios-core `docs/single-bundle.md` explains why.
 | `Shared` | Live Activity attributes and views, the Approve/Deny/Stop App Intents (app and widget) |
 | `PokiWidgets` | The Live Activity widget |
 
-PokiCore (Swift) and PokiLauncher (Rust, C ABI) come from dev/ios-core (`docs/ios-core.md`).
+PokiCore (Swift, `native/ios/PokiCore`) and PokiLauncher (Rust with a C ABI, `native/launcher`) are described in `docs/ios-core.md`. Poki has no default relay: the person deploys their own (`deploy/cf-relay/DEPLOY.md`) and enters its address in the Connect tab.
 
 ## Build
 
-GitHub Actions (`.github/workflows/ios-app.yml`) builds `Poki-unsigned.ipa` on every push to
-`dev/ios-app`, runs it on the iOS Simulator and uploads a screenshot of every screen in light and
+GitHub Actions (`.github/workflows/ios-app.yml`) builds `Poki-unsigned.ipa` on demand and for
+`ios-v*` release tags, runs it on the iOS Simulator and uploads a screenshot of every screen in light and
 dark mode (artifact `simulator-smoke`, folder `shots`). Locally on a Mac with Xcode 26 or later:
 
 ```sh

@@ -1,7 +1,7 @@
 # Poki, the iPhone app: setup, the Live Activity with approvals, the relay
 # connection and the debug probe, in one app. Generated with XcodeGen in the ios-app workflow (run
 # scripts/make-assets.sh first); there is no checked-in .xcodeproj. The runner (WebDriverAgent) is a
-# second bundle, built by the ios-runner workflow; see dev/ios-core docs/single-bundle.md.
+# second bundle, built by the ios-runner workflow; see docs/single-bundle.md.
 name: Poki
 options:
   bundleIdPrefix: nz.zheha.poki

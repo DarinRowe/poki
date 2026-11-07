@@ -1,3 +1,8 @@
 Poki/Assets.xcassets/
 PokiWidgets/Assets.xcassets/
 *.xcodeproj/
+# Written by xcodegen from project.yml.
+Poki/Info.plist
+Poki/Poki.entitlements
+PokiWidgets/Info.plist
+PokiWidgets/PokiWidgets.entitlements

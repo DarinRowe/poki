@@ -1,12 +1,12 @@
 # Device test checklist (PokiCore and PokiLauncher)
 
-Everything in dev/ios-core is tested on Linux and macOS only (Swift tests, Rust tests, iOS builds).
+PokiCore, the relay and the launcher are tested on Linux and macOS only (Swift tests, Rust tests, iOS builds).
 These checks need the phone. Run them in order: each step relies on the one before. Write the
 result and the time next to each line.
 
 ## 0. Before
 
-- [ ] Poki and Poki Runner (dev/ios-app CI builds) installed with the same signing tool and Apple ID, developer trusted. Open Poki once; opening Poki Runner by hand should show its screen and go back to Poki.
+- [ ] Poki and Poki Runner (`ios-app.yml` and `ios-runner.yml` builds) installed with the same signing tool and Apple ID, developer trusted. Open Poki once; opening Poki Runner by hand should show its screen and go back to Poki.
 - [ ] Developer Mode on (Settings → Privacy & Security → Developer Mode).
 - [ ] Note the iOS version and whether the phone is on Wi-Fi or cellular for each step.
 
@@ -37,7 +37,7 @@ result and the time next to each line.
 
 ## 4. PokiCore through the relay
 
-- [ ] The relay state reaches `ready`; the connector URL (`https://pokimcp.zheha.nz/v1/<label>/<secret>/mcp`) is shown in Poki.
+- [ ] Deploy your relay (`deploy/cf-relay/deploy.sh`) and enter its address in Connect. The relay state reaches `ready`; the connector URL (`https://<relay host>/v1/<label>/<secret>/mcp`) is shown in Poki.
 - [ ] Add it in Claude as a connector; `tools/list` shows look, do, status.
 - [ ] `look` within 2 s, with a screenshot and elements.
 - [ ] A Clock task (World Clock → add a city) and a Notes task, timed from the first call to the last.

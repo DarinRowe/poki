@@ -24,5 +24,5 @@ Build numbers are the GitHub Actions run number of the release workflow.
 ## [0.1.0] - unreleased
 
 First prototype: Poki pairs with the phone it runs on, keeps the runner up over the loopback, answers
-MCP (look, do, status) through the relay at pokimcp.zheha.nz, and asks the owner on the Lock Screen
+MCP (look, do, status) through the person's own relay (no default; `deploy/cf-relay/deploy.sh`), and asks the owner on the Lock Screen
 before sensitive actions.
