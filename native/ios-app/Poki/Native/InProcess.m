@@ -125,17 +125,25 @@ static id PKForegroundElement(id ax, NSString *(^bundleForPID)(int)) {
         BOOL isSpringBoard = springBoardPID > 0 ? pid == springBoardPID : [bundleForPID(pid) isEqualToString:@"com.apple.springboard"];
         if (isSpringBoard) springBoard = element; else [candidates addObject:element];
     }
-    // Poki's own process is never the app being driven: beside the target app (the iPhone Duo's
-    // side-by-side apps, iPad windows) it is set aside, so the other app is the front one.
-    if (candidates.count > 1) {
-        NSMutableArray *others = [NSMutableArray array];
-        for (id element in candidates) if (PKAXPid(element) != getpid()) [others addObject:element];
-        if (others.count) candidates = others;
-    }
     if (candidates.count == 1) return candidates.firstObject;
     if (!candidates.count) return springBoard ?: system;
-    SEL hitTest = NSSelectorFromString(@"accessibilityElementForElementAtPoint:error:");
     CGRect screen = system ? [PKRequestSnapshot(ax, system, 1, 1, NULL) frame] : CGRectNull;
+    // Beside the target app (the iPhone Duo's side-by-side apps, iPad windows) Poki's own process is
+    // set aside, so the other app is the front one. Full screen, Poki is the front app (an app it just
+    // ended can still be listed for a moment).
+    id own = nil;
+    for (id element in candidates) if (PKAXPid(element) == getpid()) own = element;
+    if (own) {
+        CGRect frame = [PKRequestSnapshot(ax, own, 1, 1, NULL) frame];
+        BOOL fullScreen = !CGRectIsEmpty(screen) && !CGRectIsEmpty(frame)
+            && frame.size.width >= screen.size.width - 8 && frame.size.height >= screen.size.height - 8;
+        if (fullScreen) return own;
+        NSMutableArray *others = [candidates mutableCopy];
+        [others removeObject:own];
+        candidates = others;
+        if (candidates.count == 1) return candidates.firstObject;
+    }
+    SEL hitTest = NSSelectorFromString(@"accessibilityElementForElementAtPoint:error:");
     if (!CGRectIsEmpty(screen) && [ax respondsToSelector:hitTest]) {
         NSError *error;
         id hit = nil;
