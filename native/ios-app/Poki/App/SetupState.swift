@@ -53,6 +53,9 @@ enum SetupStep: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 
     /// The steps this launch shows: the in-process path has no Poki Runner to install.
+    /// Poki automates the phone itself (ESP-152): step text names Poki, not Poki Runner.
+    static var inProcess: Bool { AutomationPath.current == .inProcess }
+
     static var shown: [SetupStep] { AutomationPath.current == .inProcess ? allCases.filter { $0 != .runner } : Array(allCases) }
 
     var title: String {
@@ -80,10 +83,10 @@ enum SetupStep: String, CaseIterable, Identifiable {
     var summary: String {
         switch self {
         case .runner: "The helper app that taps and types for your agent. Poki starts it; you never open it."
-        case .developerMode: "Lets this iPhone run Poki Runner."
+        case .developerMode: Self.inProcess ? "Lets Poki use this iPhone’s developer services." : "Lets this iPhone run Poki Runner."
         case .loopback: "Use Poki's local connection, or a compatible VPN app you already have."
         case .pairing: "Gives Poki its own key to this iPhone. Made and kept on the phone, no computer needed."
-        case .automation: "Lets Poki Runner use other apps."
+        case .automation: Self.inProcess ? "Lets Poki use other apps." : "Lets Poki Runner use other apps."
         case .background: "Keeps Poki connected while it is in the background, and shows what it does on the Lock Screen."
         }
     }
