@@ -60,11 +60,14 @@ final class Bridge {
         p.standardError = errPipe
         outPipe.fileHandleForReading.readabilityHandler = { [weak self] h in
             let data = h.availableData
-            Task { @MainActor in self?.consumeOut(data) }
+            if data.isEmpty { h.readabilityHandler = nil; return }
+            // The main queue keeps chunks in order (a Task per chunk might not).
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.consumeOut(data) } }
         }
         errPipe.fileHandleForReading.readabilityHandler = { [weak self] h in
             let data = h.availableData
-            Task { @MainActor in self?.consumeErr(data) }
+            if data.isEmpty { h.readabilityHandler = nil; return }
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.consumeErr(data) } }
         }
         p.terminationHandler = { [weak self] proc in
             let status = proc.terminationStatus
