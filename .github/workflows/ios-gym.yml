@@ -13,8 +13,8 @@ on:
       humanize:
         description: "Touches and typing shaped after a person's (PokiCore's Humanize): on (the default) or off, for a speed comparison of the two on the same commit"
         type: choice
-        options: [on, "off"]
-        default: on
+        options: ["on", "off"]
+        default: "on"
   workflow_call:
 
 permissions:
