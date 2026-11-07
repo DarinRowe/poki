@@ -32,6 +32,29 @@ pub fn key_for(team: &str) -> Result<(Vec<u8>, bool)> {
     Ok((key.to_pkcs8_der().map_err(|e| Error::msg(e.to_string()))?.as_bytes().to_vec(), true))
 }
 
+/// A throwaway identity with a self-signed "Apple Development" certificate, for checking the
+/// signing pipeline without an Apple Account (`poki-setup selftest-sign`). iOS won't trust it.
+pub fn self_signed(team: &str) -> Result<Identity> {
+    let mut rng = rand::thread_rng();
+    let key = RsaPrivateKey::new(&mut rng, 2048).map_err(|e| Error::msg(format!("could not make a key: {e}")))?;
+    let der = key.to_pkcs8_der().map_err(|e| Error::msg(e.to_string()))?.as_bytes().to_vec();
+    let kp = rcgen_key(&der)?;
+    let mut params = rcgen::CertificateParams::new(Vec::<String>::new()).map_err(|e| Error::msg(e.to_string()))?;
+    let mut dn = rcgen::DistinguishedName::new();
+    dn.push(rcgen::DnType::CommonName, format!("Apple Development: Poki Setup Self-Test ({team})"));
+    dn.push(rcgen::DnType::OrganizationalUnitName, team);
+    dn.push(rcgen::DnType::OrganizationName, "Poki Setup Self-Test");
+    dn.push(rcgen::DnType::CountryName, "US");
+    params.distinguished_name = dn;
+    params.extended_key_usages = vec![rcgen::ExtendedKeyUsagePurpose::CodeSigning];
+    let cert = params.self_signed(&kp).map_err(|e| Error::msg(e.to_string()))?;
+    Ok(Identity {
+        team_id: team.to_string(),
+        certificate: crate::apple::portal::Certificate { certificate_id: "selftest".into(), serial_number: "01".into(), name: "Poki Setup Self-Test".into(), machine_name: "selftest".into(), der: cert.der().to_vec() },
+        key_pkcs8: der,
+    })
+}
+
 fn write_private(path: &std::path::Path, bytes: &[u8]) -> Result<()> {
     std::fs::write(path, bytes)?;
     #[cfg(unix)]

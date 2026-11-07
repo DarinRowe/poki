@@ -86,6 +86,19 @@ enum Cmd {
         #[arg(long)]
         signing_zip: Option<PathBuf>,
     },
+    /// Check the signing pipeline without an Apple Account: signs with a throwaway self-signed
+    /// identity and stand-in profiles. The result does not install; verify it with `codesign`.
+    #[command(hide = true)]
+    SelftestSign {
+        #[arg(long)]
+        ipa: PathBuf,
+        #[arg(long)]
+        out: PathBuf,
+        #[arg(long)]
+        signing_zip: Option<PathBuf>,
+        #[arg(long, default_value = "SELFTEST01")]
+        team: String,
+    },
     /// Sign Poki again and reinstall it on a phone this computer set up.
     Renew {
         #[arg(long)]
@@ -295,6 +308,13 @@ async fn run() -> Result<()> {
                 eprintln!("  · {n}");
             }
             println!("{} → {} ({}) as {}, profile good for {} days", out_path.display(), built.version, built.build, built.bundle_id, (built.profile_expires_at - keeper::now()) / 86_400);
+            Ok(())
+        }
+        Cmd::SelftestSign { ipa, out: out_path, signing_zip, team } => {
+            for n in poki_setup_core::sign::selftest(&ipa, signing_zip.as_deref(), &out_path, &team)? {
+                eprintln!("  · {n}");
+            }
+            println!("{}", out_path.display());
             Ok(())
         }
         Cmd::Renew { udid, due } => {

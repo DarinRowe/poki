@@ -300,3 +300,35 @@ mod tests {
         assert!(!names.iter().any(|n| n.contains("PokiTunnel")));
     }
 }
+
+/// Signs an IPA with a throwaway identity and stand-in profiles, exactly as a real install would
+/// apart from Apple's part, so a Mac can check the result with `codesign --verify`. Returns notes.
+pub fn selftest(ipa: &Path, signing_zip: Option<&Path>, out: &Path, team: &str) -> Result<Vec<String>> {
+    let reporter = Reporter::silent();
+    let requested = match signing_zip {
+        Some(z) => requested_from_signing_zip(z, "external")?,
+        None => Default::default(),
+    };
+    let unpacked = unpack(ipa, team, &requested, &reporter)?;
+    let identity = crate::apple::identity::self_signed(team)?;
+    let mut profiles = vec![];
+    for b in &unpacked.bundles {
+        let mut ents = plist::Dictionary::new();
+        ents.insert("application-identifier".into(), format!("{team}.{}", b.new_id).into());
+        ents.insert("com.apple.developer.team-identifier".into(), team.into());
+        ents.insert("get-task-allow".into(), true.into());
+        ents.insert("keychain-access-groups".into(), plist::Value::Array(vec![format!("{team}.*").into()]));
+        ents.insert("com.apple.security.application-groups".into(), plist::Value::Array(vec![unpacked.app_group.clone().into()]));
+        profiles.push((
+            b.new_id.clone(),
+            profile::Profile { uuid: "00000000-0000-0000-0000-000000000000".into(), name: "Poki Setup Self-Test".into(), team_id: team.into(), app_id: format!("{team}.{}", b.new_id), entitlements: ents, expires_at: 0, raw: b"selftest-profile".to_vec() },
+        ));
+    }
+    let mut notes = sign(&unpacked, &identity, &profiles, &reporter)?;
+    pack(&unpacked, out)?;
+    notes.insert(0, format!("{} bundles: {}", unpacked.bundles.len(), unpacked.bundles.iter().map(|b| format!("{} -> {}", b.old_id, b.new_id)).collect::<Vec<_>>().join(", ")));
+    if !unpacked.dropped_extensions.is_empty() {
+        notes.push(format!("left out: {}", unpacked.dropped_extensions.join(", ")));
+    }
+    Ok(notes)
+}

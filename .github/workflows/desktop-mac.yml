@@ -9,6 +9,10 @@ on:
     tags: ['desktop-v*.*.*']
     branches: ['dev/desktop-*']
 
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   mac:
     if: github.repository == 'ZhehanZhang/poki-remote' || startsWith(github.ref, 'refs/tags/')
@@ -31,6 +35,16 @@ jobs:
         run: desktop/mac/scripts/bundle.sh "$MODE" "$PWD/dist"
       - name: Core and bridge check against Apple
         run: python3 desktop/mac/scripts/e2e.py "$PWD/dist/Poki Setup.app/Contents/MacOS/poki-setup-bridge"
+      - name: Signing check with Apple's codesign
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          (cd desktop && cargo build --release -p poki-setup-cli)
+          WF=$(gh api repos/${{ github.repository }}/actions/workflows --jq '.workflows[]|select(.name=="iOS app")|.id')
+          RUN=$(gh api "repos/${{ github.repository }}/actions/workflows/$WF/runs?branch=dev/ios-integration-sync&status=success&per_page=1" --jq '.workflow_runs[0].id')
+          echo "Poki IPA from iOS app run $RUN"
+          gh run download "$RUN" -R ${{ github.repository }} -n Poki-unsigned -D ipa
+          desktop/mac/scripts/sign-check.sh desktop/target/release/poki-setup ipa/Poki-external-unsigned.ipa ipa/Poki-signing.zip
       - name: Screenshots
         run: |
           APP="$PWD/dist/Poki Setup.app/Contents/MacOS/PokiSetup"
