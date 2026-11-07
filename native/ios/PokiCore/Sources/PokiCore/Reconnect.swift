@@ -2,22 +2,42 @@ import Foundation
 
 /// When Poki's built-in local connection (the packet tunnel) is dialled again after it failed or
 /// dropped. It holds the policy and no timers: the app asks `lost()` for the wait before the next try.
+/// The waits are 1, 2, 4, 8, 16 s, then 30 s, eight tries in all (about two minutes); then the owner
+/// decides, from Poki's Setup or by opening the app again.
 public struct ReconnectPlan: Sendable {
+    public static let waits: [Double] = [1, 2, 4, 8, 16, 30, 30, 30]
+    /// A connection that stayed up this long makes its loss a new story: the count starts over. A
+    /// tunnel that comes up and drops again at once keeps counting, so it cannot be dialled forever.
+    public static let stableAfter: Double = 30
+
+    private var failures = 0
+    private var upSince: Date?
+
     public init() {}
 
     /// True after the owner ended the connection on purpose (Disconnect, Turn off) until they start it again.
     public private(set) var stoppedByOwner = false
 
     /// The tunnel is up.
-    public mutating func connected(at date: Date = Date()) {}
+    public mutating func connected(at date: Date = Date()) { upSince = date }
 
     /// The tunnel failed or dropped. The seconds to wait before the next try, or nil for no more tries.
-    public mutating func lost(at date: Date = Date()) -> Double? { nil }
+    public mutating func lost(at date: Date = Date()) -> Double? {
+        if let up = upSince, date.timeIntervalSince(up) >= Self.stableAfter { failures = 0 }
+        upSince = nil
+        guard !stoppedByOwner, failures < Self.waits.count else { return nil }
+        defer { failures += 1 }
+        return Self.waits[failures]
+    }
 
-    public mutating func ownerStopped() {}
+    public mutating func ownerStopped() { stoppedByOwner = true }
 
-    public mutating func ownerStarted() {}
+    public mutating func ownerStarted() {
+        stoppedByOwner = false
+        failures = 0
+        upSince = nil
+    }
 
     /// Starts the count again, for a person who opens Poki after the tries ran out.
-    public mutating func startOver() {}
+    public mutating func startOver() { failures = 0 }
 }

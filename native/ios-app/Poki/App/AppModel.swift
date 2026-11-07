@@ -121,6 +121,10 @@ final class AppModel {
             for await event in core.events { self?.handle(event) }
         }
         loopback.onChange = { [weak self] old, new in self?.loopbackChanged(from: old, to: new) }
+        // A built-in tunnel that fails or drops while Poki is on dials again by itself; the loopback
+        // check that follows lets `loopbackChanged` start the runner, as for any other recovery.
+        tunnel.wanted = { [weak self] in self?.sessionOn == true && self?.setup.loopback == .builtIn }
+        tunnel.onReconnected = { [weak self] in self?.loopback.check() }
         if !diskImage.isReady { Task { await diskImage.download() } }
         if UserDefaults.standard.string(forKey: "pokiSample") != nil { loadSample() }
         NotificationCenter.default.addObserver(forName: UIApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
@@ -150,6 +154,7 @@ final class AppModel {
         }
         Task {
             await tunnel.refresh()
+            tunnel.retryIfWanted()
             if wantsOn, !sessionOn, pairingPath != nil, diskImage.isReady { startSession(reconnectLocal: false) }
         }
         if let step = guiding, isDone(step) { stopGuide() }

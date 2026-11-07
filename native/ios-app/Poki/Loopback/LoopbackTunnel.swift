@@ -1,5 +1,6 @@
 import Foundation
 import NetworkExtension
+import PokiCore
 
 @MainActor
 @Observable
@@ -15,6 +16,16 @@ final class LoopbackTunnel {
     private var manager: NETunnelProviderManager?
     private var statusObserver: NSObjectProtocol?
     private var connectionDeadline: Task<Void, Never>?
+    /// After the tunnel failed or dropped without the owner ending it, dial again with a backoff and a
+    /// cap (GitHub issue 44: it stayed down for 101 s and 134 s until someone opened Poki). The
+    /// owner's own Disconnect, or Turn off, ends it for good until they connect again.
+    private var reconnect = ReconnectPlan()
+    private var reconnectTask: Task<Void, Never>?
+    private var reconnecting = false
+    /// Whether Poki is on and needs the local connection; the app model answers.
+    var wanted: () -> Bool = { false }
+    /// The tunnel is up again after an automatic reconnect; the app checks the loopback at once.
+    var onReconnected: (() -> Void)?
 
     // Read the embedded id: signing tools can rewrite bundle identifiers.
     private let providerID: String? = {
@@ -38,6 +49,7 @@ final class LoopbackTunnel {
 
     isolated deinit {
         connectionDeadline?.cancel()
+        reconnectTask?.cancel()
         if let statusObserver { NotificationCenter.default.removeObserver(statusObserver) }
     }
 
@@ -53,6 +65,18 @@ final class LoopbackTunnel {
 
     /// Called only after the owner chooses Poki's local VPN, never while using an external proxy.
     func connect() async throws {
+        reconnect.ownerStarted()
+        try await bringUp()
+    }
+
+    /// Poki came to the front with the tunnel down and Poki on: start the automatic tries again.
+    func retryIfWanted() {
+        guard wanted(), reconnectTask == nil, case .failed = state, !reconnect.stoppedByOwner else { return }
+        reconnect.startOver()
+        scheduleReconnect(because: "Poki is in front again")
+    }
+
+    private func bringUp() async throws {
         #if targetEnvironment(simulator)
         let message = "The local VPN needs a physical iPhone. Its network connection cannot be tested in the Simulator."
         state = .failed(message)
@@ -93,6 +117,7 @@ final class LoopbackTunnel {
                 guard let self, self.state == .connecting else { return }
                 self.manager?.connection.stopVPNTunnel()
                 self.state = .failed("The local VPN did not connect within 15 seconds. Try again, or choose an external connection.")
+                self.scheduleReconnect(because: "it did not connect within 15 seconds")
             }
         } catch is CancellationError {
             updateStatus()
@@ -106,6 +131,10 @@ final class LoopbackTunnel {
     }
 
     func disconnect() {
+        reconnect.ownerStopped()
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        reconnecting = false
         guard !busy, let manager else { return }
         connectionDeadline?.cancel()
         guard manager.connection.status != .disconnected, manager.connection.status != .invalid else { updateStatus(); return }
@@ -121,7 +150,11 @@ final class LoopbackTunnel {
     private func updateStatus() {
         guard available else { state = .unavailable; return }
         switch manager?.connection.status ?? .invalid {
-        case .connected: connectionDeadline?.cancel(); state = .connected
+        case .connected:
+            connectionDeadline?.cancel()
+            state = .connected
+            reconnect.connected()
+            if reconnecting { reconnecting = false; onReconnected?() }
         case .connecting, .reasserting: state = .connecting
         case .disconnecting: state = .disconnecting
         case .invalid, .disconnected:
@@ -129,10 +162,44 @@ final class LoopbackTunnel {
             connectionDeadline?.cancel()
             if state == .connecting || state == .connected {
                 state = .failed("The local VPN disconnected. Reconnect here. If it keeps stopping, check that both Poki and its tunnel were signed with Network Extensions, or choose an external connection.")
+                logStopReason()
+                scheduleReconnect(because: "the local VPN disconnected")
             } else if case .failed = state {
                 return
             } else { state = .off }
         @unknown default: state = .off
+        }
+    }
+
+    /// Why iOS stopped the tunnel, when it says: the log is how an owner (or an issue) tells a system
+    /// stop from another VPN taking over.
+    private func logStopReason() {
+        manager?.connection.fetchLastDisconnectError { error in
+            let reason = error.map { "\($0.localizedDescription) (\(($0 as NSError).domain) \(($0 as NSError).code))" } ?? "none reported"
+            Task { @MainActor in AppLog.shared.add("loopback", "local VPN stopped, reason: \(reason)") }
+        }
+    }
+
+    /// Dials again after `ReconnectPlan`'s next delay (jittered), if Poki is on and the owner has not
+    /// ended the connection. The tries are counted when they fail, so a connect that works and drops
+    /// again at once does not start over.
+    private func scheduleReconnect(because cause: String) {
+        guard wanted(), reconnectTask == nil else { return }
+        guard let seconds = reconnect.lost() else {
+            AppLog.shared.add("loopback", "local VPN: not reconnecting (\(cause)); " + (reconnect.stoppedByOwner ? "it was ended on purpose" : "the automatic tries are used up"))
+            return
+        }
+        let wait = seconds * Double.random(in: 0.8...1.2)
+        AppLog.shared.add("loopback", "local VPN: reconnecting in \(Int(wait.rounded())) s (\(cause))")
+        reconnectTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(wait))
+            guard let self, !Task.isCancelled else { return }
+            self.reconnectTask = nil
+            // A change the owner started a moment ago finishes first.
+            for _ in 0..<10 where self.busy { try? await Task.sleep(for: .milliseconds(500)) }
+            guard !Task.isCancelled, self.wanted(), !self.busy else { return }
+            self.reconnecting = true
+            do { try await self.bringUp() } catch { self.reconnecting = false }
         }
     }
 
