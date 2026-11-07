@@ -179,6 +179,17 @@ struct Humanize: Sendable {
         }
     }
 
+    /// The plan in at most `count` bursts: neighbours are joined, each joined burst keeps the first
+    /// one's gap and goes at the mean of their paces, so the text and its rhythm stay close.
+    static func merged(_ plan: [(text: String, frequency: Int, gapBefore: Double)], into count: Int) -> [(text: String, frequency: Int, gapBefore: Double)] {
+        guard count > 0, plan.count > count else { return plan }
+        let size = Int((Double(plan.count) / Double(count)).rounded(.up))
+        return stride(from: 0, to: plan.count, by: size).map { start in
+            let group = plan[start..<min(plan.count, start + size)]
+            return (group.map(\.text).joined(), group.map(\.frequency).reduce(0, +) / group.count, group.first?.gapBefore ?? 0)
+        }
+    }
+
     /// How long a typing plan takes on the keyboard: the bursts at their pace plus the gaps.
     static func seconds(of plan: [(text: String, frequency: Int, gapBefore: Double)]) -> Double {
         plan.reduce(0) { $0 + $1.gapBefore + Double($1.text.count) / Double(max(1, $1.frequency)) }

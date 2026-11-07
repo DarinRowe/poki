@@ -428,27 +428,49 @@ extension Computer {
     /// The deletes, then the text: in one call at the keyboard's fixed pace when `humanize` is off or
     /// the action has no time for more; else in word-sized bursts at an uneven pace with pauses
     /// between them (`Humanize.typing`), each burst one `/wda/keys` call with its `frequency`
-    /// (characters a second; WDA's default is 60, the in-process table's 120).
+    /// (characters a second; WDA's default is 60, the in-process table's 120). The bursts are at most
+    /// `maxBursts` calls, and each call's own cost on the runner counts: a loaded WebDriverAgent
+    /// answers each key call only once the app is idle (CI simulator: "Wi-Fi 你好" in bursts ran past
+    /// a 9 s action half-typed, where one call took 7.9 s). When the bursts so far show the rest
+    /// would not fit, the rest goes in one call at the fixed pace.
     func sendKeys(deletes: Int, text: String, until: Double) async throws {
         let backspaces = Array(repeating: "\u{8}", count: deletes)
-        let plan = humanize.enabled ? humanize.typing(text) : []
-        // The bursts need their time before the action's is up (plus the read after); when they do
-        // not fit, the text goes in one call at the fixed pace rather than half-typed.
-        if plan.isEmpty || Humanize.seconds(of: plan) + 0.06 * Double(deletes) > until - now() - 0.8 {
-            let keys = backspaces + text.map(String.init)
+        let plan = humanize.enabled ? Humanize.merged(humanize.typing(text), into: Self.maxBursts) : []
+        func oneCall(_ keys: [String]) async throws {
             _ = try await runner.call("POST", "/wda/keys", ["value": .array(keys.map(JSON.string))], timeout: 3 + 0.06 * Double(keys.count))
+        }
+        // Bursts only with room for the plan, a guessed cost per call and the read after.
+        let budget = until - now() - 0.8
+        if plan.isEmpty || Humanize.seconds(of: plan) + Self.burstCallCost * Double(plan.count) + 0.06 * Double(deletes) > budget {
+            try await oneCall(backspaces + text.map(String.init))
             return
         }
         if deletes > 0 {
             _ = try await runner.call("POST", "/wda/keys", ["value": .array(backspaces.map(JSON.string))], timeout: 3 + 0.06 * Double(deletes))
         }
-        for burst in plan {
+        var overhead = Self.burstCallCost
+        for (i, burst) in plan.enumerated() {
+            let rest = Array(plan[i...])
+            // The calls so far say what a call costs on this runner; the rest in one call when the
+            // bursts left would not fit.
+            if i > 0, Humanize.seconds(of: rest) + overhead * Double(rest.count) > until - now() - 0.8 {
+                try await oneCall(rest.flatMap { $0.text.map(String.init) })
+                return
+            }
             if burst.gapBefore > 0 { await sleep(seconds: burst.gapBefore) }
             let keys: [JSON] = burst.text.map { .string(String($0)) }
             let body: JSON = ["value": .array(keys), "frequency": .number(Double(burst.frequency))]
+            let sent = now()
             _ = try await runner.call("POST", "/wda/keys", body, timeout: 3 + Double(burst.text.count) / Double(burst.frequency))
+            let took = now() - sent - Double(burst.text.count) / Double(max(1, burst.frequency))
+            overhead = i == 0 ? max(0, took) : max(overhead, took)
         }
     }
+
+    /// At most this many key calls for one text when it goes in bursts.
+    static let maxBursts = 4
+    /// The guessed cost of one key call beyond its keys, before any has been measured.
+    static let burstCallCost = 0.35
 
     static let fieldTypes: Set<String> = ["TextField", "SecureTextField", "SearchField", "TextView"]
 

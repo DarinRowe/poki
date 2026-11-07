@@ -128,30 +128,31 @@ static id PKForegroundElement(id ax, NSString *(^bundleForPID)(int)) {
     if (candidates.count == 1) return candidates.firstObject;
     if (!candidates.count) return springBoard ?: system;
     CGRect screen = system ? [PKRequestSnapshot(ax, system, 1, 1, NULL) frame] : CGRectNull;
-    // Beside the target app (the iPhone Duo's side-by-side apps, iPad windows) Poki's own process is
-    // set aside, so the other app is the front one. Full screen, Poki is the front app (an app it just
-    // ended can still be listed for a moment).
+    // The app under the screen's centre is the front one. Poki's own process is the answer only when
+    // it is there and fills the screen; beside the target app (the iPhone Duo's side-by-side apps,
+    // iPad windows) the centre can fall on Poki, and the other app is the one being driven. (A
+    // process in the background still reports a full-screen frame, so the frame alone says nothing.)
     id own = nil;
     for (id element in candidates) if (PKAXPid(element) == getpid()) own = element;
-    if (own) {
-        CGRect frame = [PKRequestSnapshot(ax, own, 1, 1, NULL) frame];
-        BOOL fullScreen = !CGRectIsEmpty(screen) && !CGRectIsEmpty(frame)
-            && frame.size.width >= screen.size.width - 8 && frame.size.height >= screen.size.height - 8;
-        if (fullScreen) return own;
-        NSMutableArray *others = [candidates mutableCopy];
-        [others removeObject:own];
-        candidates = others;
-        if (candidates.count == 1) return candidates.firstObject;
-    }
+    NSMutableArray *others = [candidates mutableCopy];
+    if (own) [others removeObject:own];
     SEL hitTest = NSSelectorFromString(@"accessibilityElementForElementAtPoint:error:");
+    int hitPID = 0;
     if (!CGRectIsEmpty(screen) && [ax respondsToSelector:hitTest]) {
         NSError *error;
         id hit = nil;
         @try { hit = ((PKElementAtPoint)objc_msgSend)(ax, hitTest, CGPointMake(CGRectGetMidX(screen), CGRectGetMidY(screen)), &error); }
         @catch (__unused NSException *e) {}
-        int hitPID = PKAXPid(hit);
-        for (id element in candidates) if (hitPID > 0 && PKAXPid(element) == hitPID) return element;
+        hitPID = PKAXPid(hit);
     }
+    for (id element in others) if (hitPID > 0 && PKAXPid(element) == hitPID) return element;
+    if (own && hitPID == getpid()) {
+        CGRect frame = [PKRequestSnapshot(ax, own, 1, 1, NULL) frame];
+        BOOL fullScreen = !CGRectIsEmpty(screen) && !CGRectIsEmpty(frame)
+            && frame.size.width >= screen.size.width - 8 && frame.size.height >= screen.size.height - 8;
+        if (fullScreen || !others.count) return own;
+    }
+    if (others.count) return others.firstObject;
     return candidates.firstObject;
 }
 
