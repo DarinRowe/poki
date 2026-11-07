@@ -167,6 +167,9 @@ Accessibility can miss changes that affect only pixels, such as Calculator's dis
 | Apps | `list_crashes` | List available reports, optionally filtering by process name or bundle identifier and kind. |
 | Apps | `get_crash` | Read a report by path from list_crashes, or find the newest report for process. |
 | Batches | `batch_commands` | Do a whole known task in one call: launch the app, tap, fill, scroll, go back and answer alerts, each {tool, arguments}. |
+| Batches | `run_code` | Run an async JavaScript function on an isolated worker, calling device tools with `await tools.<name>(args)`, so the code loops, filters and decides each next step from the results in one call instead of a model round trip per step. |
+
+`run_code` is in the complete catalog, not the default `tools/list`, so it is reached by name or after `POKI_MCP_TOOLS=all`. The sandbox exposes only `tools`, `input` and `console`: no require, file system, network, process or timers. A tool error throws and the code can catch it; an action receipt with `sent=false` or an unknown outcome stops the script and returns the steps already run, as `batch_commands` does; cancellation and timeout also stop it and cancel the device call in progress. The result lists every tool call with its name, elapsed time and receipt. Default limits are 120 seconds and 60 tool calls, set with `timeout_seconds` and `max_tool_calls`. Use it for predictable multi-step work such as scrolling until something appears and then reading it; use a single tool for a one-step action, and return to the model when the next step needs visual judgement.
 
 ## Agent skills
 
