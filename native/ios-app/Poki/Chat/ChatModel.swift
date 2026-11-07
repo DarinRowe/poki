@@ -49,8 +49,8 @@ final class ChatModel {
     /// A board's sample conversation, for screenshots.
     let isSample = UserDefaults.standard.string(forKey: "pokiChat") != nil
     private let app: AppModel
-    /// The model's side of the conversation: pi's loop (ESP-177), or for Anthropic and OpenAI, unless
-    /// `-chatEngine pi`, the provider's own API in its own form.
+    /// The model's side of the conversation: pi's loop (ESP-177), or for Anthropic and OpenAI with
+    /// `-chatEngine direct`, the provider's own API in its own form.
     private var loop: PiLoop?
     /// For the log's line at the end of each task: when it began, the tool calls, finish_task's verdict.
     private var taskStart = Date()
@@ -146,9 +146,9 @@ final class ChatModel {
         }
     }
 
-    /// Anthropic and OpenAI keep their own APIs, the phone acceptance path, until pi has run with their
-    /// keys; `-chatEngine pi` sends them through pi too. ChatGPT, DeepSeek and Gemini always run on pi.
-    private static var direct: Bool { UserDefaults.standard.string(forKey: "chatEngine") != "pi" }
+    /// Every provider runs on pi. `-chatEngine direct` sends Anthropic and OpenAI through their own APIs
+    /// instead; that code goes once the phone acceptance with the owner's OpenAI key has passed on pi.
+    private static var direct: Bool { UserDefaults.standard.string(forKey: "chatEngine") == "direct" }
 
     private func began(_ engine: String, _ provider: ModelProvider, _ model: String) {
         taskStart = Date(); toolCalls = 0; finished = nil
