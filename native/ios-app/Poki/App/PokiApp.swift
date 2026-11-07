@@ -41,6 +41,7 @@ struct RootView: View {
         }
         .fullScreenCover(item: $setupStart) { start in SetupView(start: start.index) }
         .sheet(isPresented: $voiceOpen) { VoiceView(close: { voiceOpen = false }).tint(Site.blue) }
+        .task { InProcessProbe.shared.startFromLaunchArguments(model: model) }
         .onChange(of: scenePhase, initial: true) { _, phase in
             if phase == .active { model.becameActive() } else if phase == .background { model.wentToBackground() }
         }

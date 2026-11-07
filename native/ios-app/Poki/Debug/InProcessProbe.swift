@@ -1,0 +1,322 @@
+import SwiftUI
+import UIKit
+
+/// The Debug tab's check of UI automation from Poki's own process (no runner, no port): open the
+/// daemon session, tap, type. Every step goes to Poki's log, to the system log (`PokiInProcess`), and
+/// to Documents/inprocess-probe.json.
+///
+/// Launch arguments run it without touching the phone, for a device check from the Mac:
+/// `-pokiInProcess self` taps the field below and types into it, then reads it back;
+/// `-pokiInProcess later -pokiProbeX 200 -pokiProbeY 300 -pokiProbeDelay 8` waits, then taps that
+/// point and types, whatever app is in front by then;
+/// `-automationPath runner -pokiInProcess source -pokiProbeDelay 10` waits, then keeps the front app's
+/// tree as read by Poki Runner and by Poki's own process;
+/// `-pokiInProcess apps -pokiProbeApp BUNDLE` launches that app, launches Settings, activates the app,
+/// launches it again and terminates it, noting the front app and its pid after each.
+@MainActor
+final class InProcessProbe: ObservableObject {
+    static let shared = InProcessProbe()
+    static let sample = "poki123 AbC 中文24680"
+
+    @Published private(set) var lines: [String] = []
+    @Published private(set) var running = false
+    @Published var x = "201"
+    @Published var y = "437"
+    @Published var delay = "8"
+    weak var field: UITextField?
+
+    let queue = DispatchQueue(label: "poki.inprocess.probe", qos: .userInitiated)
+    private var record: [[String: Any]] = []
+
+    func startFromLaunchArguments(model: AppModel) {
+        let defaults = UserDefaults.standard
+        guard let mode = defaults.string(forKey: "pokiInProcess") else { return }
+        if let v = defaults.string(forKey: "pokiProbeX") { x = v }
+        if let v = defaults.string(forKey: "pokiProbeY") { y = v }
+        if let v = defaults.string(forKey: "pokiProbeDelay") { delay = v }
+        Task {
+            // The field has to be on screen for the self test.
+            try? await Task.sleep(for: .seconds(1.5))
+            switch mode {
+            case "self": await selfTest()
+            case "later": await later()
+            case "read": await readOnly()
+            case "separate": await separateTrial()
+            case "port": await portCheck()
+            case "source": await sourceBothPaths(model: model)
+            case "apps": await appsCycle(defaults.string(forKey: "pokiProbeApp") ?? "local.pokimcp.fixture")
+            case "bench": await benchmark(model: model, rounds: defaults.integer(forKey: "pokiBenchRounds") > 0 ? defaults.integer(forKey: "pokiBenchRounds") : 5)
+            default: await prepareOnly()
+            }
+        }
+    }
+
+    func prepareOnly() async {
+        guard begin("prepare") else { return }
+        _ = await prepare()
+        end()
+    }
+
+    func readOnly() async {
+        guard begin("read") else { return }
+        defer { end() }
+        guard await prepare() else { return }
+        await read()
+    }
+
+    private func read() async {
+        let result = await withCheckedContinuation { (c: CheckedContinuation<[String: Any], Never>) in
+            queue.async { c.resume(returning: PKInProcess.shared().readProbe()) }
+        }
+        let parts = result.keys.sorted().map { "\($0)=\(result[$0]!)" }.joined(separator: " ")
+        note("read: \(parts)", result.merging(["step": "read"]) { a, _ in a })
+    }
+
+    /// Taps Poki's own empty field, which focuses it only if the tap arrived, types the sample and
+    /// reads the field back.
+    func selfTest() async {
+        guard begin("self test") else { return }
+        defer { end() }
+        guard await prepare(), let field else { return }
+        field.text = ""
+        field.resignFirstResponder()
+        try? await Task.sleep(for: .seconds(0.4))
+        let frame = field.convert(field.bounds, to: nil)
+        let point = CGPoint(x: frame.midX, y: frame.midY)
+        let pasteboard = UIPasteboard.general.changeCount
+        let tap = await touch([[PKTouchPoint.at(point, offset: 0), PKTouchPoint.at(point, offset: 0.05)]], "tap at [\(Int(point.x)), \(Int(point.y))]")
+        try? await Task.sleep(for: .seconds(0.6))
+        note("tap landed: field focused = \(field.isFirstResponder)", ["step": "tap_check", "focused": field.isFirstResponder])
+        guard tap.delivery == .sent else { return }
+        let typed = await type(Self.sample)
+        try? await Task.sleep(for: .seconds(0.6))
+        let value = field.text ?? ""
+        let same = value == Self.sample
+        note("read back: \(same ? "same as sent" : "differs (\(value.count) characters)"); clipboard \(UIPasteboard.general.changeCount == pasteboard ? "unchanged" : "changed")",
+             ["step": "read_back", "same": same, "characters": value.count, "clipboard_unchanged": UIPasteboard.general.changeCount == pasteboard, "type_delivery": typed.delivery.rawValue])
+    }
+
+    /// For another app in front: waits, then taps the point (or, with x "field", the first text or
+    /// search field in the front app's tree) and types the sample there, then reads the focused
+    /// field back through the in-process tree.
+    func later() async {
+        guard begin("tap and type later") else { return }
+        defer { end() }
+        guard await prepare() else { return }
+        let seconds = Double(delay) ?? 8
+        let background = UIApplication.shared.beginBackgroundTask(withName: "In-process probe")
+        defer { UIApplication.shared.endBackgroundTask(background) }
+        note("waiting \(Int(seconds)) s; bring the app to try to the front", ["step": "wait", "seconds": seconds])
+        try? await Task.sleep(for: .seconds(seconds))
+        note("app state: \(UIApplication.shared.applicationState == .active ? "Poki in front" : "Poki in the background")", ["step": "state", "active": UIApplication.shared.applicationState == .active])
+        var point = CGPoint(x: Double(x) ?? 201, y: Double(y) ?? 437)
+        if x == "field" {
+            guard let found = await frontField() else { note("no text or search field in the front app's tree", ["step": "field_missing"]); return }
+            point = found
+        }
+        let tap = await touch([[PKTouchPoint.at(point, offset: 0), PKTouchPoint.at(point, offset: 0.05)]], "tap at [\(Int(point.x)), \(Int(point.y))]")
+        guard tap.delivery == .sent else { return }
+        try? await Task.sleep(for: .seconds(1.0))
+        _ = await type(Self.sample)
+        try? await Task.sleep(for: .seconds(0.8))
+        let value = await focusedValue()
+        // A field that already held text (a fixture app kept running since an earlier check) ends with
+        // the sample instead of equalling it.
+        let appended = value.map { $0 != Self.sample && $0.hasSuffix(Self.sample) } ?? false
+        note("read back in the front app: \(value == Self.sample ? "same as sent" : appended ? "sent text appended to what the field held" : value.map { "differs (\($0.count) characters)" } ?? "no focused field")",
+             ["step": "read_back_front", "same": value == Self.sample, "appended": appended, "focused": value != nil, "characters": value?.count ?? 0])
+        await read()
+    }
+
+    func appsCycle(_ bundle: String) async {
+        guard begin("open, switch and close \(bundle)") else { return }
+        defer { end() }
+        guard await prepare() else { return }
+        let background = UIApplication.shared.beginBackgroundTask(withName: "In-process probe")
+        defer { UIApplication.shared.endBackgroundTask(background) }
+        for (action, target) in [("launch", bundle), ("launch", "com.apple.Preferences"), ("activate", bundle), ("launch", bundle), ("terminate", bundle)] {
+            let result = await withCheckedContinuation { (c: CheckedContinuation<[String: Any], Never>) in
+                queue.async {
+                    let t = ProcessInfo.processInfo.systemUptime
+                    let code = PKInProcess.shared().app(target, action: action)
+                    Thread.sleep(forTimeInterval: 1)
+                    let front = PKInProcess.shared().frontApp()
+                    c.resume(returning: ["code": code ?? "", "seconds": ProcessInfo.processInfo.systemUptime - t,
+                                         "front": front["bundleId"] as? String ?? "", "front_pid": front["pid"] as? Int ?? 0])
+                }
+            }
+            note("\(action) \(target): \((result["code"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "done"), front \(result["front"] ?? "?") pid \(result["front_pid"] ?? 0)",
+                 result.merging(["step": "app", "action": action, "bundle": target]) { a, _ in a })
+        }
+    }
+
+    private func frontField() async -> CGPoint? {
+        await withCheckedContinuation { (c: CheckedContinuation<CGPoint?, Never>) in
+            queue.async {
+                var code: NSString?
+                guard let xml = PKInProcess.shared().sourceXML(nil, code: &code),
+                      let match = xml.firstMatch(of: /<XCUIElementType(?:SearchField|TextField|TextView)\b[^>]*? x="(-?\d+)" y="(-?\d+)" width="(\d+)" height="(\d+)"/),
+                      let fx = Double(match.1), let fy = Double(match.2), let w = Double(match.3), let h = Double(match.4), w > 0, h > 0 else { c.resume(returning: nil); return }
+                c.resume(returning: CGPoint(x: fx + w / 2, y: fy + h / 2))
+            }
+        }
+    }
+
+    private func focusedValue() async -> String? {
+        await withCheckedContinuation { (c: CheckedContinuation<String?, Never>) in
+            queue.async {
+                var code: NSString?
+                var focus: NSDictionary?
+                _ = PKInProcess.shared().sourceXML(&focus, code: &code)
+                c.resume(returning: focus?["value"] as? String)
+            }
+        }
+    }
+
+    /// Whether ending a session ends the Automation Running banner: a session of its own (not the
+    /// shared one), one tap, a hold, then its connection closed. Only meaningful in a fresh process.
+    func separateTrial() async {
+        guard begin("separate session trial") else { return }
+        defer { end() }
+        let point = CGPoint(x: Double(x) ?? 201, y: Double(y) ?? 437)
+        let hold = Double(delay) ?? 8
+        note("separate session: open, Automation Mode, tap [\(Int(point.x)), \(Int(point.y))], hold \(Int(hold)) s, close", ["step": "separate_start"])
+        let result = await withCheckedContinuation { (c: CheckedContinuation<[String: Any], Never>) in
+            queue.async { c.resume(returning: PKInProcess.shared().separateSessionTrial(at: point, hold: hold)) }
+        }
+        let line = result.keys.sorted().map { "\($0)=\(result[$0].map { "\($0)" } ?? "")" }.joined(separator: " ")
+        note("separate session: \(line); watch whether the banner goes now", (["step": "separate_result"] as [String: Any]).merging(result) { a, _ in a })
+    }
+
+    /// Nothing in Poki may listen on WebDriverAgent's port on the in-process path: a connection to
+    /// 127.0.0.1:8100 from inside the app has to be refused.
+    func portCheck() async {
+        guard begin("port 8100") else { return }
+        defer { end() }
+        let result = await probe(label: "8100", host: "127.0.0.1", port: 8100, timeout: 2)
+        note("127.0.0.1:8100: \(result.outcome) \(result.detail) after \(result.milliseconds) ms", ["step": "port_8100", "outcome": result.outcome, "detail": result.detail])
+    }
+
+    // MARK: Steps
+
+    func prepare() async -> Bool {
+        note("prepare: opening the daemon session and Automation Mode", ["step": "prepare_start"])
+        let result = await withCheckedContinuation { (c: CheckedContinuation<[String: Any], Never>) in
+            queue.async { c.resume(returning: PKInProcess.shared().prepare()) }
+        }
+        let ok = (result["ok"] as? Bool) == true
+        let seconds = String(format: "%.3f", (result["seconds"] as? Double) ?? 0)
+        note(ok ? "prepare: ready in \(seconds) s, generation \(result["generation"] ?? "?"), enable \((result["reused"] as? Bool) == true ? "reused" : "new")"
+                : "prepare: failed in \(seconds) s: \(result["code"] ?? "?") \(result["detail"] ?? "")",
+             result.merging(["step": "prepare"]) { a, _ in a })
+        return ok
+    }
+
+    private func touch(_ fingers: [[PKTouchPoint]], _ what: String) async -> PKOutcome {
+        let outcome = await withCheckedContinuation { (c: CheckedContinuation<PKOutcome, Never>) in
+            queue.async { c.resume(returning: PKInProcess.shared().touch(fingers, timeout: 5)) }
+        }
+        report(what, outcome)
+        return outcome
+    }
+
+    private func type(_ text: String) async -> PKOutcome {
+        let outcome = await withCheckedContinuation { (c: CheckedContinuation<PKOutcome, Never>) in
+            queue.async { c.resume(returning: PKInProcess.shared().type(text, timeout: 10)) }
+        }
+        report("type \(text.count) characters", outcome)
+        return outcome
+    }
+
+    private func report(_ what: String, _ o: PKOutcome) {
+        let delivery = ["not_sent", "sent", "unknown"][o.delivery.rawValue]
+        note("\(what): \(delivery) in \(String(format: "%.3f", o.seconds)) s, generation \(o.generation)\(o.code.map { ", \($0)" } ?? "")\(o.detail.map { " (\($0))" } ?? "")",
+             ["step": what, "delivery": delivery, "seconds": o.seconds, "generation": o.generation, "code": o.code ?? NSNull()])
+    }
+
+    // MARK: Record
+
+    func begin(_ what: String) -> Bool {
+        guard !running else { return false }
+        running = true
+        record = []
+        note("start: \(what)", ["step": "begin", "what": what])
+        return true
+    }
+
+    func end() {
+        running = false
+        guard let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first,
+              let data = try? JSONSerialization.data(withJSONObject: record, options: [.prettyPrinted]) else { return }
+        try? data.write(to: directory.appendingPathComponent("inprocess-probe.json"))
+    }
+
+    func note(_ line: String, _ fields: [String: Any]) {
+        var entry = fields
+        entry["uptime"] = ProcessInfo.processInfo.systemUptime
+        record.append(entry)
+        lines.append(line)
+        NSLog("PokiInProcess %@", line)
+        AppLog.shared.add("inprocess", line)
+    }
+}
+
+struct InProcessSection: View {
+    @ObservedObject var probe = InProcessProbe.shared
+    @Environment(AppModel.self) private var model
+    @AppStorage("automationPath") private var path = AutomationPath.inProcess.rawValue
+    private let running = AutomationPath.current
+
+    var body: some View {
+        Section {
+            Picker("Agents' actions go through", selection: $path) {
+                Text("Poki Runner").tag(AutomationPath.runner.rawValue)
+                Text("Poki itself").tag(AutomationPath.inProcess.rawValue)
+            }
+            if path != running.rawValue {
+                Text("Takes effect when Poki starts again.").font(.caption).foregroundStyle(.orange)
+            }
+            ProbeField(probe: probe).frame(height: 44)
+            HStack {
+                Button("Port 8100") { Task { await probe.portCheck() } }
+                Button("Separate session") { Task { await probe.separateTrial() } }
+            }.disabled(probe.running)
+            Button("Compare both paths (5 rounds)") { Task { await probe.benchmark(model: model, rounds: 5) } }.disabled(probe.running)
+            HStack {
+                Button("Prepare") { Task { await probe.prepareOnly() } }
+                Spacer()
+                Button("Read") { Task { await probe.readOnly() } }
+                Spacer()
+                Button("Self test") { Task { await probe.selfTest() } }
+            }
+            .buttonStyle(.borderless).disabled(probe.running)
+            HStack {
+                TextField("x", text: $probe.x).keyboardType(.numberPad)
+                TextField("y", text: $probe.y).keyboardType(.numberPad)
+                TextField("s", text: $probe.delay).keyboardType(.numberPad)
+                Button("Later") { Task { await probe.later() } }.buttonStyle(.borderless).disabled(probe.running)
+            }
+            .monospacedDigit()
+            ForEach(probe.lines.indices.reversed(), id: \.self) { i in Text(probe.lines[i]).font(.caption2.monospaced()).textSelection(.enabled) }
+        } header: {
+            Text("In-process automation")
+        } footer: {
+            Text("Taps and types from Poki itself, without Poki Runner. Self test taps the field above and types into it. Later waits, then taps the point (x, y) and types, in whatever app is in front.")
+        }
+    }
+}
+
+private struct ProbeField: UIViewRepresentable {
+    let probe: InProcessProbe
+    func makeUIView(context: Context) -> UITextField {
+        let field = UITextField()
+        field.placeholder = "In-process test field"
+        field.borderStyle = .roundedRect
+        field.autocorrectionType = .no
+        field.spellCheckingType = .no
+        field.accessibilityIdentifier = "inprocess-field"
+        probe.field = field
+        return field
+    }
+    func updateUIView(_ view: UITextField, context: Context) { probe.field = view }
+}

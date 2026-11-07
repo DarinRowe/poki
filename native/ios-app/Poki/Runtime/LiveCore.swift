@@ -13,12 +13,12 @@ final class LiveCore: CoreSession {
     private let continuation: AsyncStream<ShellEvent>.Continuation
     private var pump: Task<Void, Never>?
 
-    init(host: AppCoreHost) {
+    init(host: AppCoreHost, transport: HTTPTransport) {
         self.host = host
         var config = CoreConfig()
         // Signing tools may rename the app; its own id is Poki too.
         if let own = Bundle.main.bundleIdentifier { config.ownApps.append(own) }
-        core = PokiCore(config: config, host: host)
+        core = PokiCore(config: config, host: host, transport: transport)
         (events, continuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(64))
         let continuation = self.continuation
         pump = Task { [core] in
