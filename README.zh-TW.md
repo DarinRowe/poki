@@ -47,6 +47,8 @@ npm start
 
 Poki 以 macOS 為目標平台。Linux 使用者請見社群移植版 [poki-for-linux](https://github.com/carrotciallo/poki-for-linux)（[#16](https://github.com/JosssphZhou/poki/issues/16)），它在本儲存庫之外維護。
 
+Windows：社群移植版 [scy7796/poki-for-windows](https://github.com/scy7796/poki-for-windows)（由其作者維護，我們未測試）。
+
 ### 預先編譯的 macOS arm64 套件
 
 從 Release 頁面下載 `poki-v0.1.1-macos-arm64.tar.gz`，然後執行：

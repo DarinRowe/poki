@@ -47,6 +47,8 @@ npm start
 
 Poki 面向 macOS。Linux 用户详见社区移植版 [poki-for-linux](https://github.com/carrotciallo/poki-for-linux)（[#16](https://github.com/JosssphZhou/poki/issues/16)），它在本仓库之外维护。
 
+Windows：社区移植版 [scy7796/poki-for-windows](https://github.com/scy7796/poki-for-windows)（由其作者维护，我们未测试）。
+
 ### macOS arm64 预编译安装包
 
 从版本发布页下载 `poki-v0.1.1-macos-arm64.tar.gz`，然后运行：

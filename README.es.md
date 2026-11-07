@@ -47,6 +47,8 @@ Requiere macOS 15 o posterior, Xcode completo, Rust, Node.js 24+ y ffmpeg. `./bi
 
 Poki está pensado para macOS. Para Linux, consulta el port de la comunidad [poki-for-linux](https://github.com/carrotciallo/poki-for-linux) ([#16](https://github.com/JosssphZhou/poki/issues/16)), que se mantiene fuera de este repositorio.
 
+Windows: port de la comunidad en [scy7796/poki-for-windows](https://github.com/scy7796/poki-for-windows) (mantenido por su autor, no probado por nosotros).
+
 ### Paquete precompilado para macOS arm64
 
 Descarga `poki-v0.1.1-macos-arm64.tar.gz` desde la release y ejecuta:

@@ -47,6 +47,8 @@ macOS 15 이상, 전체 버전 Xcode, Rust, Node.js 24+, ffmpeg가 필요합니�
 
 Poki는 macOS용입니다. Linux에서는 커뮤니티 포팅 버전인 [poki-for-linux](https://github.com/carrotciallo/poki-for-linux)([#16](https://github.com/JosssphZhou/poki/issues/16))를 참고하세요. 이 저장소와 별도로 관리됩니다.
 
+Windows: 커뮤니티 포팅 버전 [scy7796/poki-for-windows](https://github.com/scy7796/poki-for-windows)(작성자가 관리하며, 저희는 테스트하지 않았습니다).
+
 ### 사전 빌드된 macOS arm64 패키지
 
 릴리스에서 `poki-v0.1.1-macos-arm64.tar.gz`를 내려받아 실행하세요:
