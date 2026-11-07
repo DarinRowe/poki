@@ -20,7 +20,7 @@ struct ChatView: View {
                     ForEach(Array(chat.entries.enumerated()), id: \.element.id) { i, entry in
                         row(entry, at: i).id(entry.id)
                     }
-                    if needsSetup { SetupBubble(openSetup: openSetup) }
+                    if needsSetup { SetupBubble(paired: model.pairingPath != nil, openSetup: openSetup) }
                 }
                 .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 10)
                 .frame(maxWidth: .infinity)
@@ -35,8 +35,9 @@ struct ChatView: View {
         .background(Color(.systemBackground))
     }
 
-    /// Nothing is set up yet: the chat says what comes first.
-    private var needsSetup: Bool { model.pairingPath == nil && !model.sessionOn && !chat.running && !chat.isSample }
+    /// Setup is not finished (nothing paired yet, or a step left after pairing, such as UI Automation):
+    /// the chat says so, one tap from setup, as the old Home's Setup row did.
+    private var needsSetup: Bool { (model.pairingPath == nil || model.setupStepsLeft) && !model.sessionOn && !chat.running && !chat.isSample }
 
     @ViewBuilder private func row(_ entry: ChatEntry, at i: Int) -> some View {
         switch entry.kind {
@@ -241,14 +242,15 @@ private struct NoteLine: View {
     }
 }
 
-/// Before setup: Poki says what comes first, and the bubble opens setup.
+/// Before setup, or with a step left: Poki says so, and the bubble opens setup.
 private struct SetupBubble: View {
+    var paired: Bool
     var openSetup: () -> Void
     var body: some View {
         HStack {
             Button(action: openSetup) {
                 HStack(spacing: 4) {
-                    Text("First, set up this iPhone. About 5 minutes.")
+                    Text(paired ? "Finish setting up this iPhone." : "First, set up this iPhone. About 5 minutes.")
                     Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
                 }
                 .font(.system(size: 17)).foregroundStyle(Site.blue)

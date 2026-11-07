@@ -110,7 +110,7 @@ struct Issue: Identifiable {
             out.append(Issue(id: "cellular", title: String(localized: "Connect to Wi-Fi first"), text: LoopbackMonitor.cellularHint, fix: .none))
         }
         if let problem = model.problem {
-            out.append(Issue(id: "problem", title: String(localized: "Needs attention"), text: local(problem), fix: problem.contains("Pair") || problem.contains("disk image") ? .setup : .none))
+            out.append(Issue(id: "problem", title: String(localized: "Needs attention"), text: local(problem), fix: problem.contains("Pair") || problem.contains("disk image") || problem.contains("Setup") ? .setup : .none))
         }
         if let problem = model.activityProblem {
             out.append(Issue(id: "activity", title: String(localized: "Live Activity is off"), text: local(problem), fix: .settings))

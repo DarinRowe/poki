@@ -856,6 +856,13 @@ final class AppModel {
 
     var setupComplete: Bool { SetupStep.shown.allSatisfy(isDone) }
 
+    /// A setup step is still to do. The loopback counts as done once a connection is chosen: whether it
+    /// answers right now is checked live and is off whenever Poki is (the built-in connection), which is
+    /// not a step left for the owner.
+    var setupStepsLeft: Bool {
+        SetupStep.shown.contains { $0 == .loopback ? setup.loopback == .none : !isDone($0) }
+    }
+
     var activityProblem: String? { activity.lastError }
     var activitiesEnabled: Bool { activity.enabled }
 

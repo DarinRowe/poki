@@ -1340,6 +1340,16 @@
         }
       }
     },
+    "Finish setting up this iPhone." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完成此 iPhone 的设置。"
+          }
+        }
+      }
+    },
     "Finished" : {
       "localizations" : {
         "zh-Hans" : {
