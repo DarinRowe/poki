@@ -21,3 +21,4 @@ const answers: Record<string, unknown> = {
   metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main" } },
   convertFileSrc: (p: string) => p,
 };
+export {};
