@@ -216,8 +216,13 @@ final class VoiceModel {
     /// How long a tap waits for the owner's OK on the phone: about as long as the card says it lasts.
     static let approvalWait: Double = 115
 
-    init(clearTap: @escaping @MainActor (String, String?, String?) async -> TapClearance) {
+    /// look and do, run by PokiCore on this phone (the relay's tools): name, JSON arguments → text, failed.
+    private let phoneTool: @MainActor (String, String) async -> (String, Bool)
+
+    init(clearTap: @escaping @MainActor (String, String?, String?) async -> TapClearance,
+         phoneTool: @escaping @MainActor (String, String) async -> (String, Bool)) {
         self.clearTap = clearTap
+        self.phoneTool = phoneTool
     }
 
     var isOn: Bool { link != nil }
@@ -389,7 +394,11 @@ final class VoiceModel {
         Task {
             var state = VoiceCall.State.done
             var output: String
-            if local {
+            if local, Self.phoneTools.contains(call.name) {
+                let (text, failed) = await phoneTool(call.name, call.arguments)
+                output = text.count > 6000 ? String(text.prefix(6000)) + "…" : text
+                if failed { state = .failed }
+            } else if local {
                 output = Self.localTool(call.name)
             } else if let bridge {
                 do {
@@ -541,9 +550,14 @@ final class VoiceModel {
         case "open_app": "Opening an app"
         case "tap_text": "Tapping"
         case "go_home": "Going Home"
+        case "look": "Looking at the screen"
+        case "do": "Using the phone"
         default: call.name
         }
     }
+
+    /// PokiCore's tools, answered on this phone through the runner.
+    static let phoneTools: Set<String> = ["look", "do"]
 
     /// Tools the phone answers itself. They change nothing.
     static func localTool(_ name: String) -> String {

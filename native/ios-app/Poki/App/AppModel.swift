@@ -87,7 +87,11 @@ final class AppModel {
         let core = LiveCore(host: host)
         self.core = core
         // Voice taps get the same rules and approval card as an agent's `do`.
-        voice = VoiceModel { text, bundle, name in await core.clearTap(on: text, inApp: bundle, named: name, waiting: VoiceModel.approvalWait) }
+        voice = VoiceModel(clearTap: { text, bundle, name in await core.clearTap(on: text, inApp: bundle, named: name, waiting: VoiceModel.approvalWait) },
+                           phoneTool: { name, arguments in
+                               let result = await core.tool(name, arguments: arguments)
+                               return (result.text, result.isError)
+                           })
         let launcher = RustLauncher()
         self.launcher = launcher
         pairer = RustPairing()

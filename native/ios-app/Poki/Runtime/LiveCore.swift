@@ -35,6 +35,7 @@ final class LiveCore: CoreSession {
         await core.clearTap(on: text, inApp: bundleID, named: name, waiting: seconds)
     }
     func accessChanged() { core.accessChanged() }
+    func tool(_ name: String, arguments: String) async -> ToolResult { await core.tool(name, arguments: arguments) }
 
     private static func map(_ event: CoreEvent) -> ShellEvent {
         switch event {

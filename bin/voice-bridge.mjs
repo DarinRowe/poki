@@ -2,7 +2,11 @@
 // Poki voice bridge: hands the Poki app short-lived OpenAI Realtime credentials, so the phone never
 // holds the API key, and runs the voice tools that move the phone through the local Poki MCP.
 //
-//   OPENAI_API_KEY=... POKI_MCP_STATE_DIR=... node bin/voice-bridge.mjs [--port 47830] [--host 0.0.0.0] [--device <id>]
+//   OPENAI_API_KEY=... POKI_MCP_STATE_DIR=... node bin/voice-bridge.mjs [--port 47830] [--host 0.0.0.0] [--device <id>] [--mac-tools]
+//
+// By default the phone moves itself: look and do run in Poki on the phone (PokiCore and its runner, the
+// relay's tools), and the bridge only hands out credentials. --mac-tools instead offers the tools below
+// that move the phone through this Mac's Poki MCP (it must be running).
 //
 // The phone opens http://<this Mac>:<port>/voice/<secret>/ ; the secret is in voice-bridge.json in the
 // state directory. Endpoints under that prefix:
@@ -30,6 +34,7 @@ const port = Number(arg('port', '47830'));
 const host = arg('host', '0.0.0.0');
 const device = arg('device', process.env.POKI_VOICE_DEVICE);
 const testDir = arg('test-dir');
+const macTools = process.argv.includes('--mac-tools');
 const apiKey = process.env.OPENAI_API_KEY;
 if (!apiKey) { console.error('Set OPENAI_API_KEY (for example from the keychain) before starting the voice bridge.'); process.exit(1); }
 
@@ -37,14 +42,20 @@ const model = process.env.POKI_VOICE_MODEL ?? 'gpt-realtime-2.1';
 const instructions = `You are Poki, a voice assistant that operates the user's iPhone with tools.
 Speak briefly: one short sentence per reply, in the user's language.
 When a tool can answer or do what the user asks, call it at once, without speaking first. Never guess facts about the phone; use a tool.
-Call a tool once per request. Never repeat an action that already ran, including actions from before a reconnect that the conversation says have finished.
+A request can take several steps (open an app, tap, type): call one tool after another until it is done, then say in one short sentence that it is done. Never repeat an action that already ran, including actions from before a reconnect that the conversation says have finished.
 Tapping something that sends, pays, deletes or calls waits until the user allows it on the phone; if the result says they did not, tell them in one sentence and do not try another way.
 Only the user approves, with their own finger: never open Poki to tap Allow, Deny or anything else in it.
 If the user tells you to stop or be quiet, stop talking, but anything already running keeps running; when its result arrives, report it in one sentence.
-To read a page, open it first, then read the screen.`;
+To read a page, open it first, then read the screen.${macTools ? '' : `
+With do, open an app by its bundle id (Notes com.apple.mobilenotes, Weather com.apple.weather, Settings com.apple.Preferences, Messages com.apple.MobileSMS, Calculator com.apple.calculator, Clock com.apple.mobiletimer) and put several actions in one do when you know them; tap elements by the numbers from the latest look or do.`}`;
 
 // The voice tools. `local` tools are answered by the phone itself; the bridge runs the others through Poki MCP.
-const voiceTools = [
+const phoneTools = [
+  { name: 'get_ios_version', local: true, description: 'Read the iPhone model and its iOS version. Changes nothing on the phone.', parameters: { type: 'object', properties: {}, additionalProperties: false } },
+  { name: 'look', local: true, description: 'Read the iPhone screen now: the app in front and its numbered elements (role, label, frame in points).', parameters: { type: 'object', properties: {}, additionalProperties: false } },
+  { name: 'do', local: true, description: 'Run actions on the iPhone in order, then read the screen once. Actions: {launch: "bundle id"}; {tap: n} or {tap: [x, y]}; {type: "text", ref?: n} (taps n first, then types); {key: "return"}; {scroll_to: "text"}; {swipe: "up"|"down"|"left"|"right"}; {button: "home"}; {wait_until: "text"}; {wait: ms}. The answer says what each action did and what is new on screen.', parameters: { type: 'object', properties: { actions: { type: 'array', items: { type: 'object' } } }, required: ['actions'], additionalProperties: false } },
+];
+const macVoiceTools = [
   { name: 'get_ios_version', local: true, description: 'Read the iPhone model and its iOS version. Changes nothing on the phone.', parameters: { type: 'object', properties: {}, additionalProperties: false } },
   { name: 'open_settings', description: 'Open the Settings app on the iPhone, or one of its pages (about, general, software_update, battery, wifi, display, and so on). Leave out page to open Settings itself.', parameters: { type: 'object', properties: { page: { type: 'string', enum: ['about', 'general', 'software_update', 'battery', 'wifi', 'bluetooth', 'display', 'sounds', 'notifications', 'privacy', 'screen_time'] } }, additionalProperties: false } },
   { name: 'read_screen', description: 'Read the text and controls on the iPhone screen now.', parameters: { type: 'object', properties: {}, additionalProperties: false } },
@@ -52,6 +63,7 @@ const voiceTools = [
   { name: 'tap_text', description: 'Tap the visible button or row whose text matches.', parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'], additionalProperties: false } },
   { name: 'go_home', description: 'Go to the Home Screen.', parameters: { type: 'object', properties: {}, additionalProperties: false } },
 ];
+const voiceTools = macTools ? macVoiceTools : phoneTools;
 
 function sessionConfig({ effort = 'low', vad = 'server_vad', voice = 'marin' } = {}) {
   const turn = vad === 'semantic_vad'
@@ -205,7 +217,7 @@ const readBody = req => new Promise((resolve, reject) => {
 
 const { secret, file } = await bridgeSecret();
 const mcp = new Mcp();
-await mcp.connect();
+if (macTools) await mcp.connect();
 
 const server = http.createServer(async (req, res) => {
   const reply = (status, body) => { res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(body)); };

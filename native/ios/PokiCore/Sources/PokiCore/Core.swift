@@ -263,6 +263,15 @@ public final class PokiCore: @unchecked Sendable {
         }
     }
 
+    /// look, do or status for another part of the app (the Voice tab), run here on the phone exactly as a
+    /// relay call: same gate, approvals, Live Activity and deadlines. `arguments` is the call's JSON object.
+    public func tool(_ name: String, arguments: String) async -> ToolResult {
+        guard let args = try? JSON.parse(arguments.isEmpty ? "{}" : arguments) else {
+            return ToolResult(text: "error: the arguments are not JSON; nothing was sent", jpeg: nil, isError: true)
+        }
+        return await call(name, args)
+    }
+
     // MARK: MCP over HTTP (Streamable HTTP, JSON answers only)
 
     static let protocolVersions = ["2025-06-18", "2025-03-26", "2024-11-05"]
