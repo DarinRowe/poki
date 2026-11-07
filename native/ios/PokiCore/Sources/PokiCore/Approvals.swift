@@ -1,7 +1,7 @@
 import Foundation
 
 /// What needs the owner's approval on the phone before it is sent. Words match whole words or
-/// phrases, case-insensitively, in the label of the element an action touches.
+/// phrases, case-insensitively, in the label, value or identifier of the element an action touches.
 public struct SensitivityRules: Sendable, Equatable {
     public var secureFields = true
     public var payments: [String] = ["pay", "buy", "purchase", "subscribe", "checkout", "place order", "transfer", "send money", "confirm payment", "apple pay", "支付", "付款", "购买", "订阅", "转账", "确认支付", "下单"]
@@ -40,12 +40,13 @@ public struct SensitivityRules: Sendable, Equatable {
         if let bundle = app?.bundleID, guardedApps.contains(bundle) { return "input in \(app?.describe ?? bundle)" }
         if typing, secureFields, element?.isSecure == true || (element == nil && secureOnScreen) { return "typing into a password field" }
         guard let element, !typing else { return nil }
-        let text = element.text
-        if let word = Self.matches(text, payments) { return "a payment (\"\(word)\")" }
-        if let word = Self.matches(text, deletions) { return "deleting (\"\(word)\")" }
+        let texts = [element.text, element.identifier ?? ""]
+        func match(_ words: [String]) -> String? { texts.lazy.compactMap { Self.matches($0, words) }.first }
+        if let word = match(payments) { return "a payment (\"\(word)\")" }
+        if let word = match(deletions) { return "deleting (\"\(word)\")" }
         if let bundle = app?.bundleID, callingApps.contains(bundle) { return "a call (in \(app?.describe ?? bundle))" }
-        if let word = Self.matches(text, calling) { return "a call (\"\(word)\")" }
-        if let bundle = app?.bundleID, messagingApps.contains(bundle), let word = Self.matches(text, sending) {
+        if let word = match(calling) { return "a call (\"\(word)\")" }
+        if let bundle = app?.bundleID, messagingApps.contains(bundle), let word = match(sending) {
             return "sending a message (\"\(word)\")"
         }
         return nil

@@ -285,6 +285,20 @@ final class ApprovalTests: XCTestCase {
         XCTAssertTrue(wasAsked, "the owner is asked on the phone")
     }
 
+    /// An element can read "Done" and still be the Send button by its identifier; `do` checks both.
+    func testDoAsksForAButtonOnlyItsIdentifierCallsSend() async {
+        let wda = FakeWDA()
+        let button: JSON = ["type": "XCUIElementTypeButton", "label": "Done", "name": "send-button", "rect": ["x": 16, "y": 100, "width": 358, "height": 44]]
+        let root: JSON = ["type": "XCUIElementTypeApplication", "label": "Messages", "rect": ["x": 0, "y": 0, "width": 390, "height": 844], "children": [button]]
+        wda.set("GET /source") { _ in (200, ["value": root]) }
+        wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": "com.apple.MobileSMS", "name": "Messages"]]) }
+        let (core, _, _) = makeCore(wda)
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["tap": 1]]])
+        XCTAssertTrue(result.text.contains("approval_required"), result.text)
+        XCTAssertTrue(wda.bodies("POST /wda/tap").isEmpty)
+    }
+
     /// The relay agent's `do` never taps in Poki either.
     func testDoTapsNothingInPoki() async {
         let wda = FakeWDA()
