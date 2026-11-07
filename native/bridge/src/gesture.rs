@@ -339,4 +339,76 @@ mod tests {
         }
         assert!(timing_errors.is_empty(), "{}", timing_errors.join("\n"));
     }
+
+    #[tokio::test(start_paused = true)]
+    async fn strokes_send_each_point_once_on_schedule_and_lift_between_strokes() {
+        let point = |x, y, time_ms| PathPoint { x, y, time_ms };
+        let strokes = Strokes(vec![
+            vec![
+                point(100, 500, 0),
+                point(200, 500, 16),
+                point(300, 500, 32),
+                point(400, 500, 48),
+            ],
+            vec![point(500, 100, 0), point(500, 200, 20)],
+        ]);
+        let contact = |touching, x, y| Contact {
+            id: 0,
+            touching,
+            x,
+            y,
+        };
+        let first = [
+            contact(true, 100, 500),
+            contact(true, 200, 500),
+            contact(true, 300, 500),
+            contact(true, 400, 500),
+            contact(false, 400, 500),
+        ];
+        let second = [
+            contact(true, 500, 100),
+            contact(true, 500, 200),
+            contact(false, 500, 200),
+        ];
+        let both: Vec<_> = first.iter().chain(&second).collect();
+        let gap = STROKE_GAP_MS as f64;
+        // A late send goes out at once and still goes out; the lift gap starts after the release completes.
+        for (delay_ms, fail_at, sent, times) in [
+            (
+                5,
+                None,
+                both.clone(),
+                vec![0.0, 16.0, 32.0, 48.0, 53.0, 58.0 + gap, 78.0 + gap, 83.0 + gap],
+            ),
+            (
+                25,
+                None,
+                both.clone(),
+                vec![0.0, 25.0, 50.0, 75.0, 100.0, 125.0 + gap, 150.0 + gap, 175.0 + gap],
+            ),
+            (
+                5,
+                Some(2),
+                vec![&first[0], &first[1], &first[2], &contact(false, 300, 500)],
+                vec![0.0, 16.0, 32.0, 37.0],
+            ),
+        ] {
+            let mut transport = Transport::new(delay_ms, fail_at);
+            let outcome = strokes.send(&mut transport).await;
+            if fail_at.is_some() {
+                assert_eq!(outcome.unwrap_err().to_string(), "transport failed");
+            } else {
+                outcome.unwrap();
+            }
+            let packets: Vec<_> = transport.transmissions.iter().map(|t| &t.contacts[0]).collect();
+            assert_eq!(packets, sent, "delay={delay_ms}, fail={fail_at:?}");
+            for (packet, expected_ms) in transport.transmissions.iter().zip(&times) {
+                let actual_ms = packet.at.as_secs_f64() * 1000.0;
+                assert!(
+                    actual_ms >= *expected_ms && actual_ms < expected_ms + 2.0,
+                    "delay={delay_ms}, fail={fail_at:?}: expected {expected_ms} ms, got {actual_ms} ms"
+                );
+            }
+        }
+    }
 }
