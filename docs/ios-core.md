@@ -383,7 +383,10 @@ missed a photo), and from the first matching action on nothing is sent. PokiCore
 `approvalRequested` for those and holds up to `approvalWait` (115 s: owners took 42 to 47 s, and a
 request lives 120 s). A relay answers its caller itself after `req_timeout_ms`, so a call that came
 through one holds only until the relay's time less a read and a 2 s margin. If approved in time, they
-run and the answer says `approved on the phone`. If not, it answers `not_sent from action k: approval_required (id
+run and the answer says `approved on the phone`. An approval that comes with too little of the relay's
+time left to send the actions and read the screen (each action at its cap) is kept and not run: the
+answer says `approval_required`, and the same actions sent again run at once. A call the caller gave
+up on (the relay's `cancel`) sends nothing, whenever the owner answers. If not, it answers `not_sent from action k: approval_required (id
 …)` after the read, saying which actions were sent, and those from k on, sent again on their own in a
 later `do` within 2 minutes, run once that approval is granted. Denied: `not_sent … the owner
 declined`.

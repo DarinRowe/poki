@@ -178,20 +178,26 @@ final class Approvals: @unchecked Sendable {
         emit(.approvalEnded(id: id, approved: approved))
     }
 
-    /// Waits for the decision, at most `seconds`; nil when it is still pending then.
+    /// Waits for the decision, at most `seconds`; nil when it is still pending then, or when the
+    /// waiting task is cancelled (the caller gave up): the request itself stays for the owner.
     func wait(id: String, seconds: Double) async -> Decision? {
         let token = UUID()
-        return await withCheckedContinuation { (continuation: CheckedContinuation<Decision?, Never>) in
-            lock.lock()
-            guard var entry = entries[id] else { lock.unlock(); continuation.resume(returning: .expired); return }
-            if let decision = entry.decision { lock.unlock(); continuation.resume(returning: decision); return }
-            entry.waiters[token] = continuation
-            entries[id] = entry
-            lock.unlock()
-            Task {
-                await sleep(seconds: seconds)
-                self.takeWaiter(id: id, token: token)?.resume(returning: nil)
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Decision?, Never>) in
+                lock.lock()
+                guard var entry = entries[id] else { lock.unlock(); continuation.resume(returning: .expired); return }
+                if let decision = entry.decision { lock.unlock(); continuation.resume(returning: decision); return }
+                guard !Task.isCancelled else { lock.unlock(); continuation.resume(returning: nil); return }
+                entry.waiters[token] = continuation
+                entries[id] = entry
+                lock.unlock()
+                Task {
+                    await sleep(seconds: seconds)
+                    self.takeWaiter(id: id, token: token)?.resume(returning: nil)
+                }
             }
+        } onCancel: {
+            takeWaiter(id: id, token: token)?.resume(returning: nil)
         }
     }
 

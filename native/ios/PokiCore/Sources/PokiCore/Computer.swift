@@ -294,6 +294,16 @@ final class Computer: @unchecked Sendable {
     }
     static let relayMargin = 2.0
 
+    /// What one action may take (`run` holds each to it); a launch gets the time XCTest's handshake takes.
+    func actionCap(_ action: JSON) -> Double { action["launch"] != nil ? max(config.actionCap, 9) : config.actionCap }
+
+    /// The most `actions`, the pause after the last and the read of the screen can take once they
+    /// start, each action within its own cap. The call's deadline (`until`) may bound it sooner.
+    func timeToFinish(_ actions: [JSON], until: Double) -> Double {
+        let longestPause = Self.settle.values.max() ?? 1
+        return min(max(0, until - now()), actions.reduce(0) { $0 + actionCap($1) } + longestPause + config.readTimeout)
+    }
+
     func act(actions: [JSON], full: Bool, answerBy: Double? = nil) async -> ToolResult {
         var started = now()
         var until = started + config.toolDeadline
@@ -364,13 +374,26 @@ final class Computer: @unchecked Sendable {
                 let waited = now() - asked
                 until += waited
                 started += waited
+                // The caller gave up while the owner was being waited for (the relay sent `cancel`): the
+                // model will send these actions again, so nothing is sent for this call, whatever the owner does.
+                if Task.isCancelled {
+                    return ToolResult(text: "cancelled: the caller stopped waiting before the owner answered; nothing was sent from action \(at + 1).", jpeg: nil, isError: true)
+                }
                 // The owner's approval can open Poki: the app comes back before anything is sent into Poki.
-                if let back = await bringBack(from: before, why: "after the approval", check: true) { extra.append(back) }
+                // Nothing of the owner's can have done that while the request is still unanswered, and
+                // the time is the answer's.
+                if outcome != nil, let back = await bringBack(from: before, why: "after the approval", check: true) { extra.append(back) }
                 let sentFirst = at > 0 ? " Actions 1 to \(at) were sent (below)." : ""
                 let again = at > 0 ? "send action \(at + 1)\(tail.count > 1 ? " to \(actions.count)" : "") again, on their own" : "send the same actions again"
                 switch outcome {
+                case .approved? where answerBy.map({ now() + timeToFinish(tail, until: until) + Self.relayMargin > $0 }) == true:
+                    // Too late for the relay: the actions would run after it answered its caller with a 504, and
+                    // the model would send them again. The approval stays; the same actions sent again run at once.
+                    return await refused(until: until, full: full, did: did, text: "not_sent from action \(at + 1): approval_required (id \(approval.id)): \(reason). The owner approved on the phone, but too late for this call to send the actions and read the screen before the relay gives up on it.\(sentFirst) The approval is kept: \(again) and they run at once (within \(Int(approvals.lifetime / 60)) minutes).")
                 case .approved?:
-                    _ = approvals.consumeGrant(fingerprint: fingerprint)
+                    guard approvals.consumeGrant(fingerprint: fingerprint) != nil else {
+                        return await refused(until: until, full: full, did: did, text: "not_sent from action \(at + 1): approval_required (id \(approval.id)): \(reason). The approval went to another call with the same actions, so nothing was sent from this one.\(sentFirst) To run them, \(again) and ask again.")
+                    }
                     approvedNote = "approval: approved on the phone after \(Int(waited.rounded())) s (\(reason))"
                     toRun = tail
                 case .declined?:
@@ -429,7 +452,7 @@ final class Computer: @unchecked Sendable {
         var lastKind: String?
         for (i, action) in actions.enumerated() {
             let index = offset + i
-            let cap = action["launch"] != nil ? max(config.actionCap, 9) : config.actionCap
+            let cap = actionCap(action)
             let actionsUntil = min(until - config.readTimeout - 0.5, now() + cap)
             let left = actionsUntil - now()
             if left < 0.3 {
