@@ -44,6 +44,8 @@ flowchart LR
 | 内置本机连接 | 不需要同时保留其他 VPN，或用户明确选择切换 | 在 Poki 中启用，由用户通过系统验证 | Poki 与隧道扩展都具备 Network Extension 能力和匹配描述文件 |
 | 复用现有 VPN | 当前 VPN 支持本机回环或等效 TCP 反射功能 | 保持原 VPN 连接，在 Poki 选择 External app | 可用完整版本，也可用不含隧道扩展的外部连接版本 |
 
+付费开发者团队两种版本都能签。免费 Apple ID 的个人团队不能为 Network Extension 生成描述文件，只能签外部连接版本，本机连接由现有 VPN 或 LocalDevVPN 提供。两种账号对应的版本和需要注册的标识见 `native/ios-app/README.md` 的签名一节。
+
 内置连接使用系统 VPN 配置。启用它可能断开其他 VPN；它不是免 VPN 配置方案。复用现有 VPN 时，Poki 自己的隧道保持关闭，使用现有隧道提供本机回环。
 
 `10.7.0.1` 是本方案固定的手机内部地址，不是个人网络地址，也不是中转地址。内置实现只处理该地址的 IPv4 TCP，不添加互联网默认路由或 DNS 设置。
@@ -189,12 +191,12 @@ Poki 可能按空闲设置主动停止 Runner。出现休眠状态不等于会�
 
 在已获授权的 Cloudflare 账户中创建独立 Worker，避免覆盖其他任务的实例。部署实现来自 `deploy/cf-relay/`。没有登录时，先完成该账户的正常浏览器登录。
 
-部署命令会输出真实服务地址，因此将输出保存到仓库外的私有日志：
+部署命令会输出真实服务地址，因此将输出保存到仓库外的私有日志。`RELAY_NAME` 是自己选定的 Worker 名，和 `TEAM_ID` 等变量一样在终端私下设置：
 
 ```sh
 umask 077
 relay_task_dir=$(mktemp -d)
-deploy/cf-relay/deploy.sh --name poki-relay-demo \
+deploy/cf-relay/deploy.sh --name "$RELAY_NAME" \
   > "$relay_task_dir/deploy.log" 2>&1
 ```
 
