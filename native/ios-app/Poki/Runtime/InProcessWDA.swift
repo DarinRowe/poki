@@ -104,8 +104,15 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
             "POST /wda/apps/activate": { [unowned self] body, _ in try self.done(self.native.app(try Self.bundle(body), action: "activate")) },
             "POST /wda/apps/terminate": { [unowned self] body, _ in try self.done(self.native.app(try Self.bundle(body), action: "terminate")) },
             // The clipboard is Poki's own to read and write here; WDA's wire form is base64 text.
+            // Empty only when it is: no text while it holds something (an image, or a paste the owner
+            // did not allow), or while Poki is in the background and iOS may hide it, is unreadable.
             "POST /wda/getPasteboard": { _, _ in
-                let text = DispatchQueue.main.sync { UIPasteboard.general.string } ?? ""
+                let (text, items, active) = DispatchQueue.main.sync {
+                    (UIPasteboard.general.string, UIPasteboard.general.numberOfItems, UIApplication.shared.applicationState == .active)
+                }
+                guard let text = text ?? (items == 0 && active ? "" : nil) else {
+                    throw Refusal("unable to read clipboard", items > 0 ? "the clipboard holds no text" : "the clipboard cannot be read while Poki is in the background")
+                }
                 return .string(Data(text.utf8).base64EncodedString())
             },
             "POST /wda/setPasteboard": { body, _ in
