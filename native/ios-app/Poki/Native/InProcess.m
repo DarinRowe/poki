@@ -33,10 +33,8 @@
 - (BOOL)hasFocus;
 - (BOOL)hasKeyboardFocus;
 - (BOOL)loadAccessibility:(NSError **)error;
-- (id)initWithBundleIdentifier:(NSString *)bundle;
-- (void)launch;
-- (void)activate;
-- (void)terminate;
+- (void)_XCT_launchApplicationWithBundleID:(NSString *)bundle arguments:(NSArray *)arguments environment:(NSDictionary *)environment completion:(void (^)(NSError *))completion;
+- (void)_XCT_terminateApplicationWithBundleID:(NSString *)bundle completion:(void (^)(NSError *))completion;
 - (void)pressButton:(long long)button;
 - (void)pressLockButton;
 + (id)connectionForInitiatingSharedSession;
@@ -522,17 +520,53 @@ static BOOL PKInstanceSignature(Class cls, SEL selector, const char *result, NSA
     }
 }
 
+/// testmanagerd's answer to one launch or terminate request, or nil within `seconds`.
+static NSString *PKDaemonReply(NSTimeInterval seconds, void (^send)(void (^)(NSError *))) {
+    dispatch_semaphore_t done = dispatch_semaphore_create(0);
+    __block NSString *code = @"no_reply";
+    send(^(NSError *error) { code = error ? (error.localizedDescription ?: @"failed") : nil; dispatch_semaphore_signal(done); });
+    if (dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(seconds * NSEC_PER_SEC)))) return @"no_reply";
+    return code;
+}
+
+/// Opens, brings forward or ends an app through testmanagerd, as XCUIApplication does inside a UI
+/// test: launch ends a running copy first and starts it again, activate brings a running copy forward
+/// (or starts it), terminate ends it. XCUIApplication itself refuses to exist outside a UI test bundle.
+/// Launch and activate return once the app is in front.
 - (nullable NSString *)app:(NSString *)bundle action:(NSString *)action {
     @try {
         PKOutcome *refused;
         uint64_t generation = 0;
-        if (![self current:&generation outcome:&refused]) return refused.code ?: @"no_session";
-        id app = [[NSClassFromString(@"XCUIApplication") alloc] initWithBundleIdentifier:bundle];
-        if ([action isEqualToString:@"launch"]) [app launch];
-        else if ([action isEqualToString:@"activate"]) [app activate];
-        else if ([action isEqualToString:@"terminate"]) [app terminate];
-        else return @"unknown_action";
-        return nil;
+        id session = [self current:&generation outcome:&refused];
+        if (!session) return refused.code ?: @"no_session";
+        id proxy = [session daemonProxy];
+        BOOL launch = [action isEqualToString:@"launch"], activate = [action isEqualToString:@"activate"];
+        if (!launch && !activate && ![action isEqualToString:@"terminate"]) return @"unknown_action";
+        if (!launch && !activate) {
+            return PKDaemonReply(15, ^(void (^reply)(NSError *)) { [proxy _XCT_terminateApplicationWithBundleID:bundle completion:reply]; });
+        }
+        BOOL (^inFront)(NSTimeInterval) = ^BOOL(NSTimeInterval seconds) {
+            NSDate *by = [NSDate dateWithTimeIntervalSinceNow:seconds];
+            do {
+                if ([[self frontApp][@"bundleId"] isEqualToString:bundle]) return YES;
+                [NSThread sleepForTimeInterval:0.25];
+            } while ([by timeIntervalSinceNow] > 0);
+            return NO;
+        };
+        if (launch && !PKDaemonReply(15, ^(void (^reply)(NSError *)) { [proxy _XCT_terminateApplicationWithBundleID:bundle completion:reply]; })) {
+            // A launch sent while the old process is still exiting is answered but starts nothing.
+            NSDate *by = [NSDate dateWithTimeIntervalSinceNow:5];
+            while ([by timeIntervalSinceNow] > 0 && [[self frontApp][@"bundleId"] isEqualToString:bundle]) [NSThread sleepForTimeInterval:0.25];
+            [NSThread sleepForTimeInterval:0.5];
+        }
+        for (int attempt = 0; attempt < 2; attempt++) {
+            NSString *code = PKDaemonReply(30, ^(void (^reply)(NSError *)) {
+                [proxy _XCT_launchApplicationWithBundleID:bundle arguments:@[] environment:@{} completion:reply];
+            });
+            if (code) return code;
+            if (inFront(attempt ? 10 : 5)) return nil;
+        }
+        return @"not_in_front";
     } @catch (NSException *e) {
         return [NSString stringWithFormat:@"%@: %@", e.name, e.reason];
     }
