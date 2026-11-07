@@ -416,7 +416,8 @@ private struct StandingBy: View {
             return "Agents can reach this iPhone, but Poki can’t tap until Loopback is on."
         }
         if !issues.isEmpty { return "Fix the item below so your agents can use this iPhone." }
-        return model.runnerPaused ? "The runner starts when an agent asks." : "Ready for the agent’s next step."
+        // In-process there is no runner to start: the launcher only mounts the disk image.
+        return model.runnerPaused && model.automationPath == .runner ? "The runner starts when an agent asks." : "Ready for the agent’s next step."
     }
 
     /// "12 steps in 1:24", from the first to the last of the recent steps.
