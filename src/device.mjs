@@ -50,6 +50,26 @@ export function screenChange(before, after) {
   return { screen_change: changed ? 'changed' : 'unchanged', screen_change_verified: true, screen_changed: changed };
 }
 
+// AX root/window frames offer an orientation check without an extra screenshot.
+// Accept only near-screen-sized roots; app content and floating windows are not
+// reliable evidence of screen geometry. Missing/ambiguous roots fail closed.
+function axRootOrientation(elements, viewport) {
+  if (!viewport || viewport.width <= 0 || viewport.height <= 0) return null;
+  const near = (actual, expected) => Number.isFinite(actual) &&
+    Math.abs(actual - expected) <= Math.max(8, expected * 0.25);
+  let same = false, rotated = false;
+  for (const element of elements) {
+    if (!/^(?:XCUIElementType)?(?:Application|Window)$/i.test(element.role ?? element.type ?? '')) continue;
+    const frame = element.frame ?? element;
+    if (!frame || frame.x < -8 || frame.y < -8) continue;
+    const match = near(frame.width, viewport.width) && near(frame.height, viewport.height);
+    const swapped = near(frame.width, viewport.height) && near(frame.height, viewport.width);
+    if (match && !swapped) same = true;
+    if (swapped && !match) rotated = true;
+  }
+  return same === rotated ? null : rotated ? 'rotated' : 'same';
+}
+
 export function hidPoint(x, y, width, height) {
   if (![x,y,width,height].every(Number.isFinite) || width < 2 || height < 2 || x < 0 || y < 0 || x >= width || y >= height) throw new Error(`Coordinates must be inside the screen (${width} × ${height} points).`);
   return [Math.round(x / (width - 1) * 65535), Math.round(y / (height - 1) * 65535)];
@@ -58,7 +78,7 @@ export function hidPoint(x, y, width, height) {
 const names = (device, query) => device.id === query || device.name.toLocaleLowerCase() === query.toLocaleLowerCase();
 
 export class Devices {
-  selected; requested; frame; size; seen; elements = []; elementsAt = 0; lastInputAt = -Infinity; inBatch = false;
+  selected; requested; frame; size; seen; structureViewport; batchViewportVerified = false; elements = []; elementsAt = 0; lastInputAt = -Infinity; lastInputCompletedAt; inBatch = false;
   scales = new Map(); readCosts = new Map(); physicalNames = new Map(); backgroundDevices = new Map(); nextRef = 0;
   constructor(coordinator = new Coordination()) { this.coordinator = coordinator; }
   async run(file, args, timeout = 45000, input) {
@@ -69,7 +89,7 @@ export class Devices {
     const result = await closePlatform(this, onlyDevices);
     if (onlyDevices) for (const id of onlyDevices) this.backgroundDevices.delete(id);
     else this.backgroundDevices.clear();
-    if (!onlyDevices || onlyDevices.has(this.frame?.device)) { this.frame = undefined; this.elements = []; }
+    if (!onlyDevices || onlyDevices.has(this.frame?.device) || onlyDevices.has(this.structureViewport?.device)) { this.frame = undefined; this.elements = []; this.structureViewport = undefined; }
     return result;
   }
   close() { return this.coordinator.end(this, 'session_closed'); }
@@ -88,7 +108,7 @@ export class Devices {
   ownBackground(id, type) { if (!this.backgroundDevices.has(id)) this.backgroundDevices.set(id, new Set()); this.backgroundDevices.get(id).add(type); }
   unownBackground(id, type) { const owned = this.backgroundDevices.get(id); owned?.delete(type); if (!owned?.size) this.backgroundDevices.delete(id); }
   access(target) { this.coordinator.access(this, target); }
-  changed(target) { this.coordinator.changed(target.id); this.elements = []; this.elementsAt = 0; this.frame = undefined; this.seen = undefined; }
+  changed(target) { this.coordinator.changed(target.id); this.elements = []; this.elementsAt = 0; this.frame = undefined; this.seen = undefined; this.structureViewport = undefined; }
   async inventory(all = false) {
     const { stdout } = await this.run('python3', [join(root, 'native/devices.py')], 8000);
     const physical = new Map();
@@ -213,6 +233,7 @@ export class Devices {
       if (this.frame?.revision !== this.coordinator.revision(target.id) || this.frame?.device !== target.id || this.frame?.width !== width || this.frame?.height !== height || !this.frame.data.equals(data)) { this.elements=[]; this.elementsAt=0; }
       checkWork();
       this.frame = { id: randomUUID(), device: target.id, revision: this.coordinator.revision(target.id), width, height, scale, data, original, at: Date.now(), capture_started_at: started, capture_completed_at: new Date().toISOString() };
+      this.structureViewport = undefined;
       this.size = { device: target.id, width, height };
       return this.frame;
     } finally { await unlink(path).catch(() => {}); }
@@ -220,7 +241,17 @@ export class Devices {
   async viewport() {
     const target = await this.target();
     if (this.frame && this.frame.revision !== this.coordinator.revision(target.id)) { this.frame = undefined; this.elements = []; }
-    if (!this.frame || this.frame.device !== target.id) return this.capture();
+    if (!this.frame || this.frame.device !== target.id) {
+      // An AX-only post-action read can reuse a freshly measured viewport;
+      // it never masquerades as a captured frame. Known input or capture
+      // invalidates this binding; old refs still expire after 30 seconds.
+      const bound = this.structureViewport;
+      if (bound?.rootVerified === true && bound.device === target.id &&
+          bound.revision === this.coordinator.revision(target.id) &&
+          this.size?.device === target.id && this.size.width === bound.width && this.size.height === bound.height &&
+          this.elements.length && Date.now() - this.elementsAt <= 30000) return this.size;
+      return this.capture();
+    }
     return this.frame;
   }
   async ocr(frame) {
@@ -280,23 +311,46 @@ export class Devices {
     const started = performance.now(), observedAt = new Date().toISOString(), timings = timingCount();
     const tree = await phase('accessibility', () => this.bridge({ op: 'ax', include_offscreen: false }));
     this.readCosts.set(target.id, performance.now() - started);
-    // A long-lived bridge says whether it answered from a held subscription (see bridge-daemon.mjs).
     const served = timingsSince(timings).findLast(entry => typeof entry.ax === 'string')?.ax;
     if (tree.foreground?.pid) this.lastForeground = { device: target.id, pid: tree.foreground.pid };
-    if (tree.foreground && !tree.foreground.bundle_id && this.springBoard?.device === target.id && tree.foreground.pid === this.springBoard.pid) tree.foreground = { ...tree.foreground, bundle_id: springBoardId, name: 'SpringBoard' };
-    const elements = (tree.elements ?? []).filter(onScreen(this.size?.device === target.id ? this.size : await this.capture()));
-    // A tree that leaves a state out compares equal to one that gives its default.
-    // The app in front is part of the screen: a switch counts as a change even before its tree arrives.
+    if (tree.foreground && !tree.foreground.bundle_id && this.springBoard?.device === target.id && tree.foreground.pid === this.springBoard.pid)
+      tree.foreground = { ...tree.foreground, bundle_id: springBoardId, name: 'SpringBoard' };
+    const rawElements = tree.elements ?? [];
+    const previousSize = this.size?.device === target.id ? this.size : undefined;
+    // Rotation may occur externally between inputs. A verified AX root is
+    // checked before filtering or converting any coordinates.
+    if (axRootOrientation(rawElements, previousSize) === 'rotated') {
+      this.structureViewport = undefined; this.elements = []; this.elementsAt = 0; this.frame = undefined;
+      await this.capture();
+    }
+    const viewport = this.size?.device === target.id ? this.size : await this.capture();
+    const rootVerified = axRootOrientation(rawElements, viewport) === 'same';
+    if (!rootVerified) this.structureViewport = undefined;
+    const elements = rawElements.filter(onScreen(viewport));
+    // Preserve upstream foreground-based identity, including PID-only roots.
     const front = [tree.foreground?.pid ?? null, tree.foreground?.bundle_id ?? null];
-    const signature = JSON.stringify([front, ...elements.map(e => { const box = e.frame ?? e; return [e.type ?? e.role, e.label, e.text, e.value, e.focused, Boolean(e.selected), flagOn(e.enabled), box.x, box.y, box.width, box.height]; })]);
-    return this.seen = { device: target.id, foreground: tree.foreground, elements, signature, at: performance.now(), startedAt: started, observedAt, ...(served ? { served } : {}) };
+    const signature = JSON.stringify([front, ...elements.map(e => {
+      const box = e.frame ?? e;
+      return [e.type ?? e.role, e.label, e.text, e.value, e.focused, Boolean(e.selected), flagOn(e.enabled), box.x, box.y, box.width, box.height];
+    })]);
+    return this.seen = {
+      device: target.id, revision: this.coordinator.revision(target.id), foreground: tree.foreground,
+      elements, signature, rootVerified, at: performance.now(), startedAt: started, observedAt,
+      structure_started_at: observedAt, structure_completed_at: new Date().toISOString(),
+      ...(served ? { served } : {}),
+    };
   }
   // A simulator's size only changes when it rotates. A physical device maps touches through its
   // current orientation, so it keeps taking a fresh frame.
   async screenSize() {
     const target = await this.target();
-    // Inside a batch a phone keeps the size its first step measured; a rotate step clears it.
-    return (target.kind === 'simulator' || this.inBatch) && this.size?.device === target.id ? this.size : this.viewport();
+    if (target.kind === 'simulator' && this.size?.device === target.id) return this.size;
+    // A batch may retain only a viewport that was captured or validated
+    // during THIS batch, not one inherited from a previous AX-only action.
+    if (this.inBatch && this.batchViewportVerified && this.size?.device === target.id) return this.size;
+    const result = await this.viewport();
+    if (this.inBatch) this.batchViewportVerified = true;
+    return result;
   }
   // Reading the result back saves the caller a round trip to look. The action has already happened,
   // so a failed read only loses the report; a stop request still surfaces as a stop.
@@ -323,8 +377,14 @@ export class Devices {
     try {
       const target = await this.target();
       const confirmation = this.confirmation();
-      const { signature, screen } = await deadline(this.observationBudget(target) + this.confirmationBudget(before), () => readScreen(this, { ...options, before, confirmation }));
-      return { screen, ...screenChange(before, signature) };
+      const { signature, screen, structuredObservation } = await deadline(
+        this.observationBudget(target) + this.confirmationBudget(before) + (options.structured ? 3000 : 0),
+        () => readScreen(this, { ...options, before, confirmation }));
+      const reusable = structuredObservation && this.lastInputCompletedAt;
+      const receiptId = reusable ? randomUUID() : undefined;
+      return { screen, ...screenChange(before, signature),
+        ...(reusable ? { receipt_id: receiptId, input_completed_at: this.lastInputCompletedAt,
+          post_action_observation: { version: 1, action_receipt_id: receiptId, ...structuredObservation } } : {}) };
     } catch (error) {
       try { checkWork(); } catch (stop) { return { stopped: true, stop_reason: stoppingReason(stop) }; }
       // Input clears the last read, so one left now was taken after the action: report it rather than nothing.
@@ -356,6 +416,22 @@ export class Devices {
   observation(frame = this.frame) {
     return { id: frame.id, device: frame.device, width: frame.width, height: frame.height, units: 'points', capture_started_at: frame.capture_started_at, capture_completed_at: frame.capture_completed_at, structure_completed_at: frame.structure_completed_at, structure_source: frame.source ?? null, atomic: false, revision: frame.revision };
   }
+  observationFromStructure(seen, frame) {
+    const size = this.size;
+    const revision = this.coordinator.revision(seen.device);
+    // The first post-input screenshot may advance the revision because it
+    // differs from the old pre-input picture. This is not a second input.
+    if (!size || size.device !== seen.device ||
+        (frame ? frame.revision !== revision || (frame.revision !== seen.revision && frame.revision !== seen.revision + 1)
+          : seen.revision !== revision)) return null;
+    return { id: randomUUID(), device: seen.device, revision,
+      width: size.width, height: size.height, units: 'points', atomic: false,
+      structure_source: 'accessibility',
+      structure_started_at: seen.structure_started_at, structure_completed_at: seen.structure_completed_at,
+      ...(frame ? { capture_started_at: frame.capture_started_at,
+        capture_completed_at: frame.capture_completed_at } : {}),
+    };
+  }
   async input(request) {
     const target = await this.target();
     const frame = 'x' in request || 'x1' in request || request.op === 'pinch' || request.op === 'draw_strokes' ? await this.screenSize() : undefined;
@@ -384,6 +460,7 @@ export class Devices {
     catch (error) { result = { outcome: 'unknown', error: error.message, stopped: Boolean(stopped(error)), stop_reason: stopped(error) ? stoppingReason(error) : 'unknown', instruction: 'Input may have been delivered. Inspect the screen before retrying.', isError: true }; }
     if (result.reason === 'display_service_missing') result = { ...result, instruction: `No input was sent. This iPhone does not provide com.apple.coredevice.displayservice, which touch and text input need. Screenshots and accessibility work without it, so they do not show whether input is available. Run node bin/prepare-device.mjs ${target.id} from the Poki checkout to install a developer disk image that provides it. See docs/physical-iphone.md#touch-and-text-input-fail.` };
     this.lastInputAt = performance.now();
+    this.lastInputCompletedAt = new Date().toISOString();
     if (target.kind === 'physical') {
       try { await phase('recording_recovery', () => resumeRecordings(this, target)); }
       catch (error) { result = { ...result, recording: { resumed: false, error: error.message }, stopped: Boolean(stopped(error)), ...(stopped(error) ? { stop_reason: stoppingReason(error) } : {}) }; }
@@ -394,6 +471,12 @@ export class Devices {
     const def = definitions.find(d => d[0] === name);
     if (!def) throw new Error(`Unknown tool: ${name}`);
     const args = def[2].parse(original);
+    // Invalidate a previous call's AX-only viewport BEFORE dispatching any
+    // tool. In particular CUA look/do and batch_commands bypass the default
+    // input branch; without this they could reuse portrait size after rotation.
+    // The default input branch may renew it only after its own fresh AX read.
+    const previousViewport = this.structureViewport;
+    this.structureViewport = undefined;
     const previous = this.requested, previousResolved = this.resolved;
     // Steps of one batch share a lookup, which runs a Python process and simctl each time.
     const sharesTarget = this.inBatch && args.device === undefined;
@@ -474,8 +557,13 @@ export class Devices {
           const result = await this.recognize(args), frame = this.frame;
           let prompt;
           try { prompt = { status: 'checked', source: 'ocr', warning: promptWarning(await this.ocr(frame)) }; }
-          catch (error) { if (stopped(error)) throw error; prompt = { status: 'unavailable', instruction: 'Inspect the image for system prompts before continuing.' }; }
-          return { content: [...text({ ...result, prompt }).content, { type: 'image', data: frame.data.toString('base64'), mimeType: 'image/png' }] };
+          catch (error) { if (stopped(error)) throw error; prompt = { status: 'unavailable', instruction: args.include_image === false
+            ? 'Prompt check unavailable. Take a screenshot and inspect it before continuing.'
+            : 'Inspect the image for system prompts before continuing.' }; }
+          // Capturing and prompt checking are unchanged; only the optional
+          // response image attachment is skipped.
+          return { content: [...text({ ...result, prompt }).content,
+            ...(args.include_image === false ? [] : [{ type: 'image', data: frame.data.toString('base64'), mimeType: 'image/png' }])] };
         }
         case 'get_foreground_app': {
           const tree = await this.bridge({ op:'ax', include_offscreen:false });
@@ -509,7 +597,11 @@ export class Devices {
           throw new Error('The requested orientation was not reported by the device.');
         }
         // Without await, the finally below restores the device state while the first step is still looking up its device.
-        case 'batch_commands': return await runBatch(this, args);
+        case 'batch_commands': {
+          this.batchViewportVerified = false;
+          try { return await runBatch(this, args); }
+          finally { this.batchViewportVerified = false; }
+        }
         case 'look': return await cua.look(this, args);
         case 'do': return await cua.act(this, args);
         case 'run_code': return await runCode(this, args);
@@ -518,14 +610,26 @@ export class Devices {
           // A batch step that asks for verification (verify: true) is compared even when checksStep would skip it.
           const looks = verify && reportsScreen.has(name) && !this.inBatch, touches = verify && touchesControl.has(name) && (args.verify === true || this.checksStep());
           this.beforeInput = undefined; this.expectsForeground = false;
-          // A batch step may reuse the read its predecessor just took of the same screen.
-          const before = looks || touches ? await this.readBefore(this.inBatch ? this.reuseMs() : 0) : undefined;
+          // The AX-only binding is valid only when this same call has just
+          // performed a fresh root-verified AX read. Unverified or first-step
+          // batch gestures fall back to image capture for coordinate sizing.
+          const before = looks || touches
+            ? await this.readBefore(previousViewport ? 0 : this.inBatch ? this.reuseMs() : 0)
+            : undefined;
+          if (previousViewport && before?.rootVerified === true &&
+              before.device === previousViewport.device &&
+              before.revision === this.coordinator.revision(before.device) &&
+              this.size?.device === before.device &&
+              this.size.width === previousViewport.width && this.size.height === previousViewport.height &&
+              this.elements.length && Date.now() - this.elementsAt <= 30000) {
+            this.structureViewport = { ...previousViewport, revision: before.revision };
+          }
           let result = await interaction(this,name,args);
           if(result===undefined) throw new Error(`No implementation for ${name}`);
           const delivered = result.sent === true && !result.isError && !result.stopped;
           // A target that had to be waited for is compared with the screen it was found on, not the one before the wait.
           const sentTo = this.beforeInput ?? before, signature = sentTo?.elements.length ? sentTo.signature : undefined;
-          if (looks && delivered) result = { ...result, ...await this.readback(signature) };
+          if (looks && delivered) result = { ...result, ...await this.readback(signature, { structured: args.return_observation === true, structuredVisual: args.post_action_ocr === true }) };
           else if (touches && delivered && signature !== undefined) result = { ...result, ...await this.changedSince(signature) };
           // Which list the scroll moved, from the reads on either side of it.
           if (name === 'scroll' && looks && delivered && sentTo?.elements.length && this.seen?.elements.length && this.seen.startedAt > this.lastInputAt) result = { ...result, moved: whatMoved(sentTo.elements, this.seen.elements) };

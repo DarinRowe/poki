@@ -2,6 +2,7 @@
 // Source: poki-mcp/client/fast/run.mjs. The plan loop is retained; App owns model handoff.
 import { FastSession } from './session.mjs';
 import { candidatesFor, succeeded, conditionsMatch, matching } from './task.mjs';
+import { reusableActionObservation } from '../post-action-observation.mjs';
 
 // Tapping the status bar scrolls a page to its top. The bar is the band above the app's first element, never
 // taller than a twentieth of the screen; its left part holds the clock, clear of a notch or Dynamic Island.
@@ -19,7 +20,7 @@ export async function runFast({ task, alternatives = [], onSelect = () => {}, ca
   const mode = 'plan';
   const started = performance.now();
   const stats = { mode, provider: null, model: null, model_calls: 0, model_ms: 0, tool_calls: 0, tool_ms: 0, scope_ms: 0, action_count: 0, scope_launch_count: 0, return_count: 0, total_ms: 0 };
-  let session, lease, observation, lastAction, pending = false, reason = null, status = 'handoff', previousPage, scrolledToTop = false;
+  let session, lease, observation, nextObservation, lastAction, pending = false, reason = null, status = 'handoff', previousPage, scrolledToTop = false;
   const history = [], observedIds = new Set();
   let scopePid;
   const checkpoint = () => ({
@@ -51,7 +52,7 @@ export async function runFast({ task, alternatives = [], onSelect = () => {}, ca
     scopePid = receipt.pid;
   };
   const fresh = () => {
-    const age = Date.now() - Date.parse(observation.observation.capture_started_at);
+    const age = Date.now() - Date.parse(observation.observation.structure_started_at ?? observation.observation.capture_started_at);
     if (!Number.isFinite(age) || age < -1000 || age > 25000) throw new Error('stale_observation');
   };
   try {
@@ -63,7 +64,8 @@ export async function runFast({ task, alternatives = [], onSelect = () => {}, ca
     for (;;) {
       signal.throwIfAborted();
       await session.call('renew_device', { lease_id: lease.lease_id, ttl_seconds: 300 });
-      const current = await session.call('observe_device', { device: task.device, source: 'auto', max_elements: 400, include_offscreen: false });
+      const current = nextObservation ?? await session.call('observe_device', { device: task.device, source: 'auto', max_elements: 400, include_offscreen: false, include_image: false });
+      nextObservation = null;
       if (!current.observation?.id || current.observation.device !== lease.device || observedIds.has(current.observation.id)
         || !Array.isArray(current.elements) || !current.elements.length || current.truncated
         || !['accessibility', 'ocr'].includes(current.source)
@@ -103,13 +105,14 @@ export async function runFast({ task, alternatives = [], onSelect = () => {}, ca
       if (candidates.length !== 1) throw new Error('no_candidates');
       const action = candidates[0];
       fresh(); signal.throwIfAborted();
-      const args = { ...action.arguments, device: task.device, ...(action.op === 'scroll' ? { direction: action.direction } : {}),
+      const args = { ...action.arguments, device: task.device, return_observation: true, post_action_ocr: true, ...(action.op === 'scroll' ? { direction: action.direction } : {}),
         ...(action.ref ? { ref: action.ref } : {}), ...(action.text_id ? { text: task.texts[action.text_id] } : {}),
         ...(unverified.has(action.op) ? { verify: false } : {}) };
       lastAction = action.id; pending = true; stats.action_count++;
       const receipt = await session.call(action.op, args);
       if (receipt.sent !== true) throw new Error('unknown_outcome');
       pending = false; history.push(action.id);
+      nextObservation = reusableActionObservation(receipt, task.device, task.bundle_id);
     }
   } catch (error) {
     reason = signal.aborted ? 'cancelled'

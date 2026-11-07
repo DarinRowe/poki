@@ -51,8 +51,20 @@ const strokeChecks = {
     if (total > 60000) ctx.addIssue({ code: 'custom', path: ['strokes'], message: `The strokes together must last at most 60000 ms; these last ${total} ms.` });
   },
 };
+// Additive observation arguments: legacy clients retain their existing schema
+// behavior and the upstream stroke timing refinements are preserved.
+const actionObservationTools = new Set(['tap', 'double_tap', 'long_press', 'tap_text', 'swipe',
+  'drag', 'scroll', 'pinch', 'type_text', 'fill', 'press_key', 'press_button', 'go_back', 'handle_alert']);
 const schemaOf = tool => {
-  const schema = z.fromJSONSchema(tool.inputSchema);
+  const schemaWithObservations = actionObservationTools.has(tool.name)
+    ? { ...tool.inputSchema, properties: { ...tool.inputSchema.properties,
+      return_observation: { type: 'boolean', description: 'Request a ref-bearing post-input observation when available.' },
+      post_action_ocr: { type: 'boolean', description: 'Capture after stable AX and check image OCR prompts (default false).' } } }
+    : tool.name === 'observe_device'
+      ? { ...tool.inputSchema, properties: { ...tool.inputSchema.properties,
+        include_image: { type: 'boolean', description: 'Attach PNG (default true); false retains capture and prompt checks.' } } }
+      : tool.inputSchema;
+  const schema = z.fromJSONSchema(schemaWithObservations);
   return strokeChecks[tool.name] ? schema.superRefine(strokeChecks[tool.name]) : schema;
 };
 export const definitions = catalog.tools.map(tool => [tool.name, [tool.description, guidance[tool.name]].filter(Boolean).join('\n\n'), schemaOf(tool), readOnly.has(tool.name)]);

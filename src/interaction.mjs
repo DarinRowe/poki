@@ -222,12 +222,14 @@ export function describeScreen(seen, elements = seen.elements, source = 'accessi
 // read it, because OCR text alone cannot say whether anything moved. Over a slow connection one read
 // can take seconds, so the reads stop when another would not finish inside the caller's deadline, and
 // the last one is reported with screen_stable false rather than lost.
-export async function readScreen(ctx, { once = false, before, confirmation } = {}) {
+export async function readScreen(ctx, { once = false, before, confirmation, structured = false, structuredVisual = false } = {}) {
   await ctx.settle();
   const started = performance.now();
   const cost = () => ctx.readCost?.() ?? 0;
   // A batch that ends on a touch has just read the screen to see whether it changed.
   let seen = await readStructure(ctx, once ? 0 : justReadMs), stable = false;
+  // A delayed confirming read may be a new object yet represent the same stable AX tree.
+  let reuseStable = false;
   // A read that began before the last input shows the screen the input was sent to, never the current one.
   if (seen.startedAt < ctx.lastInputAt) seen = await readStructure(ctx, 0);
   const window = Math.max(stableWithinMs, 2 * cost() + pollMs);
@@ -239,15 +241,69 @@ export async function readScreen(ctx, { once = false, before, confirmation } = {
     seen = next;
     if (same) { stable = true; break; }
   }
+  reuseStable = stable;
   if (before !== undefined && seen.elements.length && seen.signature === before) {
     const confirmed = await confirmUnchanged(ctx, before, seen, confirmation);
-    if (confirmed !== seen) { seen = confirmed; stable = false; }
+    if (confirmed !== seen) {
+      // A later AX read with an unchanged signature can be reused; keep
+      // the original screen_stable reporting independent of this receipt gate.
+      reuseStable = confirmed.elements?.length > 0 && confirmed.signature === seen.signature &&
+        Number.isFinite(confirmed.startedAt) && confirmed.startedAt >= seen.startedAt;
+      seen = confirmed; stable = false;
+    }
   }
   const compared = seen.elements.length > 0;
   const elements = compared ? seen.elements : (await ctx.recognize({ source: 'ocr', max_elements: Number.MAX_SAFE_INTEGER })).elements;
+  let warning = promptWarning(elements);
+  let structuredObservation;
+  if (structured && reuseStable && compared && seen.structure_started_at && seen.structure_completed_at &&
+      Date.parse(seen.structure_started_at) >= Date.parse(ctx.lastInputCompletedAt) &&
+      seen.revision === ctx.coordinator.revision(seen.device) &&
+      ctx.size?.device === seen.device && elements.length <= 400) {
+    // A route may opt into image/OCR verification. The screenshot is taken
+    // AFTER the AX structure stabilizes; neither source is claimed atomic.
+    const axViewport = { ...ctx.size };
+    let frame;
+    if (structuredVisual) {
+      try { frame = await ctx.capture(); }
+      catch (error) { if (stopped(error)) throw error; }
+    }
+    const sameViewport = axViewport.device === frame?.device && axViewport.width === frame?.width && axViewport.height === frame?.height;
+    if (!structuredVisual || frame && frame.device === seen.device && sameViewport &&
+        (frame.revision === seen.revision || frame.revision === seen.revision + 1) &&
+        Date.parse(frame.capture_started_at) >= Date.parse(seen.structure_completed_at)) {
+      let prompt = { status: 'checked', source: 'accessibility', warning: warning ?? null };
+      if (structuredVisual) {
+        prompt.source = 'ocr';
+        try { prompt.warning ??= promptWarning(await ctx.ocr(frame)); }
+        catch (error) {
+          if (stopped(error)) throw error;
+          prompt = { status: 'unavailable', source: 'ocr' };
+        }
+      }
+      warning ??= prompt.warning;
+      const observation = ctx.observationFromStructure(seen, frame);
+      if (observation) {
+        ctx.elements = elements.map(element => ({ ...element, ref: `e${++ctx.nextRef}` }));
+        ctx.elementsAt = Date.now();
+        if (!frame) ctx.structureViewport = {
+          device: seen.device, revision: seen.revision,
+          width: observation.width, height: observation.height,
+          // If AX did not identify an unambiguous full-screen root,
+          // the next coordinate/ref action must capture to verify size.
+          rootVerified: seen.rootVerified === true,
+        };
+        structuredObservation = { observation, source: 'accessibility', foreground: seen.foreground,
+          elements: ctx.elements, total: ctx.elements.length, truncated: false, prompt };
+      }
+    }
+  }
   return {
     signature: compared ? seen.signature : undefined,
-    screen: { ...describeScreen(seen, elements, compared ? 'accessibility' : 'ocr'), ...(compared && !stable ? { screen_stable: false } : {}) },
+    ...(structuredObservation ? { structuredObservation } : {}),
+    screen: { ...describeScreen(seen, elements, compared ? 'accessibility' : 'ocr'),
+      ...(compared && !stable ? { screen_stable: false } : {}),
+      ...(warning ? { prompt: warning } : {}) },
   };
 }
 

@@ -6,7 +6,7 @@ import { matching, conditionsMatch, planSchema, selectorFor } from './fast/task.
 import { flagOn } from '../src/element-flags.mjs';
 import { learnReadout, readCurrent } from './readout.mjs';
 
-const observationTools = new Set(['observe_device', 'list_elements']);
+const observationTools = new Set(['observe_device', 'list_elements', 'post_action_observation']);
 const passiveTools = new Set(['poki_mcp_status', 'list_apps', 'get_foreground_app', 'take_screenshot', 'acquire_device', 'renew_device', 'release_device']);
 const label = e => e.label ?? e.text ?? '';
 const role = e => e.role ?? e.type;
