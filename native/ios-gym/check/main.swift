@@ -361,8 +361,10 @@ _ = await open("animation")
 scenario = "relaunch in wait_until"
 async let waiting: String = call("wait_until a text that never comes (8 s)", "do", ["actions": [["wait_until": ["text": "Never shown", "ms": 8000]]]], budget: 15)
 try? await Task.sleep(nanoseconds: 1_500_000_000)
-print(sh(["xcrun", "simctl", "terminate", udid, gymBundle]))
-print(sh(["xcrun", "simctl", "launch", udid, gymBundle]))
+// Off the main actor: simctl blocks for seconds under load, and the call's answer is delivered on
+// the main actor (that wait was charged to PokiCore as an 18 s gap it could not account for).
+let relaunchLog = await Task.detached { sh(["xcrun", "simctl", "terminate", udid, gymBundle]) + sh(["xcrun", "simctl", "launch", udid, gymBundle]) }.value
+print(relaunchLog)
 let waited = await waiting
 check(!waited.contains("HUNG"), "wait_until answers while the app relaunches under it")
 var relaunched = ""
@@ -566,7 +568,7 @@ check(!during.contains("HUNG"), "a look during a long do answers")
 // the runner is back.
 scenario = "runner killed"
 let runnerBundle = env["WDA_BUNDLE"] ?? "com.facebook.WebDriverAgentRunner.xctrunner"
-print(sh(["xcrun", "simctl", "terminate", udid, runnerBundle]))
+print(await Task.detached { sh(["xcrun", "simctl", "terminate", udid, runnerBundle]) }.value)
 try? await Task.sleep(nanoseconds: 1_500_000_000)
 let dead = await call("look with the runner dead", "look", budget: 30)
 check(!dead.contains("HUNG"), "a look with a dead runner answers")
