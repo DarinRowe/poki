@@ -33,6 +33,9 @@ result and the time next to each line.
 - [ ] Start pairing in Poki: the launcher emits `advertise`, and Poki appears in Settings' list of computers to pair with.
 - [ ] Pick it: a PIN appears in Poki's Live Activity; type it on the phone.
 - [ ] `paired` arrives with a path; the file is in the app's container (never print its contents).
+- [ ] Start pairing, then leave Settings without pairing: after 10 minutes Poki stops waiting (Try again
+  shows), the Live Activity ends, and Poki no longer keeps itself running. Switching to another tab, or
+  opening another Setup step, while pairing cancels it at once.
 - [ ] Older iOS, or if this fails: use a pairing file made on a Mac (RPPairing or lockdown plist) and note which kind worked.
 
 ## 3. Launcher

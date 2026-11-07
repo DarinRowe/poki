@@ -45,6 +45,8 @@ struct RootView: View {
         .onChange(of: scenePhase, initial: true) { _, phase in
             if phase == .active { model.becameActive() } else if phase == .background { model.wentToBackground() }
         }
-        .onOpenURL { _ in tab = .home }
+        // A tap on the Live Activity while pairing comes back to the pairing step, where the PIN is.
+        .onOpenURL { _ in if !model.pairingUnderWay { tab = .home } }
+        .onChange(of: tab) { old, _ in if old == .setup { model.leftPairing() } }
     }
 }

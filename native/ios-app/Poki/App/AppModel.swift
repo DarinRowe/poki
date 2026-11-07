@@ -70,10 +70,7 @@ final class AppModel {
 
     var connectionInUse: Bool {
         if sessionOn || sessionStarting { return true }
-        switch pairing {
-        case .advertising?, .pin?: return true
-        default: return false
-        }
+        return pairingUnderWay
     }
 
     var connectionMethod: SetupState.Loopback {
@@ -525,6 +522,23 @@ final class AppModel {
         pairingKeepAlive.stop()
         pairing = nil
         activity.update { $0.pin = nil }
+        if !sessionOn { stopGuide(); activity.end() }
+    }
+
+    /// Waiting for Settings or showing a PIN: the listener, Bonjour and the keep-alive are running.
+    var pairingUnderWay: Bool {
+        switch pairing {
+        case .advertising?, .pin?: true
+        default: false
+        }
+    }
+
+    /// The person left the pairing step in Poki (another tab, or another step): the pairing stops at
+    /// once, and with it the background keep-alive. Going to Settings is not leaving.
+    func leftPairing() {
+        guard pairingUnderWay else { return }
+        log.add("pairing", "cancelled: the pairing step was left")
+        cancelPairing()
     }
 
     private func pairingChanged(_ event: PairingEvent) {

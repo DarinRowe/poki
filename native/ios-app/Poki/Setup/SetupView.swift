@@ -17,6 +17,7 @@ struct SetupView: View {
                     Section {
                         StepHeader(number: index + 1, step: step, done: model.isDone(step), expanded: isOpen(step)) {
                             withAnimation(.snappy) { open = isOpen(step) ? .none : step }
+                            if !isOpen(.pairing) { model.leftPairing() }
                         }
                         if isOpen(step) { content(step) }
                     }
