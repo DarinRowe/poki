@@ -69,6 +69,12 @@ that no answer may halt the agent and from the first Poki Gym runs (`native/ios-
     twice is listed once, a tap on a container names its buttons, and a fresh launch survives an app
     that takes over 4 s to end.
 
+11. A wedged runner (an app whose main loop hangs holds WDA's whole queue while `/status` still
+    answers) is restarted by PokiCore on its own after a 15 s stall, and the next call says why; a
+    tree read that times out is read again at half depth within the same call; a WKWebView with
+    none of its page in the tree is listed as collapsed with the picture's text; `scroll_to` says
+    how far it got when its time runs out.
+
 Still not done: a `collect` or `expect` field, a `recover` action, and redaction of sensitive text
 (Zhehan: out of scope for now).
 
