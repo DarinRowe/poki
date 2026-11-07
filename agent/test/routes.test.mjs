@@ -112,3 +112,39 @@ test('A demonstrated Settings route replays from the top of Settings after the f
   assert.equal(outcome.status, 'success', outcome.handoff_reason);
   assert.deepEqual(result?.details, [{ label: '受信任证书存储区版本', value: '2026100900' }]);
 });
+
+test('A model run whose first batch missed a tap still teaches a route that replays from the top of Settings', async t => {
+  for (const run of recorded.explorations) await t.test(run.name, async t => {
+    const directory = await mkdtemp(join(tmpdir(), 'poki-route-exploration-'));
+    t.after(() => rm(directory, { recursive: true, force: true }));
+    const store = new RouteStore(directory);
+    assert.ok(await store.learn({ ...run, id: run.name, device: 'fixture-device', verify: async () => true }), 'Only the missed tap is dropped');
+    const { outcome, result } = await replay(store, run.prompt, settingsPhone({ edit: freeSpace }));
+    assert.equal(outcome.status, 'success', outcome.handoff_reason);
+    assert.equal(outcome.stats.model_calls, 0);
+    assert.deepEqual(result?.details, run.details);
+  });
+});
+
+test('A failed step is dropped only when the screen after it is the screen it failed on', async t => {
+  const run = recorded.explorations.find(run => run.name === 'iOS version, second run');
+  const scrolled = run.trace.findIndex(entry => entry.tool === 'scroll') + 1;
+  const stale = { tool: 'tap', args: { ref: 'e1', device: 'fixture-device' }, error: true,
+    result: 'Element ref is stale. Use tap_text with its label, or call list_elements again.' };
+  for (const { name, trace, learned } of [
+    { name: 'a stale tap that changed nothing', learned: true,
+      trace: [...run.trace.slice(0, scrolled + 1), stale, run.trace[scrolled], ...run.trace.slice(scrolled + 1)] },
+    { name: 'a failed scroll that still moved the page', learned: false,
+      trace: run.trace.map((entry, index) => index === scrolled - 1 ? { ...entry, error: true, result: 'The scroll could not be confirmed.' } : entry) },
+  ]) await t.test(name, async t => {
+    const directory = await mkdtemp(join(tmpdir(), 'poki-route-failed-step-'));
+    t.after(() => rm(directory, { recursive: true, force: true }));
+    const store = new RouteStore(directory);
+    const route = await store.learn({ ...run, trace, id: name, device: 'fixture-device', verify: async () => true });
+    assert.equal(Boolean(route), learned);
+    if (!learned) return;
+    const { outcome, result } = await replay(store, run.prompt, settingsPhone({ edit: freeSpace }));
+    assert.equal(outcome.status, 'success', outcome.handoff_reason);
+    assert.deepEqual(result?.details, run.details);
+  });
+});
