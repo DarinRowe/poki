@@ -1,6 +1,6 @@
 # Note for Joseph's agent: Poki on the iPhone, standalone (branch `dev/ios-standalone`)
 
-Written Nov 7 2026, 1:30 am ET, updated 6:55 am ET, for Joseph and the agent working for him. Zhehan is away and cannot
+Written Nov 7 2026, 1:30 am ET, updated 7:20 am ET, for Joseph and the agent working for him. Zhehan is away and cannot
 test further builds, so everything from this round is on this branch. It was developed on Zhehan's
 fork (ZhehanZhang/poki-remote) and consolidated here; nothing on `main` was changed and no PR is open.
 The companion branch `dev/mcp-agent-tools` carries the matching work on the Node MCP; its note is
@@ -49,12 +49,12 @@ All of it is new files under these paths, except a WebDriverAgent section in `TH
 
 | Path | What | Fork branch it came from (final commit) |
 |---|---|---|
-| `native/ios-app` | The app (0.2.4, build 57), including the Live Activity | `dev/ios-app` 6c1c32d, `dev/live-activity` 8654a1d |
+| `native/ios-app` | The app (0.2.4, build 59), including the Live Activity | `dev/ios-app` 7ae68b6, `dev/live-activity` 8654a1d |
 | `native/ios/PokiCore` | The on-phone MCP (`look`, `do`, `status`); its own note is `native/ios/PokiCore/NOTE-FOR-UPSTREAM.md` | `dev/ios-core` d109439 |
 | `native/launcher` | PokiLauncher (Rust, idevice): pairs, mounts the DDI, starts and supervises the runner | `dev/ios-core` 65f7595 |
 | `native/ios-runner` | WDA 16.15.3 submodule, branding, `PokiRunnerHost` | `dev/ios-runner` a3e80ea |
 | `deploy/cf-relay`, `native/ios/RelayCheck` | Workers relay and a client check | `dev/cf-relay` fb8876c |
-| `native/ios-gym` | Poki Gym: a simulator app with one screen per hard case for UI automation (animation that never idles, alerts, the paste prompt, long lists, sheets, late focus, dense and duplicated trees, a web view, a navigation stack), so look/do scenarios have a fixed target; `ios-gym.yml` builds it and its scorecard job runs PokiCore from the same branch through ten hard screens and three faults (all pass) | `dev/ios-gym` 5703dfb |
+| `native/ios-gym` | Poki Gym: a simulator app with one screen per hard case for UI automation (animation that never idles, alerts, the paste prompt, long lists, sheets, late focus, dense and duplicated trees, a web view, a navigation stack), so look/do scenarios have a fixed target; `ios-gym.yml` builds it and its scorecard job runs PokiCore from the same branch through ten hard screens and three faults (all pass) | `dev/ios-gym` 943c4ab |
 | `docs/research-ax-tree-reliability.md` | What bounds accessibility tree reads under animation, and the options | `dev/ios-app` |
 | `deploy/proxy-modules` | Loopback modules for Surge, Loon, sing-box, Shadowrocket | `dev/ios-app` |
 | `docs/ios-core.md`, `docs/device-test-checklist.md`, `docs/production-bar.md`, `docs/release-review.md`, `CHANGELOG.md` | Spec, phone checklist, release notes | |
