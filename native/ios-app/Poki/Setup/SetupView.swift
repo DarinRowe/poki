@@ -155,7 +155,7 @@ extension SetupStep {
         switch self {
         case .runner: "The helper app that taps and types for your agent. Poki starts it; you never open it."
         case .developerMode: "Allows this iPhone to run Poki Runner."
-        case .loopback: "Allows Poki to reach this iPhone’s developer services, with its built-in connection or your proxy app."
+        case .loopback: "Allows Poki to reach this iPhone’s developer services through your proxy app."
         case .pairing: "Gives Poki its own key to this iPhone. The key stays on this device."
         case .automation: "Allows Poki Runner to control other apps."
         case .background: "Keeps Poki connected in the background and shows its activity on the Lock Screen."
@@ -268,6 +268,7 @@ private struct NoteLine: View {
 private struct LoopbackPage: View {
     @Environment(AppModel.self) private var model
     @State private var open: String?
+    @State private var otherOpen = false
     @State private var copied = false
 
     var body: some View {
@@ -289,83 +290,81 @@ private struct LoopbackPage: View {
         .padding(.horizontal, 20).padding(.top, 20)
         .accessibilityElement(children: .combine)
 
-        connectionChoice
-        if model.connectionMethod == .proxy || !model.tunnel.available {
-            SectionCaption(text: "USE YOUR PROXY APP")
-            VStack(alignment: .leading, spacing: 0) {
-                Text("Keep your existing VPN connected. Poki uses its loopback and leaves its own VPN off.")
-                    .site(15, line: 20).fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 16).padding(.top, 13).padding(.bottom, 4)
-                GlassActionRow(title: "Use the Current VPN", chevron: false, divider: false) { model.chooseConnection(.proxy) }
-                    .disabled(connectionLocked)
-            }
-            .glassCard()
-            .padding(.horizontal, 20).padding(.bottom, 12)
-            VStack(spacing: 0) {
-                ForEach(ProxyApps.all) { app in proxyRow(app) }
-                localDevVPN
-            }
-            .whiteCard()
-            .padding(.horizontal, 20)
-            .disabled(connectionLocked)
-        } else {
-            builtIn
+        // The external app is the way (ESP-168): its list is always shown and always open to read.
+        // The built-in connection is kept, folded under Other Ways at the bottom.
+        SectionCaption(text: "USE YOUR PROXY APP")
+        VStack(spacing: 0) {
+            ForEach(ProxyApps.all) { app in proxyRow(app) }
+            localDevVPN
         }
-        if model.connectionInUse {
-            SetupFootnote(text: "Stop Poki and finish pairing before changing the local connection.")
+        .whiteCard()
+        .padding(.horizontal, 20)
+        .disabled(externalLocked)
+        otherWays
+        Color.clear.frame(height: 0).onAppear {
+            if open == nil { open = model.setup.proxyApp }
+            if model.setup.loopback == .builtIn { otherOpen = true }
         }
-        Color.clear.frame(height: 0).onAppear { if open == nil { open = model.setup.proxyApp } }
     }
 
     /// The connection cannot change while Poki is on or pairing, or while the tunnel is changing.
     private var connectionLocked: Bool { model.connectionInUse || model.tunnel.busy }
+    /// Reading and following an app's steps is always fine; only moving off a built-in connection that
+    /// Poki is using waits.
+    private var externalLocked: Bool { model.setup.loopback == .builtIn && connectionLocked }
 
-    /// Built-in or the person's own VPN app. A build without the tunnel extension only has the latter.
-    @ViewBuilder private var connectionChoice: some View {
-        if model.tunnel.available {
-            SectionCaption(text: "LOCAL CONNECTION")
-            VStack(spacing: 0) {
-                choiceRow("Built-in", sub: "No extra app", method: .builtIn, divider: true)
-                choiceRow("External App", sub: "Your proxy app or LocalDevVPN", method: .proxy, divider: false)
-            }
-            .glassCard()
-            .padding(.horizontal, 20)
-            .disabled(connectionLocked)
-        } else {
-            #if targetEnvironment(simulator)
-            SetupFootnote(text: "The built-in connection runs on a physical iPhone. External connection options are shown below.")
-            #else
-            SetupFootnote(text: "This build uses an external connection. For the built-in connection, install the local-VPN build with signing that supports Network Extensions.")
-            #endif
-        }
-    }
-
-    private func choiceRow(_ title: LocalizedStringKey, sub: LocalizedStringKey, method: SetupState.Loopback, divider: Bool) -> some View {
-        Button { model.chooseConnection(method) } label: {
-            HStack(spacing: 10) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(title).site(17, line: 22)
-                    Text(sub).site(13, line: 16).foregroundStyle(Site.c3)
+    /// Other Ways: the built-in connection, folded.
+    @ViewBuilder private var otherWays: some View {
+        SectionCaption(text: "OTHER WAYS")
+        VStack(spacing: 0) {
+            Button { withAnimation(.snappy) { otherOpen.toggle() } } label: {
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Built-in").site(17, line: 22)
+                        Text("No extra app").site(13, line: 16).foregroundStyle(Site.c3)
+                    }
+                    Spacer(minLength: 0)
+                    if model.setup.loopback == .builtIn {
+                        Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold))
+                    }
+                    Text(verbatim: otherOpen ? "⌄" : "›").site(17, line: 22).foregroundStyle(Site.c4)
                 }
-                Spacer(minLength: 0)
-                if model.connectionMethod == method {
-                    Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold))
+                .padding(.vertical, 11).padding(.horizontal, 16).contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityValue(otherOpen ? Text("Expanded") : Text("Collapsed"))
+            if otherOpen {
+                Site.edge.frame(height: 1)
+                if model.tunnel.available {
+                    builtIn
+                    if model.setup.loopback == .builtIn {
+                        GlassActionRow(title: "Use the Current VPN", chevron: false, divider: false) { model.chooseConnection(.proxy) }
+                            .disabled(connectionLocked)
+                    }
+                } else {
+                    #if targetEnvironment(simulator)
+                    NoteLine(symbol: "info.circle", text: String(localized: "The built-in connection runs on a physical iPhone. Use your proxy app above."))
+                        .padding(.horizontal, 16).padding(.vertical, 13)
+                    #else
+                    NoteLine(symbol: "info.circle", text: String(localized: "This build uses an external connection. For the built-in connection, install the local-VPN build with signing that supports Network Extensions."))
+                        .padding(.horizontal, 16).padding(.vertical, 13)
+                    #endif
                 }
             }
-            .padding(.vertical, 11).padding(.horizontal, 16).contentShape(.rect)
         }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(model.connectionMethod == method ? .isSelected : [])
-        .overlay(alignment: .bottom) { if divider { Site.edge.frame(height: 1) } }
+        .glassCard()
+        .padding(.horizontal, 20)
+        if otherOpen, model.connectionInUse, model.tunnel.available {
+            SetupFootnote(text: "Stop Poki and finish pairing before changing the local connection.")
+        }
     }
 
     @ViewBuilder private var builtIn: some View {
-        SectionCaption(text: "BUILT-IN CONNECTION")
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 8) {
                 Text("No extra app needed. Poki connects only to this iPhone; your normal internet traffic and DNS stay on their usual routes.")
                     .site(15, line: 20).fixedSize(horizontal: false, vertical: true)
-                Text("iOS shows this as a VPN. Enabling it may disconnect another VPN app. To keep a compatible VPN, choose External App instead.")
+                Text("iOS shows this as a VPN. Enabling it may disconnect another VPN app. To keep a compatible VPN, use your proxy app above instead.")
                     .site(13, line: 18).foregroundStyle(Site.c3).fixedSize(horizontal: false, vertical: true)
                 switch model.tunnel.state {
                 case .connecting: NoteLine(symbol: "hourglass", text: String(localized: "Connecting to this iPhone…"))
@@ -388,8 +387,6 @@ private struct LoopbackPage: View {
             case .disconnecting, .unavailable: EmptyView()
             }
         }
-        .glassCard()
-        .padding(.horizontal, 20)
     }
 
     /// Also while Poki is on with the built-in connection: reconnecting it is how the owner recovers

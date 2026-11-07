@@ -77,7 +77,8 @@ final class AppModel {
 
     var connectionMethod: SetupState.Loopback {
         if setup.loopback != .none { return setup.loopback }
-        return ProxyApps.all.contains(where: \.isInstalled) ? .proxy : .builtIn
+        // The external app is the way (ESP-168); the built-in connection is only ever chosen.
+        return .proxy
     }
 
     init() {

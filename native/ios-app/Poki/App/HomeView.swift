@@ -363,6 +363,22 @@ private struct StandingBy: View {
 
             HealthCard(issues: issues, openSetup: openSetup).padding(.horizontal, 16).padding(.top, 24)
 
+            // Setup is always one tap away, on or off (ESP-168: with Poki off there was no way back
+            // into it from Home; the board does not draw this row).
+            Button(action: openSetup) {
+                let done = SetupStep.allCases.filter(model.isDone).count
+                let total = SetupStep.allCases.count
+                HStack {
+                    Text("Setup").site(15, line: 18)
+                    Spacer(minLength: 8)
+                    Text("\(done) of \(total)").site(15, line: 18).foregroundStyle(done == total ? Site.ok : Site.c4).monospacedDigit()
+                    Text(verbatim: "›").site(15, line: 18).foregroundStyle(Site.c4)
+                }
+                .padding(.horizontal, 16).frame(height: 44).glassCard(14).contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 16).padding(.top, 16)
+
             if let last = model.recentSteps.last {
                 NavigationLink(value: HomeRoute.steps) {
                     HStack {
@@ -378,7 +394,7 @@ private struct StandingBy: View {
                     .padding(.horizontal, 16).frame(height: 44).glassCard(14).contentShape(.rect)
                 }
                 .buttonStyle(.plain)
-                .padding(.horizontal, 16).padding(.top, 16)
+                .padding(.horizontal, 16).padding(.top, 10)
             }
             Spacer(minLength: 24)
         }
