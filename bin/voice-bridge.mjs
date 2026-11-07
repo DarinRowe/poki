@@ -12,7 +12,6 @@
 //                target}, the element it would tap and the app in front. The phone checks that with Poki's
 //                approval rules (PokiCore), asks the owner when they say so, and sends the same call again
 //                with checked: {app, text}; only then is the element tapped, matched exactly, in that app.
-//   GET  ledger  the calls this bridge ran, newest last, so a reconnecting phone can say what already happened
 // With --test-dir <dir> (test runs of the app, poki://voice?test=1-20):
 //   GET  utterance?n=01  recorded speech <dir>/u01.24k.pcm (24 kHz mono PCM16)
 //   POST report          one finished test turn, appended to voice-test-report.jsonl in the state directory
@@ -136,6 +135,7 @@ async function bridgeSecret() {
   return { secret, file };
 }
 
+// voice-ledger.jsonl: what ran, for the person reading it later. The phone keeps its own record of calls.
 const ledgerFile = join(stateDir, 'voice-ledger.jsonl');
 const ledger = new Map();   // call_id → { entry, done: Promise }
 
@@ -232,9 +232,6 @@ const server = http.createServer(async (req, res) => {
       await appendFile(join(stateDir, 'voice-test-report.jsonl'), JSON.stringify({ at: new Date().toISOString(), ...turn }) + '\n', { mode: 0o600 });
       console.log(JSON.stringify({ event: 'test-turn', n: turn.n, ok: turn.ok, calls: turn.calls, ms: turn.ms }));
       return reply(200, {});
-    }
-    if (req.method === 'GET' && action === 'ledger') {
-      return reply(200, { calls: [...ledger.values()].map(({ entry }) => ({ call_id: entry.call_id, name: entry.name, args: entry.args, state: entry.state, output: entry.output && clip(entry.output, 300) })) });
     }
     return reply(404, { error: 'not found' });
   } catch (error) {
