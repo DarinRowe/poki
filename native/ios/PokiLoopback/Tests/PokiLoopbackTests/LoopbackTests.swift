@@ -1,4 +1,5 @@
 import Foundation
+import NetworkExtension
 import XCTest
 @testable import PokiLoopback
 
@@ -61,3 +62,14 @@ extension LoopbackTests {
     }
 }
 #endif
+
+/// GitHub issue 44: the app dials the tunnel again after it drops, but not after the owner turned it off
+/// in Settings, or after another VPN took the single packet tunnel.
+final class TunnelStopTests: XCTestCase {
+    func testOnlyAnEndByTheOwnerOrAnotherVPNLeavesTheTunnelDown() {
+        let leftDown: [NEProviderStopReason] = [.userInitiated, .superceded, .providerDisabled, .configurationDisabled, .configurationRemoved, .authenticationCanceled, .userLogout, .userSwitch]
+        let failures: [NEProviderStopReason] = [.none, .providerFailed, .noNetworkAvailable, .unrecoverableNetworkChange, .connectionFailed, .idleTimeout, .sleep, .configurationFailed, .appUpdate]
+        for reason in leftDown { XCTAssertTrue(TunnelStop.isOnPurpose(reason), "\(reason.rawValue)") }
+        for reason in failures { XCTAssertFalse(TunnelStop.isOnPurpose(reason), "\(reason.rawValue)") }
+    }
+}
