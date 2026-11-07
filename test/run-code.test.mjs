@@ -87,6 +87,7 @@ test('run_code times out, cancels the in-flight device call, and the daemon serv
   assert.equal(result.isError, true);
   const summary = summaryOf(result);
   assert.equal(summary.stop_reason, 'timeout');
+  assert.deepEqual(summary.calls.map(call => [call.tool, call.interrupted]), [['get_foreground_app', true]], 'the report names the call the timeout cut off');
   assert.equal((await f.events()).filter(event => event.op === 'ax_tree').length, 1, 'the blocked read must not be retried');
   await f.set({});
   assert.equal(value(await other.callTool({ name: 'wait', arguments: { seconds: 0 } })).waited, 0, 'the device must be free for the next session');
