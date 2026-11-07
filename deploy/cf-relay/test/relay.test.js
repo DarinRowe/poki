@@ -174,6 +174,17 @@ describe('OAuth and MCP', () => {
     expect((await limited.json()).error.code).toBe(-32003);
   });
 
+  it('a phone that drops after it got the request is not reported as offline, since the request may have run', async () => {
+    let p;
+    const c = await connected(async () => { p.ws.close(1011, 'dropped'); return undefined; });
+    p = c.p;
+    const dropped = await call(c.mcp, c.token, { jsonrpc: '2.0', id: 'd', method: 'tools/call', params: { name: 'do' } });
+    expect(dropped.status).toBe(502);
+    const body = await dropped.json();
+    expect(body).toMatchObject({ jsonrpc: '2.0', id: 'd', error: { code: -32004 } });
+    expect(body.error.message).toMatch(/may have run/);
+  });
+
   it('the access list can change on the live connection', async () => {
     const c = await connected();
     c.p.ws.send(JSON.stringify({ t: 'access', access: [] }));

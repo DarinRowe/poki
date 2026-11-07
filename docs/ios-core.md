@@ -86,6 +86,7 @@ reconnects with backoff (1, 2, 4 … 30 s, jittered) when no `pong` arrives for 
 |---|---|
 | Unknown label, or secret hash not in `access` (indistinguishable) | 404 `{"error":"not found"}` |
 | Phone not connected | 503 with a JSON-RPC error body: `{"jsonrpc":"2.0","id":<request id or null>,"error":{"code":-32001,"message":"The phone is offline: open Poki on the phone, or check its network."}}` |
+| The phone disconnects after the `req` was sent, before its `res` | 502 with the same JSON-RPC shape, code -32004. The request may have run on the phone, so the client should look before it retries. |
 | No `res` within `req_timeout_ms` | 504 with the same JSON-RPC shape, code -32002 |
 | Rate limit | 429 with the JSON-RPC shape, code -32003 |
 | Body over `max_body` | 413 |

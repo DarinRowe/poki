@@ -88,6 +88,7 @@ var notFound = /* @__PURE__ */ __name(() => json(404, { error: "not found" }), "
 var oauthError = /* @__PURE__ */ __name((status, error, description) => json(status, { error, ...description ? { error_description: description } : {} }), "oauthError");
 var RPC_ERRORS = {
   offline: [503, -32001, "The phone is offline: open Poki on the phone, or check its network."],
+  dropped: [502, -32004, "The phone disconnected after it received the request, so the request may have run. Call look before trying again."],
   timeout: [504, -32002, "The phone did not answer in time."],
   limited: [429, -32003, "Too many requests: wait a little and try again."]
 };
@@ -368,7 +369,7 @@ var DeviceRelay = class extends DurableObject {
     }
   }
   webSocketClose(ws) {
-    for (const [id, waiter] of this.pending) if (waiter.ws === ws) waiter.resolve(void 0);
+    for (const [id, waiter] of this.pending) if (waiter.ws === ws) waiter.resolve("dropped");
   }
   webSocketError(ws) {
     this.webSocketClose(ws);
@@ -430,6 +431,7 @@ var DeviceRelay = class extends DurableObject {
       return rpcError("timeout", body);
     }
     if (reply === "cancelled") return new Response(null, { status: 499 });
+    if (reply === "dropped") return rpcError("dropped", body);
     if (!reply) return rpcError("offline", body);
     const out = { ...CORS };
     for (const name of RETURNED_HEADERS) if (typeof reply.headers?.[name] === "string") out[name] = reply.headers[name];
