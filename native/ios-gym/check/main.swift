@@ -477,7 +477,19 @@ if ref(in: a, "Address") == nil { a = await call("look (full) for the address ba
 if let address = ref(in: a, "Address") {
     // With the scheme, Safari's first suggestion is the site itself (a bare host's first suggestion
     // is a Google search on this runtime, and Go did not load it on 3 of 4 runs).
-    let opened = await call("type a URL and return", "do", ["actions": [["type": "https://example.com/", "ref": .number(Double(address))], ["key": "return"], ["wait_until": ["text": "Example Domain", "ms": 12000]]]], budget: 25)
+    var opened = await call("type a URL and return", "do", ["actions": [["type": "https://example.com/", "ref": .number(Double(address))], ["key": "return"], ["wait_until": ["text": "Example Domain", "ms": 12000]]]], budget: 25)
+    // A busy runner answers not_sent and says to send the type again; Safari's first-use sheet
+    // ("Safari search now shows personalized suggestions", Continue) can come up over the keyboard.
+    for i in 1...2 where opened.contains("not_sent") || ref(in: opened, "Continue", type: "Button") != nil {
+        if let cont = ref(in: opened, "Continue", type: "Button") {
+            opened = await call("tap Continue on Safari's first-use sheet", "do", ["actions": [["tap": .number(Double(cont))]]])
+        }
+        if opened.contains("not_sent") || ref(in: opened, "Example Domain") == nil {
+            opened = await awaitRunner(opened)
+            let field = ref(in: opened, "Address") ?? address
+            opened = await call("type a URL and return (again, \(i))", "do", ["actions": [["type": "https://example.com/", "ref": .number(Double(field)), "clear": true], ["key": "return"], ["wait_until": ["text": "Example Domain", "ms": 12000]]]], budget: 25)
+        }
+    }
     // The page's title as an element (not the wait_until's wording); when the return key did not
     // submit (seen once: the suggestions stayed), the suggestion row with the URL is tapped.
     var loaded = ref(in: opened, "Example Domain") != nil ? opened : await call("look at the page", "look")
