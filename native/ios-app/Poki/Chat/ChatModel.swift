@@ -52,6 +52,10 @@ final class ChatModel {
     /// The model's side of the conversation: pi's loop (ESP-177), or for Anthropic and OpenAI, unless
     /// `-chatEngine pi`, the provider's own API in its own form.
     private var loop: PiLoop?
+    /// For the log's line at the end of each task: when it began, the tool calls, finish_task's verdict.
+    private var taskStart = Date()
+    private var toolCalls = 0
+    private var finished: Bool?
     private var client: ModelClient?
     /// The plan the model published with report_plan; the bubble shows its steps up to the current one.
     private var modelPlan: [String]?
@@ -108,8 +112,10 @@ final class ChatModel {
             }
             guard let client else { return }
             client.say(text)
+            began("direct", provider, model)
             task = Task { [weak self] in
                 await self?.run(client, delivered: you.id)
+                self?.logEnd("direct", outcome: nil)
                 self?.running = false
             }
             return
@@ -128,12 +134,14 @@ final class ChatModel {
             }
         }
         guard let loop else { return }
+        began("pi", provider, model)
         task = Task { [weak self] in
             let outcome = await loop.run(text, maxTurns: Self.maxTurns) { text in
                 self?.markDelivered(you.id)
                 self?.add(.poki(text))
             }
             self?.ended(outcome, delivered: you.id)
+            self?.logEnd("pi", outcome: outcome)
             self?.running = false
         }
     }
@@ -141,6 +149,18 @@ final class ChatModel {
     /// Anthropic and OpenAI keep their own APIs, the phone acceptance path, until pi has run with their
     /// keys; `-chatEngine pi` sends them through pi too. ChatGPT, DeepSeek and Gemini always run on pi.
     private static var direct: Bool { UserDefaults.standard.string(forKey: "chatEngine") != "pi" }
+
+    private func began(_ engine: String, _ provider: ModelProvider, _ model: String) {
+        taskStart = Date(); toolCalls = 0; finished = nil
+        AppLog.shared.add("chat", "task started: \(engine), \(provider.rawValue)/\(model)")
+    }
+
+    private func logEnd(_ engine: String, outcome: PiLoop.Outcome?) {
+        let seconds = String(format: "%.1f", Date().timeIntervalSince(taskStart))
+        let verdict = finished.map { $0 ? "success" : "failure" } ?? "not called"
+        let ending = outcome.map { if case .failed = $0 { "failed" } else { "\($0)" } } ?? (stopAsked ? "stopped" : "ended")
+        AppLog.shared.add("chat", "task ended: \(engine), \(ending) after \(seconds) s, \(toolCalls) tool calls, finish_task \(verdict)")
+    }
 
     private func ended(_ outcome: PiLoop.Outcome, delivered youID: UUID) {
         finishPlan()
@@ -205,6 +225,7 @@ final class ChatModel {
 
     /// The phone's tools go to PokiCore; the harness's two are answered here, as task-runner.mjs answers them.
     private func perform(_ call: ToolCall) async -> PokiCore.ToolAnswer {
+        toolCalls += 1
         let args = (call.arguments.data(using: .utf8).flatMap { try? JSONSerialization.jsonObject(with: $0) }) as? [String: Any] ?? [:]
         switch call.name {
         case "report_plan":
@@ -217,6 +238,7 @@ final class ChatModel {
             guard let success = args["success"] as? Bool, args["summary"] is String else {
                 return PokiCore.ToolAnswer(text: Harness.invalidResult, jpeg: nil, isError: true)
             }
+            finished = success
             updatePlan { steps in
                 for i in steps.indices where steps[i].state == .current || steps[i].state == .waiting { steps[i].state = success ? .done : .failed }
             }
