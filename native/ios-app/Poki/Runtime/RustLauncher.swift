@@ -86,7 +86,10 @@ final class RustPairing: NSObject, DevicePairing, NetServiceDelegate {
 
     private func publish(_ value: [String: Any]) {
         unpublish()
-        guard let type = value["service_type"] as? String, let instance = value["instance"] as? String, let port = value["port"] as? Int else { return }
+        guard let type = value["service_type"] as? String, let instance = value["instance"] as? String, let port = value["port"] as? Int else {
+            Task { @MainActor in AppLog.shared.add("pairing", "Bonjour advertisement is missing required fields") }
+            return
+        }
         let service = NetService(domain: "local.", type: type.hasSuffix(".") ? type : type + ".", name: instance, port: Int32(port))
         if let txt = value["txt"] as? [String: Any] {
             service.setTXTRecord(NetService.data(fromTXTRecord: txt.mapValues { Data(String(describing: $0).utf8) }))
@@ -94,9 +97,20 @@ final class RustPairing: NSObject, DevicePairing, NetServiceDelegate {
         service.delegate = self
         service.publish()
         self.service = service
+        Task { @MainActor in AppLog.shared.add("pairing", "Bonjour publication requested") }
     }
 
     private func unpublish() { service?.stop(); service = nil }
+
+    func netServiceDidPublish(_ sender: NetService) {
+        Task { @MainActor in AppLog.shared.add("pairing", "Bonjour publication succeeded") }
+    }
+
+    func netService(_ sender: NetService, didNotPublish errorDict: [String: NSNumber]) {
+        let code = errorDict[NetService.errorCode]?.intValue ?? 0
+        let domain = errorDict[NetService.errorDomain]?.intValue ?? 0
+        Task { @MainActor in AppLog.shared.add("pairing", "Bonjour publication failed (domain \(domain), code \(code))") }
+    }
 }
 
 extension RustLauncher {

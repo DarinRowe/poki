@@ -61,6 +61,7 @@ final class AppModel {
     private let core: LiveCore
     private let launcher: RunnerLauncher
     private let pairer: DevicePairing
+    private let pairingKeepAlive = KeepAlive()
     private let activity = ActivityController()
     let log = AppLog.shared
     private var eventsTask: Task<Void, Never>?
@@ -510,13 +511,21 @@ final class AppModel {
         activity.start(deviceName: deviceName)
         activity.update { $0.phase = .pairing; $0.pin = nil; $0.headline = "Pair in Settings" }
         do {
+            // The person completes pairing in Settings. Keep the listener and Bonjour publication
+            // alive there, before a regular Poki session can be started.
+            try pairingKeepAlive.start()
             try pairer.start(hostName: "Poki", saveTo: AppFiles.pairingFile) { [weak self] event in
                 Task { @MainActor in self?.pairingChanged(event) }
             }
-        } catch { pairing = .failed("\(error)") }
+        } catch { pairingChanged(.failed("\(error)")) }
     }
 
-    func cancelPairing() { pairer.cancel(); pairing = nil; activity.update { $0.pin = nil } }
+    func cancelPairing() {
+        pairer.cancel()
+        pairingKeepAlive.stop()
+        pairing = nil
+        activity.update { $0.pin = nil }
+    }
 
     private func pairingChanged(_ event: PairingEvent) {
         pairing = event
@@ -526,6 +535,7 @@ final class AppModel {
             activity.start(deviceName: deviceName)
             activity.update { $0.phase = .pairing; $0.pin = pin; $0.headline = "Pairing code" }
         case .paired(let url):
+            pairingKeepAlive.stop()
             try? (url as NSURL).setResourceValue(URLFileProtection.completeUntilFirstUserAuthentication, forKey: .fileProtectionKey)
             setup.pairingFile = url.path
             pairingTrouble = nil; pairingVerifiedAt = nil
@@ -533,6 +543,7 @@ final class AppModel {
             activity.update { $0.phase = .idle; $0.pin = nil; $0.headline = "Paired" }
             if !sessionOn { Task { try? await Task.sleep(for: .seconds(4)); if !self.sessionOn { self.activity.end() } } }
         case .failed(let why):
+            pairingKeepAlive.stop()
             activity.update { $0.phase = .problem; $0.pin = nil; $0.headline = "Pairing failed: \(why)" }
             if !sessionOn { Task { try? await Task.sleep(for: .seconds(8)); if !self.sessionOn { self.activity.end() } } }
         case .advertising: break
