@@ -70,9 +70,10 @@ async function phone(directory, stack) {
   return { calls, stack, close: () => { server.closeAllConnections(); return new Promise(done => server.close(done)); } };
 }
 
-for (const { name, stack } of [
+for (const { name, stack, handoff } of [
   { name: 'A taught route runs from the poki entry with no model access', stack: ['Home'] },
   { name: 'A taught route returns to its start page when the phone was left on another page', stack: ['Home', 'Other'] },
+  { name: 'A taught route that cannot reach its start fails at once when no model is available', stack: ['Other'], handoff: true },
 ]) test(name, { timeout: 20000 }, async t => {
   const directory = await mkdtemp(join(tmpdir(), 'poki-taught-route-'));
   const device = await phone(join(directory, 'mcp'), [...stack]);
@@ -87,6 +88,14 @@ for (const { name, stack } of [
   child.stdout.on('data', data => { output += data; }); child.stderr.on('data', data => { output += data; });
   const [code] = await once(child, 'close');
   const [record] = await Promise.all((await readdir(join(directory, 'state', 'tasks'))).map(async file => JSON.parse(await readFile(join(directory, 'state', 'tasks', file), 'utf8'))));
+  if (handoff) {
+    assert.equal(code, 1, output);
+    assert.equal(record.failure.code, 'model_setup', record.result);
+    assert.equal(record.execution.recovery.reason, 'step_precondition_failed');
+    assert.match(record.result, /OPENAI_API_KEY|poki login/);
+    assert.deepEqual(device.stack, ['Other'], 'No route action runs from a page it was not taught on');
+    return;
+  }
   assert.equal(code, 0, output);
   assert.equal(record.phase, 'completed', record.result);
   assert.equal(record.execution.mode, 'route');
