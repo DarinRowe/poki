@@ -53,6 +53,8 @@ Answer each one exactly once:
 1. In Poki, the user taps **Add connector** and copies the URL.
 2. In claude.ai: Settings → Connectors → Add custom connector, paste the URL, Connect. ChatGPT works the same way in developer mode.
 3. The client runs OAuth on its own: it discovers the metadata, registers itself and opens the authorize page. The relay asks the connected phone whether it knows this secret and grants at once. There is no password and no page to click through, because the URL itself is the credential. The phone must be online, otherwise the page says so.
+   Clients differ in what they register, so the relay accepts a callback on any https host (and on http only for localhost, 127.0.0.1 and [::1]). The user never sees an approval page or a consent step: pasting the URL is the whole authorization, and the phone checks it silently. If registration answers 400 `invalid_redirect_uri` with a description starting `callback address not allowed`, the client sent a callback the relay refuses ([DEPLOY.md](DEPLOY.md#oauth-design) lists the rules, including the optional `REDIRECT_HOSTS` list).
+   The relay supports Streamable HTTP only. A client that probes for SSE with `GET` on the MCP URL gets 405 from the phone, and a client that follows the spec then falls back to `POST`. Do not answer that `GET` with a stream.
 4. The client now calls tools, and each call arrives at the phone as a `req`. To disconnect a client, the user revokes its secret in Poki.
 
 Approving each new client on the phone, with a prompt that names the client, would need a v2 frame pair. [APPROVAL-v2.md](APPROVAL-v2.md) has the proposal.

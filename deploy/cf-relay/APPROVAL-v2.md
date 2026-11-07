@@ -26,7 +26,7 @@ The phone answers once:
 {"t":"approval","id":"a7","approved":true,"remember":true}
 ```
 
-- `client_name` comes from dynamic client registration and is untrusted text. The phone shows it next to `redirect_host`, which the relay has already checked against `REDIRECT_HOSTS`, and treats the host as the real identity.
+- `client_name` comes from dynamic client registration and is untrusted text. The phone shows it next to `redirect_host`, which the relay has already checked is https or loopback http (and on `REDIRECT_HOSTS` when the operator sets it), and treats the host as the real identity.
 - `remember: true` means the phone records the client fingerprint for that secret and answers later requests from the same client without asking. It also adds the fingerprint to the next `access` frame, as `clients: {"<secret hash>": ["<fp>", ...]}`. The relay then checks the fingerprint on every MCP request, as it already does for secret hashes. Revoking a client is then a phone-side edit, the same as revoking a secret.
 - Timeout: the relay holds the authorize request for up to 90 s. On timeout, a deny, or the phone disconnecting, the relay redirects with `error=access_denied`. A pending approval counts toward `CONCURRENT`.
 - The relay sends at most 3 open `approve` frames per label, and at most 10 a minute. Past that, the answer is `access_denied` without asking, so an outsider cannot flood the phone with prompts.

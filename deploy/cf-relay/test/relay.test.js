@@ -135,7 +135,7 @@ describe('OAuth and MCP', () => {
     const again = await signIn(c.id.label, c.secret);
     const code = new URL(again.authorized.headers.get('Location')).searchParams.get('code');
     expect((await tokens(again.as, again.client, b64u(crypto.getRandomValues(new Uint8Array(32))), code)).status).toBe(400);
-    const foreign = await SELF.fetch(again.as.registration_endpoint, { method: 'POST', body: JSON.stringify({ redirect_uris: ['https://evil.example/cb'] }) });
+    const foreign = await SELF.fetch(`${again.as.authorization_endpoint}?${new URLSearchParams({ response_type: 'code', client_id: c.client.client_id, redirect_uri: 'https://evil.example/cb', code_challenge: 'x'.repeat(43), code_challenge_method: 'S256' })}`, { redirect: 'manual' });
     expect(foreign.status).toBe(400);
     const otherSecret = newSecret();
     const elsewhere = c.mcp.replace(c.secret, otherSecret);
