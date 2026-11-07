@@ -165,20 +165,6 @@ struct SiteToggleStyle: ToggleStyle {
     }
 }
 
-/// The 36 pt glass circle with the gear in the top right of Home.
-struct GearButton: View {
-    var action: () -> Void
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: "gearshape").font(.system(size: 17, weight: .medium)).foregroundStyle(.white)
-                .frame(width: 36, height: 36)
-                .glassCard(18)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(Text("Settings"))
-    }
-}
-
 /// The bear, round.
 struct BearAvatar: View {
     var size: CGFloat

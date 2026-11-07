@@ -171,6 +171,18 @@ final class ApprovalTests: XCTestCase {
         XCTAssertTrue(third.text.contains("approval_required"), third.text)
     }
 
+    /// The chat's model loop in the app calls the tools with JSON text through `callTool`; a deletion
+    /// still waits for the owner and taps nothing.
+    func testTheInAppChatPathWaitsForTheOwnerToo() async {
+        let (core, wda, _) = makeCore(screenWithDelete())
+        _ = await core.callTool("look", arguments: "{}")
+        let result = await core.callTool("do", arguments: #"{"actions":[{"tap":1}]}"#)
+        XCTAssertTrue(result.isError)
+        XCTAssertTrue(result.text.contains("approval_required"), result.text)
+        XCTAssertTrue(wda.bodies("POST /wda/tap").isEmpty)
+        XCTAssertEqual(core.pendingApproval?.reason, "deleting (\"delete\")")
+    }
+
     func testApprovalDuringTheWaitRunsTheActionsInTheSameCall() async {
         let (core, wda, _) = makeCore(screenWithDelete()) { $0.approvalWait = 2 }
         _ = await core.call("look", [:])

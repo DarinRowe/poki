@@ -12,7 +12,7 @@ The runner (WebDriverAgent, built by `.github/workflows/ios-runner.yml`) is a se
 
 | Path | What |
 |---|---|
-| `Poki/App` | App entry, tabs, Home, the app model (on/off, runner sleep and wake, events, approvals, pairing, setup steps) |
+| `Poki/App` | App entry (Chat and Voice pages), status words and issues, all steps, the app model (on/off, runner sleep and wake, events, approvals, pairing, setup steps) |
 | `Poki/Setup` | Setup, one guided page with live checks |
 | `Poki/Loopback` | Live 10.7.0.1 check, proxy app detection and one-tap module install |
 | `Poki/Activity` | Live Activity controller (state, steps, thumbnail in the App Group) |
@@ -37,7 +37,7 @@ xcodegen generate --spec native/ios-app/project.yml
 open native/ios-app/Poki.xcodeproj
 ```
 
-`-pokiScreen home|setup|connect|debug|activity|steps|status|connector` opens that screen at launch (setup as its full-screen flow, connect as the Settings sheet, debug as Diagnostics inside it); `-pokiSetupStep N` opens setup at step N, and `-pokiSample B|C` fills Home with sample steps and an approval, and `-pokiSample PIN` shows a sample pairing code, for screenshots only.
+`-pokiScreen home|setup|connect|debug|activity|steps|status|connector|details|model|voice` opens that screen at launch (home is the chat, setup its full-screen flow, connect the Settings sheet, debug Diagnostics inside it, details Poki's details, steps its history); `-pokiChat empty|working|approved` and `-pokiVoice ready|listening|working` show the ESP-171 boards' sample chat and voice faces; `-pokiSetupStep N` opens setup at step N, and `-pokiSample B|C` fills the status, history and Live Activity with sample steps and an approval, and `-pokiSample PIN` shows a sample pairing code, for screenshots only.
 
 Poki is in English and Simplified Chinese and follows the iPhone's language. The app's screens use the String Catalog `Shared/Localizable.xcstrings`, the Live Activity its own table `Shared/LiveActivity.xcstrings` (see `Shared/ActivityWords.swift`), and the permission prompts `Poki/InfoPlist.xcstrings`. Poki's own status words stay in English inside the app (the code compares them and the agent reads them) and are looked up where they reach the screen; the launcher's fix sentences have entries too. Steps an agent reports, logs and diagnostics output stay as they come. Add `-AppleLanguages '(zh-Hans)'` to a launch to see Chinese without changing the simulator's language.
 
@@ -91,8 +91,8 @@ the bridge runs the tools that move the phone (`open_settings`, `read_screen`, `
 - Each function call runs once, keyed by its `call_id`, in the app and again in the bridge.
 - `tap_text` is held by Poki's approvals, like an agent's `do`: the bridge first says what it would tap
   and in which app, without tapping; the phone checks that with PokiCore's rules (payments, deleting,
-  sending messages, calls) and, when they ask for it, waits up to two minutes for Allow (in Voice, on Home
-  or from the notification). Only then does the bridge tap that element, matched exactly, in that app.
+  sending messages, calls) and, when they ask for it, waits up to two minutes for Allow (in the Dynamic Island, on the Live
+  Activity or from the notification). Only then does the bridge tap that element, matched exactly, in that app.
 - A dropped connection sends nothing again. A call outlives the session that asked for it; the next
   session is told how it ended instead of asking for it again.
 - Stop talking (or speaking over Poki) cancels the reply, never the step running on the phone.
@@ -136,7 +136,7 @@ Setup
 
 Turned on
 - [ ] Turn on: the Live Activity says "On. Waiting for an agent"; no automation banner yet.
-- [ ] An agent's first call starts the runner; its steps show on the Lock Screen and on Home.
+- [ ] An agent's first call starts the runner; its steps show on the Lock Screen and in the chat.
 - [ ] Opening Poki Runner while in use shows "Poki is using this iPhone", not a black screen.
 - [ ] No banner flicker during a run; a slow swipe or drag does not restart the runner.
 - [ ] Stop on the Live Activity or in Poki: the banner goes away within seconds; the next call starts it again.

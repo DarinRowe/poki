@@ -11,6 +11,16 @@
         }
       }
     },
+    "%@ %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ %@"
+          }
+        }
+      }
+    },
     "%@ in %@": {
       "localizations": {
         "zh-Hans": {
@@ -31,12 +41,32 @@
         }
       }
     },
+    "%@ key": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 密钥"
+          }
+        }
+      }
+    },
     "%@ or later": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "%@ 或更高版本"
+          }
+        }
+      }
+    },
+    "%@%@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@%@"
           }
         }
       }
@@ -57,6 +87,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@，第 %lld 步"
+          }
+        }
+      }
+    },
+    "%@, waiting for you": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@，等待确认"
+          }
+        }
+      }
+    },
+    "%@, your %@ key": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@（使用 %@ 密钥）"
           }
         }
       }
@@ -201,6 +251,16 @@
         }
       }
     },
+    "A key is saved. Enter a new one to replace it.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已保存密钥。输入新密钥将覆盖原密钥。"
+          }
+        }
+      }
+    },
     "ADDRESSES": {
       "localizations": {
         "zh-Hans": {
@@ -221,6 +281,16 @@
         }
       }
     },
+    "API key, if it needs one": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "API 密钥（可选）"
+          }
+        }
+      }
+    },
     "About 5 minutes. Everything stays on this iPhone.": {
       "localizations": {
         "zh-Hans": {
@@ -237,6 +307,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "添加"
+          }
+        }
+      }
+    },
+    "Add Key": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加密钥"
+          }
+        }
+      }
+    },
+    "Add URL": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加地址"
           }
         }
       }
@@ -262,6 +352,16 @@
         }
       }
     },
+    "Add your Anthropic key first: tap my picture, then Model.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先添加 Anthropic 密钥：轻点头像，再选择“模型”。"
+          }
+        }
+      }
+    },
     "Add your agent": {
       "localizations": {
         "zh-Hans": {
@@ -272,12 +372,32 @@
         }
       }
     },
+    "Add your key to chat with Poki": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加密钥以开始与 Poki 对话"
+          }
+        }
+      }
+    },
     "Added": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "添加日期"
+          }
+        }
+      }
+    },
+    "Address": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务地址"
           }
         }
       }
@@ -319,6 +439,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "智能体无法连接此 iPhone"
+          }
+        }
+      }
+    },
+    "All Settings": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所有设置"
           }
         }
       }
@@ -443,6 +573,56 @@
         }
       }
     },
+    "Anthropic answered %lld: %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anthropic 返回错误（%lld）：%@"
+          }
+        }
+      }
+    },
+    "Anthropic did not accept the key. Check it in Poki › Model.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anthropic 密钥无效。请前往“Poki”›“模型”检查。"
+          }
+        }
+      }
+    },
+    "Anthropic is overloaded right now. Try again in a minute.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anthropic 服务繁忙，请稍后再试。"
+          }
+        }
+      }
+    },
+    "Anthropic says the key has hit its rate limit. Try again in a minute.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已达调用频率上限，请稍后再试。"
+          }
+        }
+      }
+    },
+    "Any OpenAI-compatible URL": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "兼容 OpenAI 的接口地址"
+          }
+        }
+      }
+    },
     "Approval": {
       "localizations": {
         "zh-Hans": {
@@ -459,6 +639,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "需要批准"
+          }
+        }
+      }
+    },
+    "Approved in the Dynamic Island, %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已在灵动岛批准：%@"
           }
         }
       }
@@ -483,6 +673,16 @@
         }
       }
     },
+    "CHAT": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对话"
+          }
+        }
+      }
+    },
     "CHECKS": {
       "localizations": {
         "zh-Hans": {
@@ -493,12 +693,32 @@
         }
       }
     },
+    "Cancel": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消"
+          }
+        }
+      }
+    },
     "Cancel Pairing": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "取消配对"
+          }
+        }
+      }
+    },
+    "Change address": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "修改地址"
           }
         }
       }
@@ -530,6 +750,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在检查…"
+          }
+        }
+      }
+    },
+    "Claude declined this request.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude 拒绝了此请求。"
           }
         }
       }
@@ -616,6 +846,16 @@
         }
       }
     },
+    "Conversation": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "历史对话"
+          }
+        }
+      }
+    },
     "Copied": {
       "localizations": {
         "zh-Hans": {
@@ -663,6 +903,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "拷贝下方配置。"
+          }
+        }
+      }
+    },
+    "Create a key at console.anthropic.com, then paste it here.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 console.anthropic.com 创建密钥并粘贴至此处。"
+          }
+        }
+      }
+    },
+    "Custom Endpoint": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自定义地址"
+          }
+        }
+      }
+    },
+    "Delivered": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已送达"
           }
         }
       }
@@ -788,6 +1058,16 @@
         }
       }
     },
+    "End conversation": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "结束对话"
+          }
+        }
+      }
+    },
     "Enter the code shown here and on the Lock Screen.": {
       "extractionState": "manual",
       "localizations": {
@@ -870,6 +1150,16 @@
         }
       }
     },
+    "First, set up this iPhone. About 5 minutes.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完成此 iPhone 的初始设置，约需 5 分钟。"
+          }
+        }
+      }
+    },
     "Fix the item below so your agents can use this iPhone.": {
       "localizations": {
         "zh-Hans": {
@@ -921,12 +1211,82 @@
         }
       }
     },
+    "Hi, I’m Poki. Tell me what to do on this iPhone.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你好，我是 Poki。请告诉我需要在这台 iPhone 上执行什么操作。"
+          }
+        }
+      }
+    },
+    "History": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "历史记录"
+          }
+        }
+      }
+    },
+    "Hold and say it.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按住说话。"
+          }
+        }
+      }
+    },
+    "Hold to Talk": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按住说话"
+          }
+        }
+      }
+    },
+    "Hold to add something": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按住继续说"
+          }
+        }
+      }
+    },
+    "Hold to talk, slide up to end": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按住说话，上滑结束"
+          }
+        }
+      }
+    },
     "Home Screen": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "主屏幕"
+          }
+        }
+      }
+    },
+    "I stopped after %lld steps. Tell me how to go on.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已执行 %lld 步并暂停。请指示下一步操作。"
           }
         }
       }
@@ -1043,6 +1403,16 @@
         }
       }
     },
+    "I’ll ask before anything you can’t undo.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "执行不可撤销的操作前，我会先向你确认。"
+          }
+        }
+      }
+    },
     "Keep IPv6 out of the tun address list.": {
       "extractionState": "manual",
       "localizations": {
@@ -1085,12 +1455,52 @@
         }
       }
     },
+    "Key added": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "密钥已添加"
+          }
+        }
+      }
+    },
+    "Keys stay in this iPhone’s Keychain. Poki sends each key only to its own provider.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "密钥仅保存在本机钥匙串中，且仅发送给对应服务商。"
+          }
+        }
+      }
+    },
     "LOG": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "日志"
+          }
+        }
+      }
+    },
+    "Last Run": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上次运行"
+          }
+        }
+      }
+    },
+    "Last answer %lld ms after you stopped": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上次响应耗时 %lld 毫秒"
           }
         }
       }
@@ -1111,6 +1521,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "让智能体执行正在等你批准的这一步。"
+          }
+        }
+      }
+    },
+    "Listening…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在倾听…"
           }
         }
       }
@@ -1287,12 +1707,42 @@
         }
       }
     },
+    "Message Poki": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "给 Poki 发消息"
+          }
+        }
+      }
+    },
     "Messages": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "信息"
+          }
+        }
+      }
+    },
+    "Model": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模型"
+          }
+        }
+      }
+    },
+    "More": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更多"
           }
         }
       }
@@ -1304,6 +1754,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "装载开发者磁盘映像超时。每次重启后 Poki 需要联网一次以获取 Apple 的签名，请检查无线局域网或蜂窝网络。Poki 会自动重试。"
+          }
+        }
+      }
+    },
+    "Mute Poki's voice": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "静音"
           }
         }
       }
@@ -1355,6 +1815,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "永不"
+          }
+        }
+      }
+    },
+    "New Conversation": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新对话"
           }
         }
       }
@@ -1442,6 +1912,16 @@
         }
       }
     },
+    "Not approved, so Poki skipped that step": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未获批准，已跳过此步骤"
+          }
+        }
+      }
+    },
     "Not on yet": {
       "localizations": {
         "zh-Hans": {
@@ -1469,6 +1949,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "10.7.0.1 没有应答。请开启代理 App（含 Poki 模块）或 LocalDevVPN。"
+          }
+        }
+      }
+    },
+    "Notifications": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通知"
+          }
+        }
+      }
+    },
+    "OR USE AN AGENT YOU ALREADY RUN": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "或接入现有的 Agent"
           }
         }
       }
@@ -1509,6 +2009,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "开启"
+          }
+        }
+      }
+    },
+    "On it. Opening Messages.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "好的，正在打开“信息”。"
           }
         }
       }
@@ -1647,6 +2157,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "打开并轻点“连接”。它会占用系统 VPN 通道，开启期间会替换其他 VPN。"
+          }
+        }
+      }
+    },
+    "Open the chat with Mom": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开与妈妈的对话"
           }
         }
       }
@@ -1794,6 +2314,16 @@
         }
       }
     },
+    "Pause": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂停"
+          }
+        }
+      }
+    },
     "Paused for you": {
       "localizations": {
         "zh-Hans": {
@@ -1845,6 +2375,16 @@
         }
       }
     },
+    "Poki can't use the microphone. Allow it in Settings, Privacy, Microphone.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Poki 无法访问麦克风。请在“设置”›“隐私与安全性”›“麦克风”中开启权限。"
+          }
+        }
+      }
+    },
     "Poki cannot access the keychain and has no relay key yet. Reinstall Poki with your signing tool, then reopen Settings.": {
       "localizations": {
         "zh-Hans": {
@@ -1861,6 +2401,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Poki 无法在后台保持运行"
+          }
+        }
+      }
+    },
+    "Poki could not reach Anthropic: %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法连接 Anthropic：%@"
           }
         }
       }
@@ -1891,6 +2441,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Poki 已离线。请检查此 iPhone 的网络连接，Poki 会自动重新连接。"
+          }
+        }
+      }
+    },
+    "Poki keeps the key now; chatting with %@ comes in an update. Until then the chat uses Anthropic.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "密钥已保存。后续更新将支持使用 %@ 对话，目前默认使用 Anthropic。"
           }
         }
       }
@@ -1963,6 +2523,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Poki 将打开“设置”。前往“**隐私与安全性 › 开发者模式**”并轻点“**与 Poki 配对**”。"
+          }
+        }
+      }
+    },
+    "Poki, details": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Poki 详情"
           }
         }
       }
@@ -2112,6 +2682,36 @@
         }
       }
     },
+    "Release to end the conversation.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "松开以结束对话。"
+          }
+        }
+      }
+    },
+    "Release to send. Slide up to cancel.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "松开发送，上滑取消。"
+          }
+        }
+      }
+    },
+    "Remove Key": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除密钥"
+          }
+        }
+      }
+    },
     "Restart the phone, then open Poki again.": {
       "extractionState": "manual",
       "localizations": {
@@ -2119,6 +2719,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "重启手机，然后重新打开 Poki。"
+          }
+        }
+      }
+    },
+    "Resume": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "继续"
           }
         }
       }
@@ -2139,6 +2749,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "运行检查"
+          }
+        }
+      }
+    },
+    "Run bin/voice-bridge.mjs on your Mac and enter the address it gives. The Mac holds your OpenAI key and gives this phone a key that works for one minute, so the phone never stores it. Audio goes straight from this phone to OpenAI.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 Mac 上运行 bin/voice-bridge.mjs 并输入生成的地址。OpenAI 密钥保存在 Mac 本地，手机仅获取有效期 1 分钟的临时凭证，不保存密钥，音频将由手机直连发送至 OpenAI。"
           }
         }
       }
@@ -2204,12 +2824,42 @@
         }
       }
     },
+    "Save address": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存地址"
+          }
+        }
+      }
+    },
+    "Send": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送"
+          }
+        }
+      }
+    },
     "Send “On my way” to Mom": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "给妈妈发送“在路上了”"
+          }
+        }
+      }
+    },
+    "Sent. Mom has it. Anything else?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已发送给妈妈。还需要其他帮助吗？"
           }
         }
       }
@@ -2230,6 +2880,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "设置此 iPhone"
+          }
+        }
+      }
+    },
+    "Set the voice bridge first: tap here, or Poki › Voice and Speech.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先配置语音桥接：轻点此处，或前往“Poki”›“语音与朗读”。"
           }
         }
       }
@@ -2357,6 +3017,26 @@
         }
       }
     },
+    "Step %lld, in %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "第 %lld 步（“%@”）"
+          }
+        }
+      }
+    },
+    "Step 3 of 4, in Messages": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "第 3/4 步（“信息”）"
+          }
+        }
+      }
+    },
     "Steps from your agent appear here and on the Lock Screen.": {
       "localizations": {
         "zh-Hans": {
@@ -2407,6 +3087,26 @@
         }
       }
     },
+    "Stop talking": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打断播报"
+          }
+        }
+      }
+    },
+    "Stop talking ends Poki's reply; a step already running on the phone still finishes and Poki tells you how it went.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打断播报仅停止语音回复，当前正在执行的操作仍会完成并向你反馈结果。"
+          }
+        }
+      }
+    },
     "Stopped": {
       "localizations": {
         "zh-Hans": {
@@ -2417,12 +3117,32 @@
         }
       }
     },
+    "Stopped.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已停止。"
+          }
+        }
+      }
+    },
     "THIS IPHONE": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "此 iPhone"
+          }
+        }
+      }
+    },
+    "Talk to Poki": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "与 Poki 语音对话"
           }
         }
       }
@@ -2460,6 +3180,16 @@
         }
       }
     },
+    "Tap Send": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "轻点“发送”"
+          }
+        }
+      }
+    },
     "Tap Start, leave the app for a while, then return. The log records suspension gaps and connection closures.": {
       "localizations": {
         "zh-Hans": {
@@ -2490,6 +3220,36 @@
         }
       }
     },
+    "Taps and types on this iPhone for you": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "替你在这台 iPhone 上点按和打字"
+          }
+        }
+      }
+    },
+    "Text Mom\nI’m on my way…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "告诉妈妈\n我在路上了…"
+          }
+        }
+      }
+    },
+    "Text Mom “On my way”": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "给妈妈发消息“在路上了”"
+          }
+        }
+      }
+    },
     "That is not a relay address. Enter the address deploy.sh printed, such as https://poki-relay.you.workers.dev.": {
       "localizations": {
         "zh-Hans": {
@@ -2500,12 +3260,42 @@
         }
       }
     },
+    "That is not a voice bridge address. It looks like http://192.168.1.10:47830/voice/ followed by a long code.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语音桥接地址格式有误。正确格式示例：http://192.168.1.10:47830/voice/ 后接一串字符。"
+          }
+        }
+      }
+    },
     "The Live Activity did not start: %@": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "实时活动未能启动：%@"
+          }
+        }
+      }
+    },
+    "The answer was cut off.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回复已截断。"
+          }
+        }
+      }
+    },
+    "The approval ran out, so Poki skipped that step": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "批准超时，已跳过此步骤"
           }
         }
       }
@@ -2548,6 +3338,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "替智能体执行轻点和输入的辅助 App。由 Poki 自动启动，无需手动打开。"
+          }
+        }
+      }
+    },
+    "The keychain did not take the key. Try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "密钥无法保存至钥匙串，请重试。"
           }
         }
       }
@@ -2623,6 +3423,16 @@
         }
       }
     },
+    "This Anthropic key can’t use %@.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此 Anthropic 密钥不支持调用 %@。"
+          }
+        }
+      }
+    },
     "This happens after a restore, a reset of Location & Privacy, or when the phone forgot Poki. Pair again; the old key is replaced.": {
       "localizations": {
         "zh-Hans": {
@@ -2685,6 +3495,16 @@
         }
       }
     },
+    "Today": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今天"
+          }
+        }
+      }
+    },
     "Try Again": {
       "localizations": {
         "zh-Hans": {
@@ -2701,6 +3521,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "隧道已开，无应答"
+          }
+        }
+      }
+    },
+    "Turn On": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开"
           }
         }
       }
@@ -2842,6 +3672,16 @@
         }
       }
     },
+    "Typing “On my way”": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在输入“在路上了”"
+          }
+        }
+      }
+    },
     "UI Automation is on": {
       "localizations": {
         "zh-Hans": {
@@ -2858,6 +3698,56 @@
           "stringUnit": {
             "state": "translated",
             "value": "使用你的代理 App"
+          }
+        }
+      }
+    },
+    "VOICE": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语音"
+          }
+        }
+      }
+    },
+    "Via Relay ›": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通过中转 ›"
+          }
+        }
+      }
+    },
+    "Voice": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语音"
+          }
+        }
+      }
+    },
+    "Voice and Speech": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语音与朗读"
+          }
+        }
+      }
+    },
+    "Voice bridge": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语音桥接"
           }
         }
       }
@@ -2913,6 +3803,16 @@
         }
       }
     },
+    "Waiting for you to approve in the Dynamic Island": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待在灵动岛批准"
+          }
+        }
+      }
+    },
     "With a free Apple ID, self-signed apps expire after 7 days and are limited to 3 at a time; Poki and Poki Runner use 2. Free accounts also can’t sign a VPN, so Loopback requires your proxy app or LocalDevVPN.": {
       "localizations": {
         "zh-Hans": {
@@ -2933,12 +3833,42 @@
         }
       }
     },
+    "YOUR API KEY": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的 API 密钥"
+          }
+        }
+      }
+    },
+    "Your Mac": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的 Mac"
+          }
+        }
+      }
+    },
     "Your agents can use this iPhone.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "你的智能体可以使用这台 iPhone。"
+          }
+        }
+      }
+    },
+    "Your computer does the thinking. Poki only taps and types.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "由电脑端负责推理，Poki 仅执行点击与输入操作。"
           }
         }
       }
@@ -2960,6 +3890,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "失败：画面无变化"
+          }
+        }
+      }
+    },
+    "http://your-mac.local:47830/voice/…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "http://your-mac.local:47830/voice/…"
+          }
+        }
+      }
+    },
+    "https://…/v1": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "https://…/v1"
           }
         }
       }
@@ -3011,6 +3961,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld 个步骤"
+          }
+        }
+      }
+    },
+    "“Text Mom I’m on my way.”": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“告诉妈妈我在路上了。”"
           }
         }
       }

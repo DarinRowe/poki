@@ -323,6 +323,28 @@ public final class PokiCore: @unchecked Sendable {
          "annotations": ["readOnlyHint": true]],
     ]
 
+    /// A tool's answer for a caller in the app itself (the chat's model loop), without MCP framing.
+    public struct ToolAnswer: Sendable {
+        public let text: String
+        public let jpeg: Data?
+        public let isError: Bool
+        public init(text: String, jpeg: Data?, isError: Bool) { self.text = text; self.jpeg = jpeg; self.isError = isError }
+    }
+
+    /// Calls `look`, `do` or `status` from inside the app, the same way an MCP client's `tools/call`
+    /// does: one call at a time, the same approval rules, the same events. `arguments` is the JSON
+    /// object the model sent.
+    public func callTool(_ name: String, arguments: String) async -> ToolAnswer {
+        let args = (try? JSON.parse(arguments)) ?? .object([:])
+        let output = await call(name, args)
+        return ToolAnswer(text: output.text, jpeg: output.jpeg, isError: output.isError)
+    }
+
+    /// The tools as MCP lists them (name, description, inputSchema), as a JSON array, and the
+    /// instructions MCP clients get, for a model loop inside the app.
+    public static var toolCatalogJSON: String { JSON.array(tools).serialized() }
+    public static var toolInstructions: String { instructions }
+
     func call(_ name: String, _ args: JSON) async -> ToolResult {
         if name == "status" { return status() }
         guard name == "look" || name == "do" else { return ToolResult(text: "unknown tool \(name); the tools are look, do and status", jpeg: nil, isError: true) }
