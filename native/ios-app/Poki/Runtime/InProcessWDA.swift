@@ -41,8 +41,12 @@ enum InProcessSession: Equatable {
 final class InProcessWDA: HTTPTransport, @unchecked Sendable {
     private typealias Route = (_ body: JSON?, _ element: String?) throws -> JSON
     private let native = PKInProcess.shared()
-    /// One action or read at a time, as WDA serves its requests on one thread.
-    private let queue = DispatchQueue(label: "poki.inprocess.wda", qos: .userInitiated)
+    /// One action or read at a time, as WDA serves its requests on one thread. Replaced when a request
+    /// holds it for good (see `send`), as a restarted runner is a new process.
+    private var queue = DispatchQueue(label: "poki.inprocess.wda", qos: .userInitiated)
+    private let state = NSLock()
+    /// The request the queue is serving now and when it began.
+    private var inFlight: (key: String, since: Double)?
     /// Screenshots are answered beside the queue, as WDA does.
     private let pictures = DispatchQueue(label: "poki.inprocess.screenshot", qos: .userInitiated)
     private let screen: CGSize
@@ -186,9 +190,25 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
         let key = "\(method) \(path)"
         let parsed = body.flatMap { try? JSON.parse($0) }
         let route = routes[key]
+        // A request that never comes back (the gym's dense screen: an accessibility snapshot of 1,500
+        // elements held the queue past PokiCore's 15 s wedge watchdog) would hold every request after
+        // it, the way a wedged WebDriverAgent holds its one thread. The watchdog drops the session and
+        // the next call opens a new one: that open gets a new queue, and the held request is left to
+        // end on its own, as a restarted runner leaves its old process.
+        let lane: DispatchQueue = state.withLock {
+            if key == "POST /session", let held = inFlight, Date().timeIntervalSince1970 - held.since > 8 {
+                queue = DispatchQueue(label: "poki.inprocess.wda", qos: .userInitiated)
+                inFlight = nil
+            }
+            return key == "GET /screenshot" ? pictures : queue
+        }
         return await withCheckedContinuation { continuation in
-            (key == "GET /screenshot" ? pictures : queue).async { [self] in
-                continuation.resume(returning: answer(key, session: session, element: element, body: parsed, route: route))
+            lane.async { [self] in
+                let began = Date().timeIntervalSince1970
+                if key != "GET /screenshot" { state.withLock { inFlight = (key, began) } }
+                let out = answer(key, session: session, element: element, body: parsed, route: route)
+                if key != "GET /screenshot" { state.withLock { if inFlight?.since == began { inFlight = nil } } }
+                continuation.resume(returning: out)
             }
         }
     }
