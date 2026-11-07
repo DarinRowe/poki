@@ -532,7 +532,7 @@
                   "type": "number",
                   "minimum": 0,
                   "maximum": 60000,
-                  "description": "Milliseconds after the stroke touches down. 0 for the first point, then strictly increasing."
+                  "description": "Milliseconds after the stroke touches down, fractions allowed. 0 for the first point, then strictly increasing."
                 }
               },
               "required": [
@@ -589,7 +589,7 @@
                         "type": "number",
                         "minimum": 0,
                         "maximum": 60000,
-                        "description": "Milliseconds after the stroke touches down. 0 for the first point, then strictly increasing."
+                        "description": "Milliseconds after the stroke touches down, fractions allowed. 0 for the first point, then strictly increasing."
                       }
                     },
                     "required": [

@@ -134,8 +134,12 @@ impl Session {
         let action = if request["op"] == "connect" || request["op"] == "reconnect" {
             None
         } else {
-            let action: Request = serde_json::from_value(request.clone())?;
-            action.validate()?;
+            let parsed: Result<Request> =
+                serde_json::from_value(request.clone()).map_err(Into::into);
+            let action = match parsed.and_then(|action| action.validate().map(|()| action)) {
+                Ok(action) => action,
+                Err(error) => return refused_reply(&request, error),
+            };
             if matches!(
                 action,
                 Request::InstallApp { .. } | Request::UninstallApp { .. }
@@ -268,6 +272,24 @@ fn unsent_reply(
             }
             Ok(reply)
         }
+    }
+}
+
+// The reply for a request refused before connecting, so before anything could reach the phone.
+fn refused_reply(
+    request: &Value,
+    error: Box<dyn std::error::Error + Send + Sync>,
+) -> Result<Value> {
+    match request["op"].as_str() {
+        Some("launch_app") => Ok(super::apps::not_sent(error)),
+        // Reads, settings and app installs report a refusal as an error, as they report any other failure.
+        Some(
+            "ax_tree" | "screenshot" | "device_info" | "display_info" | "list_apps"
+            | "configuration" | "install_app" | "uninstall_app",
+        ) => Err(error),
+        _ => Ok(
+            json!({"isError":true,"outcome":"not_sent","stop_reason":"error","sent":false,"screen_change_verified":false,"error":error.to_string(),"instruction":"Nothing was sent to the iPhone: the helper refused this request before any input. Correct the request before retrying."}),
+        ),
     }
 }
 
@@ -597,6 +619,46 @@ mod tests {
                 _ => false,
             };
             if !reported {
+                failures.push(format!(
+                    "{request}: nothing was sent, but the reply is {reply:?}"
+                ));
+            }
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
+    #[tokio::test]
+    async fn a_request_refused_before_any_input_says_nothing_was_sent() {
+        let mut failures = Vec::new();
+        let stroke = |time_ms: Value| json!({"op":"draw_strokes","strokes":[[{"x":100,"y":100,"time_ms":0},{"x":200,"y":200,"time_ms":time_ms}]]});
+        for request in [
+            // Refused by validation, and refused while parsing.
+            stroke(json!(0)),
+            stroke(json!("12")),
+            json!({"op":"tap","x":-1,"y":200}),
+            json!({"op":"ax_tree","include_offscreen":"yes"}),
+        ] {
+            // No tunnel is open, so a refusal must come before any connection attempt.
+            let mut session = Session {
+                transport: Transport::Local("fixture-phone".into()),
+                control: None,
+                connection: None,
+            };
+            let reply = session.request(request.clone()).await;
+            let reported = match (request["op"].as_str().unwrap(), &reply) {
+                ("ax_tree", Err(error)) => !error.to_string().contains("delivered"),
+                (_, Ok(reply)) => {
+                    reply["outcome"] == "not_sent"
+                        && reply["sent"] == false
+                        && reply["isError"] == true
+                        && !reply["instruction"]
+                            .as_str()
+                            .unwrap_or("")
+                            .contains("delivered")
+                }
+                _ => false,
+            };
+            if !reported || session.connection.is_some() {
                 failures.push(format!(
                     "{request}: nothing was sent, but the reply is {reply:?}"
                 ));

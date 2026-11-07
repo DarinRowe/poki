@@ -137,7 +137,7 @@ Accessibility can miss changes that affect only pixels, such as Calculator's dis
 | Touch | `scroll_to` | Search for visible text and scroll until it is found, content stops changing, or max_scrolls is reached. |
 | Touch | `drag` | Hold a touch, then move between the supplied logical-point endpoints. |
 | Touch | `pinch` | Perform a two-finger gesture centered at x/y in screen points. |
-| Touch | `touch_path` | Draw one continuous stroke through timed points, such as a circle or a curve. |
+| Touch | `touch_path` | Draw one continuous stroke through timed points, such as a circle or a curve. `time_ms` may have a fractional part. |
 | Touch | `draw_strokes` | Draw 1 to 12 separately lifted strokes in one call, such as handwriting or a signature. |
 | Text and keys | `fill` | Focus a field by ref, coordinates, or matching field label/placeholder/value/identifier, replace its text, and optionally submit after text verification. |
 | Text and keys | `type_text` | Enter text into the focused field, optionally clearing it first and sending Return after verification. |

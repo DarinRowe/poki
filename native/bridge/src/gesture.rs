@@ -75,7 +75,8 @@ impl Drag {
 pub(crate) struct PathPoint {
     pub x: u16,
     pub y: u16,
-    pub time_ms: u64,
+    /// Milliseconds after the stroke touches down; fractions are kept, so 120 points over 1500 ms come 12.5 ms apart.
+    pub time_ms: f64,
 }
 
 pub(crate) const STROKE_GAP_MS: u64 = 80;
@@ -90,17 +91,20 @@ impl Strokes {
         if !(1..=12).contains(&self.0.len()) {
             return Err("strokes must contain 1..12 strokes".into());
         }
-        let mut total = 0;
+        let mut total = 0.0;
         for points in &self.0 {
             if !(2..=8192).contains(&points.len()) {
                 return Err("a stroke must contain 2..8192 points".into());
             }
-            if points[0].time_ms != 0 || points.windows(2).any(|w| w[1].time_ms <= w[0].time_ms) {
+            if points[0].time_ms != 0.0
+                || points.iter().any(|point| !point.time_ms.is_finite())
+                || points.windows(2).any(|w| w[1].time_ms <= w[0].time_ms)
+            {
                 return Err("time_ms must start at 0 and increase at every point".into());
             }
             total += points[points.len() - 1].time_ms;
         }
-        if total > 60000 {
+        if total > 60000.0 {
             return Err("strokes must last at most 60000 ms together".into());
         }
         Ok(())
@@ -118,7 +122,7 @@ impl Strokes {
             let mut last = first;
             let outcome: Result<()> = async {
                 for &point in &points[1..] {
-                    sleep_until(start + Duration::from_millis(point.time_ms)).await;
+                    sleep_until(start + Duration::from_secs_f64(point.time_ms / 1000.0)).await;
                     last = point;
                     hid.send_touchscreen(TOUCHSCREEN_STATE_CONTACT, point.x, point.y)
                         .await?;
@@ -215,6 +219,7 @@ pub(crate) fn pinch_contacts(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
     use tokio::time::{Instant, advance};
 
     #[derive(Debug, PartialEq)]
@@ -411,12 +416,12 @@ mod tests {
         let point = |x, y, time_ms| PathPoint { x, y, time_ms };
         let strokes = Strokes(vec![
             vec![
-                point(100, 500, 0),
-                point(200, 500, 16),
-                point(300, 500, 32),
-                point(400, 500, 48),
+                point(100, 500, 0.0),
+                point(200, 500, 16.0),
+                point(300, 500, 32.0),
+                point(400, 500, 48.0),
             ],
-            vec![point(500, 100, 0), point(500, 200, 20)],
+            vec![point(500, 100, 0.0), point(500, 200, 20.0)],
         ]);
         let contact = |touching, x, y| Contact {
             id: 0,
@@ -498,5 +503,48 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn the_documented_circle_with_fractional_times_is_accepted_and_drawn_on_schedule() {
+        // touch_path's guidance: a circle over 1500 ms with 120 points, a point every 12.5 ms, about 10 degrees past its start.
+        let points: Vec<_> = (0..120)
+            .map(|i| {
+                let angle = i as f64 * std::f64::consts::TAU / 116.0;
+                json!({
+                    "x": (30000.0 + 10000.0 * angle.cos()).round() as u16,
+                    "y": (30000.0 + 10000.0 * angle.sin()).round() as u16,
+                    "time_ms": i as f64 * 12.5,
+                })
+            })
+            .collect();
+        let request: crate::Request = serde_json::from_value(json!({
+            "op": "draw_strokes",
+            "strokes": [points],
+        }))
+        .expect("the helper must accept the documented circle");
+        request.validate().unwrap();
+        let crate::Request::DrawStrokes { strokes } = request else {
+            panic!("parsed as another request");
+        };
+        let mut transport = Transport::new(1, None);
+        strokes.send(&mut transport).await.unwrap();
+        assert_eq!(transport.transmissions.len(), 121);
+        let mut timing_errors = Vec::new();
+        for (index, packet) in transport.transmissions.iter().enumerate() {
+            let expected_ms = if index == 120 {
+                1488.5
+            } else {
+                index as f64 * 12.5
+            };
+            let actual_ms = packet.at.as_secs_f64() * 1000.0;
+            if actual_ms < expected_ms || actual_ms >= expected_ms + 2.0 {
+                timing_errors.push(format!(
+                    "point {index}: expected {expected_ms} ms, got {actual_ms} ms"
+                ));
+            }
+        }
+        assert!(timing_errors.is_empty(), "{}", timing_errors.join("\n"));
+        assert!(!transport.transmissions[120].contacts[0].touching);
     }
 }
