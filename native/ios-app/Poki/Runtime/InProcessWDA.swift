@@ -174,9 +174,16 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
         let key = "\(method) \(path)"
         let parsed = body.flatMap { try? JSON.parse($0) }
         let route = routes[key]
+        let asked = Date()
         return await withCheckedContinuation { continuation in
             (key == "GET /screenshot" ? pictures : queue).async { [self] in
-                continuation.resume(returning: answer(key, session: session, element: element, body: parsed, route: route))
+                let started = Date()
+                let result = answer(key, session: session, element: element, body: parsed, route: route)
+                // One line per request in the system log (PokiInProcess), with its wait in the queue and
+                // its own time, so a slow call can be traced to the request that took it.
+                let waited = Int(started.timeIntervalSince(asked) * 1000), took = Int(Date().timeIntervalSince(started) * 1000)
+                if waited > 5 || took > 5 { NSLog("PokiInProcess timing: %@ %d ms%@", key, took, waited > 5 ? " (queued \(waited) ms)" : "") }
+                continuation.resume(returning: result)
             }
         }
     }

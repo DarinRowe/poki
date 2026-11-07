@@ -51,7 +51,7 @@ typedef NS_ENUM(NSInteger, PKDelivery) {
 /// Whether the screen can be read from here: the front app (accessibility), its element tree, and a
 /// screenshot, each timed. Keys per part: *_ok, *_seconds, *_error, and counts.
 - (NSDictionary<NSString *, id> *)readProbe;
-/// A PNG of the main screen, or nil and why.
+/// A picture of the main screen (a JPEG through XCTest's quality API where it exists, else a PNG), or nil and why.
 - (nullable NSData *)screenshot:(NSString *_Nullable *_Nullable)code;
 /// The app in front: bundleId, name, pid. Empty when accessibility gives none.
 - (NSDictionary<NSString *, id> *)frontApp;
