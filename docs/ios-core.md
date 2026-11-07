@@ -178,10 +178,30 @@ Each answer is facts only: the app in front, numbered elements, what each action
 
 - **Numbers stay.** An element still on screen in the next read keeps its number (same text and frame
   first, then same text); a new screen (another app, or under 30% of the elements kept) numbers from
-  1 again. `do` lists only the new (`+`) and moved (`~`) elements and says how many others kept their
+  1 again, and its heading says so (`a new screen: numbered from 1 again, the numbers of the read
+  before no longer apply`). `do` lists only the new (`+`) and moved (`~`) elements and says how many others kept their
   numbers; `look` and `full=true` list everything.
 - **`screen_changed`** in every `do`: whether the elements, or only the picture, differ from the read
-  before, so a no-op action is visible at once.
+  before, so a no-op action is visible at once. The picture is compared as a 32 by 64 grid of grey
+  levels, and counts as changed when over 1 % of the cells move by more than 12 of 255: a cursor
+  blinking or the clock ticking is not a change; a sheet, a photo or a page coming in is. A
+  picture-only change says how much and where (`in 3 % of it, within [372, 110, 13, 690]`), so the
+  long scroll indicator iOS draws beside a two-page list fading out (seen on the simulator after a
+  drag: 2-3 % in a strip at the right edge) reads as what it is without a look at the picture.
+- **The picture and the tree are of the same moment.** The screenshot is taken first (served apart
+  from WDA's queue) and the tree after it; when the tree came over 0.6 s later and time is left, the
+  picture is taken again after it (`note: the picture was taken again after the tree, which came
+  1,400 ms later than the first picture`), so a list and the chat opened from it are never shown as
+  one screen (seen on the phone in WeChat).
+- **An element that fills the screen** (80 % of it or more: a web view, a feed's container) is tapped
+  at its centre, and the answer says so (`this element fills the screen, so the tap went to its
+  centre at [201, 437], whatever is drawn there; tap a smaller element, or a point on the picture`).
+- **The home screen is named**: a read with SpringBoard in front says `app: Home screen
+  (SpringBoard: the home screen, the App Switcher, a banner or a system alert)`. WDA takes the app
+  under its "active app detection point" as the one in front; the default is near the top left
+  corner, under every banner and the Dynamic Island, so a banner made WDA dump SpringBoard's tree
+  instead of the app's (seen on the phone in JD). Each session moves the point to (200, 420), the
+  middle of the screen.
 - **The screenshot is one pixel per screen point** (402 px wide on a 402-point iPhone 17 Pro), and the
   answer says so: a point on the picture is a point to tap.
 - **Lean lists.** Text an element around it already says (a post's text and then each of its lines),
@@ -195,10 +215,14 @@ Each answer is facts only: the app in front, numbered elements, what each action
   is listed instead, numbered and tappable at its centre, under a heading that says so. When that
   yields nothing, the read's note says why: no text found, the text could not be read, or the reading
   did not finish in time (with its milliseconds).
-- **Taps are hit-tested.** A numbered element is touched at its centre, or, when the centre is off
-  screen or under a bar or a later element in the tree (a reply bar), at the nearest point of it that
-  is free; the answer says where. No free point: `not_hittable`, nothing is sent. Points off the screen
-  are `not_hittable` too.
+- **Taps are hit-tested, never held back.** A numbered element is touched at its centre, or, when
+  the centre is off screen or under a bar or a later element in the tree (a reply bar), at the nearest
+  point of it that is free, and the answer says where and what the tree puts over it. When no point of
+  it is free it is still touched, at the centre of its visible part, with a note to see whether it
+  took: the tree's order is not the drawing order (seen on the phone: Photos' Select button came after
+  the photo grid in the tree and was refused). What scrolls inside a list never counts as covering
+  what is outside the list. Only an element with no part on the screen, or a point off it, is
+  `not_hittable`, and nothing is sent then.
 - **Gestures.** `swipe` is a quick flick inside the biggest list on screen (or `in: n`), clear of bars
   and anything drawn across it, away from the screen's system edges. `drag` moves at its own speed
   (`ms`, default 400) and rests 150 ms before lifting, so the list stops where the finger stops
@@ -213,12 +237,27 @@ Each answer is facts only: the app in front, numbered elements, what each action
   digits are read back exactly in the tests), and every `type` says what the focused field holds
   afterwards (`the field now reads "…"`, or only its length for a password). `via: "paste"` is the
   backup the model may choose: PokiCore reads the owner's clipboard first (unreadable: nothing is
-  pasted), puts the text on it, opens the field's edit menu with a long press, taps Paste (the word
-  in 12 languages) and puts the owner's clipboard back whatever happened.
+  pasted), puts the text on it, reads it back (a write that did not take answers `not_sent`, with
+  "type the text instead"), opens the field's edit menu with a long press, taps Paste (the word in
+  12 languages) and watches the field for the text. The owner's clipboard goes back once the text
+  has landed, or after 45 s: an app's first paste from the runner makes iOS ask the owner to allow
+  it, and putting the clipboard back before the owner answers pastes the owner's own text (seen on
+  the phone, Nov 7 2026 12:30 am ET: the owner's clipboard went into JD's search box). While the
+  field has not shown the text the answer says `iOS may be asking the owner to allow the paste`.
 - **Locked phone**: `do` checks `/wda/locked` first and sends nothing but buttons while locked
   (`screen: locked`); `look` says so too. Unknown counts as unlocked.
 - **Approvals**: the owner's time on an approval does not count against the actions or the read;
-  a `do` that waited for one may take up to `toolDeadline + approvalWait` (about 46 s).
+  a `do` that waited for one may take up to `toolDeadline + approvalWait` (about 46 s), and one
+  that had to wait for the runner to start adds that wait too (at most `runnerWait`, 15 s).
+- **Poki's own screen is never worked in by mistake**: a tap near the top of the screen can land on
+  Poki's Live Activity in the Dynamic Island, and the owner's answer to an approval can open Poki
+  (seen on the phone, Nov 6 2026 10:35 pm ET: `Tap "Back"` and `Tap "All Inboxes"` answered
+  `app: Poki`). The Dynamic Island (the top 64 points, middle half of the width) is never listed.
+  After an approval, and after the read that follows the actions, Poki in front where another app
+  was being worked in means that app is activated again (`note: Poki was in front …; Mail was
+  brought back`) and the read is made again; the model never sees Poki's screen as the result of
+  a tap. Working in Poki on purpose (the last read showed Poki) is left alone. The app's bundle id
+  is `CoreConfig.ownBundleID`.
 - **`wait_until`**: `{wait_until: "text"}`, `{wait_until: {text, gone: true, ms}}` or
   `{wait_until: {settled: true, ms}}` reads the tree every 250 ms until the text appears or goes, or
   two reads match (default 3 s, at most 10 s, within the action time). Not seeing it is reported, not
@@ -227,7 +266,11 @@ Each answer is facts only: the app in front, numbered elements, what each action
 ### Deadlines (no hangs)
 
 - Every runner HTTP call has its own timeout (reads 4 s, taps 3 s, typing 3 s plus 60 ms per
-  character, launches 8 s) and the whole tool call has `toolDeadline`.
+  character, launches 8 s), every action has its own action time (`actionCap`, 6 s, from when it
+  starts; a launch 9 s), and the whole tool call has `toolDeadline` (25 s, the actions and the read
+  together). The action time starts when the actions do, after the runner's start and the lock
+  check (seen on the phone: a launch sent while the runner was starting had its time used up
+  before it went, and a batch of Home, tap and drag had 6 s for all three).
 - At the deadline the tool answers anyway, saying which step did not finish and whether it may
   have been delivered, plus the last good read if any. A late runner answer is dropped.
 - Two refused or broken runner requests in a row mark the runner unhealthy: PokiCore calls
@@ -242,6 +285,34 @@ Each answer is facts only: the app in front, numbered elements, what each action
   keyboard's looping slide-to-type introduction. A call that finds the runner `.starting` (restarting, or woken from idle by
   the app) waits for it, checking every 250 ms for up to `runnerWait` (15 s) within its deadline, then
   goes on; a `.failed` runner is answered at once with its fix.
+- **An action this side gives up on ends the session; a read keeps it.** WDA serves every request
+  but a few (status, screenshot, ending a session) one after another on its main thread, and goes on
+  serving a request after the client has stopped waiting. Seen on the phone: a feed's tree took
+  longer than a read, and the swipes and taps sent after it waited their turn behind it and landed
+  long after the agent had reported them failed. So when an action (or a session open) times out or
+  is cut off by its action time, PokiCore sends `DELETE /session` at once (answered apart from the
+  queue): WDA answers everything still queued for that session with "session does not exist" instead
+  of running it, and the request it is serving is the last thing it does for it. A read (`GET`) that
+  times out keeps the session: nothing behind a read can act, and ending the session only put the
+  next session open behind the same slow read (seen on the phone, Nov 7 2026 12:35 am ET: every look
+  in WeChat opened a session that queued behind the read before it, and the session count climbed
+  while the reads kept failing). Before the next action PokiCore checks that the runner is through
+  (a cheap queued request answered in time); a `do` whose turn does not come within the action time
+  answers `not_sent: the runner is still finishing an earlier GET /source from 9 s ago` without
+  sending anything, and a `look` says the same in its note and shows the picture (screenshots are
+  served apart from the queue). The next queued request that is answered clears the note. An action
+  cut off after it reached the runner is `unknown`; one cut off while the session was still being
+  opened is `not_sent`.
+- **An answer is never lost to a relay drop.** A call keeps running when the relay connection
+  resets under it (seen on the phone: a three-action `do` answered "what was sent is unknown" when
+  the tunnel reset mid-call, though the actions had gone). Its answer cannot go to the connection
+  that is gone, so it is kept (the last three) and put in front of the next call's answer: `earlier,
+  never delivered to you: the do call whose connection dropped (finished at 00:31:12): …` then
+  `now:` and the new answer.
+- A plain `launch` activates the app (to the front as it is, or started if not running); only `fresh:
+  true` ends it and starts it through XCTest's launch, whose handshake takes several seconds on the
+  phone (a Photos launch hit the 6 s action time there). A launch action gets 9 s of action time,
+  from when it starts.
 - Buttons (Home, lock, volume) get 8 s and a slow answer does not count as a runner miss. WDA's
   `/wda/homescreen` waits for SpringBoard to come up and go idle before it answers: about 3 s on the CI
   simulator (a 3 s timeout failed there), and it holds WDA's main thread the same way on a phone, where
@@ -250,6 +321,19 @@ Each answer is facts only: the app in front, numbered elements, what each action
 
 - One tool call runs at a time per phone. A second one waits at most 2 s, then answers `busy` with what
   the first is doing.
+
+### The element tree's form
+
+`treeFormat` picks `GET /source?format=xml` (the default) or `format=json`, both with
+`visible, accessible, enabled, index` excluded. WDA's JSON tree adds every element's custom actions
+(`customActions`), fetched from the accessibility server one round trip per element whatever is
+excluded, so a big tree (a feed, a keyboard) costs hundreds of round trips; its XML tree leaves them
+out unless asked (`includeCustomActionsInPageSource`). The XML is parsed with Foundation's XMLParser
+into the same elements. The CI simulator job runs the checks with both and prints both tables. Run
+42320256495 (Settings, read time of the tree and screenshot together): warm look 0.26 to 0.44 s XML
+against 0.63 to 0.71 s JSON; with the keyboard up 0.28 s against 2.0 s; the first read after a fresh
+launch 1.1 s against 5.9 s; after typing 0.46 s against 3.1 s. The phone has not been measured with
+XML yet.
 
 ### Measured on the CI simulator (run 42258166342)
 
@@ -282,15 +366,19 @@ and falls back to the picture.
 | Rule | Default |
 |---|---|
 | Typing into a secure text field | approval |
-| Tapping an element whose label matches the payment words (Pay, Buy, Purchase, Subscribe, Transfer, Send money, 支付, 付款, 购买, 转账, …) | approval |
+| Tapping an element whose label starts with a payment word, or is a short label (four words or fewer) holding one (Pay, Buy, Purchase, Subscribe, Transfer, Send money, 支付, 付款, 购买, 转账, …); a name inside a longer text is not an action (`Contact photo for Best Buy`) | approval |
 | Deleting (Delete, Remove, Erase, Reset, 删除, 移除, 抹掉, …) | approval |
 | Sending a message or mail (Send, 发送 in Messages, Mail, WeChat, WhatsApp, Telegram, …) | approval |
 | Apps on a list (banking, wallets; by bundle id) | approval for every input |
 
-When an action matches, nothing in that `do` is sent. PokiCore emits `approvalRequested` and holds up
-to `approvalWait`. If approved in time, the actions run and the answer says `approved on the phone`.
-If not, it answers `not_sent: approval_required (id …)`, and the same actions in a later `do` within
-2 minutes run once that approval is granted. Denied: `not_sent: the owner declined`.
+When an action matches, the plain actions before it in that `do` are sent first (seen on the phone:
+a last selection tap held back with the Delete after it meant the Delete, once approved, would have
+missed a photo), and from the first matching action on nothing is sent. PokiCore emits
+`approvalRequested` for those and holds up to `approvalWait`. If approved in time, they run and the
+answer says `approved on the phone`. If not, it answers `not_sent from action k: approval_required (id
+…)` after the read, saying which actions were sent, and those from k on, sent again on their own in a
+later `do` within 2 minutes, run once that approval is granted. Denied: `not_sent … the owner
+declined`.
 
 ## 3. PokiLauncher C ABI, v1
 

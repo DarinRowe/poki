@@ -35,7 +35,7 @@ final class Computer: @unchecked Sendable {
     var size: ScreenSize?
     var lastPNG: Data?
     var lastTree: String?
-    var lastPicture: UInt64?
+    var lastPicture: PictureSketch?
 
     var lastElements: [Element] { listed.map(\.element) }
     var layout: Layout { Layout(all: lastAll, screen: size ?? ScreenSize(width: 10_000, height: 10_000)) }
@@ -71,7 +71,7 @@ final class Computer: @unchecked Sendable {
     /// only what changed since the read before (a `do`); `full` lists every element, as the tree has it.
     func readAndReply(until: Double, full: Bool, changes: Bool = false, did: [String] = [], error: String? = nil, extra: [String] = []) async -> ToolResult {
         let budget = max(0.8, min(config.readTimeout, until - now() - 0.2))
-        let reading = await runner.read(timeout: budget)
+        let reading = await runner.read(timeout: budget, format: config.treeFormat)
         if size == nil { _ = try? await screenSize(until: now() + 1.5) }
         let screen = size ?? ScreenSize(width: 10_000, height: 10_000)
         var notes = reading.notes
@@ -92,12 +92,19 @@ final class Computer: @unchecked Sendable {
         // Whether the screen changed since the read before (the one the model saw last).
         let visible = listable(reading.elements, screen)
         let tree = visible.map { "\($0.key)@\($0.frame.described)" }.joined(separator: "\n")
-        let picture = reading.png.map(fingerprint)
+        let picture = reading.png.map { PictureSketch(png: $0) }
         var changedLine: String?
         if changes, treeRead, let before = lastTree {
-            let pictureChanged: Bool? = picture.flatMap { now in lastPicture.map { $0 != now } }
+            let pictureChanged: Bool? = picture.flatMap { now in lastPicture.map { now.differs(from: $0) } }
+            // Where and how much the picture moved, so a small change (an indicator fading, a badge)
+            // can be told from a page coming in without looking.
+            var where_ = ""
+            if pictureChanged == true, let now = picture, let last = lastPicture, let change = now.change(from: last), size != nil {
+                let box = [change.x * screen.width, change.y * screen.height, change.width * screen.width, change.height * screen.height].map { Int($0.rounded()) }
+                where_ = ", in \(max(1, Int((change.share * 100).rounded()))) % of it, within [\(box.map(String.init).joined(separator: ", "))]"
+            }
             if tree != before { changedLine = "screen_changed: true (the elements changed)" }
-            else if pictureChanged == true { changedLine = "screen_changed: true (only the picture changed; the elements are the same)" }
+            else if pictureChanged == true { changedLine = "screen_changed: true (only the picture changed\(where_); the elements are the same)" }
             else { changedLine = "screen_changed: false (the elements\(pictureChanged == false ? " and the picture" : "") are the same as in the read before)" }
         }
         if treeRead { lastTree = tree }
@@ -219,7 +226,7 @@ final class Computer: @unchecked Sendable {
                 : "elements (\(shown.count) on screen; only the changed are listed: + new, ~ moved; the \(same) others keep their numbers, full=true lists all):"
             body = changed.prefix(Self.lineLimit).map { line(assigned[$0]!, shown[$0], marks[$0]) }
         } else {
-            heading = fresh || prior.isEmpty ? "elements (\(shown.count)):" : "elements (\(shown.count); + new since the last read, ~ moved):"
+            heading = prior.isEmpty ? "elements (\(shown.count)):" : fresh ? "elements (\(shown.count); a new screen: numbered from 1 again, the numbers of the read before no longer apply):" : "elements (\(shown.count); + new since the last read, ~ moved):"
             body = shown.indices.prefix(full ? 1000 : Self.lineLimit).map { line(assigned[$0]!, shown[$0], marks[$0]) }
             if !full, shown.count > Self.lineLimit { body.append("… \(shown.count - Self.lineLimit) more; full=true lists all") }
         }
@@ -283,6 +290,12 @@ final class Computer: @unchecked Sendable {
         var until = started + config.toolDeadline
         if let blocked = await waitForRunner(until: until) { return blocked }
 
+        // A runner still finishing a request this side gave up on gets nothing new: what is sent now
+        // would wait its turn and run late, after the model had moved on.
+        if await !runner.waitUntilFree(timeout: min(config.actionCap, until - now() - config.readTimeout - 0.5)), let busy = runner.busyWith {
+            return ToolResult(text: "not_sent: the runner is still finishing an earlier \(busy); nothing was sent. Call look again in a few seconds; it answers when the runner is through.", jpeg: nil, isError: true)
+        }
+
         // A locked phone takes no input but the buttons; the owner unlocks it.
         let onlyButtons = actions.allSatisfy { $0["button"] != nil || $0["wait"] != nil }
         if !onlyButtons, await isLocked() {
@@ -295,67 +308,71 @@ final class Computer: @unchecked Sendable {
             return await readAndReply(until: until, full: true, error: "element \(stale.map(String.init).joined(separator: ", ")) is not in the latest read; nothing was sent. The current elements are below.")
         }
 
-        // Approval: nothing in this call is sent until the owner approves it on the phone.
-        let fingerprint = JSON.array(actions).serialized()
+        // The runner's start and the checks above are not the actions' time (seen on the phone: a
+        // launch sent while the runner was starting had its 9 s used up before it went).
+        let prepared = now()
+        until += prepared - started
+        started = prepared
+        let before = lastForeground
+        var extra: [String] = []
+
+        // Approval: from the first action that needs it, nothing is sent until the owner approves it
+        // on the phone. The actions before it are plain and go first (seen on the phone: a last
+        // selection tap held back with the Delete after it was never made, so the Delete, once
+        // approved, would have missed it).
+        var did: [String] = []
+        var error: String?
+        var lastKind: String?
+        var toRun = actions
         var approvedNote: String?
-        if let pending = approvals.pending, pending.fingerprint != fingerprint {
+        let sensitive = firstSensitive(actions)
+        // Any other actions withdraw a pending request: nothing the automation does can approve it.
+        if let pending = approvals.pending, pending.fingerprint != sensitive.map({ JSON.array(Array(actions[$0.at...])).serialized() }) {
             approvals.withdraw(id: pending.id)
         }
-        if let reason = sensitiveReason(actions) {
+        if let (at, reason) = sensitive {
+            let tail = Array(actions[at...])
+            let fingerprint = JSON.array(tail).serialized()
             if approvals.consumeGrant(fingerprint: fingerprint) != nil {
                 approvedNote = "approval: approved on the phone (\(reason))"
             } else {
+                if at > 0 {
+                    (did, error, lastKind) = await run(Array(actions[..<at]), started: started, until: until)
+                    if error != nil {
+                        return await readAndReply(until: until, full: full, changes: true, did: did, error: error, extra: ["action \(at + 1) and the actions after it were not sent (they would have needed the owner's approval: \(reason))"])
+                    }
+                }
                 let approval = approvals.pending.flatMap { $0.fingerprint == fingerprint ? $0 : nil }
-                    ?? approvals.request(app: lastForeground?.describe ?? "unknown", summary: labels(actions), reason: reason, fingerprint: fingerprint)
+                    ?? approvals.request(app: lastForeground?.describe ?? "unknown", summary: labels(tail), reason: reason, fingerprint: fingerprint)
                 // The time the owner takes is not the actions' time: the clock starts again after it.
                 let asked = now()
-                switch await approvals.wait(id: approval.id, seconds: config.approvalWait) {
+                let outcome = await approvals.wait(id: approval.id, seconds: config.approvalWait)
+                let waited = now() - asked
+                until += waited
+                started += waited
+                // The owner's approval can open Poki: the app comes back before anything is sent into Poki.
+                if let back = await bringBack(from: before, why: "after the approval", check: true) { extra.append(back) }
+                let sentFirst = at > 0 ? " Actions 1 to \(at) were sent (below)." : ""
+                let again = at > 0 ? "send action \(at + 1)\(tail.count > 1 ? " to \(actions.count)" : "") again, on their own" : "send the same actions again"
+                switch outcome {
                 case .approved?:
                     _ = approvals.consumeGrant(fingerprint: fingerprint)
-                    let waited = now() - asked
                     approvedNote = "approval: approved on the phone after \(Int(waited.rounded())) s (\(reason))"
-                    until += waited
-                    started += waited
+                    toRun = tail
                 case .declined?:
-                    return ToolResult(text: "not_sent: the owner declined on the phone (\(reason)). Nothing was sent.", jpeg: nil, isError: true)
+                    return await refused(until: until, full: full, did: did, text: "not_sent from action \(at + 1): the owner declined on the phone (\(reason)).\(sentFirst)")
                 case .expired?:
-                    return ToolResult(text: "not_sent: the approval request ended unanswered (\(reason)). Nothing was sent.", jpeg: nil, isError: true)
+                    return await refused(until: until, full: full, did: did, text: "not_sent from action \(at + 1): the approval request ended unanswered (\(reason)).\(sentFirst)")
                 case nil:
-                    return ToolResult(text: "not_sent: approval_required (id \(approval.id)): \(reason). The owner was asked on the phone. Nothing was sent. When they approve, send the same actions again (within \(Int(approvals.lifetime / 60)) minutes); other actions withdraw the request.", jpeg: nil, isError: true)
+                    return await refused(until: until, full: full, did: did, text: "not_sent from action \(at + 1): approval_required (id \(approval.id)): \(reason). The owner was asked on the phone.\(sentFirst) When they approve, \(again) (within \(Int(approvals.lifetime / 60)) minutes); other actions withdraw the request.")
                 }
             }
         }
 
-        var did: [String] = []
-        var error: String?
-        var lastKind: String?
-        let actionsUntil = min(until - config.readTimeout - 0.5, started + config.actionCap)
-        for (index, action) in actions.enumerated() {
-            let left = actionsUntil - now()
-            if left < 0.3 {
-                error = "stopped before action \(index + 1): the \(Int(config.actionCap)) s action time ran out; nothing more was sent"
-                break
-            }
-            let began = now()
-            do {
-                let (kind, text) = try await withDeadline(left, "action \(index + 1)") { [self] in try await perform(action, until: actionsUntil) }
-                lastKind = kind
-                did.append("\(text) (sent, \(Int(((now() - began) * 1000).rounded())) ms)")
-            } catch is CancellationError {
-                return ToolResult(text: "cancelled", jpeg: nil, isError: true)
-            } catch let failure {
-                let delivery: Delivery
-                switch failure {
-                case let e as ActionFailure: delivery = e.delivery
-                case let e as RunnerError: delivery = e.delivery
-                default: delivery = .unknown
-                }
-                did.append("\(action.serialized()) (\(delivery.rawValue), \(Int(((now() - began) * 1000).rounded())) ms)")
-                // An action that may have been delivered is never sent again by us, and nothing after it is sent.
-                error = "action \(index + 1) \(delivery == .unknown ? "may have been delivered" : "was not sent"): \(failure)\(index + 1 < actions.count ? "; the actions after it were not sent" : "")"
-                break
-            }
-        }
+        let (moreDid, moreError, moreKind) = await run(toRun, started: started, until: until, numberedFrom: actions.count - toRun.count)
+        did += moreDid
+        error = moreError
+        lastKind = moreKind ?? lastKind
         if let lastKind {
             let pause = min(Self.settle[lastKind] ?? 0.4, max(0, until - now() - config.readTimeout - 0.3))
             if pause > 0.01 {
@@ -363,7 +380,84 @@ final class Computer: @unchecked Sendable {
                 did.append("paused \(Int((pause * 1000).rounded())) ms before reading")
             }
         }
-        return await readAndReply(until: until, full: full, changes: true, did: did, error: error, extra: approvedNote.map { [$0] } ?? [])
+        let result = await readAndReply(until: until, full: full, changes: true, did: did, error: error, extra: (approvedNote.map { [$0] } ?? []) + extra)
+        // The read shows Poki in front where another app was being worked in: a tap at the top of
+        // the screen landed on Poki's Live Activity in the Dynamic Island. The app comes back and
+        // the read is made again, so the model never sees (or acts in) Poki's own screen.
+        if lastForeground?.bundleID == config.ownBundleID, !toRun.contains(where: { $0["launch"] != nil }), until - now() > config.readTimeout + 1,
+           let back = await bringBack(from: before, why: "after the actions (a tap near the top of the screen lands on Poki's Live Activity in the Dynamic Island)", check: false) {
+            return await readAndReply(until: until, full: full, changes: true, did: did, error: error, extra: (approvedNote.map { [$0] } ?? []) + extra + [back])
+        }
+        return result
+    }
+
+    /// When Poki itself is in front although the model was working in another app, that app is
+    /// activated again, and the line says so. nil when nothing had to be done.
+    func bringBack(from before: Foreground?, why: String, check: Bool) async -> String? {
+        guard let app = before?.bundleID, app != config.ownBundleID else { return nil }
+        if check {
+            guard let front = try? await runner.call("GET", "/wda/activeAppInfo", timeout: 1.5), front["bundleId"]?.string == config.ownBundleID else { return nil }
+        }
+        do {
+            _ = try await runner.call("POST", "/wda/apps/activate", ["bundleId": .string(app)], timeout: 4)
+            return "note: Poki was in front \(why); \(before?.describe ?? app) was brought back. Nothing was sent into Poki."
+        } catch {
+            return "note: Poki was in front \(why), and \(before?.describe ?? app) could not be brought back (\(error)). Launch it, or ask the owner."
+        }
+    }
+
+    /// The actions, in order, each within its own action time (`actionCap` from when it starts; a
+    /// launch gets 9 s, the time XCTest's launch handshake takes on the phone) and the call's
+    /// deadline. Stops at the first that fails.
+    func run(_ actions: [JSON], started: Double, until: Double, numberedFrom offset: Int = 0) async -> (did: [String], error: String?, lastKind: String?) {
+        var did: [String] = []
+        var error: String?
+        var lastKind: String?
+        for (i, action) in actions.enumerated() {
+            let index = offset + i
+            let cap = action["launch"] != nil ? max(config.actionCap, 9) : config.actionCap
+            let actionsUntil = min(until - config.readTimeout - 0.5, now() + cap)
+            let left = actionsUntil - now()
+            if left < 0.3 {
+                error = "stopped before action \(index + 1): the call's time ran out (\(Int(config.toolDeadline)) s for all the actions and the read); nothing more was sent"
+                break
+            }
+            let began = now()
+            let givenUp = runner.actionsGivenUp.value
+            do {
+                let (kind, text) = try await withDeadline(left, "action \(index + 1)") { [self] in try await perform(action, until: actionsUntil) }
+                lastKind = kind
+                did.append("\(text) (sent, \(Int(((now() - began) * 1000).rounded())) ms)")
+            } catch is CancellationError {
+                did.append("\(action.serialized()) (unknown: cancelled)")
+                error = "cancelled at action \(index + 1)"
+                break
+            } catch let failure {
+                let delivery: Delivery
+                var why = "\(failure)"
+                switch failure {
+                case let e as ActionFailure: delivery = e.delivery
+                case let e as RunnerError: delivery = e.delivery
+                case is DeadlineExceeded where !runner.hasSession && runner.actionsGivenUp.value == givenUp:
+                    // The time ran out while a session was still being opened: nothing reached the phone.
+                    delivery = .notSent
+                    why += runner.busyWith.map { "; the runner is still finishing an earlier \($0)" } ?? "; no session was open yet"
+                default: delivery = .unknown
+                }
+                did.append("\(action.serialized()) (\(delivery.rawValue), \(Int(((now() - began) * 1000).rounded())) ms)")
+                // An action that may have been delivered is never sent again by us, and nothing after it is sent.
+                error = "action \(index + 1) \(delivery == .unknown ? "may have been delivered" : "was not sent"): \(why)\(i + 1 < actions.count ? "; the actions after it were not sent" : "")"
+                break
+            }
+        }
+        return (did, error, lastKind)
+    }
+
+    /// The answer when the sensitive part was not sent: text only when nothing went, else the read
+    /// after what did go.
+    func refused(until: Double, full: Bool, did: [String], text: String) async -> ToolResult {
+        guard !did.isEmpty else { return ToolResult(text: text + " Nothing was sent.", jpeg: nil, isError: true) }
+        return await readAndReply(until: until, full: full, changes: true, did: did, error: text)
     }
 
     // MARK: Sensitivity
@@ -384,24 +478,27 @@ final class Computer: @unchecked Sendable {
         return spec.int.flatMap { refs[$0] }
     }
 
-    func sensitiveReason(_ actions: [JSON]) -> String? {
+    func sensitiveReason(_ actions: [JSON]) -> String? { firstSensitive(actions)?.reason }
+
+    /// The first action that needs the owner's approval, and why.
+    func firstSensitive(_ actions: [JSON]) -> (at: Int, reason: String)? {
         let rules = config.sensitive
         let secureOnScreen = lastElements.contains(where: \.isSecure)
         var typingTarget: Element?
-        for action in actions {
+        for (at, action) in actions.enumerated() {
             if let tap = action["tap"] {
                 let e = target(tap)
                 typingTarget = e
-                if let r = rules.reason(touching: e, typing: false, app: lastForeground, secureOnScreen: secureOnScreen) { return r }
+                if let r = rules.reason(touching: e, typing: false, app: lastForeground, secureOnScreen: secureOnScreen) { return (at, r) }
             } else if action["type"] != nil {
                 let e = action["ref"].flatMap { refs[$0.int ?? -1] } ?? typingTarget
-                if let r = rules.reason(touching: e, typing: true, app: lastForeground, secureOnScreen: secureOnScreen && e == nil) { return r }
+                if let r = rules.reason(touching: e, typing: true, app: lastForeground, secureOnScreen: secureOnScreen && e == nil) { return (at, r) }
             } else if let spec = action["long_press"] {
-                if let r = rules.reason(touching: target(spec), typing: false, app: lastForeground, secureOnScreen: secureOnScreen) { return r }
+                if let r = rules.reason(touching: target(spec), typing: false, app: lastForeground, secureOnScreen: secureOnScreen) { return (at, r) }
             } else if action["key"]?.string?.lowercased() == "return", let field = typingTarget, rules.reason(touching: field, typing: true, app: lastForeground, secureOnScreen: false) != nil {
-                return "submitting a password field"
+                return (at, "submitting a password field")
             } else if let r = rules.reason(touching: nil, typing: false, app: lastForeground, secureOnScreen: false) {
-                return r
+                return (at, r)
             }
         }
         return nil

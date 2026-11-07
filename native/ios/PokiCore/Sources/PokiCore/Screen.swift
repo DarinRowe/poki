@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationXML)
+import FoundationXML
+#endif
 
 public struct Rect: Equatable, Sendable {
     public var x, y, width, height: Double
@@ -62,7 +65,11 @@ public struct Element: Equatable, Sendable {
 public struct Foreground: Equatable, Sendable {
     public var bundleID: String?
     public var name: String?
-    public var describe: String { name ?? bundleID ?? "unknown" }
+    public var describe: String {
+        if bundleID == "com.apple.springboard" { return "Home screen (SpringBoard: the home screen, the App Switcher, a banner or a system alert)" }
+        if let name, !name.isEmpty { return name }
+        return bundleID ?? "unknown"
+    }
 }
 
 public struct ScreenSize: Equatable, Sendable { public var width, height: Double }
@@ -102,23 +109,80 @@ func flatten(_ root: JSON) -> [Element] {
     return out
 }
 
+/// WDA's XML source (`<AppiumAUT><XCUIElementTypeApplication …><XCUIElementTypeButton name label
+/// value x y width height …/>…`) as the same flat list. The wrapper element is not counted.
+func flattenXML(_ data: Data) -> (elements: [Element], root: (label: String?, name: String?))? {
+    final class Walker: NSObject, XMLParserDelegate {
+        var out: [Element] = []
+        var counter = 0
+        var open: [Int?] = []
+        var depth = -1
+        var root: (label: String?, name: String?) = (nil, nil)
+        var failed = false
+        func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?, qualifiedName: String?, attributes: [String: String]) {
+            guard name != "AppiumAUT" else { return }
+            depth += 1
+            counter += 1
+            let place = counter
+            let frame = Rect(x: Double(attributes["x"] ?? "") ?? 0, y: Double(attributes["y"] ?? "") ?? 0, width: Double(attributes["width"] ?? "") ?? 0, height: Double(attributes["height"] ?? "") ?? 0)
+            let visible = attributes["visible"].map { $0 == "true" } ?? true
+            if depth == 0 { root = (attributes["label"], attributes["name"]) }
+            var index: Int?
+            if depth > 0, visible, frame.width > 0, frame.height > 0 {
+                let type = name.replacingOccurrences(of: "XCUIElementType", with: "")
+                let id = attributes["name"]
+                index = out.count
+                out.append(Element(type: type, label: attributes["label"] ?? id, value: attributes["value"], identifier: id, frame: frame, depth: depth, node: place, end: place))
+            }
+            open.append(index)
+        }
+        func parser(_ parser: XMLParser, didEndElement name: String, namespaceURI: String?, qualifiedName: String?) {
+            guard name != "AppiumAUT" else { return }
+            if let index = open.removeLast() { out[index].end = counter }
+            depth -= 1
+        }
+        func parser(_ parser: XMLParser, parseErrorOccurred error: Error) { failed = true }
+    }
+    let walker = Walker()
+    let parser = XMLParser(data: data)
+    parser.delegate = walker
+    parser.parse()
+    guard !walker.failed || !walker.out.isEmpty else { return nil }
+    return (walker.out, walker.root)
+}
+
 func listable(_ elements: [Element], _ size: ScreenSize) -> [Element] {
     elements.filter { e in
         guard !e.text.isEmpty else { return false }
         let f = e.frame
-        return f.x + f.width > 0 && f.y + f.height > 0 && f.x < size.width && f.y < size.height
+        guard f.x + f.width > 0 && f.y + f.height > 0 && f.x < size.width && f.y < size.height else { return false }
+        // The Dynamic Island (and Poki's Live Activity in it) is never listed: a tap there opens Poki.
+        // It is the top 64 points of the screen in the middle half of the width; no app content
+        // lies there (the status bar ends at 62 on an iPhone 17 Pro).
+        let centre = f.x + f.width / 2
+        if f.y + f.height <= 64, centre > size.width / 4, centre < size.width * 3 / 4, size.width < 1000 { return false }
+        return true
     }
 }
 
 extension Runner {
     /// The source without visible, accessible, enabled and index: `visible` alone costs 2 s against 0.6 s
-    /// for Settings; what is on screen is decided from the frames instead.
-    func tree(timeout: Double) async throws -> (elements: [Element], foreground: Foreground) {
-        async let source = call("GET", "/source?format=json&excluded_attributes=visible,accessible,enabled,index", timeout: timeout)
+    /// for Settings; what is on screen is decided from the frames instead. `format` is "json" or "xml"
+    /// (WDA's JSON adds each element's custom actions, one accessibility round trip per element).
+    func tree(timeout: Double, format: String = "json") async throws -> (elements: [Element], foreground: Foreground) {
+        let xml = format.lowercased() == "xml"
+        async let source = call("GET", "/source?format=\(xml ? "xml" : "json")&excluded_attributes=visible,accessible,enabled,index", timeout: timeout)
         async let app = try? call("GET", "/wda/activeAppInfo", timeout: min(timeout, 2))
         let (sourceValue, appValue) = (try await source, await app)
+        let appName = appValue?["name"]?.string.flatMap { $0.isEmpty ? nil : $0 }
+        if xml {
+            guard let text = sourceValue.string, let parsed = flattenXML(Data(text.utf8)) else {
+                throw RunnerError(message: "the runner's XML tree could not be read", delivery: .notSent)
+            }
+            return (parsed.elements, Foreground(bundleID: appValue?["bundleId"]?.string, name: appName ?? parsed.root.label ?? parsed.root.name))
+        }
         let root = (try? sourceValue.string.map(JSON.parse)) ?? sourceValue
-        let name = appValue?["name"]?.string.flatMap { $0.isEmpty ? nil : $0 } ?? root["label"]?.text ?? root["name"]?.text
+        let name = appName ?? root["label"]?.text ?? root["name"]?.text
         return (flatten(root), Foreground(bundleID: appValue?["bundleId"]?.string, name: name))
     }
 
@@ -141,23 +205,36 @@ extension Runner {
 
     /// The screenshot and the tree at the same time; each has its own deadline, and a part that fails
     /// is reported in `notes` instead of failing the read.
-    func read(timeout: Double, wantPicture: Bool = true) async -> Reading {
+    func read(timeout: Double, wantPicture: Bool = true, format: String = "json") async -> Reading {
         let started = now()
+        let pictureAt = LockedBox<Double?>(nil)
         async let treePart: Result<(elements: [Element], foreground: Foreground), Error> = {
-            do { return .success(try await self.tree(timeout: timeout)) } catch { return .failure(error) }
+            do { return .success(try await self.tree(timeout: timeout, format: format)) } catch { return .failure(error) }
         }()
         async let picturePart: Result<Data, Error>? = wantPicture ? {
+            defer { pictureAt.value = now() }
             do { return .success(try await self.screenshot(timeout: timeout)) } catch { return .failure(error) }
         }() : nil
         var reading = Reading()
+        var treeCame = false
         switch await treePart {
-        case .success(let t): reading.elements = t.elements; reading.foreground = t.foreground
+        case .success(let t): reading.elements = t.elements; reading.foreground = t.foreground; treeCame = true
         case .failure(let e): reading.notes.append("no element tree: \(e)")
         }
+        let treeAt = now()
         switch await picturePart {
         case .success(let png)?: reading.png = png
         case .failure(let e)?: reading.notes.append("no screenshot: \(e)")
         case nil: break
+        }
+        // The tree and the picture are one moment: when the tree came well after the picture (a slow
+        // snapshot while the screen moved on), the picture is taken again so the frames and the
+        // pixels agree (seen on the phone: a tree of the inside of a chat with a picture of the list).
+        if treeCame, reading.png != nil, let at = pictureAt.value, treeAt - at > 0.6, started + timeout - now() > 0.4 {
+            if let again = try? await screenshot(timeout: min(1.5, started + timeout - now())) {
+                reading.png = again
+                reading.notes.append("the picture was taken again after the tree, which came \(Int(((treeAt - at) * 1000).rounded())) ms later than the first picture")
+            }
         }
         reading.ms = Int(((now() - started) * 1000).rounded())
         return reading
