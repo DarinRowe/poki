@@ -84,6 +84,16 @@ final class AppModel {
         return .proxy
     }
 
+    /// look, do or status run here as a relay call would be (the Debug probe's end-to-end check).
+    /// The probe opened the in-process session itself (on the simulator there is no launcher), so
+    /// PokiCore may act now.
+    func inProcessReadyForProbe() { host.update(runner: .running) }
+
+    func phoneTool(_ name: String, arguments: String) async -> (text: String, isError: Bool) {
+        let result = await core.tool(name, arguments: arguments)
+        return (result.text, result.isError)
+    }
+
     init() {
         ActivityController.endAll()
         let core = LiveCore(host: host, transport: automationPath == .inProcess ? InProcessWDA(screen: UIScreen.main.bounds.size) : URLSessionTransport())
@@ -101,7 +111,12 @@ final class AppModel {
         // PokiCore asks for a restart after two silent requests in a row. A slow gesture can be one of
         // them while the runner is fine, so the runner is asked first; only a runner that does not
         // answer is started again (each restart costs seconds and flashes the automation banner).
-        host.onRestart {
+        host.onRestart { [automationPath] in
+            // In-process, XCTest keeps one session per process: there is no runner to ask or restart.
+            guard automationPath == .runner else {
+                Task { @MainActor in AppLog.shared.add("runner", "PokiCore asked for a restart; the in-process session cannot be reopened, so it was kept") }
+                return
+            }
             Task.detached {
                 let answers = await RunnerProbe.answers()
                 await MainActor.run { AppLog.shared.add("runner", answers ? "PokiCore asked for a restart; the runner answers, so it was kept" : "PokiCore asked for a restart; the runner does not answer: restarting it") }

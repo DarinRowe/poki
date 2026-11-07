@@ -97,8 +97,8 @@ private struct FirstRun: View {
     }
 
     private var setupValue: Text {
-        let done = SetupStep.allCases.filter(model.isDone).count
-        let total = SetupStep.allCases.count
+        let done = SetupStep.shown.filter(model.isDone).count
+        let total = SetupStep.shown.count
         return done == 0 ? Text(String(localized: "setup-steps", defaultValue: "\(total) steps")) : Text("\(done) of \(total)")
     }
 }
@@ -313,8 +313,11 @@ private struct SummaryRow: View {
         HStack {
             item(Health.relay(model).color, "Relay")
             Spacer()
-            item(Health.runner(model).color, "Runner")
-            Spacer()
+            // The in-process path has no Poki Runner (ESP-152): its row is hidden, the code kept.
+            if model.automationPath == .runner {
+                item(Health.runner(model).color, "Runner")
+                Spacer()
+            }
             item(Health.loopback(model).color, "Loopback")
             Spacer()
             Text(verbatim: "›").site(15, line: 18).foregroundStyle(Site.c4)
@@ -367,8 +370,8 @@ private struct StandingBy: View {
             // Setup is always one tap away, on or off (ESP-168: with Poki off there was no way back
             // into it from Home; the board does not draw this row).
             Button(action: openSetup) {
-                let done = SetupStep.allCases.filter(model.isDone).count
-                let total = SetupStep.allCases.count
+                let done = SetupStep.shown.filter(model.isDone).count
+                let total = SetupStep.shown.count
                 HStack {
                     Text("Setup").site(15, line: 18)
                     Spacer(minLength: 8)
@@ -436,8 +439,13 @@ struct HealthCard: View {
         VStack(spacing: 0) {
             PokiSwitch(label: "Poki").padding(.horizontal, 16).frame(height: 48)
                 .overlay(alignment: .bottom) { Site.edge.frame(height: 1) }
-            row("Relay", Health.relay(model))
-            row("Runner", Health.runner(model), divider: !issues.isEmpty || !hideLoopback)
+            // The in-process path has no Poki Runner (ESP-152): its row is hidden, the code kept.
+            if model.automationPath == .runner {
+                row("Relay", Health.relay(model))
+                row("Runner", Health.runner(model), divider: !issues.isEmpty || !hideLoopback)
+            } else {
+                row("Relay", Health.relay(model), divider: !issues.isEmpty || !hideLoopback)
+            }
             if !hideLoopback { row("Loopback", Health.loopback(model), divider: !issues.isEmpty) }
             ForEach(Array(issues.enumerated()), id: \.element.id) { i, issue in
                 IssueSection(issue: issue, openSetup: openSetup)
