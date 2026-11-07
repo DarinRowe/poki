@@ -8,7 +8,7 @@ mod pasteboard;
 mod remote;
 mod stream;
 
-use gesture::{Drag, Pinch, pinch_contacts};
+use gesture::{Drag, Pinch, Strokes, pinch_contacts};
 use idevice::{
     IdeviceService, ReadWrite, RsdService,
     core_device::hid::{
@@ -202,6 +202,9 @@ enum Request {
         #[serde(default = "drag_duration")]
         duration_ms: u64,
     },
+    DrawStrokes {
+        strokes: Strokes,
+    },
     Key {
         key: String,
         #[serde(default)]
@@ -322,6 +325,7 @@ impl Request {
             Self::TypeText { text, .. } if text.len() > 1024 * 1024 => {
                 return Err("text exceeds 1 MiB".into());
             }
+            Self::DrawStrokes { strokes } => strokes.validate()?,
             _ => {}
         }
         if let Self::Drag {
@@ -619,6 +623,21 @@ async fn execute_connected(
                 }
                 .send(hid)
                 .await?;
+            }
+            Request::DrawStrokes { strokes } => {
+                let hid = touch.insert(
+                    Touch::connect_rsd(adapter, rsd)
+                        .await
+                        .map_err(not_sent_error)?,
+                );
+                let begun = std::time::Instant::now();
+                strokes.send(hid).await?;
+                return Ok(json!({
+                    "sent": true,
+                    "screen_change_verified": false,
+                    "strokes": strokes.0.len(),
+                    "elapsed_ms": begun.elapsed().as_millis() as u64,
+                }));
             }
             Request::Key {
                 key,

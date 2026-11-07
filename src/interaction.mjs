@@ -380,6 +380,8 @@ export async function interaction(ctx, name, args) {
       }
       break;
     }
+    case 'touch_path': return ctx.input({ op: 'draw_strokes', strokes: [args.points] });
+    case 'draw_strokes': return ctx.input({ op: 'draw_strokes', strokes: args.strokes.map(stroke => stroke.points) });
     case 'pinch': {
       const f = await frame();
       const p = { x: args.x ?? f.width / 2, y: args.y ?? f.height / 2 };

@@ -70,6 +70,72 @@ impl Drag {
     }
 }
 
+#[derive(Clone, Copy, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct PathPoint {
+    pub x: u16,
+    pub y: u16,
+    pub time_ms: u64,
+}
+
+pub(crate) const STROKE_GAP_MS: u64 = 80;
+
+/// Separately lifted strokes. Each point is sent once at its stroke's start plus `time_ms`, like `Drag`.
+#[derive(Clone, serde::Deserialize)]
+#[serde(transparent)]
+pub(crate) struct Strokes(pub Vec<Vec<PathPoint>>);
+
+impl Strokes {
+    pub(crate) fn validate(&self) -> Result<()> {
+        if !(1..=12).contains(&self.0.len()) {
+            return Err("strokes must contain 1..12 strokes".into());
+        }
+        let mut total = 0;
+        for points in &self.0 {
+            if !(2..=8192).contains(&points.len()) {
+                return Err("a stroke must contain 2..8192 points".into());
+            }
+            if points[0].time_ms != 0 || points.windows(2).any(|w| w[1].time_ms <= w[0].time_ms) {
+                return Err("time_ms must start at 0 and increase at every point".into());
+            }
+            total += points[points.len() - 1].time_ms;
+        }
+        if total > 60000 {
+            return Err("strokes must last at most 60000 ms together".into());
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn send(&self, hid: &mut impl TouchSender) -> Result<()> {
+        for (index, points) in self.0.iter().enumerate() {
+            if index > 0 {
+                tokio::time::sleep(Duration::from_millis(STROKE_GAP_MS)).await;
+            }
+            let start = Instant::now();
+            let first = points[0];
+            hid.send_touchscreen(TOUCHSCREEN_STATE_CONTACT, first.x, first.y)
+                .await?;
+            let mut last = first;
+            let outcome: Result<()> = async {
+                for &point in &points[1..] {
+                    sleep_until(start + Duration::from_millis(point.time_ms)).await;
+                    last = point;
+                    hid.send_touchscreen(TOUCHSCREEN_STATE_CONTACT, point.x, point.y)
+                        .await?;
+                }
+                Ok(())
+            }
+            .await;
+            let release = hid
+                .send_touchscreen(TOUCHSCREEN_STATE_RELEASE, last.x, last.y)
+                .await;
+            outcome?;
+            release?;
+        }
+        Ok(())
+    }
+}
+
 pub(crate) struct Pinch {
     pub x: u16,
     pub y: u16,
@@ -378,13 +444,31 @@ mod tests {
                 5,
                 None,
                 both.clone(),
-                vec![0.0, 16.0, 32.0, 48.0, 53.0, 58.0 + gap, 78.0 + gap, 83.0 + gap],
+                vec![
+                    0.0,
+                    16.0,
+                    32.0,
+                    48.0,
+                    53.0,
+                    58.0 + gap,
+                    78.0 + gap,
+                    83.0 + gap,
+                ],
             ),
             (
                 25,
                 None,
                 both.clone(),
-                vec![0.0, 25.0, 50.0, 75.0, 100.0, 125.0 + gap, 150.0 + gap, 175.0 + gap],
+                vec![
+                    0.0,
+                    25.0,
+                    50.0,
+                    75.0,
+                    100.0,
+                    125.0 + gap,
+                    150.0 + gap,
+                    175.0 + gap,
+                ],
             ),
             (
                 5,
@@ -400,7 +484,11 @@ mod tests {
             } else {
                 outcome.unwrap();
             }
-            let packets: Vec<_> = transport.transmissions.iter().map(|t| &t.contacts[0]).collect();
+            let packets: Vec<_> = transport
+                .transmissions
+                .iter()
+                .map(|t| &t.contacts[0])
+                .collect();
             assert_eq!(packets, sent, "delay={delay_ms}, fail={fail_at:?}");
             for (packet, expected_ms) in transport.transmissions.iter().zip(&times) {
                 let actual_ms = packet.at.as_secs_f64() * 1000.0;

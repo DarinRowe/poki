@@ -18,7 +18,7 @@ The default `tools/list` response contains the tools for phone tasks. Tool names
 | Service and devices | `poki_mcp_status`, `list_devices`, `select_device` |
 | Read the screen | `list_elements`, `take_screenshot`, `get_foreground_app` |
 | Apps and URLs | `list_apps`, `launch_app`, `terminate_app`, `open_url` |
-| Touch and input | `tap`, `tap_text`, `long_press`, `double_tap`, `drag`, `pinch`, `fill`, `type_text`, `scroll`, `scroll_to`, `swipe`, `press_key`, `go_back`, `hide_keyboard`, `press_button`, `get_clipboard` |
+| Touch and input | `tap`, `tap_text`, `long_press`, `double_tap`, `drag`, `pinch`, `touch_path`, `draw_strokes`, `fill`, `type_text`, `scroll`, `scroll_to`, `swipe`, `press_key`, `go_back`, `hide_keyboard`, `press_button`, `get_clipboard` |
 | Wait, prompts, and batches | `wait_for`, `handle_alert`, `batch_commands` |
 
 The runtime default list is defined in `src/tools.mjs`. The complete catalog includes simulator management, app installation, recording, location, appearance, and device leases.
@@ -137,6 +137,8 @@ Accessibility can miss changes that affect only pixels, such as Calculator's dis
 | Touch | `scroll_to` | Search for visible text and scroll until it is found, content stops changing, or max_scrolls is reached. |
 | Touch | `drag` | Hold a touch, then move between the supplied logical-point endpoints. |
 | Touch | `pinch` | Perform a two-finger gesture centered at x/y in screen points. |
+| Touch | `touch_path` | Draw one continuous stroke through timed points, such as a circle or a curve. |
+| Touch | `draw_strokes` | Draw 1 to 12 separately lifted strokes in one call, such as handwriting or a signature. |
 | Text and keys | `fill` | Focus a field by ref, coordinates, or matching field label/placeholder/value/identifier, replace its text, and optionally submit after text verification. |
 | Text and keys | `type_text` | Enter text into the focused field, optionally clearing it first and sending Return after verification. |
 | Text and keys | `press_key` | Send a named keyboard key with optional modifiers and count (default one). |

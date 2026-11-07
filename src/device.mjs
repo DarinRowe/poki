@@ -29,7 +29,7 @@ const platformTools = new Set(['start_simulator', 'shut_down_simulator', 'start_
 // the reads it has just measured, up to a cap.
 const springBoardId = 'com.apple.springboard', springBoardExecutable = /(?:^|\/)SpringBoard(?:\.app\/SpringBoard)?$/;
 const settleMs = 600, readbackMs = 5000, maxReadbackMs = 12000;
-const reportsScreen = new Set(['tap', 'double_tap', 'long_press', 'tap_text', 'swipe', 'drag', 'scroll', 'pinch', 'type_text', 'fill', 'press_key', 'press_button', 'go_back', 'handle_alert', 'system_gesture']);
+const reportsScreen = new Set(['tap', 'double_tap', 'long_press', 'tap_text', 'swipe', 'drag', 'scroll', 'pinch', 'touch_path', 'draw_strokes', 'type_text', 'fill', 'press_key', 'press_button', 'go_back', 'handle_alert', 'system_gesture']);
 // These exist to act on a control, so the reply says when nothing was seen to change after one.
 const touchesControl = new Set(['tap', 'double_tap', 'long_press', 'tap_text', 'go_back', 'handle_alert']);
 // Touches aimed by coordinates. A run of them in a batch (selecting photos, paging a carousel) is
@@ -357,7 +357,7 @@ export class Devices {
   }
   async input(request) {
     const target = await this.target();
-    const frame = 'x' in request || 'x1' in request || request.op === 'pinch' ? await this.screenSize() : undefined;
+    const frame = 'x' in request || 'x1' in request || request.op === 'pinch' || request.op === 'draw_strokes' ? await this.screenSize() : undefined;
     const command = { ...request };
     if ('x' in command) {
       const p = hidPoint(command.x, command.y, frame.width, frame.height);
@@ -367,6 +367,10 @@ export class Devices {
       const a = hidPoint(command.x1, command.y1, frame.width, frame.height), b = hidPoint(command.x2, command.y2, frame.width, frame.height);
       if (target.kind === 'physical') [command.x1,command.y1,command.x2,command.y2] = [...a,...b];
     }
+    if (command.op === 'draw_strokes') command.strokes = command.strokes.map(points => points.map(({ x, y, time_ms }) => {
+      const p = hidPoint(x, y, frame.width, frame.height);
+      return target.kind === 'physical' ? { x: p[0], y: p[1], time_ms } : { x, y, time_ms };
+    }));
     if (command.op === 'pinch' && target.kind === 'physical') {
       command.start_distance *= 65535 / (frame.width - 1); command.end_distance *= 65535 / (frame.width - 1);
     }
@@ -413,7 +417,7 @@ export class Devices {
       }
       switch (name) {
         case 'acquire_device': return text(await this.coordinator.acquire(this, await this.target(false), args.ttl_seconds ?? 120));
-        case 'poki_mcp_status': return text({ update: await updateNotice(), implementation: `Poki MCP ${version}`, ...await buildInfo(), registered_device_tools: 50, observation_tools: 1, management_tools: 4, transport_tools: 2, total_tools: definitions.length, devices: (await this.inventory()).length, selected: this.selected ?? null, approval_mode: process.env.POKI_MCP_APPROVAL_MODE === 'allow' ? 'operator-preapproved' : 'ask-human', approval_covers: [...approvedTools], approval_scope: 'Only the tools in approval_covers ask for approval. Taps, typing and other input inside apps, including a delete confirmed with a tap, are not gated.' });
+        case 'poki_mcp_status': return text({ update: await updateNotice(), implementation: `Poki MCP ${version}`, ...await buildInfo(), registered_device_tools: 52, observation_tools: 1, management_tools: 4, transport_tools: 2, total_tools: definitions.length, devices: (await this.inventory()).length, selected: this.selected ?? null, approval_mode: process.env.POKI_MCP_APPROVAL_MODE === 'allow' ? 'operator-preapproved' : 'ask-human', approval_covers: [...approvedTools], approval_scope: 'Only the tools in approval_covers ask for approval. Taps, typing and other input inside apps, including a delete confirmed with a tap, are not gated.' });
         case 'list_devices': {
           const devices = await this.describeDevices(args.include_all_simulators);
           return text({ devices, ...(devices.some(d => d.kind === 'physical') ? {} : { notice: noUsbDevice }), ...(args.include_all_simulators ? { simulator_models: await simulatorModels() } : {}) });
