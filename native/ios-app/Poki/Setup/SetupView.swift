@@ -320,13 +320,16 @@ struct LoopbackContent: View {
             Text("Keep your existing VPN connected. Poki uses its loopback and leaves its own VPN off.")
                 .font(.subheadline)
             Button("Use the current VPN", systemImage: "network") { model.chooseConnection(.proxy) }
-                .disabled(model.connectionInUse || model.tunnel.busy)
+                .disabled(connectionLocked)
             ForEach(ProxyApps.all) { app in proxyRow(app) }
             localDevVPN
         } else {
             builtIn
         }
     }
+
+    /// The connection cannot change while Poki is on or pairing, or while the tunnel is changing.
+    private var connectionLocked: Bool { model.connectionInUse || model.tunnel.busy }
 
     @ViewBuilder private var connectionChoice: some View {
         if model.tunnel.available {
@@ -338,7 +341,7 @@ struct LoopbackContent: View {
                 Text("External app").tag(SetupState.Loopback.proxy)
             }
             .pickerStyle(.segmented)
-            .disabled(model.connectionInUse || model.tunnel.busy)
+            .disabled(connectionLocked)
         } else {
             #if targetEnvironment(simulator)
             Text("The built-in connection runs on a physical iPhone. External connection options are shown below.")
@@ -363,13 +366,13 @@ struct LoopbackContent: View {
         case .connecting:
             HStack { ProgressView(); Text("Connecting to this iPhone…") }
             Button("Cancel connection", role: .cancel) { model.tunnel.disconnect() }
-                .disabled(model.tunnel.busy || model.connectionInUse)
+                .disabled(connectionLocked)
         case .disconnecting:
             HStack { ProgressView(); Text("Disconnecting…") }
         case .connected:
             StatusLine(text: "Local VPN connected. The check above confirms developer access.", symbol: "network", color: Brand.blue)
             Button("Disconnect local connection") { model.tunnel.disconnect() }
-                .disabled(model.connectionInUse || model.tunnel.busy)
+                .disabled(connectionLocked)
         case .failed(let message):
             StatusLine(text: message, symbol: "exclamationmark.triangle.fill", color: .orange)
             enableButton
@@ -416,7 +419,7 @@ struct LoopbackContent: View {
                 else if app.isInstalled { Text("Installed").font(.caption).foregroundStyle(.secondary) }
             }
         }
-        .disabled(model.connectionInUse || model.tunnel.busy)
+        .disabled(connectionLocked)
     }
 
     private var localDevVPN: some View {
@@ -437,7 +440,7 @@ struct LoopbackContent: View {
                 if model.setup.proxyApp == "localdevvpn" { Text("In use").font(.caption.weight(.semibold)).foregroundStyle(.green) }
             }
         }
-        .disabled(model.connectionInUse || model.tunnel.busy)
+        .disabled(connectionLocked)
     }
 
     private func choose(_ app: ProxyApp) {
