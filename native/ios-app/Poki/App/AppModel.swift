@@ -98,6 +98,11 @@ final class AppModel {
         return (result.text, result.isError)
     }
 
+    /// The same call with its picture, for the gym scorecard (the Debug probe's `gym` mode).
+    func phoneToolWithPicture(_ name: String, arguments: String) async -> PokiCore.ToolAnswer {
+        await core.callTool(name, arguments: arguments)
+    }
+
     /// The chat watches the steps and approvals of the task it runs.
     var onShellEvent: ((ShellEvent) -> Void)?
 

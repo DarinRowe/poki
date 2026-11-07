@@ -151,9 +151,13 @@ static BOOL SRABI(id target, SEL selector, const char *result, NSArray<NSString 
     // A simulator has no Developer disk image: the same files are in Xcode's simulator platform.
     NSString *root = NSProcessInfo.processInfo.environment[@"POKI_SIMULATOR_DEVELOPER_DIR"];
     if (root.length) {
+        // Xcode 26.3's simulator platform ships no lib_TestingInterop.dylib (XCTestCore loads without
+        // it there); a file that is not in the platform is left out rather than failing the session.
         NSMutableArray *moved = [NSMutableArray array];
-        for (NSString *path in paths)
-            [moved addObject:[root stringByAppendingString:[path substringFromIndex:@"/System/Developer".length]]];
+        for (NSString *path in paths) {
+            NSString *inPlatform = [root stringByAppendingString:[path substringFromIndex:@"/System/Developer".length]];
+            if ([NSFileManager.defaultManager fileExistsAtPath:inPlatform]) [moved addObject:inPlatform];
+        }
         paths = moved;
     }
 #endif
