@@ -113,6 +113,8 @@ final class FakeHost: CoreHost, @unchecked Sendable {
     let restarts = LockedBox(0)
     let texts = LockedBox<[RecognizedText]?>(nil)
     let widths = LockedBox<[Int]>([])
+    let warmUps = LockedBox(0)
+    func warmUp() { warmUps.update { $0 += 1 } }
     func recognizeText(inPNG png: Data) async -> [RecognizedText]? { texts.value }
     func signingKey() throws -> RelayKey { FakeKey() }
     func accessHashes() -> [String] { ["abc123"] }

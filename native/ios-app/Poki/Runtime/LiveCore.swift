@@ -71,11 +71,18 @@ final class AppCoreHost: CoreHost, @unchecked Sendable {
     private var restart: (@Sendable () -> Void)?
     private var paused = false
     private var wake: (@Sendable () -> Void)?
+    private var warm: (@Sendable () -> Void)?
 
     func update(key: Curve25519.Signing.PrivateKey?, hashes: [String]) { lock.withLock { self.key = key; self.hashes = hashes } }
     func update(runner: RunnerState) { lock.withLock { self.runner = runner } }
     func onRestart(_ action: @escaping @Sendable () -> Void) { lock.withLock { restart = action } }
     func onWake(_ action: @escaping @Sendable () -> Void) { lock.withLock { wake = action } }
+    func onWarmUp(_ action: @escaping @Sendable () -> Void) { lock.withLock { warm = action } }
+    /// MCP initialize: a paused runner starts now, and the app gets the session ready.
+    func warmUp() {
+        _ = runnerState()
+        lock.withLock { warm }?()
+    }
     /// The runner was stopped while idle (or by the owner): the next tool call starts it again.
     func setPaused(_ value: Bool) { lock.withLock { paused = value } }
 

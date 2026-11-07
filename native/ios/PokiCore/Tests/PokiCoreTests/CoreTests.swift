@@ -366,6 +366,13 @@ final class MCPTests: XCTestCase {
         XCTAssertEqual(call["result"]?["isError"], false)
     }
 
+    /// The app opens its session when an agent connects, so the first look does not pay for it.
+    func testInitializeWarmsTheHostUp() async {
+        let (core, _, host) = makeCore()
+        _ = await post(core, ["jsonrpc": "2.0", "id": 1, "method": "initialize", "params": ["protocolVersion": "2025-06-18"]])
+        XCTAssertEqual(host.warmUps.value, 1)
+    }
+
     func testGetIsNotAllowed() async {
         let (core, _, _) = makeCore()
         let r = await core.handle(RelayRequest(id: "r", method: "GET", headers: [:], body: ""))

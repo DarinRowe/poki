@@ -40,4 +40,6 @@ enum TextRecognizer {
 extension CoreHost {
     /// Vision on the phone; a host may answer differently (tests do).
     public func recognizeText(inPNG png: Data) async -> [RecognizedText]? { TextRecognizer.recognize(png: png) }
+    /// Nothing to prepare by default.
+    public func warmUp() {}
 }

@@ -109,6 +109,8 @@ public protocol CoreHost: AnyObject, Sendable {
     func jpeg(fromPNG png: Data, width: Int, quality: Double) throws -> Data
     func runnerState() -> RunnerState
     func restartRunner()
+    /// An agent connected (MCP initialize): get ready for its first look now, not during it.
+    func warmUp()
     /// Text read from a PNG screenshot, used for elements an app collapsed. PokiCore answers it with
     /// Vision by default, so a host need not implement it.
     func recognizeText(inPNG png: Data) async -> [RecognizedText]?
@@ -315,6 +317,7 @@ public final class PokiCore: @unchecked Sendable {
         func result(_ value: JSON) -> JSON { ["jsonrpc": "2.0", "id": id ?? .null, "result": value] }
         switch method {
         case "initialize":
+            host?.warmUp()
             let asked = message["params"]?["protocolVersion"]?.string ?? Self.protocolVersions[0]
             let version = Self.protocolVersions.contains(asked) ? asked : Self.protocolVersions[0]
             let newSession = UUID().uuidString.lowercased()
