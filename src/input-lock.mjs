@@ -40,7 +40,7 @@ export async function deviceKey(ctx, args) {
   return others.length === 0 && id ? id : ANY;
 }
 
-export class InputLock {
+class InputLock {
   holders = new Map(); waiters = new Set(); reads = 0; readWaiters = [];
   constructor({ waitMs = 30000, maxReads = 4 } = {}) { this.waitMs = waitMs; this.maxReads = maxReads; }
 

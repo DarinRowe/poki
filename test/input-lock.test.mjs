@@ -2,8 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { Coordination } from '../src/coordination.mjs';
-import { InputLock, inputLockFromEnv, deviceKey } from '../src/input-lock.mjs';
+import { inputLockFromEnv, deviceKey } from '../src/input-lock.mjs';
 import { fixture } from './fixture.mjs';
+
+const lockOn = (env = {}) => inputLockFromEnv({ POKI_INPUT_LOCK: '1', POKI_INPUT_LOCK_WAIT_MS: '1000', ...env });
 
 // A session stand-in: dispatch records when each tool starts and ends and takes `ms` to run.
 function session(label, log, ms = 40) {
@@ -50,21 +52,21 @@ test('without the lock every session shares one queue, as before', async () => {
 });
 
 test('with the lock, a read from another session runs while input holds the device', async () => {
-  const coordinator = new Coordination(); coordinator.inputLock = new InputLock({ waitMs: 1000 });
+  const coordinator = new Coordination(); coordinator.inputLock = lockOn();
   const log = [], a = session('a', log, 80), b = session('b', log, 10);
   await Promise.all([coordinator.call(a, 'tap', {}), sleep(5).then(() => coordinator.call(b, 'take_screenshot', {}))]);
   assert.deepEqual(log, ['a:tap:start', 'b:take_screenshot:start', 'b:take_screenshot:end', 'a:tap:end']);
 });
 
 test('with the lock, input from two sessions to one device runs one at a time', async () => {
-  const coordinator = new Coordination(); coordinator.inputLock = new InputLock({ waitMs: 1000 });
+  const coordinator = new Coordination(); coordinator.inputLock = lockOn();
   const log = [], a = session('a', log), b = session('b', log);
   await Promise.all([coordinator.call(a, 'tap', {}), coordinator.call(b, 'type_text', { text: 'x' })]);
   assert.deepEqual(log, ['a:tap:start', 'a:tap:end', 'b:type_text:start', 'b:type_text:end']);
 });
 
 test('with the lock, input to two different devices runs side by side', async () => {
-  const coordinator = new Coordination(); coordinator.inputLock = new InputLock({ waitMs: 1000 });
+  const coordinator = new Coordination(); coordinator.inputLock = lockOn();
   const log = [], a = session('a', log), b = session('b', log);
   b.selected = 'phone-b';
   await Promise.all([coordinator.call(a, 'tap', {}), coordinator.call(b, 'tap', {})]);
@@ -72,14 +74,14 @@ test('with the lock, input to two different devices runs side by side', async ()
 });
 
 test('with the lock, one session keeps its own order even for reads', async () => {
-  const coordinator = new Coordination(); coordinator.inputLock = new InputLock({ waitMs: 1000 });
+  const coordinator = new Coordination(); coordinator.inputLock = lockOn();
   const log = [], a = session('a', log);
   await Promise.all([coordinator.call(a, 'tap', { ms: 40 }), coordinator.call(a, 'take_screenshot', { ms: 5 })]);
   assert.deepEqual(log, ['a:tap:start', 'a:tap:end', 'a:take_screenshot:start', 'a:take_screenshot:end']);
 });
 
 test('a session that waits too long gets an error naming the holder and its tool', async () => {
-  const coordinator = new Coordination(); coordinator.inputLock = new InputLock({ waitMs: 50 });
+  const coordinator = new Coordination(); coordinator.inputLock = lockOn({ POKI_INPUT_LOCK_WAIT_MS: '50' });
   const log = [], a = session('agent-a', log, 300), b = session('agent-b', log);
   const first = coordinator.call(a, 'drag', {});
   await sleep(5);
@@ -98,7 +100,7 @@ test('a session that waits too long gets an error naming the holder and its tool
 });
 
 test('an unknown device excludes input to every device', async () => {
-  const lock = new InputLock({ waitMs: 1000 });
+  const lock = lockOn();
   const releaseAny = await lock.acquire('*', { session: 's', tool: 'launch_app' });
   let got = false;
   const pending = lock.acquire('phone-a', { session: 't', tool: 'tap' }).then(release => { got = true; return release; });
@@ -107,11 +109,11 @@ test('an unknown device excludes input to every device', async () => {
   releaseAny();
   (await pending)();
   assert.equal(got, true);
-  assert.equal(lock.holders.size, 0);
+  (await lock.acquire('*', { session: 'u', tool: 'tap' }))();
 });
 
 test('reads are capped at POKI_MAX_CONCURRENT_READS', async () => {
-  const coordinator = new Coordination(); coordinator.inputLock = new InputLock({ maxReads: 2 });
+  const coordinator = new Coordination(); coordinator.inputLock = lockOn({ POKI_MAX_CONCURRENT_READS: '2' });
   const log = [], sessions = ['a', 'b', 'c'].map(name => session(name, log, 30));
   let peak = 0, running = 0;
   for (const s of sessions) { const run = s.dispatch.bind(s); s.dispatch = async (...args) => { peak = Math.max(peak, ++running); try { return await run(...args); } finally { running--; } }; }
@@ -121,7 +123,7 @@ test('reads are capped at POKI_MAX_CONCURRENT_READS', async () => {
 });
 
 test('an aborted wait leaves the queue and does not run', async () => {
-  const coordinator = new Coordination(); coordinator.inputLock = new InputLock({ waitMs: 1000 });
+  const coordinator = new Coordination(); coordinator.inputLock = lockOn();
   const log = [], a = session('a', log, 100), b = session('b', log);
   const first = coordinator.call(a, 'tap', {});
   const controller = new AbortController();
@@ -131,7 +133,8 @@ test('an aborted wait leaves the queue and does not run', async () => {
   await assert.rejects(second, /stop/);
   await first;
   assert.ok(!log.includes('b:tap:start'));
-  assert.equal(coordinator.inputLock.waiters.size, 0);
+  await coordinator.call(b, 'tap', { ms: 1 });
+  assert.ok(log.includes('b:tap:end'));
 });
 
 test('a phone named by one session and given by its UDID in another takes one input lock', { timeout: 30000 }, async t => {
