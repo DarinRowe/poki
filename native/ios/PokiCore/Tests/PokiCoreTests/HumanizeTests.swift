@@ -263,6 +263,32 @@ final class HumanizeTests: XCTestCase {
         XCTAssertEqual(wda.bodies("POST /wda/keys").count, 1, "one call at the fixed pace: \(wda.sent)")
     }
 
+    func testALongTextIsAtMostFourKeyCalls() async {
+        var h = Humanize(enabled: true, seed: 7)
+        let plan = h.typing("meet me by the old fountain near the north gate")
+        XCTAssertGreaterThan(plan.count, 4)
+        let merged = Humanize.merged(plan, into: 4)
+        XCTAssertLessThanOrEqual(merged.count, 4)
+        XCTAssertEqual(merged.map(\.text).joined(), "meet me by the old fountain near the north gate")
+        XCTAssertEqual(merged.first?.gapBefore, 0)
+    }
+
+    /// CI simulator: on a loaded WebDriverAgent each key call answered only after the app was idle,
+    /// and "Wi-Fi 你好" in bursts ran past the 9 s action half-typed. Once the first burst shows what
+    /// a call costs, the rest goes in one call.
+    func testASlowRunnerGetsTheRestOfTheTextInOneCall() async {
+        let (core, wda, _) = makeCore { $0.humanize = true; $0.actionCap = 6 }
+        let field = FaultTests.Field()
+        field.install(wda)
+        wda.delay("POST /wda/keys", 2)
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["type": "Wi-Fi 你好"]]])
+        XCTAssertFalse(result.isError, result.text)
+        XCTAssertEqual(field.value.value, "Wi-Fi 你好")
+        XCTAssertEqual(wda.bodies("POST /wda/keys").count, 2, "one burst, then the rest at once: \(wda.bodies("POST /wda/keys"))")
+        XCTAssertNil(wda.bodies("POST /wda/keys").last?["frequency"])
+    }
+
     func testThePinchIsTwoShapedFingers() async {
         let (core, wda, _) = makeCore { $0.humanize = true }
         _ = await core.call("look", [:])
