@@ -2,7 +2,8 @@
 # screenshot of each, so the app that the look/do scenarios run against is known to work. Then the
 # scorecard job runs PokiCore's look/do (from the branch being run) through every scenario and a few faults against
 # a real WebDriverAgent on the simulator, and fails on any call that hangs, comes without a picture,
-# misses its budget or does not move the screen.
+# misses its budget or does not move the screen. The scorecard-inprocess job runs the same scorecard
+# inside Poki itself (the in-process path, the app's default: no runner), built for the simulator.
 name: iOS gym
 
 on:
@@ -46,7 +47,7 @@ jobs:
           mkdir -p shots
           PID=$(xcrun simctl launch "$UDID" nz.zheha.poki.gym | sed -E 's/.*: *//')
           echo "Poki Gym pid $PID"
-          for s in menu animation alert paste list sheet focus dense dup fullscreen nav interrupt; do
+          for s in menu animation alert paste list sheet focus dense dup fullscreen nav interrupt pay; do
             [ "$s" = menu ] || xcrun simctl openurl "$UDID" "pokigym://$s"
             sleep 2
             xcrun simctl io "$UDID" screenshot "shots/$s.png" > /dev/null
@@ -77,7 +78,7 @@ jobs:
           git -C build/core checkout -q FETCH_HEAD
           echo "PokiCore at $(git -C build/core rev-parse --short HEAD)"
           mkdir -p build/core/native/ios/PokiCore/Sources/poki-gym-check
-          cp native/ios-gym/check/main.swift build/core/native/ios/PokiCore/Sources/poki-gym-check/main.swift
+          cp native/ios-gym/check/*.swift build/core/native/ios/PokiCore/Sources/poki-gym-check/
           python3 - <<'PY'
           p = 'build/core/native/ios/PokiCore/Package.swift'
           s = open(p).read()
@@ -149,3 +150,103 @@ jobs:
             build/gym-scorecard.txt
             build/wda.log
             build/gym-pictures
+
+  scorecard-inprocess:
+    needs: gym
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: PokiGym-simulator, path: build }
+      - name: Use the newest Xcode
+        run: |
+          XCODE="$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+          sudo xcode-select -s "$XCODE/Contents/Developer"
+          xcodebuild -version
+      - name: PokiLauncher for the simulator
+        run: |
+          set -euo pipefail
+          native/launcher/fetch-idevice.sh
+          rustup update stable --no-self-update && rustup default stable
+          rustup target add aarch64-apple-ios-sim
+          cargo build --release --locked --target aarch64-apple-ios-sim --manifest-path native/launcher/Cargo.toml
+      - name: Build Poki (Debug) for the simulator
+        run: |
+          set -euo pipefail
+          native/ios-app/scripts/make-assets.sh
+          brew install xcodegen
+          xcodegen generate --spec native/ios-app/project.yml
+          mkdir -p build
+          xcodebuild build \
+            -project native/ios-app/Poki.xcodeproj -scheme Poki -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath build/sim \
+            CODE_SIGNING_ALLOWED=NO ARCHS=arm64 2>&1 | tee build/sim.log | grep -E "error:|BUILD (SUCCEEDED|FAILED)" || true
+          test -d build/sim/Build/Products/Debug-iphonesimulator/Poki.app || { grep -B2 -A6 "error:" build/sim.log | head -80; exit 1; }
+      - name: Boot a simulator
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c "
+          import json, sys
+          d = json.load(sys.stdin)['devices']
+          sdk = tuple(int(v) for v in sys.argv[1].split('.'))
+          def version(r): return tuple(int(v) for v in r.rsplit('iOS-', 1)[1].split('-'))
+          runtimes = sorted((r for r in d if 'iOS-' in r and version(r) <= sdk), key=version, reverse=True)
+          phones = [x for r in runtimes for x in d[r] if x['name'].startswith('iPhone')]
+          pro = [x for x in phones if 'Pro' in x['name'] and 'Max' not in x['name']]
+          print((pro or phones)[0]['udid'])" "$(xcrun --sdk iphonesimulator --show-sdk-version)")
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+          prefs="$HOME/Library/Developer/CoreSimulator/Devices/$UDID/data/Library/Preferences"
+          mkdir -p "$prefs"
+          for domain in com.apple.Preferences com.apple.keyboard.preferences; do
+            defaults write "$prefs/$domain" DidShowContinuousPathIntroduction -bool true
+            defaults write "$prefs/$domain" KeyboardContinuousPathEnabled -bool false
+          done
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          (cd build && unzip -oq PokiGym.app.zip)
+          xcrun simctl install "$UDID" build/PokiGym.app
+          xcrun simctl install "$UDID" build/sim/Build/Products/Debug-iphonesimulator/Poki.app
+      - name: Scorecard inside Poki (in-process path)
+        run: |
+          set -o pipefail
+          # The in-process session needs the simulator platform's frameworks in the app's process
+          # (as scripts/inprocess-sim/check.sh sets them).
+          X="$(xcode-select -p)/Platforms/iPhoneSimulator.platform/Developer"
+          export SIMCTL_CHILD_POKI_SIMULATOR_DEVELOPER_DIR="$X"
+          export SIMCTL_CHILD_DYLD_FRAMEWORK_PATH="$X/Library/Frameworks:$X/Library/PrivateFrameworks"
+          export SIMCTL_CHILD_DYLD_LIBRARY_PATH="$X/usr/lib"
+          xcrun simctl spawn "$UDID" log stream --style compact --predicate 'eventMessage CONTAINS "PokiGym" OR eventMessage CONTAINS "PokiInProcess"' > build/gym-inprocess.log 2>&1 &
+          LOGPID=$!
+          xcrun simctl launch "$UDID" nz.zheha.poki -pokiInProcess gym
+          DOCS="$(xcrun simctl get_app_container "$UDID" nz.zheha.poki data)/Documents"
+          echo "Documents: $DOCS"
+          for i in $(seq 1 180); do
+            [ -s "$DOCS/gym-scorecard.txt" ] && break
+            if ! xcrun simctl spawn "$UDID" launchctl list 2>/dev/null | grep -q 'UIKitApplication:nz.zheha.poki\['; then
+              echo "::error::Poki is gone after $((i * 10)) s"; ls -t ~/Library/Logs/DiagnosticReports/ | head -3
+              for f in $(ls -t ~/Library/Logs/DiagnosticReports/Poki* 2>/dev/null | head -1); do head -100 "$f"; done
+              break
+            fi
+            sleep 10
+          done
+          kill $LOGPID 2>/dev/null || true
+          mkdir -p build/gym-pictures-inprocess
+          cp -R "$DOCS/gym-pictures/." build/gym-pictures-inprocess/ 2>/dev/null || true
+          cp "$DOCS/inprocess-probe.json" build/ 2>/dev/null || true
+          test -s "$DOCS/gym-scorecard.txt" || { echo "::error::no scorecard was written"; tail -80 build/gym-inprocess.log; exit 1; }
+          cp "$DOCS/gym-scorecard.txt" build/gym-scorecard-inprocess.txt
+          cat build/gym-scorecard-inprocess.txt
+          grep -q "failures: 0$" build/gym-scorecard-inprocess.txt
+      - name: Summary
+        if: always()
+        run: |
+          { echo "## Poki Gym scorecard, in-process path ($(git rev-parse --short HEAD))"; echo; sed -n '/^| scenario/,$p' build/gym-scorecard-inprocess.txt 2>/dev/null; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gym-scorecard-inprocess
+          path: |
+            build/gym-scorecard-inprocess.txt
+            build/gym-inprocess.log
+            build/inprocess-probe.json
+            build/gym-pictures-inprocess

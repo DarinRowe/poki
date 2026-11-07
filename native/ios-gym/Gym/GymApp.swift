@@ -24,7 +24,7 @@ struct GymApp: App {
 }
 
 enum Scenario: String, CaseIterable, Identifiable {
-    case animation, alert, paste, list, sheet, focus, dense, dup, fullscreen, nav, interrupt
+    case animation, alert, paste, list, sheet, focus, dense, dup, fullscreen, nav, interrupt, pay
     var id: String { rawValue }
     var blurb: String {
         switch self {
@@ -39,6 +39,7 @@ enum Scenario: String, CaseIterable, Identifiable {
         case .fullscreen: "A web view filling the screen with one link"
         case .nav: "Push a page with a system back button"
         case .interrupt: "300 rows; an alert pops up 2 s after the screen opens"
+        case .pay: "A Pay now button: the agent needs the owner's approval"
         }
     }
 }
@@ -84,6 +85,7 @@ struct ScenarioScreen: View {
                 case .fullscreen: FullscreenScreen()
                 case .nav: NavScreen()
                 case .interrupt: InterruptScreen()
+                case .pay: PayScreen()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
