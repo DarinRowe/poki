@@ -182,6 +182,11 @@ public final class GymScorecard {
             }
         }
         if ref(in: answer, "\"\(name)", type: "Button") == nil { answer = await awaitRunner(await call("look at the menu", "look")) }
+        // The menu is longer than the screen: a row below the fold is reached with scroll_to.
+        if ref(in: answer, "\"\(name)", type: "Button") == nil {
+            let scrolled = await scrollTo(name, step: "scroll_to the \(name) row", max: 4)
+            answer = ref(in: scrolled, "\"\(name)", type: "Button") != nil ? scrolled : await call("look at the menu (scrolled)", "look")
+        }
         guard let row = ref(in: answer, "\"\(name)", type: "Button") else {
             check(false, "the \(name) row is on the menu"); return answer
         }
@@ -239,6 +244,12 @@ public final class GymScorecard {
         check(answer.contains("app: \(name)"), "\(name) is in front after launch")
         return answer
     }
+    /// The app named on the answer's first line ("app: Settings   read: ...").
+    func frontApp(_ answer: String) -> String {
+        guard let line = answer.split(separator: "\n").first(where: { $0.hasPrefix("app: ") }) else { return "?" }
+        return String(line.dropFirst(5).components(separatedBy: "   read:").first ?? "").trimmingCharacters(in: .whitespaces)
+    }
+
     /// What the type action read back ("the field now reads \"...\"").
     func readBack(_ answer: String) -> String? {
         guard let r = answer.range(of: #"the field now reads "([^\n]*)""#, options: .regularExpression) else { return nil }
@@ -575,22 +586,27 @@ public final class GymScorecard {
             }
         } else { check(false, "the Pay now button is listed") }
 
-        // 18. finish: true on the last do: the phone goes back to the app the task began in (the owner
-        // asked from Poki Gym here: the task began with the gym in front, then went to Settings).
+        // 18. finish: true on the last do: the phone goes back to the app the task began in. A task
+        // begins with its first call after the last finish, so the origin is whatever is in front then:
+        // the gym (launched from outside on the runner path) or the home screen the earlier finish left.
         scenario = "finish"
         _ = await call("finish any earlier task", "do", ["actions": [], "finish": true], budget: 20)
-        _ = await open("animation")
-        scenario = "finish"
-        _ = await call("look (the task begins with the gym in front)", "look")
+        if let shell = env.shell {
+            log(await shell(["xcrun", "simctl", "launch", env.udid, gymBundle]))
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+        }
+        let first = await call("look (the task begins here)", "look")
+        let originApp = frontApp(first)
         let away = await call("launch Settings", "do", ["actions": [["launch": "com.apple.Preferences"], ["wait_until": ["settled": true, "ms": 2000]]]], budget: 25)
-        check(away.contains("app: Settings"), "Settings is in front before finish")
+        check(away.contains("app: Settings"), "Settings is in front before finish (the task began in \(originApp))")
         let finished = await call("do with finish: true", "do", ["actions": [], "finish": true], budget: 20)
+        check(finished.contains("finish: back in \(originApp)"), "the finish line says the phone went back to \(originApp)")
         var origin = finished
-        for i in 1...3 where !origin.contains("app: Poki Gym") {
+        for i in 1...3 where frontApp(origin) != originApp {
             try? await Task.sleep(nanoseconds: 1_000_000_000)
             origin = await call("look after finish (\(i))", "look")
         }
-        check(origin.contains("app: Poki Gym"), "after finish the phone is back in the app the task began in")
+        check(frontApp(origin) == originApp, "after finish the phone is back in \(originApp), where the task began")
 
         // Faults. A. A look while the runner is busy with a long action: it must answer, not queue forever.
         scenario = "busy runner"
