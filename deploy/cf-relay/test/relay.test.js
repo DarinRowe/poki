@@ -142,6 +142,12 @@ describe('OAuth and MCP', () => {
     expect((await call(elsewhere, c.token)).status).toBe(401);
   });
 
+  it('registers Grok Bot, whose MCP client uses a callback on www.cursor.com', async () => {
+    const c = await connected();
+    const grokBot = await SELF.fetch(c.as.registration_endpoint, { method: 'POST', body: JSON.stringify({ client_name: 'Grok Bot', redirect_uris: ['https://www.cursor.com/bot/mcp/oauth/callback'] }) });
+    expect(grokBot.status).toBe(201);
+  });
+
   it('an unknown secret is not found, and its authorization is denied', async () => {
     const c = await connected();
     const stranger = newSecret();
