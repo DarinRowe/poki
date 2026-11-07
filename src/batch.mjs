@@ -10,6 +10,9 @@ export const offDevice = new Set(['wait', 'list_devices', 'poki_mcp_status', 're
 export const changesDevice = new Set(['select_device', 'start_simulator', 'shut_down_simulator']);
 // Clients show tools under a prefixed name, and models copy it into a step.
 export const stepTool = tool => tool.replace(/^mcp__poki-mcp__/, '');
+// A step's stop_reason that ends the run, for batch_commands and run_code alike. An ordinary error
+// and a touch with no observed change are left to the caller: stop_on_error, or the script.
+export const stopsRun = reason => Boolean(reason) && reason !== 'error' && reason !== 'no_change';
 
 export function invalidStep(command) {
   if (command.tool === 'batch_commands' || command.tool === 'run_code') return 'Nested batches are not supported, and neither is run_code.';
@@ -73,7 +76,7 @@ export async function runBatch(ctx, args) {
       // written for the screen it should produce, so with none left, or when the caller allows it, it goes on.
       const reason = result._meta?.stop_reason;
       if (reason === 'no_change') { if (stopOnError && ran < commands.length) { stopReason = reason; unchanged = { step: ran, ...command }; } }
-      else if (reason && reason !== 'error') stopReason = reason;
+      else if (stopsRun(reason)) stopReason = reason;
       if (result.isError) {
         failed = true;
         failure = { step: ran, ...command, error: result.content.find(block => block.type === 'text')?.text };

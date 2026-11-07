@@ -1,13 +1,12 @@
 import { Worker } from 'node:worker_threads';
 import { deadline, checkWork, signal, stoppingReason } from './work.mjs';
-import { invalidStep, stepTool } from './batch.mjs';
+import { invalidStep, stepTool, stopsRun } from './batch.mjs';
 import { normalizeCode } from './normalize.mjs';
 
 const workerUrl = new URL('./run-code-worker.mjs', import.meta.url);
-// A receipt with sent=false or an unknown outcome stops the script, as a batch stops; so do the
-// operation's own cancellation, timeout and expiry. Everything else is an ordinary tool error the
-// script can catch and work around.
-const hardStop = new Set(['cancelled', 'timeout', 'expired', 'unknown']);
+// A receipt with sent=false or an unknown outcome stops the script, and so does any stop_reason that
+// stops a batch (stopsRun): cancellation, timeout, expiry. Everything else is an ordinary tool error
+// the script can catch and work around.
 // What the model should do next after each stop, worded as batch_commands words the same stop.
 const stopAdvice = {
   not_sent: 'The action was not delivered, so the steps after it were not run. Check the screen before retrying it.',
@@ -56,6 +55,9 @@ async function drive(ctx, code, input, maxCalls) {
   const calls = [];
   const logs = [];
   const base = () => ({ completed_calls: calls.length, calls, ...(logs.length ? { logs } : {}) });
+  const reply = (id, payload) => worker.postMessage({ type: 'result', id, resultJson: JSON.stringify(payload) });
+  // A failed call is listed and its error thrown inside the script, which may catch it.
+  const failed = (id, call, error) => { calls.push({ call: calls.length + 1, ...call }); reply(id, { error }); };
   // An interrupted call is listed with the calls before it, so the report names what was cut off.
   const cancelled = (error, interrupted) => {
     if (interrupted) calls.push({ call: calls.length + 1, ...interrupted, interrupted: true });
@@ -80,7 +82,7 @@ async function drive(ctx, code, input, maxCalls) {
       const name = stepTool(message.name);
       const toolArgs = JSON.parse(message.argsJson);
       const problem = invalidStep({ tool: name, arguments: toolArgs });
-      if (problem) { calls.push({ call: calls.length + 1, tool: name, elapsed_ms: 0, isError: true, error: problem }); worker.postMessage({ type: 'result', id: message.id, resultJson: JSON.stringify({ error: problem }) }); continue; }
+      if (problem) { failed(message.id, { tool: name, elapsed_ms: 0, isError: true, error: problem }, problem); continue; }
       const started = performance.now();
       let result, dispatchError;
       try { checkWork(); result = await ctx.dispatch(name, toolArgs); }
@@ -91,19 +93,18 @@ async function drive(ctx, code, input, maxCalls) {
         dispatchError = error.message;
       }
       const elapsed_ms = Math.round(performance.now() - started);
-      if (dispatchError) { calls.push({ call: calls.length + 1, tool: name, elapsed_ms, isError: true, error: cap(dispatchError) }); worker.postMessage({ type: 'result', id: message.id, resultJson: JSON.stringify({ error: dispatchError }) }); continue; }
+      if (dispatchError) { failed(message.id, { tool: name, elapsed_ms, isError: true, error: cap(dispatchError) }, dispatchError); continue; }
       const text = result.content?.find(block => block.type === 'text')?.text;
       let receipt; try { receipt = JSON.parse(text); } catch { receipt = text; }
       const meta = result._meta?.stop_reason;
-      const hard = (meta && hardStop.has(meta)) || receipt?.sent === false || receipt?.outcome === 'unknown';
+      const hard = stopsRun(meta) || receipt?.sent === false || receipt?.outcome === 'unknown';
       calls.push({ call: calls.length + 1, tool: name, elapsed_ms, isError: Boolean(result.isError), ...(typeof text === 'string' ? { receipt: cap(text) } : {}) });
       if (hard) {
-        const stop = meta && hardStop.has(meta) ? meta : (receipt?.sent === false ? 'not_sent' : 'unknown');
+        const stop = stopsRun(meta) ? meta : (receipt?.sent === false ? 'not_sent' : 'unknown');
         summary = { ...base(), stop_reason: stop, stopped_step: { tool: name, arguments: toolArgs, ...(receipt && typeof receipt === 'object' ? { receipt } : { receipt_text: text }) }, next: stopAdvice[stop] };
         break;
       }
-      if (result.isError) { worker.postMessage({ type: 'result', id: message.id, resultJson: JSON.stringify({ error: text ?? 'The tool call failed.' }) }); continue; }
-      worker.postMessage({ type: 'result', id: message.id, resultJson: JSON.stringify({ result: receipt ?? null }) });
+      reply(message.id, result.isError ? { error: text ?? 'The tool call failed.' } : { result: receipt ?? null });
     }
   } finally {
     box.close();
