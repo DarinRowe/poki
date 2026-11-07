@@ -215,6 +215,7 @@ jobs:
           export SIMCTL_CHILD_POKI_SIMULATOR_DEVELOPER_DIR="$X"
           export SIMCTL_CHILD_DYLD_FRAMEWORK_PATH="$X/Library/Frameworks:$X/Library/PrivateFrameworks"
           export SIMCTL_CHILD_DYLD_LIBRARY_PATH="$X/usr/lib"
+          echo "XCTest files in the simulator platform:"; find "$X/Library/Frameworks" "$X/Library/PrivateFrameworks" "$X/usr/lib" -maxdepth 1 \( -name 'XC*' -o -name 'lib_Testing*' \) 2>/dev/null
           xcrun simctl spawn "$UDID" log stream --style compact --predicate 'eventMessage CONTAINS "PokiGym" OR eventMessage CONTAINS "PokiInProcess"' > build/gym-inprocess.log 2>&1 &
           LOGPID=$!
           xcrun simctl launch "$UDID" nz.zheha.poki -pokiInProcess gym
@@ -224,6 +225,8 @@ jobs:
             [ -s "$DOCS/gym-scorecard.txt" ] && break
             if ! xcrun simctl spawn "$UDID" launchctl list 2>/dev/null | grep -q 'UIKitApplication:nz.zheha.poki\['; then
               echo "::error::Poki is gone after $((i * 10)) s"; ls -t ~/Library/Logs/DiagnosticReports/ | head -3
+              xcrun simctl spawn "$UDID" launchctl list 2>/dev/null | grep -i poki || true
+              tail -30 build/gym-inprocess.log
               for f in $(ls -t ~/Library/Logs/DiagnosticReports/Poki* 2>/dev/null | head -1); do head -100 "$f"; done
               break
             fi
