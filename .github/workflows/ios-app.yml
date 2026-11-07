@@ -30,6 +30,8 @@ jobs:
           xcodebuild -version
       - name: Field check
         run: POKI_CHECK_OUT=out/field native/ios-app/scripts/inprocess-sim/check.sh
+      - name: Field check on iPad (the fixture in a window smaller than the screen, through the viewport)
+        run: POKI_CHECK_IPAD=1 POKI_CHECK_OUT=out/field-ipad native/ios-app/scripts/inprocess-sim/check.sh
       - name: Apps check
         run: POKI_CHECK_OUT=out/apps native/ios-app/scripts/inprocess-sim/check.sh --apps
       - name: Idle cycle check (close, refuse, reopen)

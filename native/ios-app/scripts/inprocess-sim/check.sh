@@ -6,7 +6,8 @@
 # (native/simulator.m) reports for the same screen. With --apps it instead launches the fixture, launches
 # Settings, activates the fixture (the same process returns), launches it again (a new process) and
 # terminates it. With --cycle the field check runs after the session was closed and opened again, as Poki
-# does when it is idle; a touch sent while closed must not use the closed session (refused, or a new one). The simulator is deleted afterwards.
+# does when it is idle. POKI_CHECK_IPAD=1 runs on an iPad with the fixture built for iPhone only, so it
+# sits in a window smaller than the screen and the tree, screenshot and touches go through the viewport; a touch sent while closed must not use the closed session (refused, or a new one). The simulator is deleted afterwards.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 MODE=field
@@ -34,13 +35,14 @@ codesign -s - --force "$APP" >/dev/null 2>&1
 xcrun clang -fobjc-arc -fblocks -framework Foundation -framework AppKit -framework UniformTypeIdentifiers \
   "$REPO/native/simulator.m" -o "$WORK/simulator"
 xcodebuild -project "$REPO/bin/fixture-app/PokiMCPFixture.xcodeproj" -scheme PokiMCPFixture -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
-  -derivedDataPath "$WORK/fixture" CODE_SIGNING_ALLOWED=NO -quiet build
+  -derivedDataPath "$WORK/fixture" CODE_SIGNING_ALLOWED=NO ${POKI_CHECK_IPAD:+TARGETED_DEVICE_FAMILY=1} -quiet build
 FIXTURE="$WORK/fixture/Build/Products/Debug-iphonesimulator/PokiMCPFixture.app"
 
 read -r RUNTIME TYPE < <(xcrun simctl list runtimes -j | python3 -c '
 import json, sys
 r = [x for x in json.load(sys.stdin)["runtimes"] if x["platform"] == "iOS" and x["isAvailable"]][-1]
-print(r["identifier"], next(t["identifier"] for t in r["supportedDeviceTypes"] if t["productFamily"] == "iPhone"))')
+family = "iPad" if sys.argv[1] else "iPhone"
+print(r["identifier"], next(t["identifier"] for t in r["supportedDeviceTypes"] if t["productFamily"] == family))' "${POKI_CHECK_IPAD:-}")
 UDID="$(xcrun simctl create poki-inprocess-check "$TYPE" "$RUNTIME")"
 xcrun simctl boot "$UDID"
 xcrun simctl bootstatus "$UDID" -b >/dev/null
@@ -109,5 +111,8 @@ assert r["front"].get("bundleId") == "local.pokimcp.fixture", f"front app: {r['f
 assert r.get("tap") == 1 and r.get("type") == 1, f"tap {r.get('tap')} type {r.get('type')}"
 assert r.get("focus", {}).get("value") == sys.argv[2], f"focused field reads {r.get('focus')}"
 PY
-python3 "$HERE/compare.py" "$DOCS/field-after.xml" "$WORK/reference.json"
+SHIFT="$(python3 -c 'import json,sys,re;v=json.load(open(sys.argv[1])).get("viewport","");m=re.findall(r"-?[0-9.]+",v);print(m[0],m[1]) if m else print("0 0")' "$DOCS/field.json")"
+[ "$SHIFT" != "0 0" ] && echo "viewport origin: $SHIFT"
+if [ -n "${POKI_CHECK_IPAD:-}" ] && [ "$SHIFT" = "0 0" ]; then echo "::warning::on iPad the iPhone-only fixture filled the screen, so no viewport was used"; fi
+python3 "$HERE/compare.py" "$DOCS/field-after.xml" "$WORK/reference.json" $SHIFT
 if [ "$MODE" = cycle ]; then echo "in-process close, reopen (generation $(python3 -c "import json;print(json.load(open('$DOCS/field.json'))['prepare2']['generation'])")), read, tap, type and read-back passed"; else echo "in-process read, tap, type and read-back passed"; fi

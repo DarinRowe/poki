@@ -47,6 +47,13 @@ static NSDictionary *Run(NSString *mode, NSString *tag, NSString *text) {
     double v[4];
     for (int i = 0; i < 4; i++) v[i] = [[before substringWithRange:[m rangeAtIndex:i + 1]] doubleValue];
     CGPoint c = CGPointMake(v[0] + v[2] / 2, v[1] + v[3] / 2);
+    // The tree's frames are relative to the front app's part of the screen (viewport); a touch is
+    // on the whole screen, as InProcessWDA moves it.
+    CGRect viewport = PKInProcess.shared.viewport;
+    if (!CGRectIsNull(viewport)) {
+        out[@"viewport"] = NSStringFromCGRect(viewport);
+        c.x += viewport.origin.x; c.y += viewport.origin.y;
+    }
     PKOutcome *tap = [PKInProcess.shared touch:@[@[[PKTouchPoint at:c offset:0], [PKTouchPoint at:c offset:0.05]]] timeout:5];
     out[@"tap"] = @(tap.delivery);
     [NSThread sleepForTimeInterval:1];
