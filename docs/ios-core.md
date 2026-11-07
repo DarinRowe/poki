@@ -478,6 +478,12 @@ Each answer is facts only: the app in front, numbered elements, what each action
   screen with an alert (a permission prompt), the answer ends with "a system alert is in front
   (""Photos" Would Like to Send You Notifications": Don't Allow, Allow); the launched app is behind
   it: answer the alert first" instead of reading again for the app.
+- **Return is the keyboard's own key when one is up.** `{key: "return"}` taps the keyboard's
+  Go/Return/Search/Done/Send/Next key when the tree lists one ("key return: tapped the keyboard's
+  "Go" key at [340, 820]"); without a keyboard it is sent as a key event and the answer says so
+  (Safari's address bar kept its suggestions after the key event on one gym run). The scroll drag
+  is 84 % of the area with a 0.2 s rest: with no momentum, a row or two of overlap is enough (60 %
+  took 6 calls and 64 s for 250 rows).
 - **Typing has 9 s and never leaves the keys in doubt.** A type is a tap, a wait for the focus and
   the keys, plus a wait for a busy runner, so it has 9 s (the action cap otherwise). When under
   1.2 s is left for the keys they are not sent: `nothing was typed … send the type again`.

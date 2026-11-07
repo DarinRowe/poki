@@ -108,7 +108,7 @@ extension Computer {
         case "right": d = (1, 0)
         default: throw ActionFailure(message: "swipe must be up, down, left or right", delivery: .notSent)
         }
-        let half = (d.0 != 0 ? area.width : area.height) * (distance == "short" ? 0.2 : distance == "scroll" ? 0.3 : 0.35)
+        let half = (d.0 != 0 ? area.width : area.height) * (distance == "short" ? 0.2 : distance == "scroll" ? 0.42 : 0.35)
         let (cx, cy) = area.centre
         return (cx - d.0 * half, cy - d.1 * half, cx + d.0 * half, cy + d.1 * half)
     }
@@ -203,8 +203,14 @@ extension Computer {
             guard let text = Self.keyText[k] ?? (key.count == 1 ? key : nil) else {
                 throw ActionFailure(message: "key \(key) has no equivalent; use return, delete, tab, space, escape or one character", delivery: .notSent)
             }
+            // Return as the keyboard's own key when one is up: the "\n" key event left Safari's
+            // address bar with its suggestions on one gym run (the keyboard's Go key submits).
+            if text == "\n", let go = await keyboardReturnKey(timeout: min(1, max(0.3, until - now() - 1))) {
+                try await tap(go.frame.centre)
+                return ("key", "key \(key): tapped the keyboard's \"\(go.text)\" key at [\(Int(go.frame.centre.x)), \(Int(go.frame.centre.y))]")
+            }
             _ = try await runner.call("POST", "/wda/keys", ["value": [.string(text)]], timeout: 3)
-            return ("key", "key \(key)")
+            return ("key", "key \(key)\(text == "\n" ? " (sent as a key event; no keyboard key was listed to tap)" : "")")
         }
         if let spec = action["swipe"] {
             let direction = spec.string ?? spec["direction"]?.string ?? ""
@@ -354,6 +360,18 @@ extension Computer {
     }
 
     static let fieldTypes: Set<String> = ["TextField", "SecureTextField", "SearchField", "TextView"]
+
+    /// Labels of the keyboard's return key in the languages iOS ships most.
+    static let returnKeyLabels: Set<String> = ["return", "go", "search", "done", "send", "next", "join", "continue", "route", "enter", "换行", "前往", "搜索", "完成", "发送", "下一个", "加入", "繼續", "換行", "前往", "搜尋", "完成", "傳送", "改行", "開く", "検索", "完了", "送信", "次へ", "실행", "검색", "완료", "다음"]
+
+    /// The keyboard's return key as the tree lists it (a Button inside the Keyboard whose label is
+    /// one of `returnKeyLabels`), or nil when no keyboard is up or the read did not come.
+    func keyboardReturnKey(timeout: Double) async -> Element? {
+        guard let seen = try? await runner.tree(timeout: timeout, format: config.treeFormat) else { return nil }
+        let all = seen.elements
+        guard let keyboard = all.first(where: { $0.type == "Keyboard" }) else { return nil }
+        return all.last { $0.type == "Button" && keyboard.contains($0) && Self.returnKeyLabels.contains($0.text.lowercased()) && $0.frame.width >= 2 }
+    }
 
     /// Whether a field took the focus (the keyboard is up), waiting up to `seconds` (a tree read
     /// every 150 ms). Focus is read from the tree, never asked of the runner: WDA's focus query
@@ -584,13 +602,14 @@ extension Computer {
             // A drag (0.7 s) needs its confirmation (1.5 s more) and a read after it.
             guard until - now() > 2.8 else { return notYet("the action's time ran out before the list was through (\(Int(Self.scrollCap)) s)") }
             guard await runnerFree(margin: 2.8) else { return notYet("the runner is still finishing the read after the last swipe") }
-            // A resting drag of 60 % of the area, not a flick: a flick's momentum carried the gym's
+            // A resting drag of 84 % of the area, not a flick: a flick's momentum carried the gym's
             // list 26 rows past a 15-row screen (the 70 % held for the finger, not the list), and
             // the tree read while a list decelerates waits for it to stop. The drag ends with the
-            // finger held still, so the list stops where it is.
+            // finger held still, so the list stops where it is, and two reads overlap by a row or
+            // two (60 % took 6 calls and 64 s for 250 rows in the gym).
             let path = corrective ? try swipePath(region, ["up": "down", "down": "up", "left": "right", "right": "left"][fingerGoes] ?? "down", "short") : try swipePath(region, fingerGoes, "scroll")
             do {
-                try await gesture(path, seconds: 0.4, rest: 0.3, until: until - 0.8)
+                try await gesture(path, seconds: 0.4, rest: 0.2, until: until - 0.8)
             } catch let e as RunnerError where e.delivery == .unknown {
                 return notYet("the runner did not confirm the last swipe in time (\(e.message)), so it may still land")
             }

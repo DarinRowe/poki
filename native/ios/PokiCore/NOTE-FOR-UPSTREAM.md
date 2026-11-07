@@ -94,6 +94,8 @@ that no answer may halt the agent and from the first Poki Gym runs (`native/ios-
 18. Gestures get time to be confirmed; a note when an alert sits over a list; a stale picture is
     marked as such when no new one comes; the host's screenshot is offered beside the runner's; a
     launch works under a system alert.
+19. Key `"\n"` taps the keyboard's own Go/Search/Done key when one is up; `scroll_to` drags 84 % of
+    the region with a 0.2 s rest.
 
 Still not done: a `collect` or `expect` field, a `recover` action, and redaction of sensitive text
 (Zhehan: out of scope for now).

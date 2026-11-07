@@ -983,7 +983,7 @@ final class GymTests: XCTestCase {
         XCTAssertTrue(result.text.contains("scroll_to \"Row 45\": 4 swipes, found at [16,320,358,44]"), result.text)
         XCTAssertTrue(result.text.contains("found by scroll_to:") && result.text.contains("Cell \"Row 45\" [16,320,358,44] (tap "), result.text)
         XCTAssertGreaterThan(Date().timeIntervalSince(started), 3.5, "four 1 s swipes outlast the 3 s action cap: scroll_to has 12 s")
-        XCTAssertTrue(wda.bodies("POST /wda/pressAndDragWithVelocity").allSatisfy { $0["holdDuration"]?.double == 0.3 }, "a resting drag")
+        XCTAssertTrue(wda.bodies("POST /wda/pressAndDragWithVelocity").allSatisfy { $0["holdDuration"]?.double == 0.2 }, "a resting drag")
     }
 
     /// 300 rows in the gym: a swipe sent while the runner was still serving the read after the last
@@ -1085,7 +1085,8 @@ final class GymTests: XCTestCase {
         XCTAssertGreaterThan(sent[1].3, sent[1].1, "the corrective drag goes down")
         XCTAssertLessThan(abs(sent[1].3 - sent[1].1), abs(sent[0].3 - sent[0].1), "the drag back is the shorter")
         let bodies = wda.bodies("POST /wda/pressAndDragWithVelocity")
-        XCTAssertEqual(bodies.first?["holdDuration"]?.double, 0.3, "a resting drag, not a flick")
+        XCTAssertEqual(bodies.first?["holdDuration"]?.double, 0.2, "a resting drag, not a flick")
+        XCTAssertGreaterThan(abs((bodies.first?["toY"]?.double ?? 0) - (bodies.first?["fromY"]?.double ?? 0)), 600, "a long drag (84 % of the list's area), not 60 %")
     }
 
     /// Settings' search field: the keyboard came after the focus wait, and the text had landed, but
@@ -1225,6 +1226,23 @@ final class GymTests: XCTestCase {
         _ = await core.call("look", [:])
         let result = await core.call("do", ["actions": [["scroll_to": "Row 99"]]])
         XCTAssertTrue(result.text.contains("not found: the list stopped moving (its end, or the text is not in it); an alert is over the list (\"Just a moment\": Not now): answer it first"), result.text)
+    }
+
+    /// Safari's address bar: {key: "return"} as a key event left the suggestions up once. With a
+    /// keyboard up, return is a tap on its own Go/Return key; without one, the key event, and the
+    /// answer says which.
+    func testReturnIsTheKeyboardsOwnKeyWhenOneIsUp() async {
+        let (core, wda, _) = makeCore()
+        wda.tree([Node("TextField", "Address", [16, 64, 306, 37], value: "example.com"), Node("Keyboard", nil, [0, 500, 390, 344], [Node("Button", "space", [100, 800, 190, 40]), Node("Button", "Go", [300, 800, 80, 40])])], app: "Safari")
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["key": "return"]]])
+        XCTAssertTrue(result.text.contains("key return: tapped the keyboard's \"Go\" key at [340, 820]"), result.text)
+        XCTAssertEqual(wda.bodies("POST /wda/tap").last?["y"]?.double, 820)
+        XCTAssertTrue(wda.bodies("POST /wda/keys").isEmpty)
+        wda.tree([Node("TextField", "Address", [16, 64, 306, 37], value: "example.com")], app: "Safari")
+        let event = await core.call("do", ["actions": [["key": "return"]]])
+        XCTAssertTrue(event.text.contains("key return (sent as a key event; no keyboard key was listed to tap)"), event.text)
+        XCTAssertEqual(wda.bodies("POST /wda/keys").count, 1)
     }
 
     /// CI simulator, the keyboard's first use: the runner stood still for seconds, the focus reads
