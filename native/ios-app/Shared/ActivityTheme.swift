@@ -32,6 +32,8 @@ enum ActivityTone: Hashable {
     /// The text colour itself.
     case plain
     case accent, approval, done, problem
+    /// The approval's reason line: white on the card, dimmed on the island.
+    case reason
 }
 
 /// The Lock Screen card is the website's blue with glass on it; the Dynamic Island is always black.
@@ -44,9 +46,11 @@ struct ActivityPalette {
     var approval: Color
     var done: Color
     var problem: Color
+    var reason: Color
     /// Secondary buttons (Stop, Don't Allow) and the answer on its way.
     var buttonFill = Color.white.opacity(0.16)
-    /// The setup steps still to do.
+    /// The setup steps already done, and those still to do.
+    var segmentDone: Color
     var track: Color
     /// The step line of a finished run.
     var finished: Color
@@ -62,6 +66,7 @@ struct ActivityPalette {
         case .approval: approval
         case .done: done
         case .problem: problem
+        case .reason: reason
         }
     }
 }
@@ -70,11 +75,12 @@ struct ActivityPalette {
 struct ActivityTheme {
     /// White words on the blue card: the status word itself says which phase it is.
     var lock = ActivityPalette(
-        quiet: .white.opacity(0.64), accent: .white, approval: .white, done: .white,
-        problem: Color(hex: 0xFFC9C5), track: .white.opacity(0.16), finished: .white)
+        quiet: .white.opacity(0.72), accent: .white, approval: .white, done: .white,
+        problem: .white, reason: .white, segmentDone: .white, track: .white.opacity(0.28), finished: .white)
     var island = ActivityPalette(
         quiet: Color(hex: 0x9A9A96), accent: Site.sky, approval: Site.sky, done: Site.ok,
-        problem: Color(hex: 0xFF6961), track: Color(hex: 0x3A3A3A), finished: Color(hex: 0x3CCF7A))
+        problem: Color(hex: 0xFF6961), reason: .white.opacity(0.72), segmentDone: Site.ok, track: Color(hex: 0x3A3A3A),
+        finished: Color(hex: 0x3CCF7A))
     var lockBackground = Site.blue
     /// The glass edge on the blue card: a 1 pt white line, brighter along the top.
     var glassEdge = Color.white.opacity(0.28)
@@ -86,8 +92,6 @@ struct ActivityTheme {
     var stepLine = Color.white
     var stepMissed = Site.bad
     var stepHole = Color.black
-    /// Setup steps already done.
-    var segmentDone = Site.ok
     /// The Face ID glyph on Allow.
     var primaryIcon = Color.black
 

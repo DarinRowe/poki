@@ -426,7 +426,7 @@ private struct BottomControl: View {
             HStack(spacing: 4) {
                 ForEach(1...max(1, count), id: \.self) { index in
                     RoundedRectangle(cornerRadius: 2, style: .continuous)
-                        .fill(index < number ? theme.segmentDone : index == number ? palette.text : palette.track)
+                        .fill(index < number ? palette.segmentDone : index == number ? palette.text : palette.track)
                         .frame(height: 4)
                 }
             }

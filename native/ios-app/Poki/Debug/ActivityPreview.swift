@@ -139,11 +139,13 @@ private struct IslandExpandedFrame: View {
     var body: some View {
         let insets = ActivityMetrics.islandInsets
         let shape = RoundedRectangle(cornerRadius: ActivityMetrics.islandCorner, style: .continuous)
-        VStack(spacing: 6) {
+        // The row beside the camera and the gap under it as iOS lays them out (measured on the
+        // iPhone 17 Pro simulator), so the height badge matches the real island.
+        VStack(spacing: 4) {
             HStack(spacing: 0) {
-                IslandLeading(state: state).frame(width: 110, height: 36)
+                IslandLeading(state: state).frame(width: 110, height: 25)
                 Spacer(minLength: 120)
-                IslandTrailing(state: state).frame(width: 110, height: 36)
+                IslandTrailing(state: state).frame(width: 110, height: 25)
             }
             IslandBottom(state: state)
         }
