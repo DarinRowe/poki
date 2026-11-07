@@ -9,7 +9,8 @@ function statusBar({ width, height, elements }) {
   const top = Math.min(height / 20, ...elements.map(e => (e.frame ?? e).y).filter(y => y > 0));
   return Number.isFinite(width) && top > 0 ? { x: Math.round(width * 0.15), y: Math.round(top / 2) } : null;
 }
-const page = observation => JSON.stringify(observation.elements.map(e => [e.role ?? e.type, e.label ?? e.text]));
+// A fingerprint of what a screen shows, to tell whether going back reached another page.
+const fingerprint = observation => JSON.stringify(observation.elements.map(e => [e.role ?? e.type, e.label ?? e.text]));
 const returnLimit = 4;
 // The replay observes the screen after every input and checks it against the step, so an input need not read the screen back itself.
 const unverified = new Set(['tap', 'scroll', 'swipe', 'go_back']);
@@ -85,8 +86,8 @@ export async function runFast({ task, alternatives = [], onSelect = () => {}, ca
             await session.call('tap', { device: task.device, ...bar, verify: false });
             continue;
           }
-        } else if (stats.return_count < returnLimit && page(current) !== previousPage) {
-          previousPage = page(current); stats.return_count++;
+        } else if (stats.return_count < returnLimit && fingerprint(current) !== previousPage) {
+          previousPage = fingerprint(current); stats.return_count++;
           await session.call('go_back', { device: task.device, verify: false });
           continue;
         }

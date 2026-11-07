@@ -225,7 +225,7 @@ function readback(result) {
 }
 // Whether two screens show the same page: the same rows with the same values. A label with digits, such as a
 // time or free space, may change by itself and is left out, and so is a number in a value; a switch's 0 or 1 is kept.
-function page(observation) {
+function pageRows(observation) {
   return new Set(observation.elements.filter(e => flagOn(e.visible) && !/\d/.test(label(e))).flatMap(e => {
     const value = typeof e.value === 'string' && e.value !== e.placeholder && e.value !== label(e) ? e.value : '';
     const parts = [label(e), /\d/.test(value) && !/^[01]$/.test(value) ? '#' : value].filter(Boolean);
@@ -233,7 +233,7 @@ function page(observation) {
   }));
 }
 function samePage(one, two) {
-  const first = page(one), second = page(two);
+  const first = pageRows(one), second = pageRows(two);
   return first.size === second.size && [...first].every(row => second.has(row));
 }
 function compile(trace) {
