@@ -19,10 +19,9 @@ struct PokiActivityAttributes: ActivityAttributes {
             var holdsApproval: Bool { self == .approval || self == .deciding }
         }
         var phase: Phase
-        /// What the agent is doing, in a few words ("Tap “Send”"), or the phase's line.
+        /// What the agent is doing, in a few words ("Tap “Send”"), or the phase's line, in English: the
+        /// face words it in the system's language (ActivityWords).
         var headline: String
-        /// The second line where a phase has one: a problem's fix, a pairing failure's reason.
-        var hint: String?
         /// The status word in place of the phase's own ("Runner Stopped").
         var label: String?
         /// The app in front.
@@ -40,7 +39,7 @@ struct PokiActivityAttributes: ActivityAttributes {
         var runnerPaused = false
         /// Whether each of the run's latest steps went through, newest last, at most `outcomeLimit`.
         var outcomes: [Bool] = []
-        /// During setup: which step the person is on ("2 of 6") and what to do in Settings.
+        /// During setup: which step the person is on ("2/6").
         var guide: Guide?
         /// When the agent's current run of steps began.
         var since: Date?
@@ -64,8 +63,6 @@ struct PokiActivityAttributes: ActivityAttributes {
         var number: Int
         var count: Int
         var title: String
-        /// Where to go and what to tap, one line.
-        var hint: String
     }
     var deviceName: String
 }
@@ -78,12 +75,17 @@ struct PendingApproval: Codable, Hashable {
     var reason: String
     var expires: Date
 
-    /// The reason as a line under the summary: "Sending a message in Messages".
-    var reasonLine: String {
-        var text = reason
-        if let quote = text.range(of: " (\"") { text = String(text[..<quote.lowerBound]) }
-        text = text.prefix(1).uppercased() + text.dropFirst()
-        return text.contains(" in ") || app.isEmpty ? text : "\(text) in \(app)"
+    /// The approval as a short question, from PokiCore's reason and the app: "Send in Messages?".
+    /// The summary ("Tap “Send”") says how, which the thumbnail shows better.
+    var question: String {
+        // PokiCore names the app, or says "unknown", or describes the home screen at length.
+        let place = app.isEmpty || app == "unknown" || app.contains("(") ? nil : app
+        if reason.hasPrefix("sending") { return place.map { String(activity: "Send in \($0)?") } ?? String(activity: "Send a message?") }
+        if reason.hasPrefix("a payment") { return place.map { String(activity: "Pay in \($0)?") } ?? String(activity: "Make a payment?") }
+        if reason.hasPrefix("deleting") { return place.map { String(activity: "Delete in \($0)?") } ?? String(activity: "Delete this?") }
+        if reason.hasPrefix("typing into a password") { return String(activity: "Type a password?") }
+        if reason.hasPrefix("input in"), let place { return String(activity: "Use \(place)?") }
+        return String(activity: "Allow this step?")
     }
 }
 

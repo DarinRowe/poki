@@ -264,7 +264,7 @@ final class AppModel {
         host.update(runner: .starting("starting the runner"))
         host.setPaused(true)
         activityText = "Idle"
-        activity.update { $0.runnerPaused = true; $0.phase = .idle; $0.headline = "Waiting for an agent"; $0.since = nil }
+        activity.update { $0.runnerPaused = true; $0.phase = .idle; $0.headline = "Runner asleep"; $0.since = nil }
     }
 
     /// Starts a paused runner again (the next agent request, or the owner).
@@ -337,12 +337,12 @@ final class AppModel {
         runner = status
         host.update(runner: coreState(of: status))
         if status.state == "failed" {
-            let (title, hint) = Self.problemText(status.fix ?? status.detail ?? "The runner stopped")
-            activity.update { $0.phase = .problem; $0.label = "Runner Stopped"; $0.headline = title; $0.hint = hint }
+            let title = Self.problemText(status.fix ?? status.detail ?? "The runner stopped")
+            activity.update { $0.phase = .problem; $0.label = "Runner Stopped"; $0.headline = title }
         } else if !status.isRunning {
             activity.update { $0.phase = .idle; $0.headline = status.title }
         } else if activity.state.phase == .problem || activity.state.phase == .idle || activity.state.headline == "Starting the runner" {
-            activity.update { $0.phase = .idle; $0.headline = "Ready for the agent" }
+            activity.update { $0.phase = .idle; $0.headline = "Waiting for agent" }
         }
     }
 
@@ -392,7 +392,7 @@ final class AppModel {
             if approved == nil { problem = "An approval ran out before you answered, so that step was not done. The agent can ask again." }
             ApprovalNotice.clear(id)
             activity.update { state in
-                if state.approval?.id == id { state.approval = nil; state.phase = .working; state.headline = approved == true ? "Approved. Continuing" : "Not allowed" }
+                if state.approval?.id == id { state.approval = nil; state.phase = .working; state.headline = approved == true ? "Continuing" : "Step skipped" }
             }
         }
     }
@@ -446,33 +446,29 @@ final class AppModel {
     /// How long the expanded island takes to fold after a tap on its button.
     static let islandCollapse: TimeInterval = 1.5
 
-    /// The launcher's fix as the Live Activity's title and the line under it. The fixes the launcher
-    /// sends (native/launcher/src/device.rs, launch.rs) have short forms that fit one line each; any
-    /// other text is split at its first colon or the end of its first sentence.
-    nonisolated static func problemText(_ fix: String) -> (String, String?) {
-        let short: [(String, String, String)] = [
-            ("Turn on the loopback", "Turn On Loopback", "In your proxy app, or connect LocalDevVPN."),
-            ("Poki needs the internet", "Connect to the Internet", "Poki needs it once after each restart, then tries again."),
-            ("Mounting the developer disk image timed out", "Connect to the Internet", "Poki needs it once after each restart, then tries again."),
-            ("This iOS version needs a newer", "Update the Disk Image", "Open Poki's setup to download the latest one."),
-            ("The developer disk image did not install", "Downloading the Disk Image", "Poki downloads it again by itself."),
-            ("Pair again", "Pair Again", "In Poki's setup."),
-            ("Turn on Developer Mode", "Turn On Developer Mode", "Privacy & Security › Developer Mode, then restart."),
-            ("Install Poki Runner", "Install Poki Runner", "With the same signing tool and Apple ID as Poki."),
+    /// The launcher's fix as the Live Activity's content line, in English (the face words it in the
+    /// system's language). The fixes the launcher sends (native/launcher/src/device.rs, launch.rs) have
+    /// names of a few words; any other text gives its first part. What to do is in the app, which shows
+    /// the whole fix.
+    nonisolated static func problemText(_ fix: String) -> String {
+        let short: [(String, String)] = [
+            ("Turn on the loopback", "Loopback Off"),
+            ("Poki needs the internet", "No Internet"),
+            ("Mounting the developer disk image timed out", "No Internet"),
+            ("This iOS version needs a newer", "Disk Image Outdated"),
+            ("The developer disk image did not install", "Fetching Disk Image"),
+            ("Pair again", "Pairing Refused"),
+            ("Turn on Developer Mode", "Developer Mode Off"),
+            ("Install Poki Runner", "Poki Runner Missing"),
         ]
-        if let (_, title, hint) = short.first(where: { fix.hasPrefix($0.0) }) { return (title, hint) }
-        return split(fix)
+        return short.first { fix.hasPrefix($0.0) }?.1 ?? firstPart(fix)
     }
 
-    /// A text as a title and the line under it: split at the first colon or the end of the first
-    /// sentence.
-    nonisolated static func split(_ text: String) -> (String, String?) {
-        let marks = [": ", ". "].compactMap { text.range(of: $0) }.min { $0.lowerBound < $1.lowerBound }
-        guard let mark = marks else { return (text, nil) }
-        let title = String(text[..<mark.lowerBound])
-        let rest = text[mark.upperBound...].trimmingCharacters(in: .whitespaces)
-        guard !rest.isEmpty else { return (title, nil) }
-        return (title.prefix(1).uppercased() + title.dropFirst(), rest.prefix(1).uppercased() + rest.dropFirst())
+    /// A text up to its first colon or the end of its first sentence, capitalised.
+    nonisolated static func firstPart(_ text: String) -> String {
+        let mark = [": ", ". "].compactMap { text.range(of: $0) }.min { $0.lowerBound < $1.lowerBound }
+        let part = mark.map { String(text[..<$0.lowerBound]) } ?? text
+        return part.prefix(1).uppercased() + part.dropFirst()
     }
 
     // MARK: Pairing
@@ -519,8 +515,7 @@ final class AppModel {
             activity.update { $0.phase = .idle; $0.pin = nil; $0.headline = "Paired" }
             if !sessionOn { Task { try? await Task.sleep(for: .seconds(4)); if !self.sessionOn { self.activity.end() } } }
         case .failed(let why):
-            let (title, hint) = Self.split(why)
-            activity.update { $0.phase = .problem; $0.pin = nil; $0.label = "Pairing Failed"; $0.headline = title; $0.hint = hint }
+            activity.update { $0.phase = .problem; $0.pin = nil; $0.label = "Pairing Failed"; $0.headline = Self.firstPart(why) }
             if !sessionOn { Task { try? await Task.sleep(for: .seconds(8)); if !self.sessionOn { self.activity.end() } } }
         case .advertising: break
         }
@@ -538,7 +533,7 @@ final class AppModel {
         activity.update {
             $0.phase = .setup
             $0.headline = "Setting up Poki"
-            $0.guide = .init(number: (steps.firstIndex(of: step) ?? 0) + 1, count: steps.count, title: step.activityTitle, hint: step.activityHint)
+            $0.guide = .init(number: (steps.firstIndex(of: step) ?? 0) + 1, count: steps.count, title: step.activityTitle)
         }
     }
 

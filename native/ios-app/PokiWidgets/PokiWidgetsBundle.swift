@@ -58,8 +58,8 @@ extension ActivityViewContext<PokiActivityAttributes> {
             state.approval = nil
             state.decision = nil
             state.phase = .working
-            state.headline = String(localized: "The approval timed out")
-            state.event = .init(kind: .expired, text: String(localized: "Timed out"))
+            state.headline = "Step skipped"
+            state.event = .init(kind: .expired, text: "Timed out")
         }
         return state
     }

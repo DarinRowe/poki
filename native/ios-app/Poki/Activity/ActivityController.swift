@@ -31,7 +31,7 @@ import UniformTypeIdentifiers
 @MainActor
 final class ActivityController {
     private var activity: Activity<PokiActivityAttributes>?
-    private(set) var state = PokiState(phase: .idle, headline: "Ready", thumbnailVersion: 0)
+    private(set) var state = PokiState(phase: .idle, headline: "Waiting for agent", thumbnailVersion: 0)
     private(set) var lastError: String?
 
     /// After this long without a new step, a run of steps counts as finished.
@@ -140,8 +140,8 @@ final class ActivityController {
     private func transition(from old: PokiState) -> AlertConfiguration? {
         var alert: AlertConfiguration?
         let now = Date()
-        // A problem's own words go with it.
-        if state.phase != .problem { state.label = nil; state.hint = nil }
+        // A problem's own word goes with it.
+        if state.phase != .problem { state.label = nil }
 
         // A new run of steps: from anything that is not already a run.
         let runPhases: Set<PokiState.Phase> = [.working, .approval, .deciding]
@@ -151,7 +151,7 @@ final class ActivityController {
             // The runner's start and the agent's first step are one start.
             if !runAnnounced {
                 runAnnounced = true
-                setEvent(.started, String(localized: "Started"))
+                setEvent(.started, "Started")
             }
         }
         if state.phase == .done || state.phase == .idle && state.runnerPaused || state.phase == .pairing || state.phase == .setup {
@@ -160,30 +160,30 @@ final class ActivityController {
         if state.phase != .done { foldTimer?.cancel() }
         // Into another app mid-run.
         if runPhases.contains(state.phase), let app = state.app, let before = old.app, app != before {
-            setEvent(.app, String(localized: "Now in \(app)"))
+            setEvent(.app, app)
             // No pop-up: the runner is in the middle of acting.
         }
         // Approval: always pops up and lights the screen.
         if let approval = state.approval, approval.id != old.approval?.id {
-            alert = critical(String(localized: "Allow this step?"), String(localized: "\(approval.summary) in \(approval.app)"))
+            alert = critical(String(activity: "Allow this step?"), approval.question)
         }
         if state.approval == nil, let was = old.approval {
             state.decision = nil
-            let approved = state.headline.hasPrefix("Approved")
+            let approved = state.headline == "Continuing"
             let expired = !approved && was.expires <= now.addingTimeInterval(0.5)
-            setEvent(approved ? .approved : expired ? .expired : .denied, approved ? String(localized: "Allowed") : expired ? String(localized: "Timed out") : String(localized: "Denied"))
+            setEvent(approved ? .approved : expired ? .expired : .denied, approved ? "Allowed" : expired ? "Timed out" : "Denied")
         }
         if state.phase == .problem, old.phase != .problem {
-            setEvent(.problem, state.label ?? String(localized: "Problem"))
-            alert = critical(String(localized: "Poki needs attention"), state.headline)
+            setEvent(.problem, state.label ?? "Problem")
+            alert = critical(String(activity: "Poki needs attention"), ActivityWords.local(state.headline))
         }
         if let pin = state.pin, pin != old.pin {
-            setEvent(.code, String(localized: "Code ready"))
-            alert = critical(String(localized: "Pairing code \(pin)"), String(localized: "Type it on the Pair with Poki screen in Settings"))
+            setEvent(.code, "Code ready")
+            alert = critical(String(activity: "Pairing code \(pin)"), String(activity: "Type it on the Pair with Poki screen in Settings"))
         }
         if old.phase == .pairing, state.phase == .idle, state.headline == "Paired" {
-            setEvent(.paired, String(localized: "Paired"))
-            alert = critical(String(localized: "Paired"), String(localized: "This iPhone is ready for Poki"))
+            setEvent(.paired, "Paired")
+            alert = critical(String(activity: "Paired"), String(activity: "This iPhone is ready for Poki"))
         }
 
         // A step began (AppModel sets the headline to the step's words): shown, never popped up.
@@ -216,10 +216,10 @@ final class ActivityController {
         state.phase = .done
         runAnnounced = false
         state.endedAt = Date()
-        state.headline = state.app.map { String(localized: "Finished in \($0)") } ?? String(localized: "Finished")
-        setEvent(.finished, String(localized: "Finished"))
+        state.headline = "Finished"
+        setEvent(.finished, "Finished")
         let summary = state.runSummary
-        send(alert: ordinary(String(localized: "Agent finished"), summary), critical: true)
+        send(alert: ordinary(String(activity: "Agent finished"), summary), critical: true)
         armFold()
     }
 
@@ -232,7 +232,7 @@ final class ActivityController {
             guard !Task.isCancelled, let self, self.state.phase == .done else { return }
             self.update { state in
                 state.phase = .idle
-                state.headline = String(localized: "Ready for the agent")
+                state.headline = "Waiting for agent"
                 state.outcomes = []; state.stepCount = 0; state.failedCount = 0
                 state.since = nil; state.endedAt = nil; state.event = nil
             }
@@ -310,7 +310,6 @@ final class ActivityController {
         func size() -> Int { (try? JSONEncoder().encode(state).count) ?? 0 }
         guard size() > 3_500 else { return }
         state.headline = String(state.headline.prefix(80))
-        state.hint = state.hint.map { String($0.prefix(120)) }
         if var approval = state.approval {
             approval.summary = String(approval.summary.prefix(80)); approval.reason = String(approval.reason.prefix(60))
             state.approval = approval
