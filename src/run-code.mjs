@@ -1,6 +1,6 @@
 import { Worker } from 'node:worker_threads';
 import { deadline, checkWork, signal, stoppingReason } from './work.mjs';
-import { invalidStep, stepTool, changesDevice } from './batch.mjs';
+import { invalidStep, stepTool } from './batch.mjs';
 import { normalizeCode } from './normalize.mjs';
 
 const workerUrl = new URL('./run-code-worker.mjs', import.meta.url);
@@ -49,8 +49,9 @@ async function drive(ctx, code, input, maxCalls) {
   const logs = [];
   const base = () => ({ completed_calls: calls.length, calls, ...(logs.length ? { logs } : {}) });
   const cancelled = error => ({ ...base(), stop_reason: stoppingReason(error), next: 'The script did not finish within its time; the device call in progress was cancelled.' });
-  const previousInBatch = ctx.inBatch;
-  ctx.inBatch = true;
+  // Each call goes through ctx.dispatch as a direct call would, outside batch mode, so an action
+  // returns the screen it produced and the script can decide from it. A batch skips that readback
+  // because it reads the screen once at its end; a script has no end-of-run read to fall back on.
   let summary;
   try {
     for (;;) {
@@ -77,7 +78,6 @@ async function drive(ctx, code, input, maxCalls) {
         dispatchError = error.message;
       }
       const elapsed_ms = Math.round(performance.now() - started);
-      if (changesDevice.has(name)) ctx.resolved = undefined;
       if (dispatchError) { calls.push({ call: calls.length + 1, tool: name, elapsed_ms, isError: true, error: cap(dispatchError) }); worker.postMessage({ type: 'result', id: message.id, resultJson: JSON.stringify({ error: dispatchError }) }); continue; }
       const text = result.content?.find(block => block.type === 'text')?.text;
       let receipt; try { receipt = JSON.parse(text); } catch { receipt = text; }
@@ -93,7 +93,6 @@ async function drive(ctx, code, input, maxCalls) {
     }
   } finally {
     box.close();
-    ctx.inBatch = previousInBatch;
     await worker.terminate();
   }
   const reason = summary.stop_reason ?? (summary.script_error !== undefined ? 'error' : undefined);
