@@ -5,13 +5,15 @@ import vm from 'node:vm';
 // process, fetch, module loader or timers: only JavaScript intrinsics, plus a `tools` proxy, an
 // `input` value and a `console` shim built inside the context. Each `await tools.<name>(args)`
 // crosses to the daemon as a JSON string and comes back as a JSON string, so no main-thread object
-// ever reaches the context. The daemon drives the call and can terminate this worker at any time.
+// ever reaches the context, and the worker's bridge functions stay in a closure the script cannot
+// name. The daemon drives the call and can terminate this worker at any time.
 const { code, inputJson } = workerData;
 const pending = new Map();
 let nextId = 0;
 
-// Worker-realm primitives placed on the context global. The context reaches the daemon only through
-// these, and only with strings and numbers.
+// Worker-realm primitives handed to the context on its global. The prelude captures them in a closure
+// and deletes them from the global before the script runs: a worker-realm function's constructor is
+// the worker's own Function, which code generation limits on the context do not cover.
 function dispatch(name, argsJson) {
   const id = nextId++;
   return new Promise(resolve => {
@@ -35,26 +37,33 @@ const context = vm.createContext(sandbox, { codeGeneration: { strings: false, wa
 // Built inside the context so `tools`, `input` and `console` are context-realm objects. A tool call
 // stringifies its argument, hands the daemon a plain string, parses the reply back into a
 // context-realm object, and throws an ordinary Error the script can catch when the reply carries one.
-const prelude = `
-  globalThis.input = JSON.parse(__inputJson);
+const prelude = `'use strict';
+(() => {
+  const dispatch = __dispatch, emitLog = __emitLog, inputJson = __inputJson;
+  delete globalThis.__dispatch; delete globalThis.__emitLog; delete globalThis.__inputJson;
+  // Only primitives come back: the reply is a string and emitLog returns nothing, and the worker's
+  // promise is awaited here inside a context-realm promise, so the script never holds it.
+  const log = line => { emitLog(String(line)); };
+  const call = (name, argsJson) => new Promise(resolve => { dispatch(name, argsJson).then(reply => resolve(String(reply))); });
+  globalThis.input = JSON.parse(inputJson);
   globalThis.console = {
-    log: (...a) => __emitLog(a.map(String).join(' ')),
-    warn: (...a) => __emitLog('[warn] ' + a.map(String).join(' ')),
-    error: (...a) => __emitLog('[error] ' + a.map(String).join(' ')),
-    info: (...a) => __emitLog(a.map(String).join(' ')),
-    debug: (...a) => __emitLog(a.map(String).join(' ')),
+    log: (...a) => log(a.map(String).join(' ')),
+    warn: (...a) => log('[warn] ' + a.map(String).join(' ')),
+    error: (...a) => log('[error] ' + a.map(String).join(' ')),
+    info: (...a) => log(a.map(String).join(' ')),
+    debug: (...a) => log(a.map(String).join(' ')),
   };
   globalThis.tools = new Proxy({}, {
     get: (_, name) => {
       if (typeof name !== 'string') return undefined;
       return async (args) => {
-        const replyJson = await __dispatch(name, JSON.stringify(args ?? {}));
-        const reply = JSON.parse(replyJson);
+        const reply = JSON.parse(await call(name, JSON.stringify(args ?? {})));
         if (reply.error) throw new Error(reply.error);
         return reply.result;
       };
     },
   });
+})();
 `;
 
 async function run() {
