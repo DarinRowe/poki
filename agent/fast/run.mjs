@@ -11,6 +11,8 @@ function statusBar({ width, height, elements }) {
 }
 const page = observation => JSON.stringify(observation.elements.map(e => [e.role ?? e.type, e.label ?? e.text]));
 const returnLimit = 4;
+// The replay observes the screen after every input and checks it against the step, so an input need not read the screen back itself.
+const unverified = new Set(['tap', 'scroll', 'swipe', 'go_back']);
 const reasons = new Set(['device_unavailable', 'tool_failed', 'tool_protocol', 'unknown_outcome', 'scope_unavailable', 'outside_scope', 'structure_unavailable', 'stale_observation', 'ambiguous_target', 'no_candidates', 'step_precondition_failed', 'step_not_completed', 'final_condition_failed', 'task_changed']);
 export async function runFast({ task, alternatives = [], onSelect = () => {}, call, releaseLease = true, signal = new AbortController().signal }) {
   const mode = 'plan';
@@ -35,9 +37,12 @@ export async function runFast({ task, alternatives = [], onSelect = () => {}, ca
     throw new Error('scope_unavailable');
   };
   const scope = async (initial = false) => {
-    const app = await session.call('get_foreground_app', { device: task.device });
-    if (app.bundle_id || scopePid !== undefined) return verifyScope(app);
-    if (!initial || !task.launch_for_scope) throw new Error('scope_unavailable');
+    // A replay that opens its app takes the scope from the launch, which also finds the app when the device names it without a bundle identifier.
+    if (!initial || !task.launch_for_scope) {
+      const app = await session.call('get_foreground_app', { device: task.device });
+      if (app.bundle_id || scopePid !== undefined) return verifyScope(app);
+      throw new Error('scope_unavailable');
+    }
     stats.scope_launch_count++;
     const receipt = await session.call('launch_app', { device: task.device, bundle_id: task.bundle_id });
     if (receipt.bundle_id !== task.bundle_id || receipt.launched !== true || receipt.foreground_verified !== true
@@ -82,7 +87,7 @@ export async function runFast({ task, alternatives = [], onSelect = () => {}, ca
           }
         } else if (stats.return_count < returnLimit && page(current) !== previousPage) {
           previousPage = page(current); stats.return_count++;
-          await session.call('go_back', { device: task.device });
+          await session.call('go_back', { device: task.device, verify: false });
           continue;
         }
       }
@@ -98,7 +103,8 @@ export async function runFast({ task, alternatives = [], onSelect = () => {}, ca
       const action = candidates[0];
       fresh(); signal.throwIfAborted();
       const args = { ...action.arguments, device: task.device, ...(action.op === 'scroll' ? { direction: action.direction } : {}),
-        ...(action.ref ? { ref: action.ref } : {}), ...(action.text_id ? { text: task.texts[action.text_id] } : {}) };
+        ...(action.ref ? { ref: action.ref } : {}), ...(action.text_id ? { text: task.texts[action.text_id] } : {}),
+        ...(unverified.has(action.op) ? { verify: false } : {}) };
       lastAction = action.id; pending = true; stats.action_count++;
       const receipt = await session.call(action.op, args);
       if (receipt.sent !== true) throw new Error('unknown_outcome');

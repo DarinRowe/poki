@@ -835,6 +835,10 @@
         "properties": {
           "device": {
             "type": "string"
+          },
+          "verify": {
+            "type": "boolean",
+            "description": "Set false to skip action verification. Returns verified:false. Text targeting and coordinate sizing still read current device data."
           }
         }
       }
