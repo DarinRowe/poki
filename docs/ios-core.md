@@ -270,7 +270,7 @@ Each answer is facts only: the app in front, numbered elements, what each action
   (before any action) is where the owner asked, in Grok, Claude, ChatGPT or Poki's own chat, and
   the MCP session of that call is kept with it. The task ends, and that app is activated again
   (the home screen by the Home button), on the first of: a `do` with `finish: true` and no error,
-  after its read (`finish: back in Grok, where the task began` as its second line); a `DELETE` of
+  after its read (`finish: back in Grok, where the task began` as its second line, said only once Grok is in front, watched for up to 3 s, since the switch animates after WDA answers); a `DELETE` of
   the session that began the task; `finishTask()`, which the app calls before it stops an idle
   runner (default 60 s without agent activity). Nothing is sent when that app is in front already.
   There is no timer of a few seconds: an agent may think for minutes between calls. A call after
