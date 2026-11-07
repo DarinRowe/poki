@@ -46,6 +46,9 @@ enum ActivityWords {
         brief(translate(label.components(separatedBy: ", then ").first ?? label))
     }
 
+    /// A step label from PokiCore in the system's language, whole, for the app's own screens.
+    static func label(_ label: String) -> String { translate(label) }
+
     private static func isHan(_ scalar: Unicode.Scalar) -> Bool {
         (0x3400...0x9FFF).contains(scalar.value) || (0xF900...0xFAFF).contains(scalar.value)
     }

@@ -174,7 +174,7 @@ final class AppModel {
             RecentStep(text: String(localized: "Open Messages"), app: String(localized: "Home Screen"), at: now.addingTimeInterval(-70)),
             RecentStep(text: String(localized: "Tap the chat with Mom"), app: messages, at: now.addingTimeInterval(-52)),
             RecentStep(text: String(localized: "Type “On my way”"), app: messages, at: now.addingTimeInterval(-41)),
-            RecentStep(text: String(localized: "Tap at 212, 640"), app: messages, failure: String(localized: "failed: nothing changed"), at: now.addingTimeInterval(-30)),
+            RecentStep(text: "Tap at 212, 640", app: messages, failure: "failed: nothing changed", at: now.addingTimeInterval(-30)),
         ]
         activityText = String(localized: "Tap “Send”")
         approvals = [PendingApproval(id: "sample", app: messages, summary: String(localized: "Send “On my way” to Mom"),

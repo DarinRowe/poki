@@ -2470,16 +2470,6 @@
         }
       }
     },
-    "Tap at 212, 640": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "轻点 (212, 640)"
-          }
-        }
-      }
-    },
     "Tap the chat with Mom": {
       "localizations": {
         "zh-Hans": {
@@ -2964,6 +2954,7 @@
       }
     },
     "failed: nothing changed": {
+      "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {

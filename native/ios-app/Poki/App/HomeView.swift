@@ -258,7 +258,7 @@ private struct NowSection: View {
                     ForEach(model.recentSteps.suffix(3)) { step in
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text(verbatim: step.ok ? "✓" : "✕").foregroundStyle(step.ok ? Color.white : Site.bad).frame(width: 12, alignment: .leading)
-                            Text(step.text).foregroundStyle(Site.c3).lineLimit(1)
+                            Text(ActivityWords.label(step.text)).foregroundStyle(Site.c3).lineLimit(1)
                         }
                         .site(13, line: 17)
                     }
@@ -281,7 +281,7 @@ private struct NowSection: View {
     private var stopEnabled: Bool { model.approvals.isEmpty && !model.runnerPaused }
     private var working: Bool { model.activityText != "Idle" }
     private var label: LocalizedStringKey { !model.approvals.isEmpty ? "Paused for you" : working ? "Working" : "Last step" }
-    private var headline: String { working ? model.activityText : model.recentSteps.last?.text ?? String(localized: "Waiting for the agent") }
+    private var headline: String { (working ? model.activityText : model.recentSteps.last?.text).map(ActivityWords.label) ?? String(localized: "Waiting for the agent") }
     private var place: String {
         let step = model.recentSteps.count + (working ? 1 : 0)
         guard let app = model.currentApp else { return String(localized: "Step \(step)") }
@@ -676,7 +676,7 @@ struct AllStepsView: View {
                            failed: false, at: Date()))
         }
         for step in model.recentSteps.reversed() {
-            let failure = step.failure.map { $0.prefix(1).uppercased() + $0.dropFirst() }
+            let failure = step.failure.map { Bundle.main.localizedString(forKey: $0, value: $0, table: nil) }.map { $0.prefix(1).uppercased() + $0.dropFirst() }
             out.append(Row(text: step.text, detail: failure ?? step.app ?? String(localized: "Done"), failed: !step.ok, at: step.at))
         }
         return out
@@ -699,7 +699,7 @@ private struct StepRow: View {
             .frame(width: 30)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text(row.text).site(15, .medium, line: 20).foregroundStyle(Site.text).lineLimit(2)
+                    Text(ActivityWords.label(row.text)).site(15, .medium, line: 20).foregroundStyle(Site.text).lineLimit(2)
                     Spacer(minLength: 8)
                     Text(row.at, style: .time).site(12, line: 16).monospacedDigit().foregroundStyle(Site.text3)
                 }
