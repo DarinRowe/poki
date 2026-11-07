@@ -69,6 +69,7 @@ struct VoiceBridge: Equatable {
         return try JSONDecoder().decode(ToolResult.self, from: data)
     }
 
+    #if DEBUG
     /// Test runs only: recorded utterance n (24 kHz mono PCM16), served by a bridge started with --test-dir.
     func utterance(_ n: Int) async throws -> Data {
         var parts = URLComponents(url: base.appending(path: "utterance"), resolvingAgainstBaseURL: false)!
@@ -86,6 +87,7 @@ struct VoiceBridge: Equatable {
         let (data, response) = try await URLSession.shared.data(for: request)
         try Self.check(response, data)
     }
+    #endif
 
     private static func check(_ response: URLResponse, _ data: Data) throws {
         guard let http = response as? HTTPURLResponse, http.statusCode != 200 else { return }
@@ -227,15 +229,26 @@ final class VoiceModel {
         return true
     }
 
-    /// `poki://voice?bridge=<address>&start=1&muted=1`, or `&test=1-20` for a test run.
+    /// `poki://voice` can come from any web page, message or app, so it only shows the Voice tab. A link
+    /// never changes the voice bridge and never turns on the microphone: the person enters the address
+    /// and taps Talk to Poki in the app.
     func open(_ url: URL) {
+        let asked = (URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []).map(\.name)
+        if !asked.isEmpty { log.add("voice", "a link asked for \(asked.joined(separator: ", ")); links only open the Voice tab") }
+    }
+
+    #if DEBUG
+    /// Development builds only: the `-pokiVoiceLink "poki://voice?bridge=<address>&test=1-20&muted=1"`
+    /// launch argument, which only the Mac that installs and launches the build can pass. It may set the
+    /// bridge and run silent test turns, which use no microphone.
+    func openAtLaunch(_ url: URL) {
         let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
         let value = { (name: String) in items.first { $0.name == name }?.value }
-        if let address = value("bridge") { log.add("voice", setBridge(address) ? "bridge set from a link" : "the link's bridge address was not valid") }
+        if let address = value("bridge") { log.add("voice", setBridge(address) ? "bridge set at launch" : "the launch argument's bridge address was not valid") }
         if value("muted") == "1" { muted = true }
         if let test = value("test"), let range = Self.range(test) { Task { await runTest(range) } }
-        else if value("start") == "1", !isOn { Task { await start() } }
     }
+    #endif
 
     func start(microphone: Bool = true) async {
         guard link == nil else { return }
@@ -281,6 +294,7 @@ final class VoiceModel {
 
     private static let stoppedNote = "The user pressed Stop talking. Drop the reply you were giving; do not continue or repeat it. When a running step finishes, report only its result, in one sentence."
 
+    #if DEBUG
     /// Recorded speech instead of the microphone, for test runs: 24 kHz mono PCM16, sent as one user turn.
     func say(pcm24k: Data) {
         guard let link, ready else { return }
@@ -296,6 +310,7 @@ final class VoiceModel {
         wantsResponse = true
         flush()
     }
+    #endif
 
     private func closed(_ reason: String, session number: Int) {
         guard number == session, link != nil else { return }
@@ -450,9 +465,10 @@ final class VoiceModel {
         link.send(["type": "response.create"])
     }
 
-    // MARK: Test runs
+    // MARK: Test runs (development builds only)
 
-    /// `poki://voice?test=1-20`: each turn opens a fresh session, plays recorded utterance n from the bridge
+    #if DEBUG
+    /// `-pokiVoiceLink "poki://voice?test=1-20"`: each turn opens a fresh session, plays recorded utterance n from the bridge
     /// over the data channel (no microphone, Poki's voice muted), waits for the spoken result and reports
     /// the turn to the bridge.
     func runTest(_ numbers: ClosedRange<Int>) async {
@@ -500,6 +516,7 @@ final class VoiceModel {
         guard let first = parts.first, let last = parts.last, first >= 1, last >= first, last <= 99 else { return nil }
         return first...last
     }
+    #endif
 
     private static func refused(_ clearance: TapClearance) -> VoiceBridge.ToolResult {
         let output: String

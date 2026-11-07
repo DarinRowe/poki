@@ -63,7 +63,7 @@ POKI_MCP_STATE_DIR=... node bin/voice-bridge.mjs --device <iPhone id>
 ```
 
 Enter `http://<Mac>:47830/voice/<secret>` in the Voice tab (the secret is in `voice-bridge.json` in the
-state directory), or open `poki://voice?bridge=<address>`. `get_ios_version` is answered on the phone;
+state directory). `get_ios_version` is answered on the phone;
 the bridge runs the tools that move the phone (`open_settings`, `read_screen`, `open_app`, `tap_text`,
 `go_home`) through the Mac's Poki MCP.
 
@@ -75,8 +75,13 @@ the bridge runs the tools that move the phone (`open_settings`, `read_screen`, `
 - A dropped connection sends nothing again. A call outlives the session that asked for it; the next
   session is told how it ended instead of asking for it again.
 - Stop talking (or speaking over Poki) cancels the reply, never the step running on the phone.
-- `poki://voice?test=1-20` runs recorded utterances from a bridge started with `--test-dir`, silently:
-  the speech goes over the data channel instead of the microphone, and Poki's voice is muted.
+- A `poki://voice` link, from a web page or another app, only opens the Voice tab: a link never
+  changes the bridge and never turns on the microphone. The person enters the address and taps Talk
+  to Poki.
+- Development builds only: the launch argument `-pokiVoiceLink "poki://voice?bridge=<address>&test=1-20"`
+  runs recorded utterances from a bridge started with `--test-dir`, silently: the speech goes over
+  the data channel instead of the microphone, and Poki's voice is muted. Release builds have no test
+  runs.
 
 ## Signing and entitlements
 

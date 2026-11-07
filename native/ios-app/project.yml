@@ -63,6 +63,8 @@ targets:
       path: Poki/Poki.entitlements
       properties:
         com.apple.security.application-groups: [group.nz.zheha.poki]
+    scheme:
+      testTargets: [PokiTests]
     dependencies:
       - target: PokiWidgets
       - package: PokiCore
@@ -98,3 +100,18 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: nz.zheha.poki.widgets
+  # Unit tests of the app itself, hosted in it (on a simulator):
+  #   xcodebuild test -project native/ios-app/Poki.xcodeproj -scheme Poki -destination 'platform=iOS Simulator,name=iPhone 18 Pro' ARCHS=arm64
+  PokiTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: PokiTests
+    dependencies:
+      - target: Poki
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: nz.zheha.poki.tests
+        GENERATE_INFOPLIST_FILE: YES
+        # The app's bridging header is read again by @testable import.
+        HEADER_SEARCH_PATHS: $(SRCROOT)/../launcher/include

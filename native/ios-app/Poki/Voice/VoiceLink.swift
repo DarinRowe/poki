@@ -15,9 +15,11 @@ final class VoiceLink: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelega
         RTCAudioSessionConfiguration.setWebRTC(audio)
         return RTCPeerConnectionFactory()
     }()
+    #if DEBUG
     /// Test runs: WebRTC's own audio device would set up a voice-chat audio session, and iOS would ask
     /// for the microphone. This one never touches audio; the model's voice is received and dropped.
     private static let silentFactory = RTCPeerConnectionFactory(encoderFactory: nil, decoderFactory: nil, audioDevice: SilentAudioDevice())
+    #endif
 
     private let onEvent: @MainActor ([String: Any]) -> Void
     private let onClosed: @MainActor (String) -> Void
@@ -35,7 +37,11 @@ final class VoiceLink: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelega
     /// `microphone: false` (test runs) sends no audio track and needs no microphone permission; the
     /// model's voice still comes back.
     func connect(secret: String, microphone: Bool = true) async throws {
+        #if DEBUG
         let factory = microphone ? Self.factory : Self.silentFactory
+        #else
+        let factory = Self.factory
+        #endif
         let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
         let config = RTCConfiguration()
         config.sdpSemantics = .unifiedPlan
@@ -153,7 +159,8 @@ final class VoiceLink: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelega
     func peerConnection(_ peerConnection: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) {}
 }
 
-/// An audio device with no microphone and no speaker, for silent test runs.
+#if DEBUG
+/// An audio device with no microphone and no speaker, for silent test runs (development builds only).
 private final class SilentAudioDevice: NSObject, RTCAudioDevice {
     let deviceInputSampleRate = 48000.0
     let inputIOBufferDuration: TimeInterval = 0.01
@@ -178,3 +185,4 @@ private final class SilentAudioDevice: NSObject, RTCAudioDevice {
     func startRecording() -> Bool { isRecording = true; return true }
     func stopRecording() -> Bool { isRecording = false; return true }
 }
+#endif
