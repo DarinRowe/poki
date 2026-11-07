@@ -49,6 +49,9 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
     private var routes: [String: Route] = [:]
     /// The focused field from the latest `/element/active`, for the value and frame asked right after.
     private var focused: [AnyHashable: Any]?
+    /// PokiCore's snapshotMaxDepth and snapshotMaxChildren (POST /appium/settings): a read that took
+    /// too long is followed by a smaller one, in-process as on WebDriverAgent. 0: unbounded.
+    private var maxDepth = 0, maxChildren = 0
 
     init(screen: CGSize) {
         self.screen = screen
@@ -62,7 +65,12 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
                 return ["sessionId": .string("inprocess-\(self.native.generation())")]
             },
             "DELETE /session": { _, _ in .null },
-            "POST /appium/settings": { _, _ in .null },
+            "POST /appium/settings": { [unowned self] body, _ in
+                let settings = body?["settings"]
+                if let depth = settings?["snapshotMaxDepth"]?.double { self.maxDepth = depth >= 50 ? 0 : max(1, Int(depth)) }
+                if let children = settings?["snapshotMaxChildren"]?.double { self.maxChildren = children >= 10_000 ? 0 : max(1, Int(children)) }
+                return .null
+            },
             "GET /wda/screen": { [screen] _, _ in ["screenSize": ["width": .number(screen.width), "height": .number(screen.height)]] },
             "GET /wda/locked": { [unowned self] _, _ in .bool(self.native.screenLocked()) },
             "GET /wda/activeAppInfo": { [unowned self] _, _ in
@@ -71,13 +79,13 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
             },
             "GET /source": { [unowned self] _, _ in
                 var code: NSString?
-                guard let xml = self.native.sourceXML(nil, code: &code) else { throw Refusal("unknown error", "no element tree: \(code ?? "unknown")") }
+                guard let xml = self.native.sourceXML(nil, maxDepth: self.maxDepth, maxChildren: self.maxChildren, code: &code) else { throw Refusal("unknown error", "no element tree: \(code ?? "unknown")") }
                 return .string(xml)
             },
             "GET /element/active": { [unowned self] _, _ in
                 var code: NSString?
                 var focus: NSDictionary?
-                guard self.native.sourceXML(&focus, code: &code) != nil else { throw Refusal("unknown error", "no element tree: \(code ?? "unknown")") }
+                guard self.native.sourceXML(&focus, maxDepth: self.maxDepth, maxChildren: self.maxChildren, code: &code) != nil else { throw Refusal("unknown error", "no element tree: \(code ?? "unknown")") }
                 guard let focus else { throw Refusal("no such element", "no element has the keyboard focus") }
                 self.focused = focus as? [AnyHashable: Any]
                 return ["ELEMENT": "focused"]
@@ -111,8 +119,15 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
             "POST /wda/pressAndDragWithVelocity": { [unowned self] body, _ in
                 let from = try Self.point(body, "fromX", "fromY"), to = try Self.point(body, "toX", "toY")
                 let press = max(0, body?["pressDuration"]?.double ?? 0), hold = max(0, body?["holdDuration"]?.double ?? 0)
-                let moving = max(0.05, hypot(to.x - from.x, to.y - from.y) / max(1, body?["velocity"]?.double ?? 1000))
-                return try self.touch([[(from, 0), (from, press), (to, press + moving), (to, press + moving + hold)]])
+                let distance = hypot(to.x - from.x, to.y - from.y)
+                let moving = max(0.05, distance / max(1, body?["velocity"]?.double ?? 1000))
+                // The hold at the end is a real touch sample, one point short of the end and then the
+                // end itself, so the scroll view sees a finger that stopped before it lifted and the
+                // list stays where it is (the gym: a 72 % drag moved a whole screen in-process, a
+                // flick, where the same drag on WebDriverAgent moved 72 %).
+                guard hold > 0, distance > 2 else { return try self.touch([[(from, 0), (from, press), (to, press + moving), (to, press + moving + hold)]]) }
+                let near = CGPoint(x: to.x - (to.x - from.x) / distance, y: to.y - (to.y - from.y) / distance)
+                return try self.touch([[(from, 0), (from, press), (near, press + moving), (to, press + moving + hold)]])
             },
             "POST /wda/dragfromtoforduration": { [unowned self] body, _ in
                 let from = try Self.point(body, "fromX", "fromY"), to = try Self.point(body, "toX", "toY")

@@ -609,7 +609,13 @@ extension Computer {
         // After a swipe whose read shares nothing with the read before (the list moved more than a
         // screen), the next swipe is a short one back, so nothing is passed unread.
         var corrective = false, corrected = false, overshoots = 0
-        func overshot() -> String { overshoots == 0 ? "" : " (the list moved more than a screen after \(overshoots) swipe\(overshoots == 1 ? "" : "s"), so a short drag back followed each)" }
+        // How far the list moved on each swipe, from the elements the two reads share (the in-process
+        // path moved a screen on a 72 % drag where WebDriverAgent moved 72 %: the figure tells which).
+        var moved: [String] = []
+        func overshot() -> String {
+            let per = moved.isEmpty ? "" : " (the list moved \(moved.joined(separator: ", ")) pt on the swipes)"
+            return overshoots == 0 ? per : " (the list moved more than a screen after \(overshoots) swipe\(overshoots == 1 ? "" : "s"), so a short drag back followed each)" + per
+        }
         // An alert over the list takes the drags (gym: "the list stopped moving" under a permission
         // prompt): the answer names it.
         func alertNote() -> String { alertOnScreen().map { "; an alert is over the list (\($0)): answer it first" } ?? "" }
@@ -641,6 +647,7 @@ extension Computer {
                 }
                 corrective = !corrected && scrolledPastAScreen(from: all, to: seen.elements, in: region)
                 if corrective { overshoots += 1 }
+                moved.append(listMovement(from: all, to: seen.elements, in: region, fingerGoes: fingerGoes).map { String(Int($0.rounded())) } ?? (corrective ? "a screen or more" : "?"))
                 let signature = seen.elements.map { "\($0.key)@\(Int($0.frame.y))" }.joined(separator: ";")
                 if signature == last, !waited {
                     // The end is declared only when two swipes in a row, each sent to a free runner and
@@ -693,6 +700,28 @@ extension Computer {
         }
         let a = inside(before), b = inside(after)
         return a.count >= 4 && b.count >= 4 && a.isDisjoint(with: b)
+    }
+
+    /// How far the list moved between two reads, in points along the swipe's axis, positive in the
+    /// direction the finger went (the content follows the finger): the median shift of the elements
+    /// both reads list inside the region. nil when they share none.
+    func listMovement(from before: [Element], to after: [Element], in region: Rect, fingerGoes: String) -> Double? {
+        func meets(_ f: Rect) -> Bool { f.x < region.maxX && f.maxX > region.x && f.y < region.maxY && f.maxY > region.y }
+        let horizontal = fingerGoes == "left" || fingerGoes == "right"
+        func positions(_ es: [Element]) -> [String: Double] {
+            var out: [String: Double] = [:], twice = Set<String>()
+            for e in es where meets(e.frame) && !e.text.isEmpty && !Self.containers.contains(e.type) {
+                if out[e.key] != nil { twice.insert(e.key) }
+                out[e.key] = horizontal ? e.frame.x : e.frame.y
+            }
+            for k in twice { out[k] = nil }
+            return out
+        }
+        let a = positions(before), b = positions(after)
+        let shifts = a.compactMap { k, y in b[k].map { y - $0 } }.sorted()
+        guard !shifts.isEmpty else { return nil }
+        let sign: Double = fingerGoes == "up" || fingerGoes == "left" ? 1 : -1
+        return sign * shifts[shifts.count / 2]
     }
 
     /// A swipe that did something other than scroll (gym: a drag that started on Safari's address
