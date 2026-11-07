@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { askHuman } from './human.mjs';
 import { screenIdentity } from './screen-identity.mjs';
+import { flagOn } from './element-flags.mjs';
 
 const behavior = JSON.parse(readFileSync(new URL('./data/interaction.json', import.meta.url), 'utf8'));
 import { pause, deadline, checkWork, stopped } from './work.mjs';
@@ -12,7 +13,7 @@ const patienceMs = 5000, ocrAfterMs = 1000, ocrEveryMs = 2000, pollMs = 100, qui
 const ocrAllowanceMs = 12000;
 const strings = e => [e.label, e.text, e.value, e.identifier, e.placeholder].filter(v => typeof v === 'string');
 const normalize = v => v.normalize('NFKC').toLocaleLowerCase().trim();
-const visible = e => e.visible !== false && e.visible !== 0;
+const visible = e => flagOn(e.visible);
 const alertText = v => v.normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase().trim().replace(/’/g, "'");
 
 export function promptWarning(elements) {

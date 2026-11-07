@@ -1,4 +1,5 @@
 import { nativeRequest } from './remote.mjs';
+import { flagOn } from './element-flags.mjs';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { execute, pause, checkWork, signal, deadline, stopped, stoppingReason, phase } from './work.mjs';
@@ -477,7 +478,7 @@ async function simulatorSettingsFallback(ctx, target, page) {
   // Its private prefs: scheme is rejected; App-prefs alone only opens the root.
   if (!['general', 'about'].includes(page)) throw new Error(`This simulator rejects the private prefs: scheme. The requested Settings page '${page}' has no verified navigation fallback on this runtime.`);
   await openURLTransport(target, 'App-prefs:');
-  const visible = (tree, identifier) => tree.elements.find(element => element.visible !== false && element.identifier === identifier);
+  const visible = (tree, identifier) => tree.elements.find(element => flagOn(element.visible) && element.identifier === identifier);
   const about = tree => visible(tree, 'NAME_CELL_ID') && visible(tree, 'SW_VERSION_SPECIFIER');
   const general = tree => visible(tree, 'com.apple.settings.general.featureDescription') && visible(tree, 'com.apple.settings.general.about');
   let tree = await settingsTree(ctx, tree => about(tree) || general(tree) || visible(tree, 'com.apple.settings.general'));
@@ -490,7 +491,7 @@ async function simulatorSettingsFallback(ctx, target, page) {
     await tap(visible(tree, 'com.apple.settings.general')); tree = await settingsTree(ctx, general);
   }
   if (page === 'about' && !about(tree)) { await tap(visible(tree, 'com.apple.settings.general.about')); tree = await settingsTree(ctx, about); }
-  const title = tree.elements.find(element => element.visible !== false && element.type === 'Heading')?.label;
+  const title = tree.elements.find(element => flagOn(element.visible) && element.type === 'Heading')?.label;
   return { requested_page: page, page_verified: true, page_title: title, navigation_method: 'accessibility_after_private_scheme_rejection' };
 }
 

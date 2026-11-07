@@ -3,6 +3,7 @@ import { readFile, writeFile, mkdir, rename, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { matching, conditionsMatch, planSchema, selectorFor } from './fast/task.mjs';
+import { flagOn } from '../src/element-flags.mjs';
 import { learnReadout, readCurrent } from './readout.mjs';
 
 const observationTools = new Set(['observe_device', 'list_elements']);
@@ -177,7 +178,7 @@ function actionFor(entry, before, id) {
   } else if (Number.isFinite(x) && Number.isFinite(y)) {
     const matches = before.elements.filter(e => {
       const f = e.frame ?? e;
-      return e.visible !== false && x >= f.x && y >= f.y && x <= f.x + f.width && y <= f.y + f.height;
+      return flagOn(e.visible) && x >= f.x && y >= f.y && x <= f.x + f.width && y <= f.y + f.height;
     }).sort((a, b) => (a.frame ?? a).width * (a.frame ?? a).height - (b.frame ?? b).width * (b.frame ?? b).height);
     target = matches[0];
   }

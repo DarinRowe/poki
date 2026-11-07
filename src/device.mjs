@@ -2,6 +2,7 @@ import { remoteDevices, nativeRequest } from './remote.mjs';
 import { execute, checkWork, deadline, pause, phase, stopped, stoppingReason } from './work.mjs';
 import { Coordination, managementTools } from './coordination.mjs';
 import { runBatch } from './batch.mjs';
+import { flagOn } from './element-flags.mjs';
 import { mkdir, readFile, writeFile, unlink, stat } from 'node:fs/promises';
 import { join, extname, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
@@ -255,7 +256,7 @@ export class Devices {
     const tree = await phase('accessibility', () => this.bridge({ op: 'ax', include_offscreen: false }));
     const elements = (tree.elements ?? []).filter(onScreen(this.size?.device === target.id ? this.size : await this.capture()));
     // A tree that leaves a state out compares equal to one that gives its default.
-    const signature = JSON.stringify(elements.map(e => { const box = e.frame ?? e; return [e.type ?? e.role, e.label, e.text, e.value, e.focused, Boolean(e.selected), Boolean(e.enabled ?? true), box.x, box.y, box.width, box.height]; }));
+    const signature = JSON.stringify(elements.map(e => { const box = e.frame ?? e; return [e.type ?? e.role, e.label, e.text, e.value, e.focused, Boolean(e.selected), flagOn(e.enabled), box.x, box.y, box.width, box.height]; }));
     return this.seen = { device: target.id, foreground: tree.foreground, elements, signature, at: performance.now() };
   }
   // A simulator's size only changes when it rotates. A physical device maps touches through its
