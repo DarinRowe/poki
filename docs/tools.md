@@ -18,10 +18,10 @@ The default `tools/list` response contains the tools for phone tasks. Tool names
 | Service and devices | `poki_mcp_status`, `list_devices`, `select_device` |
 | Read the screen | `list_elements`, `take_screenshot`, `get_foreground_app` |
 | Apps and URLs | `list_apps`, `launch_app`, `terminate_app`, `open_url` |
-| Touch and input | `tap`, `tap_text`, `long_press`, `double_tap`, `drag`, `pinch`, `touch_path`, `draw_strokes`, `fill`, `type_text`, `scroll`, `scroll_to`, `swipe`, `press_key`, `go_back`, `hide_keyboard`, `press_button`, `get_clipboard` |
+| Touch and input | `tap`, `tap_text`, `long_press`, `double_tap`, `drag`, `pinch`, `fill`, `type_text`, `scroll`, `scroll_to`, `swipe`, `press_key`, `go_back`, `hide_keyboard`, `press_button`, `get_clipboard` |
 | Wait, prompts, and batches | `wait_for`, `handle_alert`, `batch_commands` |
 
-The runtime default list is defined in `src/tools.mjs`. The complete catalog includes simulator management, app installation, recording, location, appearance, and device leases.
+The runtime default list is defined in `src/tools.mjs`. The complete catalog includes simulator management, app installation, recording, location, appearance, drawing with `touch_path` and `draw_strokes`, and device leases.
 
 ### Complete catalog
 
