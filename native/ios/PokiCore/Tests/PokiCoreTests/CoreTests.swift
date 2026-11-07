@@ -497,6 +497,21 @@ final class ReturnToOriginTests: XCTestCase {
         XCTAssertEqual(front.value, "com.apple.weather", "the task is over: a second finish moves nothing")
     }
 
+    /// The owner stopped the runner: a client's DELETE afterwards must not send requests to the
+    /// stopped runner, whose misses would start it again.
+    func testATaskDroppedWithoutSwitchingSendsNothingLater() async throws {
+        let (core, wda, _) = makeCore()
+        let front = phone(wda, front: "ai.x.grok")
+        let initialized = await core.handle(RelayRequest(id: "i", method: "POST", headers: [:], body: (["jsonrpc": "2.0", "id": 1, "method": "initialize", "params": ["protocolVersion": "2025-06-18"]] as JSON).serialized()))
+        let session = try XCTUnwrap(initialized.headers["mcp-session-id"])
+        _ = await core.call("do", ["actions": [["launch": "com.apple.weather"]]], session: session)
+        _ = await core.finishTask(switching: false)
+        let before = wda.sent.count
+        _ = await core.handle(RelayRequest(id: "d", method: "DELETE", headers: ["mcp-session-id": session], body: ""))
+        XCTAssertEqual(wda.sent.count, before, "\(wda.sent.suffix(3))")
+        XCTAssertEqual(front.value, "com.apple.weather")
+    }
+
     /// A task never finished (no finish, idle stop off) does not send a later task's phone back to it.
     func testACallAfterTheTaskGapStartsANewTask() async {
         let (core, wda, _) = makeCore { $0.taskGap = 0 }

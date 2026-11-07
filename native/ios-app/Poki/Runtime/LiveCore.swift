@@ -29,8 +29,9 @@ final class LiveCore: CoreSession {
     func stop() { core.stop(); continuation.yield(.relay(.off)) }
     func resolveApproval(id: String, approved: Bool) { core.resolveApproval(id: id, approved: approved) }
     func accessChanged() { core.accessChanged() }
-    /// Ends the task: the phone goes back to the app it began in. The line says what happened.
-    func finishTask() async -> String? { await core.finishTask() }
+    /// Ends the task: the phone goes back to the app it began in (or, `switching: false`, stays). The
+    /// line says what happened.
+    func finishTask(switching: Bool = true) async -> String? { await core.finishTask(switching: switching) }
 
     private static func map(_ event: CoreEvent) -> ShellEvent {
         switch event {

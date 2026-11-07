@@ -243,6 +243,8 @@ final class AppModel {
     func pauseRunner(reason: String = "Stopped") {
         guard sessionOn, !runnerPaused, approvals.isEmpty else { return }
         log.add("runner", "stopping: \(reason)")
+        // The task ends with the runner; a client ending its session later sends nothing to it.
+        Task { [core] in _ = await core.finishTask(switching: false) }
         // The runner is asked to shut itself down (it ends its test and exits) and the launcher's
         // session is closed; the launcher also ends the process through the developer services.
         Task { await RunnerProbe.shutdown() }

@@ -151,7 +151,7 @@ public final class PokiCore: Sendable {
     public var events: AsyncStream<CoreEvent> { get }
     public func resolveApproval(id: String, approved: Bool)
     public func handle(_ request: RelayRequest) async -> RelayResponse   // also for local tests
-    public func finishTask() async -> String?  // the task is over: back to the app it began in
+    public func finishTask(switching: Bool = true) async -> String?  // the task is over: back to the app it began in (false: only forget it)
 }
 
 public enum CoreEvent: Sendable {
@@ -272,7 +272,7 @@ Each answer is facts only: the app in front, numbered elements, what each action
   (the home screen by the Home button), on the first of: a `do` with `finish: true` and no error,
   after its read (`finish: back in Grok, where the task began` as its second line, said only once Grok is in front, watched for up to 3 s, since the switch animates after WDA answers); a `DELETE` of
   the session that began the task; `finishTask()`, which the app calls before it stops an idle
-  runner (default 60 s without agent activity). Nothing is sent when that app is in front already.
+  runner (default 60 s without agent activity). Any stop of the runner (idle, the owner's Stop) also forgets the task with `finishTask(switching: false)`, so a later `DELETE` sends nothing to a stopped runner. Nothing is sent when that app is in front already.
   There is no timer of a few seconds: an agent may think for minutes between calls. A call after
   `taskGap` without one begins a new task, so a task never finished does not send a later one back
   to its app. `finishTask()` waits briefly for a running call and does nothing then.

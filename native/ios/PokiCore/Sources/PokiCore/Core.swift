@@ -200,13 +200,15 @@ public final class PokiCore: @unchecked Sendable {
 
     /// The task is over (the app stops an idle runner, or its chat's turn ended): the phone goes back
     /// to the app the task began in. Nothing happens while a tool call runs or when no task is open.
-    public func finishTask() async -> String? { await endTask(session: nil) }
+    /// `switching: false` only forgets the task, for a runner the owner stopped: nothing is sent to it.
+    public func finishTask(switching: Bool = true) async -> String? { await endTask(session: nil, switching: switching) }
 
     /// Only the session that began the task ends it; nil ends any.
-    func endTask(session: String?) async -> String? {
+    func endTask(session: String?, switching: Bool = true) async -> String? {
         guard await gate.enter(waiting: config.busyWait) else { return nil }
         defer { gate.leave() }
         if let session, computer.origin?.session != session { return nil }
+        guard switching else { computer.origin = nil; return nil }
         return await computer.returnToOrigin()
     }
 
