@@ -453,6 +453,20 @@ final class ReturnToOriginTests: XCTestCase {
         XCTAssertEqual(wda.sent.filter { $0 == "POST /wda/homescreen" }.count, 0)
     }
 
+    /// Seen on the simulator: activate answers while the switch animates, and a look right after
+    /// still finds the App Switcher. "back in" is said only once the app is in front.
+    func testFinishSaysSoWhenTheAppDoesNotComeToTheFront() async {
+        let (core, wda, _) = makeCore()
+        let front = phone(wda, front: "ai.x.grok")
+        _ = await core.call("look", [:])
+        _ = await core.call("do", ["actions": [["launch": "com.apple.weather"]]])
+        wda.set("POST /wda/apps/activate") { _ in (200, ["value": .null]) }
+        let done = await core.call("do", ["actions": [], "finish": true])
+        XCTAssertEqual(front.value, "com.apple.weather")
+        XCTAssertFalse(done.text.contains("finish: back in"), done.text)
+        XCTAssertTrue(done.text.contains("is not in front"), done.text)
+    }
+
     func testTheClientEndingItsSessionEndsTheTask() async throws {
         let (core, wda, _) = makeCore()
         let front = phone(wda, front: "ai.x.grok")

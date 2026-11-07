@@ -429,7 +429,16 @@ final class Computer: @unchecked Sendable {
             } else {
                 _ = try await runner.call("POST", "/wda/apps/activate", ["bundleId": .string(bundle)], timeout: 4)
             }
-            return "finish: back in \(task.app.describe), where the task began"
+            // The answer comes while the switch still animates (seen on the simulator: a look right
+            // after found the App Switcher), so the app is watched until it is in front.
+            let until = now() + 3
+            while now() < until {
+                if (try? await runner.call("GET", "/wda/activeAppInfo", timeout: 1))?["bundleId"]?.string == bundle {
+                    return "finish: back in \(task.app.describe), where the task began"
+                }
+                await sleep(seconds: 0.25)
+            }
+            return "finish: \(task.app.describe), where the task began, was brought back but is not in front after 3 s"
         } catch {
             return "finish: \(task.app.describe), where the task began, could not be brought back (\(error))"
         }

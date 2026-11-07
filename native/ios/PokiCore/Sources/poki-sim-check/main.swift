@@ -129,7 +129,12 @@ if let searchRef, let ref = Int(searchRef) {
 // ESP-176: the owner asks from one app (Safari stands in for Grok Bot), the work goes on in another,
 // and the phone is back in the first when the task ends, however long the agent thinks in between.
 _ = await core.finishTask()
-_ = try? await Runner(url: url).call("POST", "/wda/apps/activate", ["bundleId": "com.apple.mobilesafari"], timeout: 9)
+// The owner opens Safari; the switch animates for a moment, with SpringBoard in front meanwhile.
+let owner = Runner(url: url)
+_ = try? await owner.call("POST", "/wda/apps/activate", ["bundleId": "com.apple.mobilesafari"], timeout: 9)
+for _ in 0..<20 where (try? await owner.call("GET", "/wda/activeAppInfo", timeout: 2))?["bundleId"]?.string != "com.apple.mobilesafari" {
+    try? await Task.sleep(nanoseconds: 250_000_000)
+}
 let asked = await call("look (the owner asks from Safari)", "look")
 check(asked.contains("app: Safari"), "Safari is in front when the task begins")
 await call("launch Settings", "do", ["actions": [["launch": "com.apple.Preferences"]]])
