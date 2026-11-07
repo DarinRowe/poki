@@ -14,8 +14,30 @@ pub mod store;
 /// Apple's 2006 root, added to the web roots for gsa.apple.com and developerservices2.apple.com.
 pub const APPLE_ROOT_CA: &[u8] = include_bytes!("../../certs/AppleRootCA.der");
 
+/// Also trust the certificates in `SSL_CERT_FILE` when it is set, so the app works behind a
+/// company proxy that re-signs TLS (and in CI containers).
+pub fn with_extra_roots(mut b: reqwest::ClientBuilder) -> reqwest::ClientBuilder {
+    if let Ok(path) = std::env::var("SSL_CERT_FILE") {
+        if let Ok(pem) = std::fs::read(&path) {
+            let text = String::from_utf8_lossy(&pem);
+            let mut added = 0;
+            for block in text.split("-----END CERTIFICATE-----") {
+                if let Some(start) = block.find("-----BEGIN CERTIFICATE-----") {
+                    let one = format!("{}-----END CERTIFICATE-----\n", &block[start..]);
+                    if let Ok(c) = reqwest::Certificate::from_pem(one.as_bytes()) {
+                        b = b.add_root_certificate(c);
+                        added += 1;
+                    }
+                }
+            }
+            tracing::debug!("trusting {added} extra roots from {path}");
+        }
+    }
+    b
+}
+
 pub fn http_client() -> crate::Result<reqwest::Client> {
-    Ok(reqwest::Client::builder()
+    Ok(with_extra_roots(reqwest::Client::builder())
         .add_root_certificate(reqwest::Certificate::from_der(APPLE_ROOT_CA)?)
         .user_agent("Xcode")
         .http1_title_case_headers()

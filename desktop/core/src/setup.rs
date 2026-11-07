@@ -30,10 +30,19 @@ impl Signer {
 
     pub fn signed_in(&self) -> bool { self.account.session.is_some() }
 
+    /// Keeps the anisette server that worked (the client may have moved to a fallback).
+    fn remember_anisette(&mut self) {
+        let used = self.client.anisette().source().clone();
+        if self.account.anisette.as_ref() != Some(&used) {
+            self.account.anisette = Some(used);
+        }
+    }
+
     /// Starts a sign-in. `keep_password` lets the keeper re-sign without asking again.
     pub async fn sign_in(&mut self, apple_id: &str, password: &str, keep_password: bool) -> Result<Option<Pending>> {
         match self.client.sign_in(apple_id.trim(), password).await? {
             SignInOutcome::SignedIn(session) => {
+                self.remember_anisette();
                 self.account.session = Some(session);
                 self.account.password = keep_password.then(|| password.to_string());
                 self.account.xcode_token = None;
@@ -49,6 +58,7 @@ impl Signer {
 
     pub async fn finish_sign_in(&mut self, pending: Pending, code: &str) -> Result<()> {
         let session = self.client.finish(pending, code).await?;
+        self.remember_anisette();
         self.account.session = Some(session);
         self.account.xcode_token = None;
         store::save(&self.account)?;

@@ -235,7 +235,7 @@ async fn run() -> Result<()> {
             if let Some(a) = anisette {
                 signer.set_anisette(if a == "system" { Source::System } else { Source::Remote { url: a } })?;
             }
-            let password = rpassword::prompt_password("Apple ID password: ")?;
+            let password = match std::env::var("POKI_SETUP_PASSWORD") { Ok(p) if !p.is_empty() => p, _ => rpassword::prompt_password("Apple ID password: ")? };
             if let Some(pending) = signer.sign_in(&apple_id, &password, keep_password).await? {
                 let via = match pending.via {
                     poki_setup_core::apple::gsa::Factor::TrustedDevice => "your Apple devices",

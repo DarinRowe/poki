@@ -10,7 +10,12 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 
-pub const DEFAULT_REMOTE: &str = "https://ani.sidestore.io";
+pub const DEFAULT_REMOTE: &str = "https://new.ani.sidestore.io";
+/// Servers tried in turn when Apple refuses one (ec -80045). Checked Nov 7 2026: these hand out
+/// data that matches their client info; the old ani.sidestore.io does not (Mac info, Android data).
+pub const FALLBACK_REMOTES: &[&str] = &["https://new.ani.sidestore.io", "https://mac-ani.jkcoxson.com", "https://ani2.stikstore.app"];
+/// Retired: Apple has refused it since October 2026.
+const RETIRED_REMOTES: &[&str] = &["https://ani.sidestore.io"];
 pub const ROUTING_INFO: &str = "17106176";
 
 /// One set of headers, good for about a minute.
@@ -27,6 +32,10 @@ impl Headers {
     pub fn cpd(&self) -> plist::Dictionary {
         let mut d = plist::Dictionary::new();
         for (k, v) in &self.map {
+            // The client description travels as a header only (as AltSign and icloud-auth do).
+            if k.eq_ignore_ascii_case("X-Mme-Client-Info") || k.eq_ignore_ascii_case("User-Agent") {
+                continue;
+            }
             d.insert(k.clone(), plist::Value::String(v.clone()));
         }
         d.insert("bootstrap".into(), true.into());
@@ -50,7 +59,9 @@ pub enum Source {
 
 impl Source {
     pub fn default_for_platform() -> Source {
-        if cfg!(target_os = "macos") { Source::System } else { Source::Remote { url: DEFAULT_REMOTE.into() } }
+        // macOS 27 no longer hands out AOSKit headers, so a server is the default everywhere;
+        // "This Mac" stays available in Settings for older macOS.
+        Source::Remote { url: DEFAULT_REMOTE.into() }
     }
 }
 
@@ -61,7 +72,35 @@ pub struct Provider {
 }
 
 impl Provider {
-    pub fn new(source: Source) -> Self { Provider { source, remote: None, last: None } }
+    pub fn new(source: Source) -> Self {
+        let source = match source {
+            Source::Remote { url } if RETIRED_REMOTES.contains(&url.trim_end_matches('/')) => Source::Remote { url: DEFAULT_REMOTE.into() },
+            other => other,
+        };
+        Provider { source, remote: None, last: None }
+    }
+
+    /// Moves to the next fallback server after Apple refused this one. False when none is left.
+    pub fn rotate(&mut self) -> bool {
+        let current = match &self.source {
+            Source::Remote { url } => url.trim_end_matches('/').to_string(),
+            Source::System => String::new(),
+        };
+        let next = match FALLBACK_REMOTES.iter().position(|u| *u == current) {
+            Some(i) => FALLBACK_REMOTES.get(i + 1),
+            None => FALLBACK_REMOTES.first(),
+        };
+        match next {
+            Some(u) => {
+                tracing::warn!("Apple refused the anisette from {current}; trying {u}");
+                self.source = Source::Remote { url: (*u).into() };
+                self.remote = None;
+                self.last = None;
+                true
+            }
+            None => false,
+        }
+    }
 
     pub fn source(&self) -> &Source { &self.source }
 
@@ -72,8 +111,23 @@ impl Provider {
                 return Ok(h.clone());
             }
         }
+        // macOS can refuse to hand out headers (AOSKit gives none on some versions or without an
+        // iCloud sign-in). Fall back to the default server then, so sign-in still works.
+        if self.source == Source::System {
+            match system::headers() {
+                Ok(map) => {
+                    let h = Headers { map: with_time(map), made_at: std::time::Instant::now() };
+                    self.last = Some(h.clone());
+                    return Ok(h);
+                }
+                Err(e) => {
+                    tracing::warn!("system anisette failed ({e:#}); using {DEFAULT_REMOTE}");
+                    self.source = Source::Remote { url: DEFAULT_REMOTE.into() };
+                }
+            }
+        }
         let map = match &self.source {
-            Source::System => system::headers()?,
+            Source::System => unreachable!(),
             Source::Remote { url } => {
                 if self.remote.is_none() {
                     self.remote = Some(remote::Client::new(url.clone()).await?);
@@ -145,8 +199,13 @@ pub mod remote {
     }
 
     impl State {
-        fn load_or_new() -> Result<State> {
-            let path = paths::anisette_dir()?.join("state.json");
+        /// One identity per server: a provisioning from one server is useless on another.
+        fn path(url: &str) -> Result<std::path::PathBuf> {
+            let tag = hex::encode(&Sha256::digest(url.as_bytes())[..6]);
+            Ok(paths::anisette_dir()?.join(format!("state-{tag}.json")))
+        }
+        fn load_or_new(url: &str) -> Result<State> {
+            let path = Self::path(url)?;
             if let Ok(text) = std::fs::read_to_string(&path) {
                 if let Ok(s) = serde_json::from_str::<State>(&text) {
                     if s.keychain_identifier.len() == 16 {
@@ -159,8 +218,8 @@ pub mod remote {
             rand::thread_rng().fill_bytes(&mut id);
             Ok(State { keychain_identifier: id, adi_pb: None })
         }
-        fn save(&self) -> Result<()> {
-            let path = paths::anisette_dir()?.join("state.json");
+        fn save(&self, url: &str) -> Result<()> {
+            let path = Self::path(url)?;
             std::fs::write(path, serde_json::to_vec_pretty(self)?)?;
             Ok(())
         }
@@ -181,8 +240,10 @@ pub mod remote {
 
     impl Client {
         pub async fn new(url: String) -> Result<Client> {
+            // reqwest and tungstenite pull in both rustls providers; pick one for the process.
+            let _ = rustls::crypto::ring::default_provider().install_default();
             let url = url.trim_end_matches('/').to_string();
-            let http = reqwest::Client::builder().http1_title_case_headers().timeout(std::time::Duration::from_secs(30)).build()?;
+            let http = crate::apple::with_extra_roots(reqwest::Client::builder()).add_root_certificate(reqwest::Certificate::from_der(crate::apple::APPLE_ROOT_CA)?).http1_title_case_headers().timeout(std::time::Duration::from_secs(30)).build()?;
             let info: ClientInfo = http
                 .get(format!("{url}/v3/client_info"))
                 .send()
@@ -191,7 +252,8 @@ pub mod remote {
                 .error_for_status()?
                 .json()
                 .await?;
-            Ok(Client { url, info, state: State::load_or_new()?, http })
+            let state = State::load_or_new(&url)?;
+            Ok(Client { url, info, state, http })
         }
 
         fn apple_request(&self, rb: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
@@ -213,7 +275,7 @@ pub mod remote {
             let start = urls.get("midStartProvisioning").and_then(|u| u.as_string()).ok_or_else(|| Error::msg("no midStartProvisioning"))?.to_string();
             let finish = urls.get("midFinishProvisioning").and_then(|u| u.as_string()).ok_or_else(|| Error::msg("no midFinishProvisioning"))?.to_string();
             let ws_url = format!("{}/v3/provisioning_session", self.url).replacen("https://", "wss://", 1).replacen("http://", "ws://", 1);
-            let (mut ws, _) = tokio_tungstenite::connect_async(&ws_url).await.map_err(|e| Error::msg(format!("anisette provisioning: {e}")))?;
+            let (mut ws, _) = tokio_tungstenite::connect_async_tls_with_config(&ws_url, None, false, Some(ws_connector())).await.map_err(|e| Error::msg(format!("anisette provisioning: {e}")))?;
             #[derive(Deserialize)]
             #[serde(tag = "result")]
             enum Input {
@@ -256,7 +318,7 @@ pub mod remote {
                     }
                     Input::ProvisioningSuccess { adi_pb } => {
                         self.state.adi_pb = Some(b64.decode(adi_pb.trim()).map_err(|e| Error::msg(format!("bad adi_pb: {e}")))?);
-                        self.state.save()?;
+                        self.state.save(&self.url)?;
                         let _ = ws.close(None).await;
                         return Ok(());
                     }
@@ -306,9 +368,26 @@ pub mod remote {
                     ("X-Apple-I-MD-LU".to_string(), self.state.md_lu()),
                     ("X-Mme-Device-Id".to_string(), self.state.device_id()),
                     ("X-Mme-Client-Info".to_string(), self.info.client_info.clone()),
+                    // GSA must see the same client the anisette data belongs to (Apple rejects a
+                    // mismatch with -80045 since October 2026).
+                    ("User-Agent".to_string(), self.info.user_agent.clone()),
                 ])),
             }
         }
+    }
+
+    /// Web roots plus `SSL_CERT_FILE`, as the HTTP clients use.
+    fn ws_connector() -> tokio_tungstenite::Connector {
+        let mut roots = rustls::RootCertStore { roots: webpki_roots::TLS_SERVER_ROOTS.to_vec() };
+        if let Ok(path) = std::env::var("SSL_CERT_FILE") {
+            if let Ok(file) = std::fs::File::open(&path) {
+                for cert in rustls_pemfile::certs(&mut std::io::BufReader::new(file)).flatten() {
+                    let _ = roots.add(cert);
+                }
+            }
+        }
+        let config = rustls::ClientConfig::builder().with_root_certificates(roots).with_no_client_auth();
+        tokio_tungstenite::Connector::Rustls(std::sync::Arc::new(config))
     }
 
     fn plist_body(request: plist::Dictionary) -> Vec<u8> {

@@ -113,8 +113,9 @@ fn status(response: &plist::Value) -> Status {
 }
 
 fn apple_error(st: &Status) -> Error {
+    tracing::warn!("Apple sign-in status ec={} hsc={} em={:?}", st.ec, st.hsc, st.em);
     let text = match st.ec {
-        -20101 | -22406 => "Apple ID or password is wrong.".to_string(),
+        -20101 | -22406 | -20970 => "Apple ID or password is wrong.".to_string(),
         -20209 | -20751 => "This Apple ID is locked. Unlock it at iforgot.apple.com and try again.".to_string(),
         -22421 => "Apple refused the sign-in from this computer's identity (anisette). Try again in a minute, or choose another anisette server in Settings.".to_string(),
         -20283 => "Apple asked for a passcode or trusted device that this computer cannot provide. Enable two-factor authentication on this Apple ID and try again.".to_string(),
@@ -137,12 +138,13 @@ impl Client {
         root.insert("Request".into(), plist::Value::Dictionary(request));
         let mut body = Vec::new();
         plist::to_writer_xml(&mut body, &plist::Value::Dictionary(root))?;
+        tracing::trace!("GSA request: {}", String::from_utf8_lossy(&body));
         let res = self
             .http
             .post(GS_SERVICE)
             .header("Content-Type", "text/x-xml-plist")
             .header("Accept", "*/*")
-            .header("User-Agent", GSA_AGENT)
+            .header("User-Agent", headers.get("User-Agent").unwrap_or(GSA_AGENT))
             .header("X-MMe-Client-Info", headers.get("X-Mme-Client-Info").unwrap_or(""))
             .body(body)
             .send()
@@ -156,6 +158,15 @@ impl Client {
 
     /// Signs in. Returns `NeedsCode` when Apple wants a second factor.
     pub async fn sign_in(&mut self, apple_id: &str, password: &str) -> Result<Outcome> {
+        loop {
+            match self.sign_in_once(apple_id, password).await {
+                Err(Error::Apple { code: -80045, .. }) | Err(Error::Apple { code: -80046, .. }) if self.anisette.rotate() => continue,
+                other => return other,
+            }
+        }
+    }
+
+    async fn sign_in_once(&mut self, apple_id: &str, password: &str) -> Result<Outcome> {
         let anisette = self.anisette.headers().await?;
         let mut client = srp::Client::new();
 
@@ -235,6 +246,9 @@ impl Client {
             .header("Accept-Language", "en-us")
             .header("User-Agent", "Xcode");
         for (k, v) in &anisette.map {
+            if k.eq_ignore_ascii_case("User-Agent") {
+                continue;
+            }
             rb = rb.header(k.as_str(), v.as_str());
         }
         rb
