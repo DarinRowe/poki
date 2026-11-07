@@ -82,6 +82,9 @@ struct RootView: View {
     /// screenshots; `-pokiSetupStep 3` opens setup at that step.
     private func openLaunchScreen() {
         let defaults = UserDefaults.standard
+        // `-pokiVoiceBridge <address>`: the voice bridge address, from the Mac that launches the app (only a
+        // developer connection can pass launch arguments). It never turns on the microphone.
+        if let address = defaults.string(forKey: "pokiVoiceBridge") { _ = model.voice.setBridge(address) }
         switch defaults.string(forKey: "pokiScreen") {
         case "setup":
             let step = defaults.integer(forKey: "pokiSetupStep")
