@@ -66,6 +66,13 @@ enum SetupVault {
         } catch { return false }
     }
 
+    /// A pairing file put in the container from outside (Poki Setup on a computer writes it there
+    /// over house_arrest) is mirrored too, so it survives a reinstall like one Poki took itself.
+    static func mirrorPairingFromContainer() {
+        guard let data = try? Data(contentsOf: AppFiles.pairingFile), !data.isEmpty else { return }
+        if (try? Keychain.read(pairingAccount)) != data { storePairing(data) }
+    }
+
     static func forget() { Keychain.delete(pairingAccount); Keychain.delete(setupAccount) }
 }
 
