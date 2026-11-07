@@ -438,7 +438,8 @@ final class AppModel {
             // The task ends here too, as with the runner (ESP-176): nothing is switched.
             Task { [core] in _ = await core.finishTask(switching: false) }
             closeInProcess("standing by")
-            launcher.stop()
+            // The launcher stays: the disk image is mounted and the next session opens through
+            // testmanagerd on the phone itself, so no loopback (and no Wi-Fi) is needed to wake.
             standBy(reason: reason)
             return
         }
@@ -510,6 +511,7 @@ final class AppModel {
         lastAgentActivity = Date()
         log.add("runner", automationPath == .inProcess ? "an agent asked: opening the automation session again" : "an agent asked: starting the runner")
         activity.update { $0.runnerPaused = false; $0.phase = .working; $0.headline = "Starting the runner"; $0.since = Date() }
+        if automationPath == .inProcess, runner.isRunning { warmInProcess("an agent asked"); return }
         launchRunner()
     }
 
