@@ -58,8 +58,16 @@ open native/ios-app/Poki.xcodeproj
 | Entitlement | Needed for | Notes |
 |---|---|---|
 | App Groups `group.nz.zheha.poki` | Live Activity thumbnail, approvals between widget and app | Signing tools rewrite group ids per Apple ID; that works as long as both targets get the same rewritten group. |
-
 | Network Extensions `packet-tunnel-provider` | Built-in local connection | Required in both Poki and PokiTunnel, with a matching provisioning profile for each bundle. A wildcard profile is insufficient. |
+
+Which build to sign depends on the Apple account:
+
+| Apple account | Build | Local connection | Signing |
+|---|---|---|---|
+| Paid Apple Developer Program team | `Poki-unsigned.ipa` (`project.yml`) | Built-in, or an external VPN app | App IDs for Poki, `.widgets` and `.tunnel`; the App Group on Poki and `.widgets`; Network Extensions (packet tunnel) on Poki and `.tunnel`; a development or ad-hoc profile for each of the three. |
+| Free Apple ID (Personal Team) | `Poki-external-unsigned.ipa` (`project-external.yml`) | An external VPN app or LocalDevVPN only | The App Group on Poki and `.widgets` (signing tools rewrite it per Apple ID). Apps signed this way expire after 7 days, and only 3 can be installed at a time; Poki and Poki Runner use two. |
+
+Sign Poki Runner with the same account as Poki in both cases.
 
 The default `project.yml` builds Poki with its local VPN. Use signing that supports Network
 Extensions (including properly provisioned paid-team development/ad-hoc distribution). Free Personal
