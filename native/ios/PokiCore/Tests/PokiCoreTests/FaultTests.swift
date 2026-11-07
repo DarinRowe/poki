@@ -214,7 +214,8 @@ final class FaultTests: XCTestCase {
         wda.source([("Button", "General")])
         for key in ["GET /screenshot", "GET /wda/activeAppInfo"] { wda.set(key) { _ in (200, ["value": .null]) } }
         _ = await core.call("look", [:])
-        XCTAssertEqual(wda.sent.filter { $0 == "POST /session" }.count, sessions, "the session is kept")
+        XCTAssertFalse(wda.sent.contains("DELETE /session"), "slow reads keep the session; only an action that times out ends it")
+        XCTAssertEqual(wda.sent.filter { $0 == "POST /session" }.count, sessions, "the same session serves the next look once the runner is through")
     }
 
     func testAWedgedRunnerThatAnswersNothingIsRestartedAfterTheProbe() async throws {
@@ -269,6 +270,122 @@ final class FaultTests: XCTestCase {
         XCTAssertTrue(again.text.contains("text could not be read from the picture"), again.text)
     }
 
+    /// Seen on the phone: a feed's tree took longer than a read, and the swipes and taps sent after it
+    /// waited their turn behind it on WDA's main thread, so they landed long after the agent had
+    /// reported them failed. Now a request this side gives up on ends the session: WDA answers what
+    /// is queued behind it with "session does not exist" instead of running it, and an action sent
+    /// while the runner is still finishing is answered not_sent and busy, so nothing runs late.
+    /// A read that times out keeps the session (ending it would only put the next session open
+    /// behind the same slow read: seen on the phone, every look in WeChat opened a session that
+    /// queued behind the read before); an action is still answered busy, not queued to run late.
+    func testAReadThatTimesOutKeepsTheSessionAndTheNextActionIsAnsweredBusyNotRunLate() async {
+        let (core, wda, _) = makeCore { $0.readTimeout = 0.5; $0.actionCap = 1 }
+        _ = await core.call("look", [:])
+        wda.set("GET /source") { _ in try await Task.sleep(nanoseconds: 3_000_000_000); return (200, ["value": .null]) }
+        wda.set("GET /wda/locked") { _ in try await Task.sleep(nanoseconds: 3_000_000_000); return (200, ["value": false]) }
+        let slow = await core.call("look", [:])
+        XCTAssertTrue(slow.text.contains("no element tree"), slow.text)
+        try? await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertFalse(wda.sent.contains("DELETE /session"), "a slow read keeps the session: \(wda.sent)")
+        // The check whether the runner is free queues behind the slow read (the fake does not queue).
+        wda.delay("GET /wda/activeAppInfo", 2)
+        let tap = await core.call("do", ["actions": [["tap": [100, 120]]]])
+        XCTAssertTrue(tap.text.hasPrefix("not_sent: the runner is still finishing an earlier GET /source from"), tap.text)
+        XCTAssertEqual(wda.bodies("POST /wda/tap").count, 0, "nothing was queued to run late")
+        XCTAssertEqual(wda.sent.filter { $0 == "POST /session" }.count, 1, "the one session stays: \(wda.sent)")
+        try? await Task.sleep(nanoseconds: 2_800_000_000)
+        wda.source([("Button", "General"), ("Button", "Privacy")])
+        wda.set("GET /wda/locked") { _ in (200, ["value": false]) }
+        wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": "com.apple.Preferences", "name": "Settings"]]) }
+        let later = await core.call("do", ["actions": [["tap": [100, 120]]]])
+        XCTAssertFalse(later.isError, later.text)
+        XCTAssertEqual(wda.bodies("POST /wda/tap").count, 1)
+    }
+
+    /// An action that times out ends the session, so what was queued behind it does not run late.
+    func testGivingUpOnAnActionEndsTheSession() async {
+        let (core, wda, _) = makeCore { $0.actionCap = 1 }
+        _ = await core.call("look", [:])
+        wda.set("POST /wda/tap") { _ in try await Task.sleep(nanoseconds: 3_000_000_000); return (200, ["value": .null]) }
+        let result = await core.call("do", ["actions": [["tap": [100, 120]], ["tap": [100, 160]]]])
+        XCTAssertTrue(result.text.contains("may have been delivered"), result.text)
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertTrue(wda.sent.contains("DELETE /session"), "\(wda.sent)")
+        XCTAssertEqual(wda.bodies("POST /wda/tap").count, 1, "the second tap was not queued")
+    }
+
+    /// WDA's XML tree lists the same elements as its JSON one, without the custom actions it fetches
+    /// for every JSON element.
+    func testTheXMLTreeReadsLikeTheJSONOne() async {
+        let xml = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <AppiumAUT>
+          <XCUIElementTypeApplication type="XCUIElementTypeApplication" name="Settings" label="Settings" x="0" y="0" width="390" height="844">
+            <XCUIElementTypeWindow type="XCUIElementTypeWindow" x="0" y="0" width="390" height="844">
+              <XCUIElementTypeButton type="XCUIElementTypeButton" name="General" label="General &amp; more" x="16" y="100" width="358" height="44"/>
+              <XCUIElementTypeSearchField type="XCUIElementTypeSearchField" name="Search" label="Search" value="Wi-Fi" x="16" y="153" width="370" height="37"/>
+              <XCUIElementTypeOther type="XCUIElementTypeOther" x="0" y="0" width="0" height="0"/>
+            </XCUIElementTypeWindow>
+          </XCUIElementTypeApplication>
+        </AppiumAUT>
+        """
+        let parsed = flattenXML(Data(xml.utf8))
+        XCTAssertEqual(parsed?.root.label, "Settings")
+        XCTAssertEqual(parsed?.elements.map(\.type), ["Window", "Button", "SearchField"])
+        XCTAssertEqual(parsed?.elements[1].label, "General & more")
+        XCTAssertEqual(parsed?.elements[2].value, "Wi-Fi")
+        XCTAssertEqual(parsed?.elements[1].frame, Rect(x: 16, y: 100, width: 358, height: 44))
+        XCTAssertEqual(parsed?.elements[0].depth, 1)
+        XCTAssertTrue(parsed!.elements[0].contains(parsed!.elements[1]))
+        XCTAssertNil(flattenXML(Data("not xml".utf8)))
+
+        let (core, wda, _) = makeCore { $0.treeFormat = "xml" }
+        wda.set("GET /source") { _ in (200, ["value": .string(xml)]) }
+        let look = await core.call("look", [:])
+        XCTAssertTrue(look.text.contains("Button \"General & more\" [16,100,358,44]"), look.text)
+        XCTAssertTrue(look.text.contains("SearchField \"Search = Wi-Fi\""), look.text)
+        XCTAssertTrue(wda.log.contains { $0.path.hasSuffix("/source") }, wda.sent.joined(separator: ", "))
+    }
+
+    /// Seen on the phone: launching Photos hit the 6 s action time, since XCTest's launch ends a
+    /// running app and starts it again with a handshake that takes seconds. A plain launch now
+    /// activates the app (to the front as it is, or started), and a launch gets 9 s.
+    func testLaunchActivatesARunningAppAndGetsItsOwnTime() async {
+        let (core, wda, _) = makeCore { $0.actionCap = 1 }
+        _ = await core.call("look", [:])
+        wda.set("POST /wda/apps/activate") { _ in try await Task.sleep(nanoseconds: 1_500_000_000); return (200, ["value": .null]) }
+        let result = await core.call("do", ["actions": [["launch": "com.apple.mobileslideshow"]]])
+        XCTAssertTrue(result.text.contains("launch com.apple.mobileslideshow (sent"), result.text)
+        XCTAssertTrue(wda.sent.contains("POST /wda/apps/activate"), wda.sent.joined(separator: ", "))
+        XCTAssertFalse(wda.sent.contains("POST /wda/apps/launch"))
+        let fresh = await core.call("do", ["actions": [["launch": ["bundle": "com.apple.mobileslideshow", "fresh": true]]]])
+        XCTAssertTrue(fresh.text.contains("(fresh) (sent"), fresh.text)
+        XCTAssertTrue(wda.sent.contains("POST /wda/apps/terminate"))
+        XCTAssertTrue(wda.sent.contains("POST /wda/apps/launch"))
+    }
+
+    /// Seen on the phone: the last selection tap was batched with the Delete, so the whole batch waited
+    /// for approval and the Delete, once approved, would have missed a photo. The plain actions before
+    /// the first that needs approval go first, and the answer says which to send again.
+    func testTheSafePartOfABatchGoesBeforeApprovalIsAsked() async {
+        let (core, wda, _) = makeCore()
+        wda.source([("Button", "Photo"), ("Button", "Delete")], app: "Photos")
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["tap": 1], ["tap": 2]]])
+        XCTAssertTrue(result.isError)
+        XCTAssertTrue(result.text.contains("tap \"Photo\" (sent"), result.text)
+        XCTAssertTrue(result.text.contains("not_sent from action 2: approval_required"), result.text)
+        XCTAssertTrue(result.text.contains("Actions 1 to 1 were sent"), result.text)
+        XCTAssertTrue(result.text.contains("send action 2 again, on their own"), result.text)
+        XCTAssertEqual(wda.bodies("POST /wda/tap").count, 1)
+        XCTAssertEqual(core.pendingApproval?.summary, "Tap “Delete”")
+        core.resolveApproval(id: core.pendingApproval!.id, approved: true)
+        let again = await core.call("do", ["actions": [["tap": 2]]])
+        XCTAssertFalse(again.isError, again.text)
+        XCTAssertTrue(again.text.contains("approved on the phone"), again.text)
+        XCTAssertEqual(wda.bodies("POST /wda/tap").count, 2)
+    }
+
     /// Found on the simulator: reads took 2.5 s, longer than a read inside wait_until was allowed, so
     /// "settled" never saw two reads. Each read now gets the runner's time, and settled a second read.
     func testWaitUntilSettledWorksWhenEachReadIsSlow() async {
@@ -279,5 +396,154 @@ final class FaultTests: XCTestCase {
         wda.set("GET /source") { _ in try await Task.sleep(nanoseconds: 900_000_000); return (200, ["value": root]) }
         let result = await core.call("do", ["actions": [["wait_until": ["settled": true, "ms": 500]]]])
         XCTAssertTrue(result.text.contains("wait_until: the screen held still after"), result.text)
+    }
+}
+
+/// The owner's Mail test on the phone (Nov 6 2026, 10:34 pm ET): a launch sent while the runner was
+/// starting had its action time used up before it went; a batch of three plain actions had 6 s for
+/// all of them; "Contact photo for Best Buy" was taken for a payment; taps near the top of the screen
+/// landed on Poki's Live Activity in the Dynamic Island and opened Poki, where the next taps went.
+final class MailTestTests: XCTestCase {
+    func testTheRunnersStartIsNotTheActionsTime() async {
+        let host = FakeHost()
+        host.state.value = .starting("launching")
+        let (core, wda, _) = makeCore(host: host) { $0.actionCap = 1; $0.toolDeadline = 5; $0.readTimeout = 1; $0.runnerWait = 4 }
+        Task { try? await Task.sleep(nanoseconds: 1_500_000_000); host.state.value = .running }
+        let result = await core.call("do", ["actions": [["launch": "com.apple.mobilemail"]]])
+        XCTAssertFalse(result.isError, result.text)
+        XCTAssertTrue(result.text.contains("launch com.apple.mobilemail (sent"), result.text)
+        XCTAssertEqual(wda.bodies("POST /wda/apps/activate").count, 1)
+    }
+
+    func testEachActionHasItsOwnTime() async {
+        let (core, wda, _) = makeCore { $0.actionCap = 0.6; $0.toolDeadline = 6; $0.readTimeout = 1 }
+        for key in ["POST /wda/pressButton", "POST /wda/tap", "POST /wda/dragfromtoforduration"] {
+            wda.set(key) { _ in try await Task.sleep(nanoseconds: 400_000_000); return (200, ["value": .null]) }
+        }
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["button": "home"], ["tap": [100, 300]], ["drag": [0, 400, 200, 400]]]])
+        XCTAssertFalse(result.isError, result.text)
+        XCTAssertEqual(result.text.components(separatedBy: "(sent, ").count - 1, 3, result.text)
+    }
+
+    func testANameInALongerLabelIsNotAPayment() {
+        let rules = SensitivityRules()
+        let mail = Foreground(bundleID: "com.apple.mobilemail", name: "Mail")
+        func reason(_ type: String, _ label: String) -> String? {
+            rules.reason(touching: Element(type: type, label: label, value: nil, identifier: nil, frame: Rect(x: 0, y: 0, width: 40, height: 40), depth: 1), typing: false, app: mail, secureOnScreen: false)
+        }
+        XCTAssertNil(reason("Image", "Contact photo for Best Buy"))
+        XCTAssertNil(reason("Cell", "Best Buy, Your order has shipped, Yesterday, Thanks for buying from us"))
+        XCTAssertNil(reason("Cell", "PayPal, Receipt for your payment to Chase, Today"))
+        XCTAssertEqual(reason("Button", "Buy now"), "a payment (\"buy\")")
+        XCTAssertEqual(reason("Button", "Pay $12.00"), "a payment (\"pay\")")
+        XCTAssertEqual(reason("Button", "Confirm and pay"), "a payment (\"pay\")")
+        XCTAssertEqual(reason("Button", "Delete Message"), "deleting (\"delete\")")
+        XCTAssertEqual(reason("Button", "Send"), "sending a message (\"send\")")
+        XCTAssertNil(reason("Cell", "Re: Please send the files when you have them, John, Monday"))
+    }
+
+    func testTheDynamicIslandIsNeverListed() async {
+        let (core, wda, _) = makeCore()
+        wda.tree([
+            Node("Other", "Working", [150, 12, 90, 36]),
+            Node("Other", "Poki", [120, 8, 150, 44]),
+            Node("StaticText", "9:41", [30, 20, 50, 20]),
+            Node("NavigationBar", "Mailboxes", [0, 62, 390, 44], [Node("Button", "Back", [8, 66, 60, 36]), Node("Button", "Edit", [330, 66, 50, 36])]),
+            Node("Cell", "All Inboxes, 257 unread messages", [0, 110, 390, 44]),
+        ], app: "Mail")
+        let result = await core.call("look", [:])
+        XCTAssertFalse(result.text.contains("Working"), result.text)
+        XCTAssertFalse(result.text.contains("\"Poki\""), result.text)
+        XCTAssertTrue(result.text.contains("Button \"Back\""), result.text)
+        XCTAssertTrue(result.text.contains("All Inboxes"), result.text)
+        XCTAssertTrue(result.text.contains("9:41"), "the status bar at the sides stays")
+    }
+
+    func testATapThatOpensPokiBringsTheAppBack() async {
+        let (core, wda, _) = makeCore()
+        wda.tree([Node("NavigationBar", "Mailboxes", [0, 62, 390, 44], [Node("Button", "Back", [8, 66, 60, 36])]), Node("Cell", "All Inboxes", [0, 110, 390, 44])], app: "Mail")
+        wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": "com.apple.mobilemail", "name": "Mail"]]) }
+        _ = await core.call("look", [:])
+        // The tap lands on the Live Activity: Poki comes to the front.
+        wda.set("POST /wda/tap") { [wda] _ in
+            wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": "nz.zheha.poki", "name": "Poki"]]) }
+            return (200, ["value": .null])
+        }
+        wda.set("POST /wda/apps/activate") { [wda] _ in
+            wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": "com.apple.mobilemail", "name": "Mail"]]) }
+            return (200, ["value": .null])
+        }
+        let result = await core.call("do", ["actions": [["tap": 1]]])
+        XCTAssertTrue(result.text.hasPrefix("app: Mail"), result.text)
+        XCTAssertTrue(result.text.contains("note: Poki was in front after the actions"), result.text)
+        XCTAssertTrue(result.text.contains("Mail was brought back"), result.text)
+        XCTAssertEqual(wda.bodies("POST /wda/apps/activate").first?["bundleId"]?.string, "com.apple.mobilemail")
+        // Working in Poki on purpose is left alone.
+        wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": "nz.zheha.poki", "name": "Poki"]]) }
+        _ = await core.call("look", [:])
+        let inPoki = await core.call("do", ["actions": [["tap": [100, 300]]]])
+        XCTAssertFalse(inPoki.text.contains("brought back"), inPoki.text)
+        XCTAssertEqual(wda.bodies("POST /wda/apps/activate").count, 1)
+    }
+}
+
+/// The owner's JD and WeChat test on the phone (Nov 7 2026, 12:21 to 12:45 am ET).
+final class ShopTestTests: XCTestCase {
+    /// The owner's own clipboard went into a shop's search box: iOS asked the owner to allow the
+    /// paste, and the owner's clipboard had been put back before they answered.
+    func testPasteKeepsTheTextOnTheClipboardUntilItLandsAndChecksItFirst() async {
+        let (core, wda, _) = makeCore { $0.actionCap = 4 }
+        let field = FaultTests.Field()
+        field.install(wda, menu: true)
+        // The Paste tap inserts nothing (the owner is being asked): the field stays empty.
+        wda.set("POST /wda/tap") { _ in (200, ["value": .null]) }
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["type": "83K12S", "via": "paste"]]])
+        XCTAssertTrue(result.text.contains("iOS may be asking the owner to allow the paste"), result.text)
+        XCTAssertEqual(field.clipboard.value, "83K12S", "the text stays on the clipboard for the owner's answer")
+        // The text lands (the owner allowed it): the owner's clipboard goes back.
+        field.value.value = "83K12S"
+        let restored = await eventually(4) { field.clipboard.value == "owner's clipboard" }
+        XCTAssertTrue(restored, "\(String(describing: field.clipboard.value))")
+    }
+
+    func testPasteIsRefusedWhenTheClipboardCannotBeSet() async {
+        let (core, wda, _) = makeCore()
+        let field = FaultTests.Field()
+        field.install(wda, menu: true)
+        wda.set("POST /wda/setPasteboard") { _ in (200, ["value": .null]) } // the write does not take
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["type": "83K12S", "via": "paste"]]])
+        XCTAssertTrue(result.text.contains("the clipboard could not be set to the text"), result.text)
+        XCTAssertEqual(wda.bodies("POST /wda/touchAndHold").count, 0, "no menu was opened")
+        XCTAssertEqual(field.clipboard.value, "owner's clipboard")
+    }
+
+    /// The tree showed the inside of a chat while the picture still showed the list.
+    func testThePictureIsTakenAgainWhenTheTreeCameLater() async {
+        let (core, wda, _) = makeCore { $0.readTimeout = 3 }
+        wda.delay("GET /source", 0.9)
+        let result = await core.call("look", [:])
+        XCTAssertEqual(wda.sent.filter { $0 == "GET /screenshot" }.count, 2, "\(wda.sent)")
+        XCTAssertTrue(result.text.contains("the picture was taken again after the tree"), result.text)
+    }
+
+    func testTheHomeScreenIsNamedAndANewScreenSaysItsNumbersStartAgain() async {
+        let (core, wda, _) = makeCore()
+        _ = await core.call("look", [:])
+        wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": "com.apple.springboard", "name": ""]]) }
+        wda.source([("Icon", "Mail"), ("Icon", "Photos"), ("Icon", "Settings")], app: "")
+        let home = await core.call("do", ["actions": [["button": "home"]]])
+        XCTAssertTrue(home.text.hasPrefix("app: Home screen (SpringBoard"), home.text)
+        XCTAssertTrue(home.text.contains("a new screen: numbered from 1 again"), home.text)
+    }
+
+    func testATapOnAnElementThatFillsTheScreenSaysSo() async {
+        let (core, wda, _) = makeCore()
+        wda.tree([Node("Toolbar", "工具栏", [0, 0, 390, 844], [Node("Button", "加购", [300, 780, 80, 44])])], app: "京东")
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["tap": 1]]])
+        XCTAssertTrue(result.text.contains("this element fills the screen, so the tap went to its centre at [195, 422]"), result.text)
     }
 }

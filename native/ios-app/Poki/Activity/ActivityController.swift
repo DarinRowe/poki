@@ -11,11 +11,12 @@ import UniformTypeIdentifiers
 /// an `AlertConfiguration`, which lights the screen, expands the Dynamic Island and plays a sound:
 ///
 /// - approval asked (always, never throttled): the screen lights even when locked;
-/// - a run starts, the agent moves to another app, a run finishes (quiet for `finishAfter`);
-/// - a problem, a pairing code, paired.
+/// - a run finishes (quiet for `finishAfter`), a problem, a pairing code, paired.
 ///
-/// The ordinary pop-ups are spaced at least `alertSpacing` apart so a busy agent does not buzz the
-/// phone on every step. Updates are sent one after another, in order, so an alert is never overtaken
+/// Never while the runner may be sending input: an alert expands the Dynamic Island over the top
+/// of the screen, and on the owner's phone the agent's next tap (Back, a list's first row) landed
+/// on the expanded island and opened Poki. So steps, the start of a run and app switches only
+/// change the compact island and the Lock Screen (the event tag); they never expand it. Updates are sent one after another, in order, so an alert is never overtaken
 /// by an older update.
 @MainActor
 final class ActivityController {
@@ -28,7 +29,8 @@ final class ActivityController {
 
     /// How long an event tag stays on the Live Activity.
     private let eventLifetime: Duration = .seconds(6)
-    private let alertSpacing: TimeInterval = 8
+    /// Start, app switch and finish pop-ups are spaced this far apart; each step's pop-up a little less.
+    private let alertSpacing: TimeInterval = 6
 
     private var lastAlert = Date.distantPast
     private var lastSent = Date.distantPast
@@ -123,12 +125,10 @@ final class ActivityController {
         if state.phase == .working, !runPhases.contains(old.phase) {
             state.stepCount = 0; state.failedCount = 0; state.endedAt = nil; state.steps = []
             if state.since == nil { state.since = now }
-            let place = state.app.map { String(localized: "Working in \($0)") } ?? String(localized: "Your agent is using this iPhone")
-            // The runner's start and the agent's first step are one start, not two pop-ups.
+            // The runner's start and the agent's first step are one start.
             if !runAnnounced {
                 runAnnounced = true
                 setEvent(.started, String(localized: "Started"))
-                alert = ordinary(String(localized: "Agent started"), place)
             }
         }
         if state.phase == .done || state.phase == .idle && state.runnerPaused || state.phase == .pairing || state.phase == .setup {
@@ -137,7 +137,7 @@ final class ActivityController {
         // Into another app mid-run.
         if runPhases.contains(state.phase), let app = state.app, let before = old.app, app != before {
             setEvent(.app, String(localized: "Now in \(app)"))
-            alert = alert ?? ordinary(String(localized: "Now in \(app)"), state.steps.last?.text ?? String(localized: "Your agent switched apps"))
+            // No pop-up: the runner is in the middle of acting.
         }
         // Approval: always pops up and lights the screen.
         if let approval = state.approval, approval.id != old.approval?.id {
@@ -164,13 +164,12 @@ final class ActivityController {
             alert = critical(String(localized: "Paired"), String(localized: "This iPhone is ready for Poki"))
         }
 
-        // The finish timer: re-armed by every change during a run. A headline change that is not the
-        // one right after a step (AppModel's "waiting for the next step") means a step began, and a run
-        // never finishes in the middle of a step, however long it takes.
+        // A step began (AppModel sets the headline to the step's words): shown, never popped up.
         if state.phase == .working, old.phase == .working, state.headline != old.headline, state.stepCount == old.stepCount {
             if justRecorded { justRecorded = false } else { inStep = true }
         }
         if state.stepCount != old.stepCount { inStep = false }
+        // The finish timer: re-armed by every change during a run; never fires in the middle of a step.
         if state.phase == .working, state.approval == nil, state.stepCount > 0 { armFinish() } else { finishTimer?.cancel() }
         return alert
     }

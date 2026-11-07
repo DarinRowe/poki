@@ -61,6 +61,15 @@ jobs:
           brew install xcodegen
           xcodegen generate --spec native/ios-app/project.yml
 
+      - name: Version (from the release tag, else native/ios-app/VERSION and this run's number)
+        run: |
+          VERSION="${{ inputs.version }}"; BUILD="${{ inputs.build }}"
+          [ -n "$VERSION" ] || VERSION=$(cat native/ios-app/VERSION)
+          [ -n "$BUILD" ] || BUILD="${{ github.run_number }}"
+          echo "MARKETING_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "CURRENT_PROJECT_VERSION=$BUILD" >> "$GITHUB_ENV"
+          echo "Poki $VERSION ($BUILD)"
+
       - name: Build (iOS device SDK, unsigned)
         run: |
           set -o pipefail
@@ -71,23 +80,9 @@ jobs:
             -destination generic/platform=iOS \
             -derivedDataPath build/app \
             CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO \
+            MARKETING_VERSION="$MARKETING_VERSION" CURRENT_PROJECT_VERSION="$CURRENT_PROJECT_VERSION" \
             ARCHS=arm64 | tee build/app.log | grep -E "error:|BUILD (SUCCEEDED|FAILED)|\*\* " || true
           test -d build/app/Build/Products/Release-iphoneos/Poki.app
-
-      - name: Version (from the release tag when called by the release workflow)
-        run: |
-          set -euo pipefail
-          VERSION="${{ inputs.version }}"; BUILD="${{ inputs.build }}"
-          [ -n "$VERSION" ] || VERSION=$(cat native/ios-app/VERSION 2>/dev/null || echo 0.2.0)
-          [ -n "$BUILD" ] || BUILD="${{ github.run_number }}"
-          APP=build/app/Build/Products/Release-iphoneos/Poki.app
-          for plist in "$APP/Info.plist" "$APP/PlugIns/PokiWidgets.appex/Info.plist"; do
-            for kv in "CFBundleShortVersionString $VERSION" "CFBundleVersion $BUILD"; do
-              set -- $kv
-              /usr/libexec/PlistBuddy -c "Set :$1 $2" "$plist" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :$1 string $2" "$plist"
-            done
-          done
-          echo "Poki $VERSION ($BUILD)"
 
       - name: Package the IPA
         run: |
@@ -101,6 +96,9 @@ jobs:
           ditto -c -k --keepParent --norsrc Payload out/Poki-unsigned.ipa
           (cd out && shasum -a 256 *.ipa | tee SHA256SUMS)
           /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' Payload/Poki.app/Info.plist
+          V=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Payload/Poki.app/Info.plist)
+          B=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' Payload/Poki.app/Info.plist)
+          echo "Poki $V ($B)"; test "$V" = "$MARKETING_VERSION" && test "$B" = "$CURRENT_PROJECT_VERSION"
 
       # The app on the iOS Simulator: it launches, stays up, and draws its first screen. The launcher
       # cannot reach a simulator's developer services, so this checks the shell, not automation.

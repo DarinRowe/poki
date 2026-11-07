@@ -18,8 +18,8 @@ struct PokiLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: PokiActivityAttributes.self) { context in
             LockScreenView(state: context.shown)
-                .padding(.horizontal, 14).padding(.vertical, 12)
-                .activityBackgroundTint(Brand.night.opacity(0.94))
+                .padding(.horizontal, LockInsets.horizontal).padding(.vertical, LockInsets.vertical)
+                .activityBackgroundTint(Brand.night)
                 .activitySystemActionForegroundColor(.white)
         } dynamicIsland: { context in
             let state = context.shown
@@ -35,7 +35,12 @@ struct PokiLiveActivity: Widget {
                 MinimalView(state: state)
             }
             .keylineTint(state.accent)
-            .contentMargins(.horizontal, 14, for: .expanded)
+            // The expanded island's corners are deep continuous curves (about 40 pt on iOS 27), so the
+            // content keeps well clear of them: 24 pt from the sides, 18 from the top and 22 from the
+            // bottom. The corner items (bear, status, the last line) sit inside those margins.
+            .contentMargins(.horizontal, 24, for: .expanded)
+            .contentMargins(.top, 18, for: .expanded)
+            .contentMargins(.bottom, 22, for: .expanded)
         }
     }
 }
