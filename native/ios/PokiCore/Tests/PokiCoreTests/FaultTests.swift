@@ -131,13 +131,16 @@ final class FaultTests: XCTestCase {
 
     /// What the real runner answers (WDA's wdValue, with an empty string turned into nil): an empty field
     /// reads as its placeholder, or null when it has none; the placeholder is also its own attribute.
-    private func realRunnerValue(_ wda: FakeWDA, _ field: Field, placeholder: String?) {
+    private func realRunnerValue(_ wda: FakeWDA, _ field: Field, placeholder: String?, placeholderFails: Bool = false) {
         wda.set("GET /element/E1/attribute/value") { _ in
             let held = field.value.value
             if !held.isEmpty { return (200, ["value": .string(held)]) }
             return (200, ["value": placeholder.map(JSON.string) ?? .null])
         }
-        wda.set("GET /element/E1/attribute/placeholderValue") { _ in (200, ["value": placeholder.map(JSON.string) ?? .null]) }
+        wda.set("GET /element/E1/attribute/placeholderValue") { _ in
+            if placeholderFails { return (500, ["value": ["error": "unknown error", "message": "timed out"]]) }
+            return (200, ["value": placeholder.map(JSON.string) ?? .null])
+        }
     }
 
     /// Types `text` into the field and returns the answer and the error line the app log gets.
@@ -215,6 +218,58 @@ final class FaultTests: XCTestCase {
         XCTAssertTrue(logged?.contains("field has other text") == true, logged ?? "no error line")
         XCTAssertFalse(logged?.contains("Sam") ?? true, logged ?? "")
         XCTAssertFalse(logged?.contains("9931") ?? true, logged ?? "")
+    }
+
+    func testATextThatEqualsThePlaceholderIsNotTypedTwice() async {
+        let (core, wda, _) = makeCore()
+        let field = Field()
+        field.install(wda)
+        realRunnerValue(wda, field, placeholder: "三亚")
+        keys(wda, field, [("三亚", false), ("三亚", true)])
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["type": "三亚"]]])
+        XCTAssertFalse(result.isError, result.text)
+        XCTAssertEqual(field.value.value, "三亚", "the first try landed: a second would make 三亚三亚")
+        XCTAssertEqual(wda.bodies("POST /wda/keys").count, 1)
+    }
+
+    func testAPlaceholderThatStartsTheTextDoesNotMakeAHalfTypedFieldEmpty() async {
+        let (core, wda, _) = makeCore()
+        let field = Field()
+        field.install(wda)
+        realRunnerValue(wda, field, placeholder: "Search")
+        keys(wda, field, [("Search", false), ("Search apps", true)])
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["type": "Search apps"]]])
+        XCTAssertTrue(result.isError, result.text)
+        XCTAssertEqual(field.value.value, "Search", "a second try would make SearchSearch apps")
+        XCTAssertEqual(wda.bodies("POST /wda/keys").count, 1)
+    }
+
+    func testAPlaceholderThatContainsTheTextDoesNotCountAsTypedText() async {
+        let (core, wda, _) = makeCore()
+        let field = Field()
+        field.install(wda)
+        realRunnerValue(wda, field, placeholder: "Search destinations")
+        keys(wda, field, [("", false), ("Search", true)])
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["type": "Search"]]])
+        XCTAssertFalse(result.isError, result.text)
+        XCTAssertEqual(field.value.value, "Search", "the empty field only showed a longer placeholder: the text still has to go in")
+        XCTAssertEqual(wda.bodies("POST /wda/keys").count, 2)
+    }
+
+    func testAFieldWhosePlaceholderCannotBeReadIsNotTypedIntoAgainAndSaysSo() async {
+        let (core, wda, _) = makeCore()
+        let field = Field()
+        field.install(wda)
+        realRunnerValue(wda, field, placeholder: "Search destinations", placeholderFails: true)
+        keys(wda, field, [("", false), ("hello", true)])
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["type": "hello"]]])
+        XCTAssertTrue(result.isError, result.text)
+        XCTAssertEqual(wda.bodies("POST /wda/keys").count, 1)
+        XCTAssertTrue(result.text.contains("placeholder could not be read"), result.text)
     }
 
     func testPasteIsTheBackupAndPutsTheOwnersClipboardBack() async {
