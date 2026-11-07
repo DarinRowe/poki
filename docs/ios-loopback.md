@@ -49,8 +49,8 @@ matching provisioning profiles. The app and widget also require matching App Gro
 Do not remove these capabilities to make a build sign and then describe it as equivalent.
 
 `project-external.yml` includes the same base without the tunnel or its entitlement. CI builds both,
-checks the embedded extensions, stamps the app and all extensions with the release version, and
-packages two IPAs. The signing-entitlements archive identifies the capabilities for each build.
+checks the embedded extensions, checks that xcodebuild gave the app and all extensions the release
+version, and packages two IPAs. The signing-entitlements archive identifies the capabilities for each build.
 The AltStore example uses the external build; it is not a claim of supported free-account approvals.
 
 A free Personal Team cannot be assumed to provision Network Extensions. A properly provisioned

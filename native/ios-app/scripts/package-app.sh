@@ -1,5 +1,7 @@
 #!/bin/bash
-# Package an unsigned build. Stamp every extension in the staging copy, never the build products.
+# Package an unsigned build. Checks that the app and every extension carry the release version, as
+# xcodebuild set it (MARKETING_VERSION and CURRENT_PROJECT_VERSION); a build without it is refused,
+# not fixed up here, so ios-app.yml's check of the IPA can catch it.
 set -euo pipefail
 if [ "$#" != 5 ]; then
   echo "Usage: package-app.sh Poki.app local|external output.ipa version build" >&2
@@ -26,14 +28,12 @@ if edition == 'local':
         raise SystemExit('Missing packet-tunnel extension point')
     if extension.get('NSExtensionPrincipalClass') != 'PokiTunnel.PacketTunnelProvider':
         raise SystemExit('Wrong packet-tunnel entry point')
-for bundle in [app, *(app / 'PlugIns').glob('*.appex')]:
-    path = bundle / 'Info.plist'
-    with path.open('rb') as f:
+for bundle in [app, *sorted((app / 'PlugIns').glob('*.appex'))]:
+    with (bundle / 'Info.plist').open('rb') as f:
         info = plistlib.load(f)
-    info['CFBundleShortVersionString'] = version
-    info['CFBundleVersion'] = build
-    with path.open('wb') as f:
-        plistlib.dump(info, f)
+    found = (info.get('CFBundleShortVersionString'), info.get('CFBundleVersion'))
+    if found != (version, build):
+        raise SystemExit(f'{bundle.name} was built as {found[0]} ({found[1]}), expected {version} ({build}): pass MARKETING_VERSION and CURRENT_PROJECT_VERSION to xcodebuild')
 print(f'{edition}: app and {len(extensions)} extensions, version {version} ({build})')
 PY
 mkdir -p "$(dirname "$output")"
