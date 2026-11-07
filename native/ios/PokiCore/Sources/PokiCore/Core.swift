@@ -26,7 +26,7 @@ public struct CoreConfig: Sendable {
     public var ownBundleID: String
 
     /// Poki's own bundle ids (and the ids under them, like a development build's). The approval card is
-    /// in Poki, so neither `do` nor a voice tap ever taps there: only the owner's finger does.
+    /// in Poki, so `do` and a voice tap refuse to tap there when they can tell Poki is in front.
     public var ownApps: [String]
 
     public init(runnerURL: URL = URL(string: "http://127.0.0.1:8100")!, sensitive: SensitivityRules = SensitivityRules(), approvalWait: Double = 20, toolDeadline: Double = 25, actionCap: Double = 6, readTimeout: Double = 4, busyWait: Double = 2, runnerWait: Double = 15, treeFormat: String = "xml", ownBundleID: String = "nz.zheha.poki", ownApps: [String] = ["nz.zheha.poki"]) {

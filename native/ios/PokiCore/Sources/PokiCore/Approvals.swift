@@ -1,9 +1,9 @@
 import Foundation
 
 /// What needs the owner's approval on the phone before it is sent. Words match whole words or
-/// phrases, case-insensitively, at the start of the label of the element an action touches, or
-/// anywhere in a short label (a button: "Confirm and pay"); a name inside a longer text is not an
-/// action (seen on the phone: "Contact photo for Best Buy" was taken for a payment).
+/// phrases, case-insensitively, in the label, value or identifier of the element an action touches: at
+/// the start of the text, or anywhere in a short one (a button: "Confirm and pay"). A name inside a
+/// longer text is not an action (seen on the phone: "Contact photo for Best Buy" was taken for a payment).
 public struct SensitivityRules: Sendable, Equatable {
     public var secureFields = true
     public var payments: [String] = ["pay", "buy", "purchase", "subscribe", "checkout", "place order", "transfer", "send money", "confirm payment", "apple pay", "支付", "付款", "购买", "订阅", "转账", "确认支付", "下单"]
@@ -44,12 +44,13 @@ public struct SensitivityRules: Sendable, Equatable {
         if let bundle = app?.bundleID, guardedApps.contains(bundle) { return "input in \(app?.describe ?? bundle)" }
         if typing, secureFields, element?.isSecure == true || (element == nil && secureOnScreen) { return "typing into a password field" }
         guard let element, !typing else { return nil }
-        let text = element.text
-        if let word = Self.matches(text, payments) { return "a payment (\"\(word)\")" }
-        if let word = Self.matches(text, deletions) { return "deleting (\"\(word)\")" }
+        let texts = [element.text, element.identifier ?? ""]
+        func match(_ words: [String]) -> String? { texts.lazy.compactMap { Self.matches($0, words) }.first }
+        if let word = match(payments) { return "a payment (\"\(word)\")" }
+        if let word = match(deletions) { return "deleting (\"\(word)\")" }
         if let bundle = app?.bundleID, callingApps.contains(bundle) { return "a call (in \(app?.describe ?? bundle))" }
-        if let word = Self.matches(text, calling) { return "a call (\"\(word)\")" }
-        if let bundle = app?.bundleID, messagingApps.contains(bundle), let word = Self.matches(text, sending) {
+        if let word = match(calling) { return "a call (\"\(word)\")" }
+        if let bundle = app?.bundleID, messagingApps.contains(bundle), let word = match(sending) {
             return "sending a message (\"\(word)\")"
         }
         return nil
@@ -84,8 +85,9 @@ public struct Approval: Sendable, Equatable {
 }
 
 /// Pending and granted approvals. At most one is pending; it is granted or declined only from the app
-/// (the Live Activity), and nothing the automation does can grant it: every `do` and every voice tap
-/// (`PokiCore.clearTap`) withdraws it first, and neither taps inside Poki, where the card is.
+/// (the Live Activity). Every `do` and every voice tap (`PokiCore.clearTap`) withdraws it first, so a
+/// press the automation lands afterwards finds nothing to grant. Both also refuse to tap in Poki when
+/// they can tell it is in front.
 final class Approvals: @unchecked Sendable {
     enum Decision: Sendable { case approved, declined, expired }
     private struct Entry {
