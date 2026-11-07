@@ -31,4 +31,12 @@ final class ReconnectTests: XCTestCase {
         plan.connected(at: up.addingTimeInterval(10))
         XCTAssertEqual(plan.lost(at: up.addingTimeInterval(10 + 60)), 1, "up for a minute: a new loss is a new story")
     }
+
+    func testATunnelInterfaceMeansAnotherVPNIsOn() {
+        XCTAssertTrue(OtherVPN.isOn(interfaces: ["en0", "utun4"]), "a packet tunnel (WireGuard, LocalDevVPN, Karing, most others)")
+        XCTAssertTrue(OtherVPN.isOn(interfaces: ["ipsec0"]), "IKEv2 and IPsec")
+        XCTAssertTrue(OtherVPN.isOn(interfaces: ["ppp0"]), "L2TP and PPTP")
+        XCTAssertFalse(OtherVPN.isOn(interfaces: ["en0", "pdp_ip0", "awdl0", "llw0"]), "Wi-Fi, cellular and the links between Apple devices are not VPNs")
+        XCTAssertFalse(OtherVPN.isOn(interfaces: []))
+    }
 }

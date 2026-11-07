@@ -41,3 +41,12 @@ public struct ReconnectPlan: Sendable {
     /// Starts the count again, for a person who opens Poki after the tries ran out.
     public mutating func startOver() { failures = 0 }
 }
+
+/// Whether the owner has a VPN of their own on. The built-in connection is dialled again only when
+/// there is none: a second packet tunnel would displace theirs.
+public enum OtherVPN {
+    /// `names` are the network interfaces iOS has scoped settings for (the keys of `__SCOPED__` in
+    /// `CFNetworkCopySystemProxySettings`). Called while Poki's own tunnel is down, so a tunnel
+    /// interface among them is somebody else's.
+    public static func isOn(interfaces names: [String]) -> Bool { false }
+}
