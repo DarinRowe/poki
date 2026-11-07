@@ -40,7 +40,7 @@ To read a page, open it first, then read the screen.`;
 // The voice tools. `local` tools are answered by the phone itself; the bridge runs the others through Poki MCP.
 const voiceTools = [
   { name: 'get_ios_version', local: true, description: 'Read the iPhone model and its iOS version. Changes nothing on the phone.', parameters: { type: 'object', properties: {}, additionalProperties: false } },
-  { name: 'open_settings', description: 'Open a page of the Settings app on the iPhone, for example about, general, software_update, battery, wifi, display.', parameters: { type: 'object', properties: { page: { type: 'string', enum: ['about', 'general', 'software_update', 'battery', 'wifi', 'bluetooth', 'display', 'sounds', 'notifications', 'privacy', 'screen_time'] } }, required: ['page'], additionalProperties: false } },
+  { name: 'open_settings', description: 'Open the Settings app on the iPhone, or one of its pages (about, general, software_update, battery, wifi, display, and so on). Leave out page to open Settings itself.', parameters: { type: 'object', properties: { page: { type: 'string', enum: ['about', 'general', 'software_update', 'battery', 'wifi', 'bluetooth', 'display', 'sounds', 'notifications', 'privacy', 'screen_time'] } }, additionalProperties: false } },
   { name: 'read_screen', description: 'Read the text and controls on the iPhone screen now.', parameters: { type: 'object', properties: {}, additionalProperties: false } },
   { name: 'open_app', description: 'Open an app on the iPhone by its name, for example Calculator, Clock, Weather.', parameters: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'], additionalProperties: false } },
   { name: 'tap_text', description: 'Tap the visible button or row whose text matches.', parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'], additionalProperties: false } },
@@ -76,7 +76,7 @@ const runners = {
     const info = JSON.parse(text(await mcp.call('get_device_info', {})));
     return JSON.stringify({ model: info.model, ios_version: info.osVersion });
   },
-  open_settings: async (mcp, a) => clip(text(await mcp.call('open_settings', { page: a.page }))),
+  open_settings: async (mcp, a) => clip(text(await mcp.call('open_settings', a.page ? { page: a.page } : {}))),
   read_screen: async mcp => clip(text(await mcp.call('list_elements', { max_elements: 60 }))),
   open_app: async (mcp, a) => clip(text(await mcp.call('launch_app', { name: a.name }))),
   tap_text: async (mcp, a) => clip(text(await mcp.call('tap_text', { text: a.text }))),

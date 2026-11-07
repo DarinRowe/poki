@@ -15,6 +15,9 @@ final class VoiceLink: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelega
         RTCAudioSessionConfiguration.setWebRTC(audio)
         return RTCPeerConnectionFactory()
     }()
+    /// Test runs: WebRTC's own audio device would set up a voice-chat audio session, and iOS would ask
+    /// for the microphone. This one never touches audio; the model's voice is received and dropped.
+    private static let silentFactory = RTCPeerConnectionFactory(encoderFactory: nil, decoderFactory: nil, audioDevice: SilentAudioDevice())
 
     private let onEvent: @MainActor ([String: Any]) -> Void
     private let onClosed: @MainActor (String) -> Void
@@ -32,17 +35,14 @@ final class VoiceLink: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelega
     /// `microphone: false` (test runs) sends no audio track and needs no microphone permission; the
     /// model's voice still comes back.
     func connect(secret: String, microphone: Bool = true) async throws {
-        // Without the microphone (test runs) the audio unit never starts: no recording and nothing on the speaker.
-        let audio = RTCAudioSession.sharedInstance()
-        audio.useManualAudio = !microphone
-        audio.isAudioEnabled = microphone
+        let factory = microphone ? Self.factory : Self.silentFactory
         let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
         let config = RTCConfiguration()
         config.sdpSemantics = .unifiedPlan
-        guard let peer = Self.factory.peerConnection(with: config, constraints: constraints, delegate: self) else { throw VoiceError.realtime(0, "WebRTC could not start") }
+        guard let peer = factory.peerConnection(with: config, constraints: constraints, delegate: self) else { throw VoiceError.realtime(0, "WebRTC could not start") }
         self.peer = peer
         if microphone {
-            let mic = Self.factory.audioTrack(with: Self.factory.audioSource(with: constraints), trackId: "poki-mic")
+            let mic = factory.audioTrack(with: factory.audioSource(with: constraints), trackId: "poki-mic")
             peer.add(mic, streamIds: ["poki-voice"])
         } else {
             let receiveOnly = RTCRtpTransceiverInit()
@@ -151,4 +151,30 @@ final class VoiceLink: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelega
     func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {}
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove candidates: [RTCIceCandidate]) {}
     func peerConnection(_ peerConnection: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) {}
+}
+
+/// An audio device with no microphone and no speaker, for silent test runs.
+private final class SilentAudioDevice: NSObject, RTCAudioDevice {
+    let deviceInputSampleRate = 48000.0
+    let inputIOBufferDuration: TimeInterval = 0.01
+    let inputNumberOfChannels = 1
+    let inputLatency: TimeInterval = 0
+    let deviceOutputSampleRate = 48000.0
+    let outputIOBufferDuration: TimeInterval = 0.01
+    let outputNumberOfChannels = 1
+    let outputLatency: TimeInterval = 0
+    private(set) var isInitialized = false
+    private(set) var isPlayoutInitialized = false
+    private(set) var isPlaying = false
+    private(set) var isRecordingInitialized = false
+    private(set) var isRecording = false
+
+    func initialize(with delegate: RTCAudioDeviceDelegate) -> Bool { isInitialized = true; return true }
+    func terminateDevice() -> Bool { isInitialized = false; isPlaying = false; isRecording = false; return true }
+    func initializePlayout() -> Bool { isPlayoutInitialized = true; return true }
+    func startPlayout() -> Bool { isPlaying = true; return true }
+    func stopPlayout() -> Bool { isPlaying = false; return true }
+    func initializeRecording() -> Bool { isRecordingInitialized = true; return true }
+    func startRecording() -> Bool { isRecording = true; return true }
+    func stopRecording() -> Bool { isRecording = false; return true }
 }

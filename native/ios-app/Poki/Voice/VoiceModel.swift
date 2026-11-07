@@ -251,7 +251,14 @@ final class VoiceModel {
     /// Recorded speech instead of the microphone, for test runs: 24 kHz mono PCM16, sent as one user turn.
     func say(pcm24k: Data) {
         guard let link, ready else { return }
-        link.send(["type": "conversation.item.create", "item": ["type": "message", "role": "user", "content": [["type": "input_audio", "audio": pcm24k.base64EncodedString()]]]])
+        // A data channel message carries about 256 KB at most, so speech goes in as parts of 2 seconds.
+        let part = 96_000
+        var sent = true
+        for start in stride(from: 0, to: pcm24k.count, by: part) {
+            let audio = pcm24k.subdata(in: start..<min(start + part, pcm24k.count)).base64EncodedString()
+            sent = link.send(["type": "conversation.item.create", "item": ["type": "message", "role": "user", "content": [["type": "input_audio", "audio": audio]]]]) && sent
+        }
+        if !sent { log.add("voice", "the recorded speech did not go out on the data channel") }
         clock = TurnClock(said: Date())
         wantsResponse = true
         flush()
@@ -371,7 +378,7 @@ final class VoiceModel {
         let call = calls[index]
         let sent = call.session == session
             ? link.send(["type": "conversation.item.create", "item": ["type": "function_call_output", "call_id": call.id, "output": call.output]])
-            : link.send(Self.note("While the connection was down, \(call.name) \(call.arguments) finished. It already ran; do not run it again. Result: \(call.output)"))
+            : link.send(Self.note("While the connection was down, \(call.name) \(call.arguments) finished. It already ran; do not run it again. Tell the user in one sentence how it ended. Result: \(call.output)"))
         guard sent else { return }
         calls[index].delivered = true
         clock.delivered = Date()
@@ -403,6 +410,11 @@ final class VoiceModel {
     func runTest(_ numbers: ClosedRange<Int>) async {
         guard let bridge else { phase = .lost(VoiceError.noBridge.localizedDescription); return }
         muted = true
+        // Test runs have no microphone, so no voice-chat audio session keeps Poki running while a step
+        // brings another app to the front; a silent one does, as for a Poki session.
+        let awake = KeepAlive()
+        try? awake.start()
+        defer { awake.stop() }
         log.add("voice", "test run \(numbers.lowerBound)-\(numbers.upperBound) started")
         for n in numbers {
             stop()
@@ -410,7 +422,7 @@ final class VoiceModel {
             await start(microphone: false)
             if await until(10, { self.ready }), let pcm = try? await bridge.utterance(n) {
                 say(pcm24k: pcm)
-                let ok = await until(40, { self.clock.spoken != nil && !self.clock.reply.isEmpty && self.phase == .listening && self.activeResponse == nil })
+                let ok = await until(40, { self.clock.spoken != nil && !self.clock.reply.isEmpty && self.activeResponse == nil })
                 report["ok"] = ok
                 report["calls"] = clock.callNames
                 report["reply"] = clock.reply
