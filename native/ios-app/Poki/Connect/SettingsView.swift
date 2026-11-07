@@ -1,4 +1,5 @@
 import CoreImage.CIFilterBuiltins
+import PokiCore
 import SwiftUI
 
 /// Settings, the sheet behind Home's gear (ESP-139 board 04): this iPhone and its relay, the agents
@@ -24,6 +25,7 @@ struct SettingsView: View {
                     case .relay: RelayView(back: { path.removeLast() })
                     case .diagnostics: DiagnosticsView(path: $path)
                     case .log: LogView(back: { path.removeLast() })
+                    case .memory: MemoryView(back: { path.removeLast() })
                     case .activityPreview: ActivityPreview()
                     }
                 }
@@ -34,7 +36,7 @@ struct SettingsView: View {
 }
 
 enum SettingsRoute: Hashable {
-    case connector(ConnectorSecret), relay, diagnostics, log, activityPreview
+    case connector(ConnectorSecret), relay, diagnostics, log, activityPreview, memory
 }
 
 private struct SettingsHome: View {
@@ -182,6 +184,10 @@ private struct SettingsHome: View {
                 }
             }
             .buttonStyle(.plain)
+            Button { path.append(.memory) } label: {
+                WhiteRow(title: "Memory") { RowValue(text: Text("\(RoutineStore.shared.routines.count) routines")) }
+            }
+            .buttonStyle(.plain)
             Button(action: openSetup) {
                 WhiteRow(title: "Setup") { RowValue(text: Text("\(done) of \(total)"), color: done == total ? Site.okInk : Site.text3) }
             }
@@ -190,7 +196,7 @@ private struct SettingsHome: View {
                 .buttonStyle(.plain)
         }
         .whiteCard()
-        GroupFootnote(text: "Logs, checks, background hold, addresses, and Live Activity preview.")
+        GroupFootnote(text: "Memory holds the routines and notes every agent shares. Diagnostics: logs, checks, background hold, addresses, and Live Activity preview.")
     }
 
     /// Keychain errors in words. -34018 means the app's signature has no keychain access (an unsigned

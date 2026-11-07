@@ -1,3 +1,4 @@
+import PokiCore
 import SwiftUI
 
 @main
@@ -12,6 +13,8 @@ struct PokiApp: App {
         #if DEBUG && targetEnvironment(simulator)
         TestCredential.importIfGiven()
         #endif
+        // A memory backup Poki Setup put back (Documents/AgentBackup) is merged in before any agent asks.
+        _ = RoutineStore.shared.importRestoredBackup()
         let model = AppModel()
         _model = State(initialValue: model)
         _chat = State(initialValue: ChatModel(app: model))
