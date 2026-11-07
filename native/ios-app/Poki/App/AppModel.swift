@@ -1,3 +1,4 @@
+import ActivityKit
 import PokiCore
 import SwiftUI
 import UIKit
@@ -65,6 +66,7 @@ final class AppModel {
     private var eventsTask: Task<Void, Never>?
 
     init() {
+        ActivityController.endLeftovers()
         core = LiveCore(host: host)
         let launcher = RustLauncher()
         self.launcher = launcher
@@ -81,6 +83,12 @@ final class AppModel {
             }
         }
         host.onWake { [weak self] in Task { @MainActor in self?.wakeRunner() } }
+        // Allow and Deny on the Live Activity run in this process and come straight here.
+        ApprovalIntentBridge.install { [weak self] decision in
+            guard let self else { return false }
+            self.decide(decision)
+            return true
+        }
         listenForApprovals()
         // One pump for the app's whole life. Cancelling a task that reads an AsyncStream ends the
         // stream for good, so a pump per session would go silent after the first Turn off (no steps,
@@ -120,7 +128,11 @@ final class AppModel {
     /// Poki is being closed: end the runner now (the launcher kills its process) instead of leaving
     /// iOS's automation banner up for half a minute. iOS gives a few seconds for this.
     private func appWillTerminate() {
-        guard sessionOn else { return }
+        // The Live Activity goes with the app: nothing would update it after this. Detached, because
+        // the main thread is held below while the runner ends.
+        let activities = Activity<PokiActivityAttributes>.activities
+        Task.detached { for old in activities { await old.end(nil, dismissalPolicy: .immediate) } }
+        guard sessionOn else { Thread.sleep(forTimeInterval: 0.5); return }
         log.add("app", "Poki is closing: ending the runner")
         launcher.stop()
         Thread.sleep(forTimeInterval: 2.5)
@@ -138,7 +150,7 @@ final class AppModel {
             RecentStep(text: "Tap at 212, 640", detail: "In WeChat · Didn't go through", ok: false, at: now.addingTimeInterval(-30)),
             RecentStep(text: "Type “On my way”", detail: "In WeChat", ok: true, at: now.addingTimeInterval(-12)),
         ]
-        approvals = [PendingApproval(id: "sample", app: "WeChat", summary: "Tap “Send”", expires: now.addingTimeInterval(45))]
+        approvals = [PendingApproval(id: "sample", app: "WeChat", summary: "Tap “Send”", reason: "sending a message (\"send\")", expires: now.addingTimeInterval(45))]
     }
 
     // MARK: Session
@@ -328,7 +340,8 @@ final class AppModel {
         runner = status
         host.update(runner: coreState(of: status))
         if status.state == "failed" {
-            activity.update { $0.phase = .problem; $0.headline = status.fix ?? status.detail ?? "The runner stopped" }
+            let (title, hint) = Self.problemText(status.fix ?? status.detail ?? "The runner stopped")
+            activity.update { $0.phase = .problem; $0.label = "Runner Stopped"; $0.headline = title; $0.hint = hint }
         } else if !status.isRunning {
             activity.update { $0.phase = .idle; $0.headline = status.title }
         } else if activity.state.phase == .problem || activity.state.phase == .idle || activity.state.headline == "Starting the runner" {
@@ -368,11 +381,7 @@ final class AppModel {
             recentSteps.append(RecentStep(text: summary, detail: detail, ok: !failed, at: Date()))
             if recentSteps.count > 20 { recentSteps.removeFirst(recentSteps.count - 20) }
             activity.record(step: summary, ok: !failed)
-            activity.update { state in
-                state.lastAction = summary
-                state.app = app ?? state.app
-                if state.approval == nil { state.headline = "Waiting for the agent's next step" }
-            }
+            activity.update { state in state.app = app ?? state.app }
             activity.setThumbnail(thumbnail)
         case .approvalRequested(let approval):
             approvals.append(approval)
@@ -413,20 +422,61 @@ final class AppModel {
         }, ApprovalMailbox.stopRunner as CFString, nil, .deliverImmediately)
     }
 
-    /// A decision from the Live Activity. Allow is tapped on the expanded Dynamic Island, which takes
-    /// about a second to collapse; input sent at once can land on it (iOS then opens Poki). So the
-    /// Live Activity's decisions reach PokiCore after a short pause, the app's own buttons at once.
+    /// Decisions an intent left in the App Group mailbox because it ran outside the app.
     func drainApprovals() {
-        let decisions = ApprovalMailbox.drain().filter { id, _ in approvals.contains(where: { $0.id == id }) }
-        guard !decisions.isEmpty else { return }
+        for decision in ApprovalMailbox.drain() { decide(decision) }
+    }
+
+    /// A decision from the Live Activity. The card shows the answer at once (Allowing, Denying).
+    /// Allow is tapped on the expanded Dynamic Island, which takes about a second to collapse; input
+    /// sent at once can land on it (iOS then opens Poki). So the Live Activity's decisions reach
+    /// PokiCore after a short pause, the app's own buttons at once.
+    func decide(_ decision: ApprovalDecision) {
+        // A tap on an approval that already ended (answered in the app, or timed out) does nothing.
+        guard approvals.contains(where: { $0.id == decision.approvalID }) else { return }
+        log.add("approval", "\(decision.approved ? "allowed" : "denied") \(decision.approvalID) on the Live Activity")
+        activity.update { state in
+            guard state.approval?.id == decision.approvalID else { return }
+            state.phase = .deciding
+            state.decision = decision.approved
+        }
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(Self.islandCollapse))
-            for (id, approved) in decisions { core.resolveApproval(id: id, approved: approved) }
+            core.resolveApproval(id: decision.approvalID, approved: decision.approved)
         }
     }
 
     /// How long the expanded island takes to fold after a tap on its button.
     static let islandCollapse: TimeInterval = 1.5
+
+    /// The launcher's fix as the Live Activity's title and the line under it. The fixes the launcher
+    /// sends (native/launcher/src/device.rs, launch.rs) have short forms that fit one line each; any
+    /// other text is split at its first colon or the end of its first sentence.
+    nonisolated static func problemText(_ fix: String) -> (String, String?) {
+        let short: [(String, String, String)] = [
+            ("Turn on the loopback", "Turn On Loopback", "In your proxy app, or connect LocalDevVPN."),
+            ("Poki needs the internet", "Connect to the Internet", "Poki needs it once after each restart, then tries again."),
+            ("Mounting the developer disk image timed out", "Connect to the Internet", "Poki needs it once after each restart, then tries again."),
+            ("This iOS version needs a newer", "Update the Disk Image", "Open Poki's setup to download the latest one."),
+            ("The developer disk image did not install", "Downloading the Disk Image", "Poki downloads it again by itself."),
+            ("Pair again", "Pair Again", "In Poki's setup."),
+            ("Turn on Developer Mode", "Turn On Developer Mode", "Privacy & Security › Developer Mode, then restart."),
+            ("Install Poki Runner", "Install Poki Runner", "With the same signing tool and Apple ID as Poki."),
+        ]
+        if let (_, title, hint) = short.first(where: { fix.hasPrefix($0.0) }) { return (title, hint) }
+        return split(fix)
+    }
+
+    /// A text as a title and the line under it: split at the first colon or the end of the first
+    /// sentence.
+    nonisolated static func split(_ text: String) -> (String, String?) {
+        let marks = [": ", ". "].compactMap { text.range(of: $0) }.min { $0.lowerBound < $1.lowerBound }
+        guard let mark = marks else { return (text, nil) }
+        let title = String(text[..<mark.lowerBound])
+        let rest = text[mark.upperBound...].trimmingCharacters(in: .whitespaces)
+        guard !rest.isEmpty else { return (title, nil) }
+        return (title.prefix(1).uppercased() + title.dropFirst(), rest.prefix(1).uppercased() + rest.dropFirst())
+    }
 
     // MARK: Pairing
 
@@ -472,7 +522,8 @@ final class AppModel {
             activity.update { $0.phase = .idle; $0.pin = nil; $0.headline = "Paired" }
             if !sessionOn { Task { try? await Task.sleep(for: .seconds(4)); if !self.sessionOn { self.activity.end() } } }
         case .failed(let why):
-            activity.update { $0.phase = .problem; $0.pin = nil; $0.headline = "Pairing failed: \(why)" }
+            let (title, hint) = Self.split(why)
+            activity.update { $0.phase = .problem; $0.pin = nil; $0.label = "Pairing Failed"; $0.headline = title; $0.hint = hint }
             if !sessionOn { Task { try? await Task.sleep(for: .seconds(8)); if !self.sessionOn { self.activity.end() } } }
         case .advertising: break
         }
@@ -490,7 +541,7 @@ final class AppModel {
         activity.update {
             $0.phase = .setup
             $0.headline = "Setting up Poki"
-            $0.guide = .init(number: (steps.firstIndex(of: step) ?? 0) + 1, count: steps.count, title: step.title, hint: step.hint)
+            $0.guide = .init(number: (steps.firstIndex(of: step) ?? 0) + 1, count: steps.count, title: step.activityTitle, hint: step.activityHint)
         }
     }
 

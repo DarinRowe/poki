@@ -48,48 +48,52 @@ struct ActivityPreview: View {
         start.event = .init(kind: .started, text: "Started")
 
         var working = PokiState(phase: .working, headline: "Tap “Send”", thumbnailVersion: 1)
-        working.app = "WeChat"
+        working.app = "Messages"
         working.since = now.addingTimeInterval(-42)
         working.stepCount = 6; working.failedCount = 1
-        working.steps = [.init(text: "Type “On my way” in the message box", ok: true), .init(text: "Tap the Send button", ok: true)]
-        working.event = .init(kind: .app, text: "Now in WeChat")
+        working.outcomes = [true, true, false, true, true, true]
+        working.event = .init(kind: .app, text: "Now in Messages")
 
         var step = working
         step.event = nil
         step.headline = "Scroll down the chat list"
         step.stepCount = 7
-        step.steps.append(.init(text: "Tap “Send”", ok: true))
+        step.outcomes.append(true)
 
         var approval = PokiState(phase: .approval, headline: "Allow this step?", thumbnailVersion: 1)
         approval.app = "Messages"
-        approval.approval = PendingApproval(id: "a", app: "Messages", summary: "Send “On my way” to Mom", expires: now.addingTimeInterval(25))
-        approval.approvalSince = now.addingTimeInterval(-5)
+        approval.approval = PendingApproval(id: "a", app: "Messages", summary: "Send “On my way” to Mom", reason: "sending a message (\"send\")", expires: now.addingTimeInterval(25))
         approval.since = now.addingTimeInterval(-61)
-        approval.stepCount = 4
+        approval.stepCount = 4; approval.outcomes = [true, true, true, true]
+
+        var deciding = approval
+        deciding.phase = .deciding; deciding.decision = true
 
         var done = PokiState(phase: .done, headline: "Finished in Messages", thumbnailVersion: 1)
         done.app = "Messages"
         done.since = now.addingTimeInterval(-84); done.endedAt = now
         done.stepCount = 12; done.failedCount = 1
-        done.event = .init(kind: .finished, text: "Finished")
+        done.outcomes = [true, true, false, true, true, true, true, true, true, true, true, true]
 
         var ready = PokiState(phase: .idle, headline: "Ready for the agent", thumbnailVersion: 0)
         var idle = PokiState(phase: .idle, headline: "Waiting for an agent", thumbnailVersion: 0)
         idle.runnerPaused = true
         ready.runnerPaused = false
 
-        var problem = PokiState(phase: .problem, headline: "Turn on the loopback in your proxy app", thumbnailVersion: 0)
-        problem.event = .init(kind: .problem, text: "Runner stopped")
+        let (title, hint) = AppModel.problemText("Turn on the loopback in your proxy app: the Poki module in Surge or Loon.")
+        var problem = PokiState(phase: .problem, headline: title, thumbnailVersion: 0)
+        problem.label = "Runner Stopped"; problem.hint = hint
+        problem.stepCount = 6
 
         let pairWait = PokiState(phase: .pairing, headline: "Pair in Settings", thumbnailVersion: 0)
         var pairCode = PokiState(phase: .pairing, headline: "Pairing code", thumbnailVersion: 0)
         pairCode.pin = "482913"
 
         var setup = PokiState(phase: .setup, headline: "Setting up Poki", thumbnailVersion: 0)
-        setup.guide = .init(number: 2, count: 6, title: SetupStep.developerMode.title, hint: SetupStep.developerMode.hint)
+        setup.guide = .init(number: 2, count: 6, title: SetupStep.developerMode.activityTitle, hint: SetupStep.developerMode.activityHint)
 
-        return [("start", start), ("working", working), ("step", step), ("approval", approval), ("done", done), ("ready", ready), ("idle", idle),
-                ("problem", problem), ("pairing", pairWait), ("code", pairCode), ("setup", setup)]
+        return [("start", start), ("working", working), ("step", step), ("approval", approval), ("deciding", deciding), ("done", done),
+                ("ready", ready), ("idle", idle), ("problem", problem), ("pairing", pairWait), ("code", pairCode), ("setup", setup)]
     }()
 
     /// A stand-in screenshot (a chat screen) for the thumbnail, drawn here so the preview needs no files.
@@ -113,37 +117,42 @@ struct ActivityPreview: View {
     }
 }
 
-/// The Lock Screen presentation as iOS lays it out: 371 points wide, the widget's padding and tint.
+/// The Lock Screen presentation as iOS lays it out: 371 points wide, the card's corner and tint.
 private struct LockScreenFrame: View {
     var state: PokiState
     var body: some View {
-        LockScreenView(state: state)
-            .padding(.horizontal, LockInsets.horizontal).padding(.vertical, LockInsets.vertical)
+        let card = RoundedRectangle(cornerRadius: ActivityMetrics.lockCorner, style: .continuous)
+        LockScreenCard(state: state)
             .frame(maxWidth: 371)
-            .background(Brand.night, in: .rect(cornerRadius: 28, style: .continuous))
+            .background(ActivityTheme.current.lockBackground, in: card)
+            .containerShape(card)
+            .clipShape(card)
             .overlay(alignment: .bottomTrailing) { HeightBadge() }
             .environment(\.colorScheme, .dark)
     }
 }
 
 /// The expanded island, regions placed the way iOS does: leading and trailing beside the camera,
-/// the bottom region under them, 14 point margins.
+/// the bottom region under them, inside the widget's margins.
 private struct IslandExpandedFrame: View {
     var state: PokiState
     var body: some View {
-        VStack(spacing: 8) {
-            HStack(alignment: .center) {
-                IslandLeading(state: state).frame(height: 40)
+        let insets = ActivityMetrics.islandInsets
+        let shape = RoundedRectangle(cornerRadius: ActivityMetrics.islandCorner, style: .continuous)
+        VStack(spacing: 6) {
+            HStack(spacing: 0) {
+                IslandLeading(state: state).frame(width: 110, height: 36)
                 Spacer(minLength: 120)
-                IslandTrailing(state: state).frame(height: 40)
+                IslandTrailing(state: state).frame(width: 110, height: 36)
             }
             IslandBottom(state: state)
         }
-        .foregroundStyle(.white)
-        .padding(.horizontal, 24).padding(.top, 18).padding(.bottom, 22)
+        .padding(insets)
         .frame(maxWidth: 371)
-        .background(.black, in: .rect(cornerRadius: 44, style: .continuous))
-        .overlay(alignment: .top) { Capsule().fill(Color(white: 0.08)).frame(width: 120, height: 36).padding(.top, 14) }
+        .background(.black, in: shape)
+        .overlay { if state.face.outlined { shape.strokeBorder(ActivityTheme.current.approvalOutline, lineWidth: 1.5) } }
+        .overlay(alignment: .top) { Capsule().fill(Color(white: 0.08)).frame(width: 120, height: 36).padding(.top, insets.top) }
+        .overlay(alignment: .bottomTrailing) { HeightBadge() }
         .environment(\.colorScheme, .dark)
     }
 }
@@ -156,10 +165,11 @@ private struct IslandCompactFrame: View {
             HStack(spacing: 0) {
                 CompactLeading(state: state).frame(width: 44, alignment: .leading)
                 Color.clear.frame(width: 120)
-                CompactTrailing(state: state).frame(minWidth: 44, alignment: .trailing)
+                CompactTrailing(state: state).frame(width: 52, alignment: .trailing)
             }
-            .padding(.horizontal, 10).frame(height: 37)
+            .padding(.leading, 8).padding(.trailing, 8).frame(height: 37)
             .background(.black, in: .capsule)
+            .overlay { if state.face.outlined { Capsule().strokeBorder(ActivityTheme.current.approvalOutline, lineWidth: 1.5) } }
             MinimalView(state: state).frame(width: 37, height: 37).background(.black, in: .circle)
         }
         .environment(\.colorScheme, .dark)
@@ -197,7 +207,6 @@ enum DemoActivity {
         if let end = state.endedAt, let since = sample.since { state.endedAt = now; state.since = now.addingTimeInterval(-end.timeIntervalSince(since)) }
         if var approval = state.approval {
             approval.expires = now.addingTimeInterval(120); state.approval = approval
-            state.approvalSince = now.addingTimeInterval(-30)
         }
         // Poki keeps running in the background while it is on; the demo asks for time to send its alert.
         let task = UIApplication.shared.beginBackgroundTask(withName: "activity demo")

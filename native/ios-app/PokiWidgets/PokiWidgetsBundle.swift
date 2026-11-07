@@ -1,3 +1,6 @@
+// The Live Activity's configuration follows AgentLiveActivityWidget in Clarklevis1995/dsh-mobile
+// (commit ebe19764, AgentLiveActivityWidget/AgentLiveActivityWidget.swift), MIT License, Copyright (c)
+// 2026 Chaofan Li. See THIRD_PARTY_NOTICES.md.
 import ActivityKit
 import AppIntents
 import SwiftUI
@@ -8,21 +11,22 @@ struct PokiWidgetsBundle: WidgetBundle {
     var body: some Widget { PokiLiveActivity() }
 }
 
-/// Poki's Live Activity: what the agent is doing and its last steps, the pairing code while pairing,
-/// the current setup step while setting up, and Allow/Deny for sensitive actions. The buttons are for
-/// the person; PokiCore sends no input while an approval waits, so the runner never taps them.
+/// Poki's Live Activity: what the agent is doing and how its steps went, the pairing code while
+/// pairing, the current setup step while setting up, and Allow/Deny for sensitive actions. The
+/// buttons are for the person; PokiCore sends no input while an approval waits, so the runner never
+/// taps them.
 ///
-/// The Lock Screen keeps a fixed dark tint with white controls: it matches the island, reads on any
-/// wallpaper, and avoids iOS 26/27's wrong-appearance bug with adaptive tints.
+/// The Lock Screen card is the website's blue with white text and a glass edge; the Dynamic Island
+/// stays black, with the website's light blue for its accents.
 struct PokiLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: PokiActivityAttributes.self) { context in
-            LockScreenView(state: context.shown)
-                .padding(.horizontal, LockInsets.horizontal).padding(.vertical, LockInsets.vertical)
-                .activityBackgroundTint(Brand.night)
+            LockScreenCard(state: context.shown)
+                .activityBackgroundTint(ActivityTheme.current.lockBackground)
                 .activitySystemActionForegroundColor(.white)
         } dynamicIsland: { context in
             let state = context.shown
+            let insets = ActivityMetrics.islandInsets
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) { IslandLeading(state: state) }
                 DynamicIslandExpandedRegion(.trailing) { IslandTrailing(state: state) }
@@ -34,13 +38,13 @@ struct PokiLiveActivity: Widget {
             } minimal: {
                 MinimalView(state: state)
             }
-            .keylineTint(state.accent)
-            // The expanded island's corners are deep continuous curves (about 40 pt on iOS 27), so the
-            // content keeps well clear of them: 24 pt from the sides, 18 from the top and 22 from the
-            // bottom. The corner items (bear, status, the last line) sit inside those margins.
-            .contentMargins(.horizontal, 24, for: .expanded)
-            .contentMargins(.top, 18, for: .expanded)
-            .contentMargins(.bottom, 22, for: .expanded)
+            // The outline goes blue while an approval waits; otherwise the system's own.
+            .keylineTint(state.face.outlined ? ActivityTheme.current.approvalOutline : nil)
+            // Margins concentric with the island's 44 point corners: nothing reaches the curve.
+            .contentMargins(.leading, insets.leading, for: .expanded)
+            .contentMargins(.trailing, insets.trailing, for: .expanded)
+            .contentMargins(.top, insets.top, for: .expanded)
+            .contentMargins(.bottom, insets.bottom, for: .expanded)
         }
     }
 }
@@ -52,6 +56,7 @@ extension ActivityViewContext<PokiActivityAttributes> {
         var state = self.state
         if isStale, state.approval != nil {
             state.approval = nil
+            state.decision = nil
             state.phase = .working
             state.headline = String(localized: "The approval timed out")
             state.event = .init(kind: .expired, text: String(localized: "Timed out"))
