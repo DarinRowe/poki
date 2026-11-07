@@ -68,7 +68,7 @@ pub enum Outcome {
 }
 
 /// A sign-in waiting for the 2FA code.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Pending {
     pub apple_id: String,
     password: String,
