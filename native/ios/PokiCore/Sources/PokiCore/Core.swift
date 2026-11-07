@@ -16,7 +16,7 @@ public struct CoreConfig: Sendable {
     /// How long a call waits for a runner that is starting (the app wakes it when a call comes in).
     public var runnerWait: Double
     /// Poki's own bundle ids (and the ids under them, like a development build's). The approval card is
-    /// in Poki, so neither `do` nor a voice tap ever taps there: only the owner's finger does.
+    /// in Poki, so `do` and a voice tap refuse to tap there when they can tell Poki is in front.
     public var ownApps: [String]
 
     public init(runnerURL: URL = URL(string: "http://127.0.0.1:8100")!, sensitive: SensitivityRules = SensitivityRules(), approvalWait: Double = 20, toolDeadline: Double = 25, actionCap: Double = 6, readTimeout: Double = 4, busyWait: Double = 2, runnerWait: Double = 15, ownApps: [String] = ["nz.zheha.poki"]) {

@@ -81,8 +81,9 @@ public struct Approval: Sendable, Equatable {
 }
 
 /// Pending and granted approvals. At most one is pending; it is granted or declined only from the app
-/// (the Live Activity), and nothing the automation does can grant it: every `do` and every voice tap
-/// (`PokiCore.clearTap`) withdraws it first, and neither taps inside Poki, where the card is.
+/// (the Live Activity). Every `do` and every voice tap (`PokiCore.clearTap`) withdraws it first, so a
+/// press the automation lands afterwards finds nothing to grant. Both also refuse to tap in Poki when
+/// they can tell it is in front.
 final class Approvals: @unchecked Sendable {
     enum Decision: Sendable { case approved, declined, expired }
     private struct Entry {
