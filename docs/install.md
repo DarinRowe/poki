@@ -118,6 +118,7 @@ To use a physical iPhone, first pair it with your Mac over USB. After that, keep
 | `Missing prerequisite: <tool>` from `./bin/setup` | Install what the message names, then run `./bin/setup` again. Setup keeps the existing `.deps/idevice` checkout, and Cargo continues its build. |
 | `Poki MCP needs the full Xcode` from `./bin/setup` | Only the Command Line Tools are active. Install Xcode and run the commands in the message. |
 | `Local Poki MCP is not running` | Run `npm start` in the checkout. If you set `POKI_MCP_STATE_DIR`, set the same value for the daemon and the client. |
+| `usbmuxd answered, but no iPhone is attached over USB` | macOS has not attached the iPhone. Check the Finder sidebar. If Finder does not show it either, connect it directly with a data cable, unlock it, and accept **Trust This Computer**. Poki cannot use an iPhone that `devicectl` reaches only over the network. |
 | `Multiple devices match` | Name the device: call `select_device` in an MCP client session, or pass `device` in each call. |
 | The default port is in use | Run `npm start -- --port <port>`. Clients read the port from `mcp.json`. |
 | A second daemon on one Mac | Give each daemon its own `POKI_MCP_STATE_DIR`. Both write `mcp.json` in that folder, and a normal shutdown removes it. |
