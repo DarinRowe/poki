@@ -7,7 +7,11 @@
 // The phone opens http://<this Mac>:<port>/voice/<secret>/ ; the secret is in voice-bridge.json in the
 // state directory. Endpoints under that prefix:
 //   GET  token   a client secret for one Realtime session (expires in 60 s), plus the session it opens
-//   POST tool    {call_id, name, arguments}: runs one voice tool once; the same call_id never runs twice
+//   POST tool    {call_id, name, arguments}: runs one voice tool once; the same call_id never runs twice.
+//                tap_text first comes without `checked` and taps nothing: the answer is {state: "check", app,
+//                target}, the element it would tap and the app in front. The phone checks that with Poki's
+//                approval rules (PokiCore), asks the owner when they say so, and sends the same call again
+//                with checked: {app, text}; only then is the element tapped, matched exactly, in that app.
 //   GET  ledger  the calls this bridge ran, newest last, so a reconnecting phone can say what already happened
 // With --test-dir <dir> (test runs of the app, poki://voice?test=1-20):
 //   GET  utterance?n=01  recorded speech <dir>/u01.24k.pcm (24 kHz mono PCM16)
@@ -20,6 +24,7 @@ import { networkInterfaces } from 'node:os';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { root, stateDir } from '../src/config.mjs';
+import { matching } from '../src/interaction.mjs';
 
 const arg = (name, fallback) => { const i = process.argv.indexOf(`--${name}`); return i < 0 ? fallback : process.argv[i + 1]; };
 const port = Number(arg('port', '47830'));
@@ -34,6 +39,7 @@ const instructions = `You are Poki, a voice assistant that operates the user's i
 Speak briefly: one short sentence per reply, in the user's language.
 When a tool can answer or do what the user asks, call it at once, without speaking first. Never guess facts about the phone; use a tool.
 Call a tool once per request. Never repeat an action that already ran, including actions from before a reconnect that the conversation says have finished.
+Tapping something that sends, pays, deletes or calls waits until the user allows it on the phone; if the result says they did not, tell them in one sentence and do not try another way.
 If the user tells you to stop or be quiet, stop talking, but anything already running keeps running; when its result arrives, report it in one sentence.
 To read a page, open it first, then read the screen.`;
 
@@ -79,7 +85,15 @@ const runners = {
   open_settings: async (mcp, a) => clip(text(await mcp.call('open_settings', a.page ? { page: a.page } : {}))),
   read_screen: async mcp => clip(text(await mcp.call('list_elements', { max_elements: 60 }))),
   open_app: async (mcp, a) => clip(text(await mcp.call('launch_app', { name: a.name }))),
-  tap_text: async (mcp, a) => clip(text(await mcp.call('tap_text', { text: a.text }))),
+  // Only with `checked`, the app and element text the phone cleared (see runTool).
+  async tap_text(mcp, a, checked) {
+    if (checked.app) {
+      // The owner may have opened Poki to allow it; the tap belongs to the app that was checked.
+      const front = JSON.parse(text(await mcp.call('get_foreground_app', {})));
+      if (front.bundle_id !== checked.app) await mcp.call('launch_app', { bundle_id: checked.app });
+    }
+    return clip(text(await mcp.call('tap_text', { text: checked.text, exact: true })));
+  },
   go_home: async mcp => clip(text(await mcp.call('press_button', { button: 'home' }))),
 };
 
@@ -95,6 +109,23 @@ class Mcp {
   }
 }
 
+const names = e => [e.label, e.text, e.value].filter(s => typeof s === 'string' && s.trim());
+
+// What tap_text would tap, read without touching the phone: Poki MCP's own matching on the screen.
+async function tapTarget(mcp, wanted) {
+  if (typeof wanted !== 'string' || !wanted.trim()) throw new Error('tap_text needs text');
+  let screen = JSON.parse(text(await mcp.call('list_elements', { max_elements: 400 })));
+  let found = matching(screen.elements, wanted);
+  if (!found.length && screen.source !== 'ocr') {
+    screen = JSON.parse(text(await mcp.call('list_elements', { source: 'ocr', max_elements: 400 })));
+    found = matching(screen.elements, wanted);
+  }
+  if (!found.length) throw new Error(`nothing on screen reads ${JSON.stringify(wanted)}; nothing was tapped. Read the screen first.`);
+  if (found.length > 1) throw new Error(`${found.length} elements match ${JSON.stringify(wanted)}: ${found.map(e => JSON.stringify(names(e)[0] ?? '')).join(', ')}; nothing was tapped. Name one exactly.`);
+  const [first, ...rest] = names(found[0]);
+  return { app: { bundle_id: screen.foreground?.bundle_id ?? null, name: screen.foreground?.name ?? null }, target: { text: first ?? wanted, says: [first, ...rest].filter(Boolean).join(' = ') } };
+}
+
 async function bridgeSecret() {
   const file = join(stateDir, 'voice-bridge.json');
   const saved = await readFile(file, 'utf8').then(JSON.parse).catch(() => null);
@@ -108,15 +139,21 @@ async function bridgeSecret() {
 const ledgerFile = join(stateDir, 'voice-ledger.jsonl');
 const ledger = new Map();   // call_id → { entry, done: Promise }
 
-async function runTool(mcp, { call_id, name, arguments: args = {} }) {
+async function runTool(mcp, { call_id, name, arguments: args = {}, checked }) {
   const seen = ledger.get(call_id);
   if (seen) { await seen.done; return { ...seen.entry, replayed: true }; }
-  const entry = { call_id, name, args, state: 'running', started: Date.now() };
+  // A tap the phone has not checked yet: say what it would tap. Nothing runs, so it is not in the ledger.
+  if (name === 'tap_text' && !(typeof checked?.text === 'string' && checked.text)) {
+    const started = Date.now();
+    try { return { state: 'check', ...await tapTarget(mcp, args.text), started, finished: Date.now() }; }
+    catch (error) { return { state: 'failed', output: `error: ${error.message}`, started, finished: Date.now() }; }
+  }
+  const entry = { call_id, name, args, ...(checked ? { checked } : {}), state: 'running', started: Date.now() };
   const done = (async () => {
     const runner = runners[name];
     try {
       if (!runner) throw new Error(`unknown voice tool ${name}`);
-      entry.output = await runner(mcp, args);
+      entry.output = await runner(mcp, args, checked);
       entry.state = 'done';
     } catch (error) {
       entry.output = `error: ${error.message}`;
@@ -175,7 +212,7 @@ const server = http.createServer(async (req, res) => {
       if (typeof call.call_id !== 'string' || typeof call.name !== 'string') return reply(400, { error: 'call_id and name are required' });
       const entry = await runTool(mcp, call);
       console.log(JSON.stringify({ event: 'tool', call_id: call.call_id, name: call.name, state: entry.state, ms: entry.finished - entry.started, replayed: !!entry.replayed }));
-      return reply(200, { call_id: call.call_id, state: entry.state, output: entry.output, ms: entry.finished - entry.started, replayed: !!entry.replayed });
+      return reply(200, { call_id: call.call_id, state: entry.state, output: entry.output, ...(entry.state === 'check' ? { app: entry.app, target: entry.target } : {}), ms: entry.finished - entry.started, replayed: !!entry.replayed });
     }
     if (testDir && req.method === 'GET' && action === 'utterance') {
       const n = url.searchParams.get('n') ?? '';

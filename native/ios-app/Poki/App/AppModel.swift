@@ -14,7 +14,7 @@ final class AppModel {
     let loopback = LoopbackMonitor()
     let background = BackgroundKeeper()
     let diskImage = DiskImageStore()
-    let voice = VoiceModel()
+    let voice: VoiceModel
     private(set) var runner = RunnerStatus.idle
     private(set) var relayStatus = RelayStatus.off
     private(set) var sessionOn = false
@@ -53,7 +53,10 @@ final class AppModel {
     private var eventsTask: Task<Void, Never>?
 
     init() {
-        core = LiveCore(host: host)
+        let core = LiveCore(host: host)
+        self.core = core
+        // Voice taps get the same rules and approval card as an agent's `do`.
+        voice = VoiceModel { text, bundle, name in await core.clearTap(on: text, inApp: bundle, named: name, waiting: VoiceModel.approvalWait) }
         let launcher = RustLauncher()
         self.launcher = launcher
         pairer = RustPairing()
@@ -70,6 +73,11 @@ final class AppModel {
         }
         host.onWake { [weak self] in Task { @MainActor in self?.wakeRunner() } }
         listenForApprovals()
+        // Approvals come from the relay's agents and from Voice, which works with Poki off, so the events
+        // are taken for as long as the app runs.
+        eventsTask = Task { [weak self, core] in
+            for await event in core.events { self?.handle(event) }
+        }
         if !diskImage.isReady { Task { await diskImage.download() } }
         if UserDefaults.standard.bool(forKey: "pokiSample") { loadSample() }
         NotificationCenter.default.addObserver(forName: UIApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
@@ -136,9 +144,6 @@ final class AppModel {
         standBy(reason: nil)
         core.start(relay: relay)
         idleTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in Task { @MainActor in self?.checkIdle() } }
-        eventsTask = Task { [weak self, core] in
-            for await event in core.events { self?.handle(event) }
-        }
     }
 
     func stopSession() {
@@ -150,7 +155,6 @@ final class AppModel {
         confirmRunnerEnded()
         idleTimer?.invalidate(); idleTimer = nil
         runnerPaused = false; host.setPaused(false)
-        eventsTask?.cancel(); eventsTask = nil
         background.stop()
         activity.end()
         sessionOn = false

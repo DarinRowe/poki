@@ -172,6 +172,29 @@ public final class PokiCore: @unchecked Sendable {
 
     public var pendingApproval: Approval? { approvals.pending }
 
+    /// A tap another part of the app sends without `do` (the Voice tab taps through the Mac's Poki MCP),
+    /// on the element that reads `text` in the app in front. It is checked with the rules `do` uses and,
+    /// when they say so, waits for the owner's OK on the phone, with the same approval (card, Live
+    /// Activity, notification). A request still open after `seconds` is withdrawn.
+    public func clearTap(on text: String, inApp bundleID: String?, named name: String?, waiting seconds: Double) async -> TapClearance {
+        let app = Foreground(bundleID: bundleID, name: name)
+        let element = Element(type: "Other", label: text, value: nil, identifier: nil, frame: Rect(x: 0, y: 0, width: 0, height: 0), depth: 0)
+        guard let reason = config.sensitive.reason(touching: element, typing: false, app: app, secureOnScreen: false) else { return .clear }
+        let approval = approvals.request(app: app.describe, summary: "Tap “\(text)”", reason: reason, fingerprint: "tap:\(UUID().uuidString)")
+        switch await approvals.wait(id: approval.id, seconds: seconds) {
+        case .approved?:
+            _ = approvals.consumeGrant(fingerprint: approval.fingerprint)
+            return .approved(reason)
+        case .declined?:
+            return .declined(reason)
+        case .expired?:
+            return .unanswered(reason)
+        case nil:
+            approvals.withdraw(id: approval.id)
+            return .unanswered(reason)
+        }
+    }
+
     // MARK: MCP over HTTP (Streamable HTTP, JSON answers only)
 
     static let protocolVersions = ["2025-06-18", "2025-03-26", "2024-11-05"]

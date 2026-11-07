@@ -154,7 +154,8 @@ private struct StatusTile: View {
     }
 }
 
-private struct ApprovalCard: View {
+/// Allow or Deny one approval; on Home and, for its taps, in Voice.
+struct ApprovalCard: View {
     @Environment(AppModel.self) private var model
     var approval: PendingApproval
 

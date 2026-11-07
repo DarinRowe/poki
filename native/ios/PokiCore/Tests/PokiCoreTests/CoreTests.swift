@@ -207,6 +207,39 @@ final class ApprovalTests: XCTestCase {
         XCTAssertTrue(again.text.contains("approval_required"), again.text)
     }
 
+    func testTappingAContactInPhonePlacesNoCallWithoutTheOwner() async {
+        let wda = FakeWDA()
+        wda.source([("Cell", "Mom, mobile"), ("Button", "Keypad")], app: "Phone")
+        wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": "com.apple.mobilephone", "name": "Phone"]]) }
+        let (core, _, _) = makeCore(wda)
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["tap": 1]]])
+        XCTAssertTrue(result.text.contains("approval_required"), result.text)
+        XCTAssertTrue(wda.bodies("POST /wda/tap").isEmpty)
+        XCTAssertEqual(core.pendingApproval?.reason, "a call (in Phone)")
+    }
+
+    /// The Voice tab's "tap Send" goes through the Mac, not `do`; it is held by the same rules and the same approval.
+    func testAVoiceTapOnSendInMessagesWaitsForTheOwner() async {
+        let (core, _, _) = makeCore()
+        let unanswered = await core.clearTap(on: "Send", inApp: "com.apple.MobileSMS", named: "Messages", waiting: 0.2)
+        XCTAssertEqual(unanswered, .unanswered("sending a message (\"send\")"))
+        XCTAssertFalse(unanswered.mayTap)
+        XCTAssertNil(core.pendingApproval, "a request nobody answered is withdrawn")
+
+        Task {
+            _ = await eventually { core.pendingApproval != nil }
+            XCTAssertEqual(core.pendingApproval?.summary, "Tap “Send”")
+            XCTAssertEqual(core.pendingApproval?.app, "Messages")
+            core.resolveApproval(id: core.pendingApproval!.id, approved: true)
+        }
+        let approved = await core.clearTap(on: "Send", inApp: "com.apple.MobileSMS", named: "Messages", waiting: 2)
+        XCTAssertTrue(approved.mayTap, "\(approved)")
+
+        let settings = await core.clearTap(on: "Display & Brightness", inApp: "com.apple.Preferences", named: "Settings", waiting: 2)
+        XCTAssertEqual(settings, .clear)
+    }
+
     func testPasswordsNeedApproval() async {
         let wda = FakeWDA()
         wda.source([("TextField", "Email"), ("SecureTextField", "Password")])

@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import PokiCore
 import UIKit
 
 /// The voice bridge on the person's Mac (`bin/voice-bridge.mjs`): it hands out short-lived OpenAI
@@ -26,7 +27,27 @@ struct VoiceBridge: Equatable {
     }
 
     struct Token: Decodable { let value: String; let model: String; let local_tools: [String] }
-    struct ToolResult: Decodable { let state: String; let output: String; let replayed: Bool }
+    struct ToolResult: Decodable {
+        let state: String
+        var output = ""
+        var replayed = false
+        /// state "check" (tap_text before the phone cleared it): the app in front and the element it would tap.
+        var app: App?
+        var target: Target?
+        struct App: Decodable { let bundle_id: String?; let name: String? }
+        struct Target: Decodable { let text: String; let says: String }
+
+        enum CodingKeys: CodingKey { case state, output, replayed, app, target }
+        init(state: String, output: String) { self.state = state; self.output = output }
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            state = try c.decode(String.self, forKey: .state)
+            output = try c.decodeIfPresent(String.self, forKey: .output) ?? ""
+            replayed = try c.decodeIfPresent(Bool.self, forKey: .replayed) ?? false
+            app = try c.decodeIfPresent(App.self, forKey: .app)
+            target = try c.decodeIfPresent(Target.self, forKey: .target)
+        }
+    }
 
     func token() async throws -> Token {
         let (data, response) = try await URLSession.shared.data(from: base.appending(path: "token"))
@@ -34,12 +55,15 @@ struct VoiceBridge: Equatable {
         return try JSONDecoder().decode(Token.self, from: data)
     }
 
-    func run(callID: String, name: String, arguments: String) async throws -> ToolResult {
+    /// `checked`: for tap_text, the app and element text the phone cleared; without it tap_text only answers "check".
+    func run(callID: String, name: String, arguments: String, checked: [String: String]? = nil) async throws -> ToolResult {
         var request = URLRequest(url: base.appending(path: "tool"), timeoutInterval: 75)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "content-type")
         let args = (try? JSONSerialization.jsonObject(with: Data(arguments.utf8))) ?? [String: Any]()
-        request.httpBody = try JSONSerialization.data(withJSONObject: ["call_id": callID, "name": name, "arguments": args])
+        var body: [String: Any] = ["call_id": callID, "name": name, "arguments": args]
+        if let checked { body["checked"] = checked }
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, response) = try await URLSession.shared.data(for: request)
         try Self.check(response, data)
         return try JSONDecoder().decode(ToolResult.self, from: data)
@@ -184,6 +208,15 @@ final class VoiceModel {
     private var wantsResponse = false
     private var localTools: Set<String> = []
     private let log = AppLog.shared
+    /// Poki's approval for a tap (PokiCore's rules and approval card): text, app bundle id, app name.
+    private let clearTap: @MainActor (String, String?, String?) async -> TapClearance
+
+    /// How long a tap waits for the owner's OK on the phone.
+    static let approvalWait: Double = 60
+
+    init(clearTap: @escaping @MainActor (String, String?, String?) async -> TapClearance) {
+        self.clearTap = clearTap
+    }
 
     var isOn: Bool { link != nil }
 
@@ -345,8 +378,23 @@ final class VoiceModel {
                 output = Self.localTool(call.name)
             } else if let bridge {
                 do {
-                    let result = try await bridge.run(callID: call.id, name: call.name, arguments: call.arguments)
-                    output = result.output
+                    var result = try await bridge.run(callID: call.id, name: call.name, arguments: call.arguments)
+                    var note = ""
+                    if result.state == "check", let target = result.target {
+                        // A tap: Poki's approval rules first, and the owner's OK on the phone when they ask for it.
+                        let app = result.app
+                        let clearance = await clearTap(target.says, app?.bundle_id, app?.name)
+                        if clearance.mayTap {
+                            if case .approved(let why) = clearance { note = "The user allowed it on the phone (\(why)). "; log.add("voice", "tap approved: \(why)") }
+                            var checked = ["text": target.text]
+                            checked["app"] = app?.bundle_id
+                            result = try await bridge.run(callID: call.id, name: call.name, arguments: call.arguments, checked: checked)
+                        } else {
+                            result = Self.refused(clearance)
+                            log.add("voice", "tap not sent: \(result.output)")
+                        }
+                    }
+                    output = note + result.output
                     if result.state != "done" { state = .failed }
                 } catch {
                     // The bridge may have run it; never send it again. The model hears that the outcome is unknown.
@@ -451,6 +499,16 @@ final class VoiceModel {
         let parts = text.split(separator: "-").compactMap { Int($0) }
         guard let first = parts.first, let last = parts.last, first >= 1, last >= first, last <= 99 else { return nil }
         return first...last
+    }
+
+    private static func refused(_ clearance: TapClearance) -> VoiceBridge.ToolResult {
+        let output: String
+        switch clearance {
+        case .declined(let why): output = "not_sent: the user declined on the phone (\(why)). Nothing was tapped."
+        case .unanswered(let why): output = "not_sent: the user did not allow it on the phone in time (\(why)). Nothing was tapped."
+        case .clear, .approved: output = ""
+        }
+        return VoiceBridge.ToolResult(state: "failed", output: output)
     }
 
     private static func note(_ text: String) -> [String: Any] {

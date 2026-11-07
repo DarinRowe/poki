@@ -15,6 +15,13 @@ struct VoiceView: View {
         @Bindable var voice = voice
         NavigationStack {
             List {
+                // A tap that sends, pays, deletes or calls waits here (and in the notification) for the person.
+                if !app.approvals.isEmpty {
+                    Section {
+                        ForEach(app.approvals, id: \.id) { ApprovalCard(approval: $0) }
+                    }
+                    .listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
+                }
                 Section {
                     HStack(spacing: 14) {
                         Image(systemName: symbol).font(.title).foregroundStyle(voice.isOn ? Brand.blue : .secondary)
@@ -81,7 +88,10 @@ struct VoiceView: View {
 
     private func begin() async {
         micDenied = !(await AVAudioApplication.requestRecordPermission())
-        if !micDenied { await voice.start() }
+        guard !micDenied else { return }
+        // Taps that send, pay, delete or call ask for the person's OK, also by notification.
+        ApprovalNotice.requestPermission()
+        await voice.start()
     }
 
     private var symbol: String {
