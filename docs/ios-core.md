@@ -541,6 +541,13 @@ Each answer is facts only: the app in front, numbered elements, what each action
 - **The host's screenshot beside a busy runner gets 6 s, not 15.** A look under a wedged runner
   waited 18 s before it fell back; an answer at 6 s with the picture and the runner's state keeps
   the model moving. The 15 s stay for the path taken after a runner that was free gave none.
+- **A failed type reads the field through GET /element/active, in-process too.** In the
+  in-process session that request is the same accessibility snapshot as a tree read (InProcessWDA
+  takes the focused field out of `sourceXML`'s focus out-param, and the value and placeholder
+  lookups after it come from that cached dict), not the XCTest query that hung the runner for
+  19 s, so reading the field from the tree instead would save nothing there and would need the
+  in-process XML to carry focused and placeholder attributes it does not have. The focus wait
+  before typing stays on tree reads. Checked Nov 7 2026 against poki/ios-integration ea223c5.
 - **A type waits for a busy runner as long as its action allows.** A type gave up after 3 s with
   "the runner is still finishing an earlier GET /source" while 7 s of its 9 s were left; the
   runner was serving this side's own leftover read from the look before, and the model paid a
