@@ -14,6 +14,8 @@ struct Layout {
     /// Bars sit on top of the content wherever they are in the tree.
     static let bars: Set<String> = ["NavigationBar", "TabBar", "Toolbar", "Keyboard", "StatusBar"]
     static let scrollers: Set<String> = ["ScrollView", "Table", "CollectionView", "WebView"]
+    /// What a bar at the bottom of the screen is made of; a Cell or a text there is a row.
+    static let chromeTypes: Set<String> = ["Other", "Group", "Image", "Button", "Toolbar", "TabBar", "NavigationBar", "SegmentedControl"]
 
     /// The elements drawn over `target`: bars, and elements later in the tree that are neither inside
     /// it nor around it and that are not big containers (half the screen or more holds things, it
@@ -86,9 +88,21 @@ struct Layout {
         // Only what sits on the list's top or bottom edge is a bar over it. Rows an app lists beside
         // the list instead of inside it lie across the middle and are what the finger should move.
         let list0 = area
-        let over = (list.map(covers) ?? all.filter { Self.bars.contains($0.type) }).map(\.frame)
-            .filter { $0.width >= 0.5 * list0.width && $0.height <= 0.35 * list0.height }
-        for c in over where c.maxY >= list0.maxY - 2 && c.y > list0.y { area.height = max(0, min(area.maxY, c.y) - area.y) }
+        // Anything wide in the screen's bottom 160 points counts as a bar too, whatever its type
+        // (gym: Safari's address capsule is an Other over an Image, and a drag from it opened the
+        // tab overview), unless it is part of the list or a row (apps list rows beside the list).
+        let low = all.filter { e in Self.chromeTypes.contains(e.type) && e.frame.y >= screen.height - 160 && !(list.map { $0.contains(e) } ?? false) && e.node != list?.node }
+        let overElements = ((list.map(covers) ?? all.filter { Self.bars.contains($0.type) }) + low)
+            .filter { $0.frame.width >= 0.5 * list0.width && $0.frame.height <= 0.35 * list0.height }
+        let over = overElements.map(\.frame)
+        // A bar sits on the list's bottom edge; a bar-like element (not a row) in the list's bottom
+        // third counts too (the capsule ends 50 points above the web view's bottom).
+        for e in overElements {
+            let c = e.frame
+            let atEdge = c.maxY >= list0.maxY - 2
+            let lowChrome = Self.chromeTypes.contains(e.type) && c.y >= list0.maxY - 0.3 * list0.height
+            if (atEdge || lowChrome) && c.y > list0.y { area.height = max(0, min(area.maxY, c.y) - area.y) }
+        }
         for c in over where c.y <= list0.y + 2 && c.maxY < list0.maxY {
             let top = min(area.maxY, max(area.y, c.maxY))
             area.height = area.maxY - top

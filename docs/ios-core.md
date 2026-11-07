@@ -492,6 +492,22 @@ Each answer is facts only: the app in front, numbered elements, what each action
   than the tool's own, the answer ends with "at the MCP: 12.1 s from the request to this answer,
   9.2 s of it the tool's own, 2.5 s waiting for the call before to finish, 0.4 s making the
   answer". What is left is the relay and the network, outside PokiCore.
+- **A scroll's drag starts above the bottom chrome and stops when a swipe changed the screen.**
+  A drag that started on Safari's address capsule opened the tab overview, and four more swipes
+  "stopped moving" on it. Anything wide in the screen's bottom 160 points, whatever its type,
+  now counts as a bar for the swipe area, a bar in the list's bottom third cuts the area at its
+  top, and the scroll's drag runs from 80 % to 8 % of the area instead of around its centre. When
+  the read after a swipe shows another app in front, or everything around the list and
+  everything in it is gone and replaced, the scroll ends with "the last swipe changed the screen
+  (it shows TextView "TabOverview", …): the list is gone, so the scroll stopped".
+- **A bare host typed into Safari's address field gets a hint.** "example.com" and the Go key
+  never navigated in the gym (3 of 3: the suggestions stayed), "https://example.com/" loaded in
+  2 s. A type into a Safari text field of a dotted word with no scheme adds "; a bare host in
+  Safari's address field: the Go key did not open it in tests, so type it with its scheme
+  ("https://example.com") before the key".
+- **The host's screenshot beside a busy runner gets 6 s, not 15.** A look under a wedged runner
+  waited 18 s before it fell back; an answer at 6 s with the picture and the runner's state keeps
+  the model moving. The 15 s stay for the path taken after a runner that was free gave none.
 - **One element covering the screen with no parts in the tree says so.** Photos' home has its
   Library grid as one Button of 402x586 with the photos nowhere in WDA's XML (the SwiftUI grid is
   one accessibility element), so its centre is one photo among many. A Button, Cell, Image, Link

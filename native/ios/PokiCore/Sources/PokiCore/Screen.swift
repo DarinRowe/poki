@@ -240,7 +240,9 @@ extension Runner {
         // A runner already busy when the read starts is likely to give no picture in time: the
         // host's own path starts now, beside the runner's, so the two are not in series (gym: a
         // wedged runner's call spent 4 s on the runner's screenshot and then 10 s on simctl).
-        let hostTimeNow = callEnds.map { Swift.max(1.5, Swift.min(15, $0 - now() - 0.5)) } ?? 6
+        // Up to 6 s: a look under a wedged runner waited 18 s for it in the gym, and an answer at
+        // 6 s with the picture and the runner's state keeps the model moving.
+        let hostTimeNow = callEnds.map { Swift.max(1.5, Swift.min(6, $0 - now() - 0.5)) } ?? 6
         let hostEarly: Task<Data?, Never>? = wantPicture && busyWith != nil && screenshotFallback != nil
             ? Task { [fallback = screenshotFallback!] in (try? await withDeadline(hostTimeNow, "the host's screenshot") { await fallback() }) ?? nil }
             : nil

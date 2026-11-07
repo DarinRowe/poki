@@ -1147,6 +1147,48 @@ final class GymTests: XCTestCase {
         XCTAssertFalse(second.text.contains("busy: another call"), second.text)
     }
 
+    /// Gym: "example.com" + the Go key never navigated in Safari (3/3), "https://example.com/" did.
+    func testATypeOfABareHostIntoSafarisAddressFieldSaysToAddTheScheme() async {
+        let (core, wda, _) = makeCore()
+        wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": "com.apple.mobilesafari", "name": "Safari"]]) }
+        let field = FaultTests.Field()
+        field.install(wda)
+        _ = await core.call("look", [:])
+        let bare = await core.call("do", ["actions": [["type": "example.com", "ref": 1]]])
+        XCTAssertTrue(bare.text.contains("a bare host in Safari's address field: the Go key did not open it in tests, so type it with its scheme (\"https://example.com\")"), bare.text)
+        let full = await core.call("do", ["actions": [["type": "https://example.com/", "ref": 1, "clear": true]]])
+        XCTAssertFalse(full.text.contains("a bare host"), full.text)
+    }
+
+    /// Gym: a scroll's drag started on Safari's address capsule and opened the tab overview; four
+    /// more swipes then "stopped moving". The drag now starts above anything wide at the bottom,
+    /// and a swipe whose read shows another screen ends the scroll and says so.
+    func testScrollToStartsAboveTheBottomChromeAndStopsWhenASwipeChangedTheScreen() async {
+        let (core, wda, _) = makeCore()
+        wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": "com.apple.mobilesafari", "name": "Safari"]]) }
+        let page: [Node] = [
+            Node("WebView", nil, [0, 100, 390, 744], (0..<6).map { Node("StaticText", "Paragraph \($0)", [20, Double(120 + $0 * 90), 350, 60]) }),
+            Node("Image", "capsule_with_toolbar_shadow", [-30, 689, 462, 163]),
+            Node("Other", "CapsuleNavigationBar", [28, 748, 346, 45], [Node("Button", "Tabs", [320, 752, 40, 40])]),
+            Node("Button", "Back", [20, 800, 40, 40]), Node("Button", "Share", [180, 800, 40, 40]), Node("Button", "Bookmarks", [260, 800, 40, 40]),
+        ]
+        let overview: [Node] = [Node("TextView", "TabOverview", [0, 60, 390, 700]), Node("Button", "Example Domain", [67, 62, 268, 401]), Node("Button", "Close", [320, 70, 40, 40]), Node("Button", "Done", [330, 790, 50, 40]), Node("Button", "New Tab", [170, 790, 50, 40])]
+        wda.tree(page, app: "Safari")
+        let drags = LockedBox<[(Double, Double)]>([])
+        wda.set("POST /wda/pressAndDragWithVelocity") { body in
+            drags.update { $0.append((body?["fromY"]?.double ?? 0, body?["toY"]?.double ?? 0)) }
+            wda.tree(overview, app: "Safari")
+            return (200, ["value": .null])
+        }
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["scroll_to": "Learn more"]]])
+        XCTAssertEqual(drags.value.count, 1, result.text)
+        XCTAssertLessThan(drags.value.first?.0 ?? 999, 689, "the drag starts above the capsule's shadow: \(result.text)")
+        XCTAssertGreaterThan(drags.value.first?.0 ?? 0, 400, "and still low in the page: \(result.text)")
+        XCTAssertTrue(result.text.contains("1 swipes, \"Learn more\" not found: the last swipe changed the screen (it shows TextView \"TabOverview\", Button \"Example Domain\", Button \"Close\"): the list is gone, so the scroll stopped"), result.text)
+        XCTAssertFalse(result.text.contains("stopped moving"), result.text)
+    }
+
     /// Photos' home: the Library grid is one Button of 402x586 with the photos nowhere in the tree
     /// (the gym's raw XML), so its centre is one photo among many. The line says so.
     func testAnElementCoveringTheScreenAloneSaysItsPartsAreNotInTheTree() async {

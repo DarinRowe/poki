@@ -109,7 +109,15 @@ extension Computer {
         default: throw ActionFailure(message: "swipe must be up, down, left or right", delivery: .notSent)
         }
         let half = (d.0 != 0 ? area.width : area.height) * (distance == "short" ? 0.2 : distance == "scroll" ? 0.36 : 0.35)
-        let (cx, cy) = area.centre
+        var (cx, cy) = area.centre
+        // A scroll's drag runs from 8 % to 80 % of the area, not around its centre: a finger put
+        // down low grabs what sits at the bottom (gym: Safari's address capsule, and the drag up
+        // from it opened the tab overview).
+        if distance == "scroll" {
+            let shift = (d.0 != 0 ? area.width : area.height) * 0.06
+            cx += d.0 * shift
+            cy += d.1 * shift
+        }
         return (cx - d.0 * half, cy - d.1 * half, cx + d.0 * half, cy + d.1 * half)
     }
 
@@ -137,6 +145,15 @@ extension Computer {
             swipeUnread = true
             throw e
         }
+    }
+
+    /// A bare host typed into Safari's address field: the Go key did not navigate on it in the gym
+    /// (3 of 3; the suggestions stayed), while the same with a scheme loaded the page in 2 s.
+    func safariAddressNote(_ target: Element?, _ text: String) -> String {
+        guard lastForeground?.bundleID == "com.apple.mobilesafari", let target, ["TextField", "SearchField"].contains(target.type) else { return "" }
+        let t = text.trimmingCharacters(in: .whitespaces)
+        guard !t.contains("://"), !t.contains(" "), t.contains("."), !t.hasSuffix(".") else { return "" }
+        return "; a bare host in Safari's address field: the Go key did not open it in tests, so type it with its scheme (\"https://\(t)\") before the key"
     }
 
     func tap(_ p: (x: Double, y: Double)) async throws {
@@ -177,7 +194,7 @@ extension Computer {
             let readBack = reads.map { hidden ? "; the field now holds \($0.count) characters" : "; the field now reads \"\($0.count > 200 ? String($0.prefix(190)) + "…" : $0)\"" }
                 ?? "; the field could not be read back (no focused field answered in time), so check the elements or the picture"
             if let ref = action["ref"]?.int { typedInto = (ref, text) }
-            return ("type", "\(describe(action)) (\(via))\(readBack)\(focusNote(reads.map { $0.contains(text) } ?? false))\(note)")
+            return ("type", "\(describe(action)) (\(via))\(readBack)\(focusNote(reads.map { $0.contains(text) } ?? false))\(note)\(safariAddressNote(target, text))")
         }
         if action["back"] != nil {
             return ("back", try await back(until: until))
@@ -579,6 +596,10 @@ extension Computer {
                     return notYet("the read after the last swipe did not come; nothing is swiped again until it has")
                 }
                 swipeUnread = false
+                if let what = swipeChangedTheScreen(from: all, to: seen.elements, in: region, now: seen.foreground) {
+                    all = seen.elements
+                    return "\(swipes) swipes, \(wanted) not found: the last swipe changed the screen (\(what)): the list is gone, so the scroll stopped; what is on screen now is listed below"
+                }
                 corrective = !corrected && scrolledPastAScreen(from: all, to: seen.elements, in: region)
                 if corrective { overshoots += 1 }
                 let signature = seen.elements.map { "\($0.key)@\(Int($0.frame.y))" }.joined(separator: ";")
@@ -633,6 +654,22 @@ extension Computer {
         }
         let a = inside(before), b = inside(after)
         return a.count >= 4 && b.count >= 4 && a.isDisjoint(with: b)
+    }
+
+    /// A swipe that did something other than scroll (gym: a drag that started on Safari's address
+    /// capsule opened the tab overview, and four more swipes "stopped moving" on it): the app in
+    /// front changed, or everything around the list (the bars, the chrome) is gone and replaced.
+    func swipeChangedTheScreen(from before: [Element], to after: [Element], in region: Rect, now: Foreground?) -> String? {
+        if let was = lastForeground?.bundleID, let is_ = now?.bundleID, was != is_ { return "\(now?.describe ?? is_) is in front now" }
+        func named(_ es: [Element]) -> [Element] { es.filter { !$0.text.isEmpty && !Self.containers.contains($0.type) } }
+        func meets(_ f: Rect) -> Bool { f.x < region.maxX && f.maxX > region.x && f.y < region.maxY && f.maxY > region.y }
+        // What stood around the list (the bars, the chrome) is all gone, and nothing in the list's
+        // area stayed either: a scroll keeps the chrome and overlaps its reads.
+        let chrome = Set(named(before).filter { !meets($0.frame) }.map(\.key))
+        let inside = Set(named(before).filter { meets($0.frame) }.map(\.key))
+        let afterKeys = Set(named(after).map(\.key))
+        guard chrome.count >= 2, inside.count >= 2, afterKeys.count >= 3, chrome.isDisjoint(with: afterKeys), inside.isDisjoint(with: afterKeys) else { return nil }
+        return "it shows " + named(after).prefix(3).map { "\($0.type) \"\($0.text.prefix(30))\"" }.joined(separator: ", ")
     }
 
     /// The time one scroll_to may take: more than an action, since it reports where it got to.

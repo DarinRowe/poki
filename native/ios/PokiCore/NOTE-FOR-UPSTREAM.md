@@ -100,6 +100,8 @@ that no answer may halt the agent and from the first Poki Gym runs (`native/ios-
     Library grid, is listed with a note to tap a point on the picture.
 21. `scroll_to` drags 72 % of the region and checks overlap by element frames before any drag back;
     a call whose time at the MCP exceeds the tool's own by over 2 s ends with an `at the MCP:` line.
+22. A Safari hint to add the scheme to a bare host; scroll drags stay clear of the bottom chrome and
+    stop when a swipe changed the screen; the host screenshot beside a busy runner is capped at 6 s.
 
 Still not done: a `collect` or `expect` field, a `recover` action, and redaction of sensitive text
 (Zhehan: out of scope for now).
