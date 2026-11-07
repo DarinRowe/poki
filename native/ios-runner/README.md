@@ -15,7 +15,7 @@ dSYMs and uploads two unsigned IPAs with their SHA-256 sums as the `poki-runner-
   WebDriverAgent's own real-device package does; they come from the phone's developer image.
 - `poki-runner-unsigned-with-frameworks.ipa` keeps them.
 
-It runs on every push to `dev/ios-runner` and on demand. The IPA is signed when it is installed (for
+It runs on demand and for `ios-v*` release tags. The IPA is signed when it is installed (for
 now AltStore with the user's Apple ID).
 
 ## Poki Probe
