@@ -2,9 +2,10 @@
 
 Poki on the phone talks to the phone's own developer services (lockdown on 62078, RemotePairing on
 49152) at 10.7.0.1. Something on the phone has to send connections to 10.7.0.1 straight back to the
-phone. iOS allows only one VPN at a time, so instead of Poki taking that slot, the proxy app the user
-already runs does it. Keep the address at 10.7.0.1: Shadowrocket hard-codes it, and SideStore-style
-tools use the same one.
+phone. Poki's built-in connection does that with a VPN of its own. iOS allows only one VPN at a time,
+so someone who already runs a proxy app can let it do the same instead, with the setups below, and keep
+their VPN. Keep the address at 10.7.0.1: Shadowrocket hard-codes it, and SideStore-style tools use the
+same one.
 
 The reflect swaps the addresses only, not the ports: a connection to 10.7.0.1:49152 arrives at the
 phone's own port 49152. Each setup below also keeps IPv6 off on the proxy's tunnel interface,
