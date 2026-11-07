@@ -115,6 +115,15 @@ test('cancel interrupts the human dialog process and never executes the approved
 });
 
 
+test('list_devices sends the user to Finder when usbmuxd answers with no device',async t=>{
+ const f=await fixture(t);await f.set({simulatorOnly:true,simulatorBooted:true});
+ const listed=value(await f.call('list_devices'));
+ assert.deepEqual(listed.devices.map(d=>d.id),['fixture-sim']);
+ assert.match(listed.notice,/Finder sidebar/);assert.match(listed.notice,/devicectl reaches only over the network/);
+ await f.set({simulatorOnly:false});
+ assert.equal(value(await f.call('list_devices')).notice,undefined);
+});
+
 test('an occupied simulator cannot be booted through explicit, selected or batch paths',async t=>{
  const f=await fixture(t);await f.set({simulatorOnly:true});
  assert.ok(value(await f.call('acquire_device',{device:'fixture-sim'})).lease_id);

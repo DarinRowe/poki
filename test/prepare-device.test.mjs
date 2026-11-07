@@ -34,3 +34,15 @@ for (const [name, output, explanation] of failures) {
     assert.doesNotMatch(failed.stderr, /panicked|at file:/);
   });
 }
+
+test('prepare-device sends the user to Finder when usbmuxd answers with no device', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'poki-prepare-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await mkdir(join(dir, 'bin'));
+  await writeFile(join(dir, 'bin/python3'), `#!/bin/sh\necho '[]'\n`, { mode: 0o755 });
+  const env = { ...process.env, PATH: `${join(dir, 'bin')}:${process.env.PATH}`, IDEVICE_TOOLS: join(dir, 'bin/idevice') };
+  const failed = await run(process.execPath, [script], { env }).then(() => assert.fail('preparation succeeded'), error => error);
+  assert.equal(failed.code, 1);
+  assert.match(failed.stderr, /Finder sidebar/);
+  assert.match(failed.stderr, /devicectl reaches only over the network/);
+});
