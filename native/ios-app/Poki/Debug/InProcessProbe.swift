@@ -117,7 +117,11 @@ final class InProcessProbe: ObservableObject {
         _ = await type(Self.sample)
         try? await Task.sleep(for: .seconds(0.8))
         let value = await focusedValue()
-        note("read back in the front app: \(value == Self.sample ? "same as sent" : value.map { "differs (\($0.count) characters)" } ?? "no focused field")", ["step": "read_back_front", "same": value == Self.sample])
+        // A field that already held text (a fixture app kept running since an earlier check) ends with
+        // the sample instead of equalling it.
+        let appended = value.map { $0 != Self.sample && $0.hasSuffix(Self.sample) } ?? false
+        note("read back in the front app: \(value == Self.sample ? "same as sent" : appended ? "sent text appended to what the field held" : value.map { "differs (\($0.count) characters)" } ?? "no focused field")",
+             ["step": "read_back_front", "same": value == Self.sample, "appended": appended, "focused": value != nil, "characters": value?.count ?? 0])
         await read()
     }
 

@@ -13,7 +13,7 @@ if [ "${1:-}" = "--apps" ]; then MODE=apps; shift; fi
 REPO="$(cd "$HERE/../../../.." && pwd)"
 NATIVE="$(cd "${1:-$REPO/native/ios-app/Poki/Native}" && pwd)"
 X="$(xcode-select -p)/Platforms/iPhoneSimulator.platform/Developer"
-TEXT="ESP173 读屏"
+TEXT="${POKI_CHECK_TEXT:-ESP173 读屏}"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/poki-inprocess.XXXXXX")"
 UDID=""
 cleanup() {
@@ -71,7 +71,7 @@ PY
   echo "in-process launch, launch, activate, relaunch and terminate passed"
   exit 0
 fi
-xcrun simctl launch "$UDID" local.poki.inprocess-check -mode field -tag field -delay 8 -text "$TEXT" >/dev/null
+xcrun simctl launch "$UDID" local.poki.inprocess-check -mode field -tag field -delay 8 -text "$TEXT" -times "${POKI_CHECK_TIMES:-1}" >/dev/null
 sleep 3
 xcrun simctl launch "$UDID" local.pokimcp.fixture >/dev/null
 for _ in $(seq 60); do [ -s "$DOCS/field.json" ] && break; sleep 1; done

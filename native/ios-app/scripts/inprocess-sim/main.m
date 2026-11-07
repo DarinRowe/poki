@@ -27,7 +27,9 @@ static NSDictionary *Run(NSString *mode, NSString *tag, NSString *text) {
     PKOutcome *tap = [PKInProcess.shared touch:@[@[[PKTouchPoint at:c offset:0], [PKTouchPoint at:c offset:0.05]]] timeout:5];
     out[@"tap"] = @(tap.delivery);
     [NSThread sleepForTimeInterval:1];
-    PKOutcome *typed = [PKInProcess.shared type:text timeout:5];
+    NSInteger times = MAX(1, [NSUserDefaults.standardUserDefaults integerForKey:@"times"]);
+    PKOutcome *typed = nil;
+    for (NSInteger i = 0; i < times; i++) { typed = [PKInProcess.shared type:text timeout:5]; [NSThread sleepForTimeInterval:0.5]; }
     out[@"type"] = @(typed.delivery);
     [NSThread sleepForTimeInterval:1];
     NSDictionary *focus;
