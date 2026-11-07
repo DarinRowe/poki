@@ -164,6 +164,9 @@ final class ChatModel {
 
     private func ended(_ outcome: PiLoop.Outcome, delivered youID: UUID) {
         finishPlan()
+        // The turn is over: the phone goes back to the app the task began in (Poki's chat, where the
+        // reply is), as a client's finish does (ESP-176). Nothing moves when it is in front already.
+        app.finishTask()
         switch outcome {
         case .done: markDelivered(youID)
         case .stopped: add(.poki(String(localized: "Stopped.")))

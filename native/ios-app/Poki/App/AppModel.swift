@@ -33,8 +33,8 @@ final class AppModel {
     /// The runner is stopped until the next agent request (idle, or the owner tapped Stop runner).
     private(set) var runnerPaused = false
     /// Stop the runner after this long without agent activity; 0 never stops it.
-    /// Two minutes by default: an agent can think for a minute between steps of a long task, and the
-    /// runner must not stop (and the banner flash) in the middle of it.
+    /// 60 s by default. An agent can think for about a minute between steps of a long task; after a
+    /// longer pause the runner stops, and the agent's next request starts it again.
     var idleStopSeconds: Int = UserDefaults.standard.object(forKey: "idleStopSeconds.v4") as? Int ?? 60 {
         didSet { UserDefaults.standard.set(idleStopSeconds, forKey: "idleStopSeconds.v4"); log.add("runner", "idle stop set to \(idleStopSeconds) s") }
     }
@@ -622,6 +622,11 @@ final class AppModel {
 
     /// A tool call from the chat's model loop. Poki turns on first when it is off (the runner then starts
     /// on this call, like for an agent's first request); when it cannot, the answer says why.
+    /// The chat's turn ended: the phone goes back to the app the task began in, and the log says how.
+    func finishTask() {
+        Task { [core, log] in if let line = await core.finishTask() { log.add("runner", line) } }
+    }
+
     func runTool(_ name: String, arguments: String) async -> PokiCore.ToolAnswer {
         if !sessionOn { startSession() }
         guard sessionOn else {
