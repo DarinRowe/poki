@@ -53,7 +53,7 @@ else if(tool==='idevice') {
  if(args.includes('screenshot')) {if(state.screenshotUnavailable){console.error('Screenshot service unavailable');process.exit(1);}copyFileSync(process.env.FIXTURE_IMAGE,args.at(-1));console.log('Screenshot saved to: fixture');}
  else if(args.includes('screencapture')) {if(state.failRecording)process.exit(1);if(!state.recordingBlock)process.stdout.write('frame');process.stdin.resume();setInterval(()=>{},10000);}
  else console.log(JSON.stringify(args.at(-1)==='ScreenScaleFactor'?1:args.at(-1)==='DeviceName'?'Fixture Phone':'fixture'));
-} else if(tool==='ocr') {if(state.ocrUnavailable){console.error('Text recognition unavailable');process.exit(1);}if(state.ocrXs?.length>1)writeFileSync(process.env.FIXTURE_STATE,JSON.stringify({...state,ocrXs:state.ocrXs.slice(1)}));console.log(JSON.stringify([{text:state.appearsAfterReads?'Loading':state.ocrLabel??state.label??'First',x:state.ocrXs?.[0]??10,y:10,width:40,height:20}]));}
+} else if(tool==='ocr') {if(state.ocrUnavailable){console.error('Text recognition unavailable');process.exit(1);}if(state.ocrDelayMs)await new Promise(done=>setTimeout(done,state.ocrDelayMs));if(state.ocrXs?.length>1)writeFileSync(process.env.FIXTURE_STATE,JSON.stringify({...state,ocrXs:state.ocrXs.slice(1)}));console.log(JSON.stringify([{text:state.appearsAfterReads?'Loading':state.ocrLabel??state.label??'First',x:state.ocrXs?.[0]??10,y:10,width:40,height:20}]));}
 else if(tool==='simulator') {
  const connectionKeyboard=state.keyboard;
  const applyInput=req=>{

@@ -203,11 +203,25 @@ export class Devices {
     return frame.ocr ??= phase('ocr', () => this.readOCR(frame));
   }
   async readOCR(frame) {
+    if (this.ocrUnavailable) throw new Error(this.ocrUnavailable);
     const file = join(stateDir, 'frames', `${randomUUID()}-ocr.png`);
+    const binary = join(root, 'build/ocr');
     try {
       await writeFile(file, frame.data, { mode: 0o600 });
-      const { stdout } = await this.run(join(root, 'build/ocr'), [file]);
+      const { stdout } = await this.run(binary, [file]);
       return JSON.parse(stdout).map(e => ({ ...e, label: e.text, type: 'StaticText', frame: { x:e.x,y:e.y,width:e.width,height:e.height } }));
+    } catch (error) {
+      // A caller's deadline is not a broken recognizer; it must not be remembered as one.
+      if (stopped(error)) throw error;
+      // The recognizer is a host binary (Vision on macOS, tesseract on Linux). Only the binary being
+      // absent is permanent: a run that failed once - a frame it could not decode, a crashed Vision
+      // process - must not switch recognition off for the rest of the daemon's life.
+      const absent = error.code === 'ENOENT' || error.code === 'EACCES' || /\b(ENOENT|EACCES)\b/.test(error.message ?? '');
+      const message = absent
+        ? `Screen text recognition is unavailable on this host: ${binary} is missing or not executable. Only the accessibility tree can be read here.`
+        : `Screen text recognition failed on this frame: ${error.message}`;
+      if (absent) this.ocrUnavailable = message;
+      throw new Error(message);
     } finally { await unlink(file).catch(() => {}); }
   }
   async recognize(args = {}, existingFrame) {
