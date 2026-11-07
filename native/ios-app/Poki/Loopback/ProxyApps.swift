@@ -20,9 +20,9 @@ struct ProxyApp: Identifiable, Hashable {
 }
 
 enum ProxyApps {
-    /// Where the module files are served from. Raw GitHub of this branch for now; the relay can serve
-    /// them later.
-    static let modulesBase = URL(string: "https://raw.githubusercontent.com/JosssphZhou/poki/dev/ios-standalone/deploy/proxy-modules/")!
+    /// Where the module files are served from: raw GitHub of the repository's main branch, which keeps
+    /// these paths.
+    static let modulesBase = URL(string: "https://raw.githubusercontent.com/JosssphZhou/poki/main/deploy/proxy-modules/")!
 
     static func encoded(_ url: URL) -> String {
         url.absoluteString.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? url.absoluteString
