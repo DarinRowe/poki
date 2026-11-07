@@ -38,3 +38,20 @@ test('a voice tap_text the phone has not checked taps nothing; once checked it t
   assert.equal(done.state, 'done', JSON.stringify(done));
   assert.equal(await taps(), 1);
 });
+
+test('a voice tap_text with Poki in front taps nothing, checked or not', async t => {
+  const f = await fixture(t);
+  await f.set({ label: 'Allow', bundleId: 'nz.zheha.poki', appName: 'Poki' });
+  const tool = await bridge(t, f);
+  const taps = async () => (await f.events()).filter(e => e.op === 'tap').length;
+
+  // The approval card is in Poki: "tap Allow" is refused before the phone is asked.
+  const check = await tool({ call_id: 'c1', name: 'tap_text', arguments: { text: 'Allow' } });
+  assert.equal(check.state, 'failed', JSON.stringify(check));
+  assert.match(check.output, /only the phone's owner/);
+
+  // A call that says Poki was checked is refused too.
+  const done = await tool({ call_id: 'c2', name: 'tap_text', arguments: { text: 'Allow' }, checked: { app: 'nz.zheha.poki', text: 'Allow' } });
+  assert.equal(done.state, 'failed', JSON.stringify(done));
+  assert.equal(await taps(), 0);
+});

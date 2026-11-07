@@ -240,6 +240,53 @@ final class ApprovalTests: XCTestCase {
         XCTAssertEqual(settings, .clear)
     }
 
+    /// The approval card is in Poki: a voice "tap Allow" with Poki in front taps nothing, and the request
+    /// it would have granted stays for the owner.
+    func testAVoiceTapInPokiCannotApproveThePendingRequest() async throws {
+        let (core, _, _) = makeCore()
+        let send = Task { await core.clearTap(on: "Send", inApp: "com.apple.MobileSMS", named: "Messages", waiting: 3) }
+        let asked = await eventually { core.pendingApproval != nil }
+        XCTAssertTrue(asked, "the Send tap asks the owner")
+        let pending = try XCTUnwrap(core.pendingApproval)
+
+        let allow = await core.clearTap(on: "Allow", inApp: "nz.zheha.poki", named: "Poki", waiting: 1)
+        XCTAssertFalse(allow.mayTap, "\(allow)")
+        XCTAssertEqual(core.pendingApproval?.id, pending.id, "the owner still decides the Send tap")
+
+        core.resolveApproval(id: pending.id, approved: false)
+        let sent = await send.value
+        XCTAssertFalse(sent.mayTap)
+    }
+
+    /// Like `do`: another voice tap withdraws the request still waiting, so two taps never wait side by side.
+    func testAnotherVoiceTapWithdrawsThePendingRequest() async throws {
+        let (core, _, _) = makeCore()
+        let send = Task { await core.clearTap(on: "Send", inApp: "com.apple.MobileSMS", named: "Messages", waiting: 3) }
+        let asked = await eventually { core.pendingApproval != nil }
+        XCTAssertTrue(asked, "the Send tap asks the owner")
+        let pending = try XCTUnwrap(core.pendingApproval)
+
+        let settings = await core.clearTap(on: "Display & Brightness", inApp: "com.apple.Preferences", named: "Settings", waiting: 1)
+        XCTAssertEqual(settings, .clear)
+        XCTAssertNil(core.pendingApproval, "the Send request is withdrawn")
+        core.resolveApproval(id: pending.id, approved: true)  // a press that arrives late does nothing
+        let sent = await send.value
+        XCTAssertFalse(sent.mayTap, "\(sent)")
+    }
+
+    /// The relay agent's `do` never taps in Poki either.
+    func testDoTapsNothingInPoki() async {
+        let wda = FakeWDA()
+        wda.source([("Button", "Allow"), ("Button", "Deny")], app: "Poki")
+        wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": "nz.zheha.poki", "name": "Poki"]]) }
+        let (core, _, _) = makeCore(wda)
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["tap": 1]]])
+        XCTAssertTrue(result.isError, result.text)
+        XCTAssertTrue(result.text.contains("only the phone's owner"), result.text)
+        XCTAssertTrue(wda.bodies("POST /wda/tap").isEmpty)
+    }
+
     func testPasswordsNeedApproval() async {
         let wda = FakeWDA()
         wda.source([("TextField", "Email"), ("SecureTextField", "Password")])
