@@ -57,7 +57,7 @@ private struct FirstRun: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack { Spacer(); GearButton(action: openSettings) }
+            HStack(spacing: 8) { Spacer(); VoiceButton(); GearButton(action: openSettings) }
                 .frame(height: 52).padding(.horizontal, 16)
             VStack(alignment: .leading, spacing: 20) {
                 BearAvatar(size: 96)
@@ -145,6 +145,7 @@ private struct AtWork: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 PokiSwitch()
+                VoiceButton()
                 GearButton(action: openSettings)
             }
             .frame(height: 52).padding(.horizontal, 16)
@@ -186,7 +187,7 @@ private struct AtWork: View {
 }
 
 /// The approval, on a white card that floats above the blue.
-private struct ApprovalCard: View {
+struct ApprovalCard: View {
     @Environment(AppModel.self) private var model
     var approval: PendingApproval
     /// PokiCore's approvals last 30 s.
@@ -350,7 +351,7 @@ private struct StandingBy: View {
     var body: some View {
         let issues = Issue.current(model)
         VStack(spacing: 0) {
-            HStack { Spacer(); GearButton(action: openSettings) }
+            HStack(spacing: 8) { Spacer(); VoiceButton(); GearButton(action: openSettings) }
                 .frame(height: 52).padding(.horizontal, 16)
             VStack(alignment: .leading, spacing: 14) {
                 BearAvatar(size: 74).padding(4)

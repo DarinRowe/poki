@@ -228,6 +228,111 @@ final class ApprovalTests: XCTestCase {
         XCTAssertTrue(again.text.contains("approval_required"), again.text)
     }
 
+    func testTappingAContactInPhonePlacesNoCallWithoutTheOwner() async {
+        let wda = FakeWDA()
+        wda.source([("Cell", "Mom, mobile"), ("Button", "Keypad")], app: "Phone")
+        wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": "com.apple.mobilephone", "name": "Phone"]]) }
+        let (core, _, _) = makeCore(wda)
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["tap": 1]]])
+        XCTAssertTrue(result.text.contains("approval_required"), result.text)
+        XCTAssertTrue(wda.bodies("POST /wda/tap").isEmpty)
+        XCTAssertEqual(core.pendingApproval?.reason, "a call (in Phone)")
+    }
+
+    /// The Voice tab's "tap Send" goes through the Mac, not `do`; it is held by the same rules and the same approval.
+    func testAVoiceTapOnSendInMessagesWaitsForTheOwner() async {
+        let (core, _, _) = makeCore()
+        let unanswered = await core.clearTap(on: "Send", inApp: "com.apple.MobileSMS", named: "Messages", waiting: 0.2)
+        XCTAssertEqual(unanswered, .unanswered("sending a message (\"send\")"))
+        XCTAssertFalse(unanswered.mayTap)
+        XCTAssertNil(core.pendingApproval, "a request nobody answered is withdrawn")
+
+        Task {
+            _ = await eventually { core.pendingApproval != nil }
+            XCTAssertEqual(core.pendingApproval?.summary, "Tap “Send”")
+            XCTAssertEqual(core.pendingApproval?.app, "Messages")
+            core.resolveApproval(id: core.pendingApproval!.id, approved: true)
+        }
+        let approved = await core.clearTap(on: "Send", inApp: "com.apple.MobileSMS", named: "Messages", waiting: 2)
+        XCTAssertTrue(approved.mayTap, "\(approved)")
+
+        let settings = await core.clearTap(on: "Display & Brightness", inApp: "com.apple.Preferences", named: "Settings", waiting: 2)
+        XCTAssertEqual(settings, .clear)
+    }
+
+    /// The approval card is in Poki: a voice "tap Allow" with Poki in front taps nothing, and the request
+    /// it would have granted stays for the owner.
+    func testAVoiceTapInPokiCannotApproveThePendingRequest() async throws {
+        let (core, _, _) = makeCore()
+        let send = Task { await core.clearTap(on: "Send", inApp: "com.apple.MobileSMS", named: "Messages", waiting: 3) }
+        let asked = await eventually { core.pendingApproval != nil }
+        XCTAssertTrue(asked, "the Send tap asks the owner")
+        let pending = try XCTUnwrap(core.pendingApproval)
+
+        let allow = await core.clearTap(on: "Allow", inApp: "nz.zheha.poki", named: "Poki", waiting: 1)
+        XCTAssertFalse(allow.mayTap, "\(allow)")
+        XCTAssertEqual(core.pendingApproval?.id, pending.id, "the owner still decides the Send tap")
+
+        core.resolveApproval(id: pending.id, approved: false)
+        let sent = await send.value
+        XCTAssertFalse(sent.mayTap)
+    }
+
+    /// Like `do`: another voice tap withdraws the request still waiting, so two taps never wait side by side.
+    func testAnotherVoiceTapWithdrawsThePendingRequest() async throws {
+        let (core, _, _) = makeCore()
+        let send = Task { await core.clearTap(on: "Send", inApp: "com.apple.MobileSMS", named: "Messages", waiting: 3) }
+        let asked = await eventually { core.pendingApproval != nil }
+        XCTAssertTrue(asked, "the Send tap asks the owner")
+        let pending = try XCTUnwrap(core.pendingApproval)
+
+        let settings = await core.clearTap(on: "Display & Brightness", inApp: "com.apple.Preferences", named: "Settings", waiting: 1)
+        XCTAssertEqual(settings, .clear)
+        XCTAssertNil(core.pendingApproval, "the Send request is withdrawn")
+        core.resolveApproval(id: pending.id, approved: true)  // a press that arrives late does nothing
+        let sent = await send.value
+        XCTAssertFalse(sent.mayTap, "\(sent)")
+    }
+
+    /// A voice tap on an element with no readable text cannot be checked against the rules, so the owner
+    /// is asked (a Send button known only by its identifier would otherwise go through).
+    func testAVoiceTapWithNoReadableTextAsksTheOwner() async {
+        let (core, _, _) = makeCore()
+        let asked = Task { await eventually { core.pendingApproval != nil } }
+        let tap = await core.clearTap(on: "  ", inApp: "com.apple.MobileSMS", named: "Messages", waiting: 0.3)
+        let wasAsked = await asked.value
+        XCTAssertFalse(tap.mayTap, "\(tap)")
+        XCTAssertTrue(wasAsked, "the owner is asked on the phone")
+    }
+
+    /// An element can read "Done" and still be the Send button by its identifier; `do` checks both.
+    func testDoAsksForAButtonOnlyItsIdentifierCallsSend() async {
+        let wda = FakeWDA()
+        let button: JSON = ["type": "XCUIElementTypeButton", "label": "Done", "name": "send-button", "rect": ["x": 16, "y": 100, "width": 358, "height": 44]]
+        let root: JSON = ["type": "XCUIElementTypeApplication", "label": "Messages", "rect": ["x": 0, "y": 0, "width": 390, "height": 844], "children": [button]]
+        wda.set("GET /source") { _ in (200, ["value": root]) }
+        wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": "com.apple.MobileSMS", "name": "Messages"]]) }
+        let (core, _, _) = makeCore(wda)
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["tap": 1]]])
+        XCTAssertTrue(result.text.contains("approval_required"), result.text)
+        XCTAssertTrue(wda.bodies("POST /wda/tap").isEmpty)
+    }
+
+    /// The relay agent's `do` never taps in Poki either.
+    func testDoTapsNothingInPoki() async {
+        let wda = FakeWDA()
+        wda.source([("Button", "Allow"), ("Button", "Deny")], app: "Poki")
+        wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": "nz.zheha.poki", "name": "Poki"]]) }
+        let (core, _, _) = makeCore(wda)
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["tap": 1]]])
+        XCTAssertTrue(result.isError, result.text)
+        XCTAssertTrue(result.text.contains("only the phone's owner"), result.text)
+        XCTAssertTrue(wda.bodies("POST /wda/tap").isEmpty)
+    }
+
     func testPasswordsNeedApproval() async {
         let wda = FakeWDA()
         wda.source([("TextField", "Email"), ("SecureTextField", "Password")])

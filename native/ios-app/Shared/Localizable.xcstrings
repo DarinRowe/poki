@@ -3212,6 +3212,16 @@
         }
       }
     },
+    "Voice": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语音"
+          }
+        }
+      }
+    },
     "Waiting": {
       "extractionState": "manual",
       "localizations": {
