@@ -352,11 +352,15 @@ final class AppModel {
             // XCTest keeps one shared session per process and cannot open a second one, so the
             // in-process session stays open (and with it the banner) until Poki exits.
             log.add("runner", "standing by: \(reason); the in-process session stays open, and the banner with it, until Poki exits")
+            // The task ends here too, as with the runner (ESP-176): nothing is switched.
+            Task { [core] in _ = await core.finishTask(switching: false) }
             launcher.stop()
             standBy(reason: reason)
             return
         }
         log.add("runner", "stopping: \(reason)")
+        // The task ends with the runner; a client ending its session later sends nothing to it.
+        Task { [core] in _ = await core.finishTask(switching: false) }
         // The runner is asked to shut itself down (it ends its test and exits) and the launcher's
         // session is closed; the launcher also ends the process through the developer services.
         if !Self.onSimulator { Task { await RunnerProbe.shutdown() } }
@@ -429,7 +433,16 @@ final class AppModel {
         passcodeHint = runner.state == "launching" && launchingSince.map { Date().timeIntervalSince($0) > 10 } == true
         guard sessionOn, !runnerPaused, idleStopSeconds > 0, approvals.isEmpty, activityText == "Idle" else { return }
         if Date().timeIntervalSince(lastAgentActivity) >= Double(idleStopSeconds) {
-            pauseRunner(reason: "Stopped after \(idleStopSeconds / 60 > 0 ? "\(idleStopSeconds / 60) min" : "\(idleStopSeconds) s") without agent activity")
+            let reason = "Stopped after \(idleStopSeconds / 60 > 0 ? "\(idleStopSeconds / 60) min" : "\(idleStopSeconds) s") without agent activity"
+            // The task is over: the phone goes back to the app it began in while the runner can still
+            // switch apps, then the runner stops unless an agent came back meanwhile.
+            Task { [weak self, core] in
+                let line = await core.finishTask()
+                guard let self else { return }
+                if let line { self.log.add("runner", line) }
+                guard self.activityText == "Idle", Date().timeIntervalSince(self.lastAgentActivity) >= Double(self.idleStopSeconds) else { return }
+                self.pauseRunner(reason: reason)
+            }
         }
     }
 

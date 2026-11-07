@@ -44,6 +44,9 @@ final class Computer: @unchecked Sendable {
     var lastPNG: Data?
     var lastTree: String?
     var lastPicture: PictureSketch?
+    /// Where the owner asked: the app in front at the task's first look or do, and the MCP session
+    /// that made that call (nil from inside the app). The phone goes back there when the task ends.
+    var origin: (app: Foreground, session: String?, lastCall: Double)?
 
     /// The element the last scroll_to found, so the read after it can give its number (it may be
     /// past the listing's limit: the gym's 1,507-element grid had its button at 1506).
@@ -340,11 +343,13 @@ final class Computer: @unchecked Sendable {
         if ended { emit(.handoffEnded(id: id, how: "done")) }
     }
 
-    func look(full: Bool) async -> ToolResult {
+    func look(full: Bool, session: String? = nil) async -> ToolResult {
         let until = now() + config.toolDeadline
         if let blocked = await waitForRunner(until: until) { return blocked }
+        let begins = beginsTask()
         async let locked = isLocked()
         let result = restartNote(await readAndReply(until: until, full: full))
+        if begins, let app = lastForeground { origin = (app, session, now()) } else { origin?.lastCall = now() }
         guard await locked else { return result }
         var lines = result.text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         lines.insert("screen: locked (the owner has to unlock the phone before anything can be done)", at: min(1, lines.count))
@@ -392,16 +397,24 @@ final class Computer: @unchecked Sendable {
 
     // MARK: do
 
-    func act(actions: [JSON], full: Bool) async -> ToolResult {
-        restartNote(await actNow(actions: actions, full: full))
+    func act(actions: [JSON], full: Bool, finish: Bool = false, session: String? = nil) async -> ToolResult {
+        restartNote(await actNow(actions: actions, full: full, finish: finish, session: session))
     }
 
-    func actNow(actions: [JSON], full: Bool) async -> ToolResult {
+    func actNow(actions: [JSON], full: Bool, finish: Bool = false, session: String? = nil) async -> ToolResult {
         scrollFound = nil
         typedInto = nil
         var started = now()
         var until = started + config.toolDeadline
         if let blocked = await waitForRunner(until: until) { return blocked }
+        // The app the owner is in before anything is sent: the read before may be another task's.
+        if beginsTask() {
+            if let front = try? await runner.call("GET", "/wda/activeAppInfo", timeout: 1.5), let bundle = front["bundleId"]?.string {
+                origin = (Foreground(bundleID: bundle, name: front["name"]?.string), session, now())
+            }
+        } else {
+            origin?.lastCall = now()
+        }
 
         // A runner still finishing a request this side gave up on gets nothing new: what is sent now
         // would wait its turn and run late, after the model had moved on.
@@ -507,15 +520,55 @@ final class Computer: @unchecked Sendable {
                 did.append("paused \(Int((pause * 1000).rounded())) ms before reading")
             }
         }
-        let result = await readAndReply(until: until, full: full, changes: true, did: did, error: error, extra: (approvedNote.map { [$0] } ?? []) + extra)
+        var result = await readAndReply(until: until, full: full, changes: true, did: did, error: error, extra: (approvedNote.map { [$0] } ?? []) + extra)
         // The read shows Poki in front where another app was being worked in: a tap at the top of
         // the screen landed on Poki's Live Activity in the Dynamic Island. The app comes back and
         // the read is made again, so the model never sees (or acts in) Poki's own screen.
         if config.isPoki(lastForeground), !toRun.contains(where: { $0["launch"] != nil }), until - now() > config.readTimeout + 1,
            let back = await bringBack(from: before, why: "after the actions (a tap near the top of the screen lands on Poki's Live Activity in the Dynamic Island)", check: false) {
-            return await readAndReply(until: until, full: full, changes: true, did: did, error: error, extra: (approvedNote.map { [$0] } ?? []) + extra + [back])
+            result = await readAndReply(until: until, full: full, changes: true, did: did, error: error, extra: (approvedNote.map { [$0] } ?? []) + extra + [back])
+        }
+        // The read above is the work's last screen; the owner then sees their own app again.
+        if finish, error == nil {
+            let line = await returnToOrigin() ?? "finish: the app this task began in is not known, so the phone stays here"
+            var lines = result.text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+            lines.insert(line, at: min(1, lines.count))
+            result.text = lines.joined(separator: "\n")
         }
         return result
+    }
+
+    /// A call with no task open, or after `taskGap` without one, begins a task.
+    func beginsTask() -> Bool { origin.map { now() - $0.lastCall > config.taskGap } ?? true }
+
+    /// Ends the task: the app it began in comes to the front again (the home screen by the Home
+    /// button), and nothing is sent when it is in front already. nil when no task was open.
+    func returnToOrigin() async -> String? {
+        guard let task = origin else { return nil }
+        origin = nil
+        guard let bundle = task.app.bundleID else { return nil }
+        let front = try? await runner.call("GET", "/wda/activeAppInfo", timeout: 1.5)
+        if front?["bundleId"]?.string == bundle { return "finish: \(task.app.describe), where the task began, is in front" }
+        do {
+            if bundle == "com.apple.springboard" {
+                // WDA serves the Home button only outside a session.
+                _ = try await runner.raw("POST", "/wda/homescreen", [:], timeout: 8, countsAsMiss: false)
+            } else {
+                _ = try await runner.call("POST", "/wda/apps/activate", ["bundleId": .string(bundle)], timeout: 4)
+            }
+            // The answer comes while the switch still animates (seen on the simulator: a look right
+            // after found the App Switcher), so the app is watched until it is in front.
+            let until = now() + 3
+            while now() < until {
+                if (try? await runner.call("GET", "/wda/activeAppInfo", timeout: 1))?["bundleId"]?.string == bundle {
+                    return "finish: back in \(task.app.describe), where the task began"
+                }
+                await sleep(seconds: 0.25)
+            }
+            return "finish: \(task.app.describe), where the task began, was brought back but is not in front after 3 s"
+        } catch {
+            return "finish: \(task.app.describe), where the task began, could not be brought back (\(error))"
+        }
     }
 
     /// When Poki itself is in front although the model was working in another app, that app is

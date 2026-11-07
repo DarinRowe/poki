@@ -27,7 +27,7 @@ Three interfaces, each owned by one side:
 | 3. PokiLauncher C ABI | PokiLauncher (`native/launcher`); used by the app |
 | 4. What the launcher needs from the loopback | PokiTunnel (`native/ios-app/PokiTunnel`), or the user's external VPN |
 
-Version: 1.2 (2026-11-07: built-in loopback and separate external-connection build in section 4; 2026-11-06: on-device pairing in section 3, ToolFacts on toolFinished in section 2, tunnel facts in section 4, keep-alive). Every change to a section below bumps its version and is announced to the other threads.
+Version: 1.3 (2026-11-07: the phone goes back to the app a task began in, `do {finish}` and `finishTask()` in section 2). 1.2 (2026-11-07: built-in loopback and separate external-connection build in section 4; 2026-11-06: on-device pairing in section 3, ToolFacts on toolFinished in section 2, tunnel facts in section 4, keep-alive). Every change to a section below bumps its version and is announced to the other threads.
 
 ## 1. Relay frames, v1
 
@@ -116,6 +116,7 @@ public struct CoreConfig: Sendable {
     public var sensitive: SensitivityRules   // what needs approval; see below
     public var approvalWait: Duration        // how long do() holds for an approval before answering (default 20 s)
     public var toolDeadline: Duration        // hard cap per tool call (default 25 s)
+    public var taskGap: Double               // a task never finished ends after this long without a call (default 300 s)
 }
 
 /// The relay the person deployed, as entered in the app: https://poki-relay.you.workers.dev.
@@ -155,6 +156,7 @@ public final class PokiCore: Sendable {
     public func handoffDone(id: String)       // the owner tapped Done on a step the model handed to them
     public var handoff: Handoff? { get }      // the step still waiting, if any (id, kind, text, requested)
     public func handle(_ request: RelayRequest) async -> RelayResponse   // also for local tests
+    public func finishTask(switching: Bool = true) async -> String?  // the task is over: back to the app it began in (false: only forget it)
 }
 
 public enum CoreEvent: Sendable {
@@ -186,7 +188,7 @@ decision.
 The computer-use profile, ported from `src/cua.mjs` and `src/cua-wda.mjs`:
 
 - `look {full?}`: read the screen now.
-- `do {actions: [...], full?}`: run actions in order, then read the screen.
+- `do {actions: [...], full?, finish?}`: run actions in order, then read the screen.
 - `status`: the relay, the runner and pending approvals, without touching the device.
 
 Each answer is facts only: the app in front, numbered elements, what each action did (`sent`,
@@ -301,6 +303,16 @@ Each answer is facts only: the app in front, numbered elements, what each action
   brought back`) and the read is made again; the model never sees Poki's screen as the result of
   a tap. Working in Poki on purpose (the last read showed Poki) is left alone. The app's bundle id
   is `CoreConfig.ownBundleID`.
+- **Back to where the owner asked** (ESP-176): the app in front at a task's first `look` or `do`
+  (before any action) is where the owner asked, in Grok, Claude, ChatGPT or Poki's own chat, and
+  the MCP session of that call is kept with it. The task ends, and that app is activated again
+  (the home screen by the Home button), on the first of: a `do` with `finish: true` and no error,
+  after its read (`finish: back in Grok, where the task began` as its second line, said only once Grok is in front, watched for up to 3 s, since the switch animates after WDA answers); a `DELETE` of
+  the session that began the task; `finishTask()`, which the app calls before it stops an idle
+  runner (default 60 s without agent activity). Any stop of the runner (idle, the owner's Stop) also forgets the task with `finishTask(switching: false)`, so a later `DELETE` sends nothing to a stopped runner. Nothing is sent when that app is in front already.
+  There is no timer of a few seconds: an agent may think for minutes between calls. A call after
+  `taskGap` without one begins a new task, so a task never finished does not send a later one back
+  to its app. `finishTask()` waits briefly for a running call and does nothing then.
 - **`wait_until`**: `{wait_until: "text"}`, `{wait_until: {text, gone: true, ms}}` or
   `{wait_until: {settled: true, ms}}` reads the tree every 250 ms until the text appears or goes, or
   two reads match (default 3 s, at most 10 s, within the action time). Not seeing it is reported, not

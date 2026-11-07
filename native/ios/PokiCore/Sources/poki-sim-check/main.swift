@@ -183,6 +183,26 @@ if let searchRef, let fieldRef = Int(searchRef) {
 } else {
     check(false, "Settings shows a search field")
 }
+// ESP-176: the owner asks from one app (Safari stands in for Grok Bot), the work goes on in another,
+// and the phone is back in the first when the task ends, however long the agent thinks in between.
+_ = await core.finishTask()
+// The owner opens Safari; the switch animates for a moment, with SpringBoard in front meanwhile.
+let owner = Runner(url: url)
+_ = try? await owner.call("POST", "/wda/apps/activate", ["bundleId": "com.apple.mobilesafari"], timeout: 9)
+for _ in 0..<20 where (try? await owner.call("GET", "/wda/activeAppInfo", timeout: 2))?["bundleId"]?.string != "com.apple.mobilesafari" {
+    try? await Task.sleep(nanoseconds: 250_000_000)
+}
+let asked = await call("look (the owner asks from Safari)", "look")
+check(asked.contains("app: Safari"), "Safari is in front when the task begins")
+await call("launch Settings", "do", ["actions": [["launch": "com.apple.Preferences"]]])
+// Longer than an agent's thinking that must not move the phone (ESP-176: over 20 s).
+try? await Task.sleep(nanoseconds: 21_000_000_000)
+let thought = await call("look after 21 s of thinking", "look")
+check(thought.contains("app: Settings"), "the phone stays in Settings while the agent thinks")
+let finished = await call("finish", "do", ["actions": [], "finish": true])
+check(finished.contains("finish: back in Safari"), "finish brings back the app the task began in")
+let after = await call("look after finish", "look")
+check(after.contains("app: Safari"), "Safari is in front after finish")
 let home = await call("home", "do", ["actions": [["button": "home"]]])
 check(home.contains("(sent,"), "home is pressed")
 await call("status", "status")
