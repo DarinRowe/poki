@@ -6,13 +6,13 @@ import { flagOn } from './element-flags.mjs';
 
 const json = value => ({ type: 'text', text: JSON.stringify(value) });
 const receipt = value => ({ type: 'text', text: JSON.stringify(value, null, 2) });
-const offDevice = new Set(['wait', 'list_devices', 'poki_mcp_status', 'request_human_action']);
-const changesDevice = new Set(['select_device', 'start_simulator', 'shut_down_simulator']);
+export const offDevice = new Set(['wait', 'list_devices', 'poki_mcp_status', 'request_human_action']);
+export const changesDevice = new Set(['select_device', 'start_simulator', 'shut_down_simulator']);
 // Clients show tools under a prefixed name, and models copy it into a step.
-const stepTool = tool => tool.replace(/^mcp__poki-mcp__/, '');
+export const stepTool = tool => tool.replace(/^mcp__poki-mcp__/, '');
 
-function invalidStep(command) {
-  if (command.tool === 'batch_commands') return 'Nested batches are not supported.';
+export function invalidStep(command) {
+  if (command.tool === 'batch_commands' || command.tool === 'run_code') return 'Nested batches are not supported, and neither is run_code.';
   if (managementTools.has(command.tool)) return 'Call device management tools outside a batch.';
   const definition = definitions.find(([name]) => name === command.tool);
   if (!definition) {

@@ -2,6 +2,7 @@ import { remoteDevices, nativeRequest } from './remote.mjs';
 import { execute, checkWork, deadline, pause, phase, stopped, stoppingReason, timingCount, timingsSince } from './work.mjs';
 import { Coordination, managementTools } from './coordination.mjs';
 import { runBatch } from './batch.mjs';
+import { runCode } from './run-code.mjs';
 import { flagOn } from './element-flags.mjs';
 import { mkdir, readFile, writeFile, unlink, stat } from 'node:fs/promises';
 import { join, extname, isAbsolute } from 'node:path';
@@ -417,7 +418,7 @@ export class Devices {
       }
       switch (name) {
         case 'acquire_device': return text(await this.coordinator.acquire(this, await this.target(false), args.ttl_seconds ?? 120));
-        case 'poki_mcp_status': return text({ update: await updateNotice(), implementation: `Poki MCP ${version}`, ...await buildInfo(), registered_device_tools: 52, observation_tools: 1, management_tools: 4, transport_tools: 2, total_tools: definitions.length, devices: (await this.inventory()).length, selected: this.selected ?? null, approval_mode: process.env.POKI_MCP_APPROVAL_MODE === 'allow' ? 'operator-preapproved' : 'ask-human', approval_covers: [...approvedTools], approval_scope: 'Only the tools in approval_covers ask for approval. Taps, typing and other input inside apps, including a delete confirmed with a tap, are not gated.' });
+        case 'poki_mcp_status': return text({ update: await updateNotice(), implementation: `Poki MCP ${version}`, ...await buildInfo(), registered_device_tools: 53, observation_tools: 1, management_tools: 4, transport_tools: 2, total_tools: definitions.length, devices: (await this.inventory()).length, selected: this.selected ?? null, approval_mode: process.env.POKI_MCP_APPROVAL_MODE === 'allow' ? 'operator-preapproved' : 'ask-human', approval_covers: [...approvedTools], approval_scope: 'Only the tools in approval_covers ask for approval. Taps, typing and other input inside apps, including a delete confirmed with a tap, are not gated.' });
         case 'list_devices': {
           const devices = await this.describeDevices(args.include_all_simulators);
           return text({ devices, ...(devices.some(d => d.kind === 'physical') ? {} : { notice: noUsbDevice }), ...(args.include_all_simulators ? { simulator_models: await simulatorModels() } : {}) });
@@ -511,6 +512,7 @@ export class Devices {
         case 'batch_commands': return await runBatch(this, args);
         case 'look': return await cua.look(this, args);
         case 'do': return await cua.act(this, args);
+        case 'run_code': return await runCode(this, args);
         default: {
           const verify = args.verify !== false;
           // A batch step that asks for verification (verify: true) is compared even when checksStep would skip it.

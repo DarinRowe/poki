@@ -1397,6 +1397,35 @@
       }
     },
     {
+      "name": "run_code",
+      "description": "Run JavaScript on an independent worker to do a multi-step device task in one call, deciding each next step from the results instead of returning to the model between steps. code is an async function body, or an async arrow function, that may read input (your JSON) and must return a JSON-serializable value. Call device tools with await tools.<tool_name>(arguments); each returns the same structured result the tool would, so the code can inspect it, loop, filter, count and choose what to do next. Prefer one run_code for predictable multi-step work, such as scrolling until something appears and then reading it; use a single device tool directly for a one-step action, and return an image and the progress so far to the model when the next decision needs visual judgement rather than forcing a long fixed script. The sandbox exposes only tools, input and console: there is no require, file system, network, process or timer. A tool error throws and the code can catch it and adapt. An action receipt with sent=false or an unknown outcome stops the script and returns the steps already run, the same stop rule batch_commands uses; cancellation and timeout also stop it and cancel the device call in progress. The result reports every tool call with its name, elapsed time and receipt. Default limits are 120 seconds in total and 60 tool calls.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "minLength": 1
+          },
+          "input": {
+            "type": "object"
+          },
+          "timeout_seconds": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 120
+          },
+          "max_tool_calls": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 60
+          }
+        },
+        "required": [
+          "code"
+        ]
+      }
+    },
+    {
       "name": "acquire_device",
       "description": "Exclusively occupy one device across tool calls in this MCP session. No boot occurs. One lease per session; renew explicitly before expiry. Arbitration applies only inside this daemon.",
       "inputSchema": {
