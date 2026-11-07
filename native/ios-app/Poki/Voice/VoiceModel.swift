@@ -45,6 +45,24 @@ struct VoiceBridge: Equatable {
         return try JSONDecoder().decode(ToolResult.self, from: data)
     }
 
+    /// Test runs only: recorded utterance n (24 kHz mono PCM16), served by a bridge started with --test-dir.
+    func utterance(_ n: Int) async throws -> Data {
+        var parts = URLComponents(url: base.appending(path: "utterance"), resolvingAgainstBaseURL: false)!
+        parts.queryItems = [URLQueryItem(name: "n", value: String(format: "%02d", n))]
+        let (data, response) = try await URLSession.shared.data(from: parts.url!)
+        try Self.check(response, data)
+        return data
+    }
+
+    func report(_ turn: [String: Any]) async throws {
+        var request = URLRequest(url: base.appending(path: "report"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "content-type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: turn)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try Self.check(response, data)
+    }
+
     private static func check(_ response: URLResponse, _ data: Data) throws {
         guard let http = response as? HTTPURLResponse, http.statusCode != 200 else { return }
         let reason = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["error"] as? String
@@ -87,6 +105,24 @@ struct VoiceCall: Identifiable, Equatable {
     var finished: Date?
 }
 
+/// When each step of one turn happened. `said` is the end of the person's speech (or when recorded
+/// speech was sent); the rest are measured from it.
+struct TurnClock {
+    var said: Date?
+    var heard: Date?
+    var call: Date?
+    var toolDone: Date?
+    var delivered: Date?
+    var spoken: Date?
+    var callNames: [String] = []
+    var reply = ""
+
+    func ms(_ step: KeyPath<TurnClock, Date?>) -> Int? {
+        guard let said, let at = self[keyPath: step] else { return nil }
+        return Int(at.timeIntervalSince(said) * 1000)
+    }
+}
+
 struct VoiceLine: Identifiable, Equatable {
     enum Role { case you, poki, tool, note }
     let id = UUID()
@@ -125,6 +161,8 @@ final class VoiceModel {
     var muted = false { didSet { link?.setRemoteVolume(muted ? 0 : 1) } }
     /// The last measured turn: from the end of speech to the first audio of the answer that carries a tool result.
     private(set) var lastTurnMS: Int?
+    /// Timestamps of the current turn, from the end of the person's speech.
+    private(set) var clock = TurnClock()
 
     private var link: VoiceLink?
     /// session.created arrived on the current link: it takes events now.
@@ -133,8 +171,6 @@ final class VoiceModel {
     private var activeResponse: String?
     private var wantsResponse = false
     private var localTools: Set<String> = []
-    private var speechStopped: Date?
-    private var resultDelivered: Date?
     private let log = AppLog.shared
 
     var isOn: Bool { link != nil }
@@ -146,16 +182,17 @@ final class VoiceModel {
         return true
     }
 
-    /// `poki://voice?bridge=<address>&start=1&muted=1`
+    /// `poki://voice?bridge=<address>&start=1&muted=1`, or `&test=1-20` for a test run.
     func open(_ url: URL) {
         let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
         let value = { (name: String) in items.first { $0.name == name }?.value }
         if let address = value("bridge") { log.add("voice", setBridge(address) ? "bridge set from a link" : "the link's bridge address was not valid") }
         if value("muted") == "1" { muted = true }
-        if value("start") == "1", !isOn { Task { await start() } }
+        if let test = value("test"), let range = Self.range(test) { Task { await runTest(range) } }
+        else if value("start") == "1", !isOn { Task { await start() } }
     }
 
-    func start() async {
+    func start(microphone: Bool = true) async {
         guard link == nil else { return }
         guard let bridge else { phase = .lost(VoiceError.noBridge.localizedDescription); return }
         phase = .connecting
@@ -167,7 +204,7 @@ final class VoiceModel {
             let link = VoiceLink(onEvent: { [weak self] event in self?.handle(event, session: number) },
                                  onClosed: { [weak self] reason in self?.closed(reason, session: number) })
             self.link = link
-            try await link.connect(secret: token.value)
+            try await link.connect(secret: token.value, microphone: microphone)
             link.setRemoteVolume(muted ? 0 : 1)
             log.add("voice", "connected (\(token.model)), session \(number)")
         } catch {
@@ -193,13 +230,17 @@ final class VoiceModel {
         guard let link else { return }
         if activeResponse != nil { link.send(["type": "response.cancel"]) }
         link.send(["type": "output_audio_buffer.clear"])
+        // Without this the next answer (say, when a running step finishes) picks the cut-off reply back up.
+        if ready { link.send(Self.note(Self.stoppedNote)) }
     }
+
+    private static let stoppedNote = "The user pressed Stop talking. Drop the reply you were giving; do not continue or repeat it. When a running step finishes, report only its result, in one sentence."
 
     /// Recorded speech instead of the microphone, for test runs: 24 kHz mono PCM16, sent as one user turn.
     func say(pcm24k: Data) {
         guard let link, ready else { return }
         link.send(["type": "conversation.item.create", "item": ["type": "message", "role": "user", "content": [["type": "input_audio", "audio": pcm24k.base64EncodedString()]]]])
-        speechStopped = Date()
+        clock = TurnClock(said: Date())
         wantsResponse = true
         flush()
     }
@@ -229,8 +270,9 @@ final class VoiceModel {
             phase = .hearing
         case "input_audio_buffer.speech_stopped":
             phase = .thinking
-            speechStopped = Date()
-            resultDelivered = nil
+            clock = TurnClock(said: Date())
+        case "conversation.item.added":
+            if (event["item"] as? [String: Any])?["role"] as? String == "user" { clock.heard = clock.heard ?? Date() }
         case "conversation.item.input_audio_transcription.completed":
             if let text = event["transcript"] as? String, !text.isEmpty { lines.append(VoiceLine(role: .you, text: text.trimmingCharacters(in: .whitespacesAndNewlines))) }
         case "response.created":
@@ -240,13 +282,16 @@ final class VoiceModel {
             if id == activeResponse { activeResponse = nil }
             flush()
         case "response.output_audio_transcript.done":
-            if let text = event["transcript"] as? String, !text.isEmpty { lines.append(VoiceLine(role: .poki, text: text)) }
+            if let text = event["transcript"] as? String, !text.isEmpty {
+                lines.append(VoiceLine(role: .poki, text: text))
+                if clock.delivered != nil { clock.reply += text }
+            }
         case "output_audio_buffer.started":
             phase = .speaking
-            if let delivered = resultDelivered, let stopped = speechStopped {
-                lastTurnMS = Int(Date().timeIntervalSince(stopped) * 1000)
-                log.add("voice", "turn: end of speech to spoken result \(lastTurnMS!) ms (tool result in \(Int(delivered.timeIntervalSince(stopped) * 1000)) ms)")
-                resultDelivered = nil
+            if let said = clock.said, let delivered = clock.delivered, clock.spoken == nil {
+                clock.spoken = Date()
+                lastTurnMS = clock.ms(\.spoken)
+                log.add("voice", "turn: end of speech to spoken result \(lastTurnMS!) ms (tool result in \(Int(delivered.timeIntervalSince(said) * 1000)) ms)")
             }
         case "output_audio_buffer.stopped", "output_audio_buffer.cleared":
             phase = calls.contains { $0.state == .running } ? .thinking : .listening
@@ -266,6 +311,8 @@ final class VoiceModel {
     private func run(_ call: VoiceCall) {
         guard !calls.contains(where: { $0.id == call.id }) else { return }
         calls.append(call)
+        clock.call = clock.call ?? Date()
+        clock.callNames.append(call.name)
         phase = .thinking
         lines.append(VoiceLine(role: .tool, text: Self.describe(call)))
         log.add("voice", "tool \(call.name) \(call.arguments)")
@@ -299,6 +346,7 @@ final class VoiceModel {
         calls[index].state = state
         calls[index].output = output
         calls[index].finished = Date()
+        clock.toolDone = Date()
         log.add("voice", "tool \(calls[index].name) \(state == .done ? "done" : "failed")")
         deliver(index)
     }
@@ -308,13 +356,12 @@ final class VoiceModel {
     private func deliver(_ index: Int) {
         guard let link, ready, !calls[index].delivered, calls[index].state != .running else { return }
         let call = calls[index]
-        if call.session == session {
-            link.send(["type": "conversation.item.create", "item": ["type": "function_call_output", "call_id": call.id, "output": call.output]])
-        } else {
-            link.send(Self.note("While the connection was down, \(call.name) \(call.arguments) finished. It already ran; do not run it again. Result: \(call.output)"))
-        }
+        let sent = call.session == session
+            ? link.send(["type": "conversation.item.create", "item": ["type": "function_call_output", "call_id": call.id, "output": call.output]])
+            : link.send(Self.note("While the connection was down, \(call.name) \(call.arguments) finished. It already ran; do not run it again. Result: \(call.output)"))
+        guard sent else { return }
         calls[index].delivered = true
-        resultDelivered = Date()
+        clock.delivered = Date()
         wantsResponse = true
         flush()
     }
@@ -333,6 +380,51 @@ final class VoiceModel {
         guard wantsResponse, activeResponse == nil, ready, let link else { return }
         wantsResponse = false
         link.send(["type": "response.create"])
+    }
+
+    // MARK: Test runs
+
+    /// `poki://voice?test=1-20`: each turn opens a fresh session, plays recorded utterance n from the bridge
+    /// over the data channel (no microphone, Poki's voice muted), waits for the spoken result and reports
+    /// the turn to the bridge.
+    func runTest(_ numbers: ClosedRange<Int>) async {
+        guard let bridge else { phase = .lost(VoiceError.noBridge.localizedDescription); return }
+        muted = true
+        log.add("voice", "test run \(numbers.lowerBound)-\(numbers.upperBound) started")
+        for n in numbers {
+            stop()
+            var report: [String: Any] = ["n": n, "device": Self.localTool("get_ios_version")]
+            await start(microphone: false)
+            if await until(10, { self.ready }), let pcm = try? await bridge.utterance(n) {
+                say(pcm24k: pcm)
+                let ok = await until(40, { self.clock.spoken != nil && !self.clock.reply.isEmpty && self.phase == .listening })
+                report["ok"] = ok
+                report["calls"] = clock.callNames
+                report["reply"] = clock.reply
+                report["ms"] = ["heard": clock.ms(\.heard), "call": clock.ms(\.call), "toolDone": clock.ms(\.toolDone), "delivered": clock.ms(\.delivered), "spoken": clock.ms(\.spoken)].compactMapValues { $0 }
+            } else {
+                report["ok"] = false
+                report["error"] = { if case .lost(let why) = self.phase { return why } else { return "no session" } }()
+            }
+            stop()
+            try? await bridge.report(report)
+        }
+        log.add("voice", "test run finished")
+    }
+
+    private func until(_ seconds: Double, _ condition: () -> Bool) async -> Bool {
+        let end = Date().addingTimeInterval(seconds)
+        while !condition() {
+            if Date() > end { return false }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        return true
+    }
+
+    private static func range(_ text: String) -> ClosedRange<Int>? {
+        let parts = text.split(separator: "-").compactMap { Int($0) }
+        guard let first = parts.first, let last = parts.last, first >= 1, last >= first, last <= 99 else { return nil }
+        return first...last
     }
 
     private static func note(_ text: String) -> [String: Any] {

@@ -29,14 +29,26 @@ final class VoiceLink: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelega
         self.onClosed = onClosed
     }
 
-    func connect(secret: String) async throws {
+    /// `microphone: false` (test runs) sends no audio track and needs no microphone permission; the
+    /// model's voice still comes back.
+    func connect(secret: String, microphone: Bool = true) async throws {
+        // Without the microphone (test runs) the audio unit never starts: no recording and nothing on the speaker.
+        let audio = RTCAudioSession.sharedInstance()
+        audio.useManualAudio = !microphone
+        audio.isAudioEnabled = microphone
         let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
         let config = RTCConfiguration()
         config.sdpSemantics = .unifiedPlan
         guard let peer = Self.factory.peerConnection(with: config, constraints: constraints, delegate: self) else { throw VoiceError.realtime(0, "WebRTC could not start") }
         self.peer = peer
-        let mic = Self.factory.audioTrack(with: Self.factory.audioSource(with: constraints), trackId: "poki-mic")
-        peer.add(mic, streamIds: ["poki-voice"])
+        if microphone {
+            let mic = Self.factory.audioTrack(with: Self.factory.audioSource(with: constraints), trackId: "poki-mic")
+            peer.add(mic, streamIds: ["poki-voice"])
+        } else {
+            let receiveOnly = RTCRtpTransceiverInit()
+            receiveOnly.direction = .recvOnly
+            peer.addTransceiver(of: .audio, init: receiveOnly)
+        }
         let channel = peer.dataChannel(forLabel: "oai-events", configuration: RTCDataChannelConfiguration())
         channel?.delegate = self
         self.channel = channel
@@ -79,6 +91,7 @@ final class VoiceLink: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelega
     func setRemoteVolume(_ value: Double) {
         volume = value
         remoteAudio?.source.volume = value
+        remoteAudio?.isEnabled = value > 0
     }
 
     func close() {
@@ -113,7 +126,11 @@ final class VoiceLink: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelega
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCPeerConnectionState) {
         switch newState {
         case .failed: lost("the network path failed")
-        case .disconnected: lost("the network dropped")
+        case .disconnected:
+            // ICE often recovers from a short gap by itself; give it a few seconds before giving up.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self, weak peerConnection] in
+                if let peerConnection, peerConnection.connectionState != .connected { self?.lost("the network dropped") }
+            }
         default: break
         }
     }
@@ -122,6 +139,7 @@ final class VoiceLink: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelega
         guard let track = rtpReceiver.track as? RTCAudioTrack else { return }
         remoteAudio = track
         track.source.volume = volume
+        track.isEnabled = volume > 0
     }
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCSignalingState) {}

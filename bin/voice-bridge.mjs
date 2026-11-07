@@ -9,6 +9,9 @@
 //   GET  token   a client secret for one Realtime session (expires in 60 s), plus the session it opens
 //   POST tool    {call_id, name, arguments}: runs one voice tool once; the same call_id never runs twice
 //   GET  ledger  the calls this bridge ran, newest last, so a reconnecting phone can say what already happened
+// With --test-dir <dir> (test runs of the app, poki://voice?test=1-20):
+//   GET  utterance?n=01  recorded speech <dir>/u01.24k.pcm (24 kHz mono PCM16)
+//   POST report          one finished test turn, appended to voice-test-report.jsonl in the state directory
 import http from 'node:http';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -22,6 +25,7 @@ const arg = (name, fallback) => { const i = process.argv.indexOf(`--${name}`); r
 const port = Number(arg('port', '47830'));
 const host = arg('host', '0.0.0.0');
 const device = arg('device', process.env.POKI_VOICE_DEVICE);
+const testDir = arg('test-dir');
 const apiKey = process.env.OPENAI_API_KEY;
 if (!apiKey) { console.error('Set OPENAI_API_KEY (for example from the keychain) before starting the voice bridge.'); process.exit(1); }
 
@@ -172,6 +176,19 @@ const server = http.createServer(async (req, res) => {
       const entry = await runTool(mcp, call);
       console.log(JSON.stringify({ event: 'tool', call_id: call.call_id, name: call.name, state: entry.state, ms: entry.finished - entry.started, replayed: !!entry.replayed }));
       return reply(200, { call_id: call.call_id, state: entry.state, output: entry.output, ms: entry.finished - entry.started, replayed: !!entry.replayed });
+    }
+    if (testDir && req.method === 'GET' && action === 'utterance') {
+      const n = url.searchParams.get('n') ?? '';
+      if (!/^\d{2}$/.test(n)) return reply(400, { error: 'n is two digits' });
+      const audio = await readFile(join(testDir, `u${n}.24k.pcm`));
+      res.writeHead(200, { 'content-type': 'application/octet-stream', 'cache-control': 'no-store' });
+      return res.end(audio);
+    }
+    if (testDir && req.method === 'POST' && action === 'report') {
+      const turn = JSON.parse(await readBody(req));
+      await appendFile(join(stateDir, 'voice-test-report.jsonl'), JSON.stringify({ at: new Date().toISOString(), ...turn }) + '\n', { mode: 0o600 });
+      console.log(JSON.stringify({ event: 'test-turn', n: turn.n, ok: turn.ok, calls: turn.calls, ms: turn.ms }));
+      return reply(200, {});
     }
     if (req.method === 'GET' && action === 'ledger') {
       return reply(200, { calls: [...ledger.values()].map(({ entry }) => ({ call_id: entry.call_id, name: entry.name, args: entry.args, state: entry.state, output: entry.output && clip(entry.output, 300) })) });

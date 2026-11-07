@@ -46,6 +46,13 @@ struct RootView: View {
         .onChange(of: scenePhase, initial: true) { _, phase in
             if phase == .active { model.becameActive() } else if phase == .background { model.wentToBackground() }
         }
+        .task {
+            // `-pokiVoiceLink "poki://voice?…"` at launch acts like opening that link (test runs start this way).
+            if let link = UserDefaults.standard.string(forKey: "pokiVoiceLink"), let url = URL(string: link), url.host() == "voice" {
+                tab = .voice
+                model.voice.open(url)
+            }
+        }
         .onOpenURL { url in
             AppLog.shared.add("app", "opened by link poki://\(url.host() ?? "")")
             if url.host() == "voice" { tab = .voice; model.voice.open(url) } else { tab = .home }
