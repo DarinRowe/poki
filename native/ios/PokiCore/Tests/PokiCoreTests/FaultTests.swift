@@ -496,7 +496,7 @@ final class FaultTests: XCTestCase {
         // The screen changed since the read before, and only one slow read fits: the wait says so, and nothing is unknown.
         wda.source([("Button", "Other"), ("Button", "Screen")])
         wda.delay("GET /source", 1.6)
-        let changed = await core.call("do", ["actions": [["wait_until": "settled"]]])
+        let changed = await core.call("do", ["actions": [["wait_until": ["settled": true, "ms": 2000]]]])
         XCTAssertTrue(changed.text.contains("wait_until: not seen within") && changed.text.contains("(1 reads)"), changed.text)
         XCTAssertFalse(changed.text.contains("unknown"), changed.text)
     }
@@ -1153,6 +1153,39 @@ final class GymTests: XCTestCase {
         XCTAssertTrue(result.text.contains("launch com.apple.mobilenotes: no app with that bundle id is installed on this device"), result.text)
         XCTAssertFalse(result.text.contains("FBSOpen"), result.text)
         XCTAssertTrue(result.text.contains("not sent") || result.text.contains("not_sent"), result.text)
+    }
+
+    /// Photos launched from Safari: the read after the launch (and the look after it) gave Safari's
+    /// whole tree under Photos' picture. The read is now made again, in the same call, until the
+    /// launched app is in front.
+    func testTheReadAfterALaunchIsMadeAgainUntilTheLaunchedAppIsInFront() async {
+        let (core, wda, _) = makeCore()
+        _ = await core.call("look", [:])
+        let launched = LockedBox(false), readsAfter = LockedBox(0)
+        wda.set("POST /wda/apps/activate") { _ in launched.value = true; return (200, ["value": .null]) }
+        wda.set("GET /wda/activeAppInfo") { _ in
+            guard launched.value else { return (200, ["value": ["bundleId": "com.apple.mobilesafari", "name": "Safari"]]) }
+            let n = readsAfter.update { $0 += 1; return $0 }
+            if n <= 2 { return (200, ["value": ["bundleId": "com.apple.mobilesafari", "name": "Safari"]]) }
+            return (200, ["value": ["bundleId": "com.apple.mobileslideshow", "name": "Photos"]])
+        }
+        let result = await core.call("do", ["actions": [["launch": "com.apple.mobileslideshow"]]])
+        XCTAssertTrue(result.text.hasPrefix("app: Photos"), result.text)
+        XCTAssertTrue(result.text.contains("the screen was read again (2): com.apple.mobileslideshow was not in front yet"), result.text)
+        XCTAssertFalse(result.isError)
+    }
+
+    /// A wait_until asked for 8000 ms and got 6000 (the action cap); the call then took 30 s with
+    /// nothing in the answer to account for it. The wait gets the time it asks for, and a long call
+    /// says where its time went.
+    func testWaitUntilGetsTheTimeItAsksForAndALongCallAccountsForItsTime() async {
+        let (core, _, _) = makeCore { $0.toolDeadline = 20 }
+        _ = await core.call("look", [:])
+        let started = Date()
+        let result = await core.call("do", ["actions": [["wait_until": ["text": "Never there", "ms": 8000]]]])
+        XCTAssertTrue(result.text.contains("not seen within 8000 ms"), result.text)
+        XCTAssertGreaterThan(Date().timeIntervalSince(started), 7.5)
+        XCTAssertTrue(result.text.contains("took: ") && result.text.contains(" s actions, "), result.text)
     }
 
     /// CI simulator, the keyboard's first use: the runner stood still for seconds, the focus reads

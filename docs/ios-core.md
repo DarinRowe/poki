@@ -453,6 +453,17 @@ Each answer is facts only: the app in front, numbered elements, what each action
 - **A refused launch is one line.** An app the device does not have answers "launch
   com.apple.mobilenotes: no app with that bundle id is installed on this device" (not_sent), not
   the system's error dump; any other refusal is cut to its quoted sentence.
+- **The read after a launch waits for the launched app.** The runner's tree can still be the old
+  app's while the picture is the new app's (Photos launched from Safari gave Safari's whole tree
+  under Photos' screen, twice). The read is made again inside the call, up to three times, until
+  the launched bundle is in front, and also whenever the whole picture changed over an unchanged
+  tree; the answer says "the screen was read again (2): com.apple.mobileslideshow was not in
+  front yet"; screen_changed still compares with the read the model saw last.
+- **A wait gets the time it asks for, and a long call says where its time went.** `wait_until`
+  with `ms` up to 10000 has that time plus a read (8000 asked used to become 6000 under the
+  action cap). A call that took 8 s or more, or over 2 s more than its parts, ends with "took:
+  29.8 s in all: 0.1 s before the actions (runner start, busy wait, lock check), 4.9 s actions,
+  0.2 s read, 24.6 s elsewhere".
 - **Typing has 9 s and never leaves the keys in doubt.** A type is a tap, a wait for the focus and
   the keys, plus a wait for a busy runner, so it has 9 s (the action cap otherwise). When under
   1.2 s is left for the keys they are not sent: `nothing was typed … send the type again`.
