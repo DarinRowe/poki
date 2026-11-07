@@ -202,7 +202,7 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
                 // One line per request in the system log (PokiInProcess), with its wait in the queue and
                 // its own time, so a slow call can be traced to the request that took it.
                 let waited = Int(started.timeIntervalSince(asked) * 1000), took = Int(Date().timeIntervalSince(started) * 1000)
-                if waited > 5 || took > 5 { NSLog("PokiInProcess timing: %@ %d ms%@", key, took, waited > 5 ? " (queued \(waited) ms)" : "") }
+                if waited > 5 || took > 5 { NSLog("%@", "PokiInProcess timing: \(key) \(took) ms\(waited > 5 ? " (queued \(waited) ms)" : "")") }
                 continuation.resume(returning: result)
             }
         }
