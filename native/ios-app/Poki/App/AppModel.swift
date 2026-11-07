@@ -29,8 +29,8 @@ final class AppModel {
     /// Stop the runner after this long without agent activity; 0 never stops it.
     /// Two minutes by default: an agent can think for a minute between steps of a long task, and the
     /// runner must not stop (and the banner flash) in the middle of it.
-    var idleStopSeconds: Int = UserDefaults.standard.object(forKey: "idleStopSeconds.v3") as? Int ?? 120 {
-        didSet { UserDefaults.standard.set(idleStopSeconds, forKey: "idleStopSeconds.v3"); log.add("runner", "idle stop set to \(idleStopSeconds) s") }
+    var idleStopSeconds: Int = UserDefaults.standard.object(forKey: "idleStopSeconds.v4") as? Int ?? 60 {
+        didSet { UserDefaults.standard.set(idleStopSeconds, forKey: "idleStopSeconds.v4"); log.add("runner", "idle stop set to \(idleStopSeconds) s") }
     }
     /// Poki was on when it last ran; it turns itself on again at launch.
     private var wantsOn: Bool {
@@ -39,7 +39,20 @@ final class AppModel {
     }
     /// The setup step the Live Activity is guiding, if any.
     private(set) var guiding: SetupStep?
+    /// The pairing file, if it is really there. The path is never stored: the app's container moves
+    /// when Poki is installed again, and a stored path then points at nothing.
+    var pairingPath: String? { FileManager.default.fileExists(atPath: AppFiles.pairingFile.path) ? AppFiles.pairingFile.path : nil }
+    /// Why the phone refused the pairing the last time the runner started, until it is accepted again.
+    private(set) var pairingTrouble: String?
+    /// When the phone last accepted the pairing (the runner got past the pairing step).
+    private(set) var pairingVerifiedAt: Date?
+    /// The runner has been launching for a while: iOS may be asking for the passcode.
+    private(set) var passcodeHint = false
+    private var launchingSince: Date?
+    private var endCheck = 0
     private var lastAgentActivity = Date()
+    /// The agent's step now running (its label and start), for the foreground check above.
+    private var stepUnderWay: (summary: String, started: Date)?
     private var idleTimer: Timer?
     private var launcherConfig: LauncherConfig?
 
@@ -69,6 +82,13 @@ final class AppModel {
         }
         host.onWake { [weak self] in Task { @MainActor in self?.wakeRunner() } }
         listenForApprovals()
+        // One pump for the app's whole life. Cancelling a task that reads an AsyncStream ends the
+        // stream for good, so a pump per session would go silent after the first Turn off (no steps,
+        // no approvals, no relay state in the log, which is what happened on the phone).
+        eventsTask = Task { [weak self, core] in
+            for await event in core.events { self?.handle(event) }
+        }
+        loopback.onChange = { [weak self] old, new in self?.loopbackChanged(from: old, to: new) }
         if !diskImage.isReady { Task { await diskImage.download() } }
         if UserDefaults.standard.bool(forKey: "pokiSample") { loadSample() }
         NotificationCenter.default.addObserver(forName: UIApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
@@ -79,12 +99,23 @@ final class AppModel {
     /// Poki came to the front: turn on again if it was on, check the loopback live, and finish a
     /// setup step the person just did in Settings.
     func becameActive() {
+        inFront = true
         loopback.resume()
-        if wantsOn, !sessionOn, setup.pairingFile != nil, diskImage.isReady { startSession() }
+        // Poki in front while an agent's step is under way: nobody opened it on purpose. A tap near the
+        // top of the screen hit the expanded Dynamic Island (iOS opens the activity's app), or the agent
+        // tapped the activity's own label in the tree. Logged so the phone log shows it; PokiCore sends
+        // the agent back to the app it was in.
+        if sessionOn, let step = stepUnderWay, Date().timeIntervalSince(step.started) < 20 {
+            log.add("app", "Poki came to the front during a step (\(step.summary)): a tap hit the Live Activity")
+        }
+        if wantsOn, !sessionOn, pairingPath != nil, diskImage.isReady { startSession() }
         if let step = guiding, isDone(step) { stopGuide() }
     }
 
-    func wentToBackground() { loopback.pause() }
+    /// In the background the loopback is still watched while Poki is on (the agent's runner depends on
+    /// it): every 6 s, light enough for the location-kept background time.
+    func wentToBackground() { inFront = false; sessionOn ? loopback.resume(every: 6) : loopback.pause() }
+    private var inFront = true
 
     /// Poki is being closed: end the runner now (the launcher kills its process) instead of leaving
     /// iOS's automation banner up for half a minute. iOS gives a few seconds for this.
@@ -115,8 +146,9 @@ final class AppModel {
     func startSession() {
         guard !sessionOn else { return }
         problem = nil
-        guard let pairing = setup.pairingFile else { problem = "Pair this iPhone first (Setup)."; return }
+        guard let pairing = pairingPath else { problem = "Pair this iPhone first (Setup)."; return }
         guard let relay = relayAddress else { problem = Self.noRelay; return }
+        if !inFront { loopback.resume(every: 6) }
         guard diskImage.isReady, diskImage.recheck() else {
             problem = "The developer disk image is not downloaded yet (Setup > Pair). It is needed once."
             Task { await diskImage.download() }
@@ -127,6 +159,7 @@ final class AppModel {
         ApprovalNotice.requestPermission()
         stopGuide()
         activity.start(deviceName: deviceName)
+        log.add("activity", activity.isRunning ? "Live Activity started" : "Live Activity not running: \(activity.lastError ?? "unknown reason")")
         sessionOn = true
         wantsOn = true
         launcherConfig = LauncherConfig(pairing_file: pairing, ddi_dir: AppFiles.ddiDirectory.path)
@@ -135,21 +168,19 @@ final class AppModel {
         standBy(reason: nil)
         core.start(relay: relay)
         idleTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in Task { @MainActor in self?.checkIdle() } }
-        eventsTask = Task { [weak self, core] in
-            for await event in core.events { self?.handle(event) }
-        }
     }
 
     func stopSession() {
         guard sessionOn else { return }
         wantsOn = false
+        if !inFront { loopback.pause() }
         log.add("session", "turned off: ending the runner")
         core.stop()
+        Task { await RunnerProbe.shutdown() }
         launcher.stop()
         confirmRunnerEnded()
         idleTimer?.invalidate(); idleTimer = nil
         runnerPaused = false; host.setPaused(false)
-        eventsTask?.cancel(); eventsTask = nil
         background.stop()
         activity.end()
         sessionOn = false
@@ -172,27 +203,50 @@ final class AppModel {
     func pauseRunner(reason: String = "Stopped") {
         guard sessionOn, !runnerPaused, approvals.isEmpty else { return }
         log.add("runner", "stopping: \(reason)")
+        // The runner is asked to shut itself down (it ends its test and exits) and the launcher's
+        // session is closed; the launcher also ends the process through the developer services.
+        Task { await RunnerProbe.shutdown() }
         launcher.stop()
         standBy(reason: reason)
         confirmRunnerEnded()
     }
 
-    /// After a stop, checks that the runner really ended (and with it the automation banner). If it
-    /// still answers after 8 s, says so on the home screen and in the log instead of looking stopped.
+    /// After a stop, watches the runner until it really ends (and with it the automation banner):
+    /// once a second for 30 s. The log says how long it took. If it is still there after 10 s, the
+    /// home screen says so, and the notice goes away by itself the moment the runner is gone.
     private func confirmRunnerEnded() {
+        endCheck += 1
+        let check = endCheck
         Task { [weak self] in
-            try? await Task.sleep(for: .seconds(8))
-            let alive = await RunnerProbe.answers()
-            guard let self else { return }
-            if alive, self.runnerPaused || !self.sessionOn {
-                self.log.add("runner", "still answering 8 s after Stop")
-                self.problem = "Poki Runner is still running after Stop. Swipe it away in the app switcher; the banner goes with it."
-            } else {
-                self.log.add("runner", alive ? "running again (an agent asked)" : "ended")
-                if self.problem?.hasPrefix("Poki Runner is still running") == true { self.problem = nil }
+            for second in 1...30 {
+                try? await Task.sleep(for: .seconds(1))
+                guard let self, self.endCheck == check else { return }
+                // An agent asked for the runner again in the meantime: nothing to watch.
+                if self.sessionOn, !self.runnerPaused { self.clearStuckNotice(); return }
+                if !(await RunnerProbe.answers()) {
+                    self.log.add("runner", "ended \(second) s after Stop")
+                    self.clearStuckNotice()
+                    return
+                }
+                // Still up: the shutdown may have queued behind a long read in the runner, or the
+                // developer connection the launcher kills through was gone. Ask again.
+                if second == 4 || second == 12 || second == 20 {
+                    self.log.add("runner", "still answering \(second) s after Stop: asking again")
+                    await RunnerProbe.shutdown()
+                    self.launcher.stop()
+                }
+                if second == 10 {
+                    self.log.add("runner", "still answering 10 s after Stop")
+                    self.problem = Self.stuckNotice
+                }
             }
+            guard let self, self.endCheck == check else { return }
+            self.log.add("runner", "still answering 30 s after Stop")
         }
     }
+
+    private static let stuckNotice = "Poki Runner is still running after Stop. Swipe it away in the app switcher; the banner goes with it."
+    private func clearStuckNotice() { if problem == Self.stuckNotice { problem = nil } }
 
     /// The runner is off and starts on the next agent request.
     private func standBy(reason: String?) {
@@ -216,22 +270,63 @@ final class AppModel {
     }
 
     private func checkIdle() {
+        passcodeHint = runner.state == "launching" && launchingSince.map { Date().timeIntervalSince($0) > 10 } == true
         guard sessionOn, !runnerPaused, idleStopSeconds > 0, approvals.isEmpty, activityText == "Idle" else { return }
         if Date().timeIntervalSince(lastAgentActivity) >= Double(idleStopSeconds) {
             pauseRunner(reason: "Stopped after \(idleStopSeconds / 60 > 0 ? "\(idleStopSeconds / 60) min" : "\(idleStopSeconds) s") without agent activity")
         }
     }
 
+    /// The loopback came or went. Going: logged with the time, and the agent's status says so instead
+    /// of "Checking pairing". Back: the launcher tries at once instead of waiting out its backoff
+    /// (the runner dies with the tunnel, so every drop costs a restart).
+    private func loopbackChanged(from old: LoopbackMonitor.State, to new: LoopbackMonitor.State) {
+        let wasWorking = { if case .working = old { true } else { false } }()
+        if wasWorking, !loopback.isWorking {
+            log.add("loopback", "dropped: 10.7.0.1 stopped answering (\(loopback.text)); the runner cannot survive this")
+        } else if !wasWorking, loopback.isWorking, old != .checking {
+            log.add("loopback", "back: 10.7.0.1 answers again" + (sessionOn && !runner.isRunning && !runnerPaused ? "; starting the runner now" : ""))
+            if sessionOn, !runner.isRunning, !runnerPaused { launcher.restart() }
+        }
+        if sessionOn { host.update(runner: coreState(of: runner)) }
+    }
+
+    /// The runner's state as the agent reads it. While the loopback is down, every pre-launch state
+    /// is the same thing: waiting for the tunnel, said with the time it went and what to do.
+    private func coreState(of status: RunnerStatus) -> RunnerState {
+        let preLaunch = ["connecting", "pairing", "tunnel", "waiting_network", "standby", "idle"].contains(status.state)
+        if preLaunch, !loopback.isWorking, loopback.state != .checking || status.state == "waiting_network" {
+            let since = loopback.droppedAt.map { " since \(Self.clock.string(from: $0))" } ?? ""
+            let why = loopback.state == .noAnswer ? "the proxy app's tunnel is on but does not reflect 10.7.0.1" : "the loopback at 10.7.0.1 is not answering"
+            return .starting("waiting for the loopback\(since): \(why). The owner turns the proxy app's tunnel (Surge, Loon, Shadowrocket or sing-box) back on; the runner starts again by itself within seconds of that. Nothing on the phone changes meanwhile")
+        }
+        return status.coreState
+    }
+    private static let clock: DateFormatter = { let f = DateFormatter(); f.dateFormat = "HH:mm:ss"; return f }()
+
     private func runnerChanged(_ status: RunnerStatus) {
+        if status != runner { log.add("runner", "\(status.state)\(status.detail.map { ": \($0)" } ?? "")") }
         // Events from a launcher that was stopped for idle are old news.
         guard !runnerPaused else { return }
-        if status != runner { log.add("runner", "\(status.state)\(status.detail.map { ": \($0)" } ?? "")") }
+        switch status.state {
+        case "launching", "running":
+            // The phone accepted the pairing.
+            if pairingTrouble != nil { log.add("pairing", "accepted again") }
+            pairingTrouble = nil
+            pairingVerifiedAt = Date()
+            if status.state == "launching", runner.state != "launching" { launchingSince = Date() }
+        case "failed" where status.fix?.contains("Pair again") == true:
+            if pairingTrouble == nil { log.add("pairing", "refused: \(status.detail ?? "")") }
+            pairingTrouble = status.detail ?? "The phone refused the pairing."
+        default: break
+        }
+        if status.state != "launching" { launchingSince = nil; passcodeHint = false }
         if status.code == "ddi_bad", runner.code != "ddi_bad" {
             log.add("ddi", "the phone would not install the disk image: downloading it again")
             diskImage.redownload()
         }
         runner = status
-        host.update(runner: status.coreState)
+        host.update(runner: coreState(of: status))
         if status.state == "failed" {
             activity.update { $0.phase = .problem; $0.headline = status.fix ?? status.detail ?? "The runner stopped" }
         } else if !status.isRunning {
@@ -242,12 +337,15 @@ final class AppModel {
     }
 
     private func handle(_ event: ShellEvent) {
+        // Events after Turn off (the core's own "stopped") are not for the screen.
+        guard sessionOn else { return }
         switch event {
         case .relay(let status):
             if status != relayStatus { log.add("relay", "\(status)") }
             relayStatus = status
         case .toolStarted(_, let summary):
             lastAgentActivity = Date()
+            stepUnderWay = (summary, Date())
             activityText = summary
             log.add("agent", "started: \(summary)")
             if problem?.hasPrefix("An approval ran out") == true { problem = nil }
@@ -260,6 +358,7 @@ final class AppModel {
             }
         case .toolFinished(let summary, let delivery, let app, let thumbnail):
             lastAgentActivity = Date()
+            stepUnderWay = nil
             lastAction = "\(summary) · \(delivery)"
             activityText = "Idle"
             let failed = delivery.hasPrefix("failed")
@@ -277,7 +376,7 @@ final class AppModel {
             activity.setThumbnail(thumbnail)
         case .approvalRequested(let approval):
             approvals.append(approval)
-            log.add("approval", "requested \(approval.id) in \(approval.app): \(approval.summary)")
+            log.add("approval", "requested \(approval.id) in \(approval.app): \(approval.summary); Live Activity \(activity.isRunning ? "running" : "NOT running: \(activity.lastError ?? "no error")")")
             activity.update { $0.phase = .approval; $0.approval = approval; $0.headline = "Allow this step?" }
             // The Live Activity pops up for it by itself; the notification is for when it is not running.
             if !activity.isRunning { ApprovalNotice.post(approval) }
@@ -314,11 +413,20 @@ final class AppModel {
         }, ApprovalMailbox.stopRunner as CFString, nil, .deliverImmediately)
     }
 
+    /// A decision from the Live Activity. Allow is tapped on the expanded Dynamic Island, which takes
+    /// about a second to collapse; input sent at once can land on it (iOS then opens Poki). So the
+    /// Live Activity's decisions reach PokiCore after a short pause, the app's own buttons at once.
     func drainApprovals() {
-        for (id, approved) in ApprovalMailbox.drain() where approvals.contains(where: { $0.id == id }) {
-            core.resolveApproval(id: id, approved: approved)
+        let decisions = ApprovalMailbox.drain().filter { id, _ in approvals.contains(where: { $0.id == id }) }
+        guard !decisions.isEmpty else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(Self.islandCollapse))
+            for (id, approved) in decisions { core.resolveApproval(id: id, approved: approved) }
         }
     }
+
+    /// How long the expanded island takes to fold after a tap on its button.
+    static let islandCollapse: TimeInterval = 1.5
 
     // MARK: Pairing
 
@@ -330,6 +438,8 @@ final class AppModel {
         _ = try PropertyListSerialization.propertyList(from: data, format: nil)
         try data.write(to: AppFiles.pairingFile, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
         setup.pairingFile = AppFiles.pairingFile.path
+        pairingTrouble = nil; pairingVerifiedAt = nil
+        log.add("pairing", "pairing file imported")
     }
 
     func startPairing() {
@@ -357,6 +467,8 @@ final class AppModel {
         case .paired(let url):
             try? (url as NSURL).setResourceValue(URLFileProtection.completeUntilFirstUserAuthentication, forKey: .fileProtectionKey)
             setup.pairingFile = url.path
+            pairingTrouble = nil; pairingVerifiedAt = nil
+            log.add("pairing", "paired on the phone")
             activity.update { $0.phase = .idle; $0.pin = nil; $0.headline = "Paired" }
             if !sessionOn { Task { try? await Task.sleep(for: .seconds(4)); if !self.sessionOn { self.activity.end() } } }
         case .failed(let why):
@@ -394,7 +506,7 @@ final class AppModel {
         case .runner: setup.runnerInstalled
         case .developerMode: setup.developerMode
         case .loopback: loopback.isWorking || setup.loopbackChosen
-        case .pairing: setup.pairingFile != nil && diskImage.isReady
+        case .pairing: pairingPath != nil && pairingTrouble == nil && diskImage.isReady
         case .automation: setup.uiAutomation
         case .background: background.allowed && activity.enabled
         }
@@ -443,6 +555,27 @@ final class AppModel {
 
 /// Whether WebDriverAgent answers /status right now (2 s at most).
 enum RunnerProbe {
+    /// Asks the runner to shut itself down: it ends its test and exits, which takes the automation
+    /// banner with it. Nothing happens when it is not running.
+    static func shutdown() async {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.connectionProxyDictionary = [:]
+        let session = URLSession(configuration: configuration)
+        func send(_ method: String, _ path: String) async -> Data? {
+            var request = URLRequest(url: URL(string: "http://127.0.0.1:8100\(path)")!, timeoutInterval: 2)
+            request.httpMethod = method
+            return try? await session.data(for: request).0
+        }
+        // The shutdown request waits in WDA's queue behind a slow tree read; ending the session first
+        // voids whatever is queued, so the shutdown is handled at once.
+        if let status = await send("GET", "/status"),
+           let json = try? JSONSerialization.jsonObject(with: status) as? [String: Any],
+           let id = json["sessionId"] as? String, !id.isEmpty {
+            _ = await send("DELETE", "/session/\(id)")
+        }
+        _ = await send("GET", "/wda/shutdown")
+    }
+
     static func answers() async -> Bool {
         var request = URLRequest(url: URL(string: "http://127.0.0.1:8100/status")!, timeoutInterval: 2)
         request.httpMethod = "GET"
