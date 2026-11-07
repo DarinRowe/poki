@@ -24,6 +24,24 @@ final class AppModelTests: XCTestCase {
         return (model, launcher)
     }
 
+    /// Poki automates the iPhone in its own process by default, and a running launcher then only means
+    /// the disk image is mounted: the agent reads "running" once the in-process session is open. The
+    /// tests below are about the launcher's states, so they open the session first (the Debug probe's
+    /// own call); on the Poki Runner path (`-automationPath runner`) it changes nothing.
+    private func sessionOpen(_ model: AppModel) { model.inProcessReadyForProbe() }
+
+    /// The default path: a running launcher is not yet a running phone. The agent hears that the
+    /// session is opening until it is open, and "running" right after.
+    func testRunningLauncherWaitsForTheInProcessSession() throws {
+        let (model, _) = model()
+        try XCTSkipUnless(model.automationPath == .inProcess, "Poki Runner path: the launcher's state is the whole story")
+        model.loopback.simulate(.working(ms: 9))
+        let opening = model.coreState(of: RunnerStatus(state: "running")).describe
+        XCTAssertTrue(opening.contains("opening the in-process session"), opening)
+        sessionOpen(model)
+        XCTAssertEqual(model.coreState(of: RunnerStatus(state: "running")).describe, "running")
+    }
+
     /// A tunnel drop while the runner is connecting is named to the agent with the time and the fix,
     /// whatever launcher state it happens to be in; "Checking pairing" alone would say nothing.
     func testLoopbackDownIsNamedToTheAgent() {
@@ -36,6 +54,7 @@ final class AppModelTests: XCTestCase {
             XCTAssertTrue(text.contains("proxy app"), text)
         }
         // Launching and running are past the tunnel: they stay what the launcher says.
+        sessionOpen(model)
         XCTAssertEqual(model.coreState(of: RunnerStatus(state: "running")).describe, "running")
     }
 
@@ -69,6 +88,7 @@ final class AppModelTests: XCTestCase {
     func testHostSeesTheRunnerState() {
         let (model, _) = model()
         model.loopback.simulate(.working(ms: 9))
+        sessionOpen(model)
         model.runnerChanged(RunnerStatus(state: "running"))
         XCTAssertTrue(model.host.currentRunner.isRunning)
         model.runnerChanged(RunnerStatus(state: "failed", detail: "it stopped", fix: nil))
@@ -92,6 +112,7 @@ final class PasscodeTests: XCTestCase {
     func testPasscodeWaitIsNamedAndClears() {
         let model = AppModel(launcher: FakeLauncher(), pairer: FakePairing())
         model.loopback.simulate(.working(ms: 9))
+        model.inProcessReadyForProbe()
         model.runnerChanged(RunnerStatus(state: "launching"))
         model.runnerChanged(RunnerStatus(state: "launching", detail: "no answer for 12 s", code: "passcode"))
         XCTAssertTrue(model.passcodeHint)
