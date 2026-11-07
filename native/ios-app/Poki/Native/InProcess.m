@@ -334,6 +334,19 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
     return out.length ? out : png;
 }
 
+/// One front-app search shared by the tree read and the screenshot PokiCore asks for together.
+@interface PKFrontSearch : NSObject
+@property (nonatomic) NSTimeInterval started;
+@property (nonatomic) NSTimeInterval ended;
+@property (nonatomic) uint64_t inputs;
+@property (nonatomic, strong) dispatch_group_t done;
+@property (nonatomic, strong, nullable) id element;
+@property (nonatomic, strong, nullable) id ax;
+@property (nonatomic, copy, nullable) NSDictionary *info;
+@end
+@implementation PKFrontSearch
+@end
+
 @implementation PKInProcess {
     SRNativeSession *_sessions;
     uint64_t _accessibilityGeneration;
@@ -346,6 +359,9 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
     NSDictionary<NSString *, id> *_lastFront;
     NSTimeInterval _lastFrontAt;
     uint64_t _lastFrontGeneration;
+    /// Counts touches, keys, buttons and app changes; a shared search from before one is not reused.
+    uint64_t _inputs;
+    PKFrontSearch *_search;
 }
 
 + (instancetype)shared {
@@ -543,13 +559,11 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
         if (picture.length) {
             NSLog(@"PokiInProcess timing: screenshot %d ms, %lu bytes (%@)", (int)lround((NSProcessInfo.processInfo.systemUptime - started) * 1000), (unsigned long)picture.length, kind);
             // The front app's part of the screen only, when it has a part (beside another app). The
-            // front app is looked up again only while the last read found a part: with the app on the
-            // whole screen (every read on an iPhone outside the Duo's side-by-side apps) the lookup cost
-            // a second front-app search and snapshot beside every tree read; the next tree read notes a
-            // change of layout.
-            if (CGRectIsNull(self.viewport)) return picture;
+            // front app comes from the search the tree read beside it makes (shared, not made twice),
+            // and its frame from one shallow snapshot, so the first picture after a change of layout
+            // is cut too.
             NSDictionary *info; id ax;
-            id element = [self front:&info ax:&ax];
+            id element = [self sharedFront:&info ax:&ax];
             if (element) [self noteViewport:[PKRequestSnapshot(ax, element, 1, 1, NULL) frame]];
             CGRect viewport = self.viewport;
             return CGRectIsNull(viewport) ? picture : PKCropped(picture, viewport);
@@ -595,7 +609,45 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
 
 /// Any touch, key, button or app change can change the front app: the tree read's no longer stands.
 - (void)forgetFront {
-    @synchronized (self) { _lastFront = nil; }
+    @synchronized (self) { _lastFront = nil; _inputs++; }
+}
+
+/// The front app's element for a tree read or a screenshot: a search still running, or ended under
+/// 150 ms ago with no input since, is waited for and shared (the two requests come together on two
+/// queues, and each searched on its own: ~220 ms of AX round trips twice per read). A poll a while
+/// later searches again.
+- (id)sharedFront:(NSDictionary **)info ax:(id *)client {
+    PKFrontSearch *search;
+    BOOL mine = NO;
+    NSTimeInterval now = NSProcessInfo.processInfo.systemUptime;
+    @synchronized (self) {
+        PKFrontSearch *last = _search;
+        if (last && last.inputs == _inputs && (last.ended == 0 || now - last.ended < 0.15) && now - last.started < 1.5) {
+            search = last;
+        } else {
+            search = [PKFrontSearch new];
+            search.started = now;
+            search.inputs = _inputs;
+            search.done = dispatch_group_create();
+            dispatch_group_enter(search.done);
+            _search = search;
+            mine = YES;
+        }
+    }
+    if (mine) {
+        NSDictionary *found = nil;
+        id ax = nil;
+        id element = nil;
+        @try { element = [self front:&found ax:&ax]; } @catch (__unused NSException *e) {}
+        search.element = element; search.ax = ax; search.info = found;
+        search.ended = NSProcessInfo.processInfo.systemUptime;
+        dispatch_group_leave(search.done);
+    } else if (dispatch_group_wait(search.done, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)))) {
+        return [self front:info ax:client];
+    }
+    if (info) *info = search.info;
+    if (client) *client = search.ax;
+    return search.element;
 }
 
 - (void)rememberFront:(NSDictionary<NSString *, id> *)front {
@@ -694,7 +746,7 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
         NSTimeInterval started = NSProcessInfo.processInfo.systemUptime;
         id ax;
         NSDictionary *info;
-        id app = [self front:&info ax:&ax];
+        id app = [self sharedFront:&info ax:&ax];
         if (!app) { if (code) *code = @"no_front_app"; return nil; }
         NSTimeInterval frontAt = NSProcessInfo.processInfo.systemUptime;
         id root = PKSnapshotTreeBounded(ax, app, maxDepth, maxChildren, code);
