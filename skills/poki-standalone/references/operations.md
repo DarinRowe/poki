@@ -1,6 +1,6 @@
 # Poki iPhone 独立运行：全链路操作文档
 
-本文记录从应用签名到 Codex 手机端操作 iPhone 的完整配置过程。配置阶段可以使用 Mac；运行阶段由手机上的 Poki、Poki Runner、用户自建中转和云端模型协作。
+本文记录从应用签名到 Codex 手机端操作 iPhone 的完整配置过程。配置阶段可以使用 Mac；运行阶段由手机上的 Poki、用户自建中转和云端模型协作。Poki 在自己的进程里建立 XCTest 自动化会话来看屏和操作，默认只装 Poki 一个应用；旧的 Runner 路径要另装 Poki Runner，见第 3 节的可选步骤。
 
 适用实现以本仓库 iOS 独立运行分支为准。本文依据 2026-11-07 的真机配置编写，已测范围见第 9 节。文件路径均相对仓库根目录，示例标识符需要替换为自己的值。
 
@@ -11,21 +11,21 @@ flowchart LR
     User[用户在手机发起任务] --> Client[Codex 手机端：云端主机]
     Client <--> Relay[用户自建中转：MCP 与 OAuth]
     Relay <--> Core[iPhone：PokiCore]
-    Core <--> Runner[iPhone：Poki Runner]
-    Runner <--> Apps[手机应用]
+    Core <--> Session[iPhone：Poki 进程内的自动化会话]
+    Session <--> Apps[手机应用]
     Core --> Approval[灵动岛：请求用户审批]
     Approval --> Core
     Launcher[iPhone：PokiLauncher] --> Local[本机回环与开发服务]
-    Local --> Runner
+    Local --> Session
 ```
 
-手机向中转建立出站连接。中转转发 MCP 请求和回复，PokiCore 在手机上执行工具，PokiLauncher 启动本机 Runner。远程任务选择云端主机，可避免依赖在线 Mac 执行代理循环。
+手机向中转建立出站连接。中转转发 MCP 请求和回复，PokiCore 在手机上执行工具；PokiLauncher 挂载开发者磁盘映像，Poki 随后在自己的进程里打开自动化会话。远程任务选择云端主机，可避免依赖在线 Mac 执行代理循环。
 
 验收分三层记录：
 
 | 层次 | 必须看到的结果 |
 | --- | --- |
-| 配置完成 | 本机开发服务可达、手机配对成功、Runner 运行、中转就绪、客户端完成认证 |
+| 配置完成 | 本机开发服务可达、手机配对成功、Poki 日志出现 `in-process session ready`、中转就绪、客户端完成认证 |
 | 独立基本操作 | USB 已拔掉，从手机发起新云端任务，工具调用成功，目标应用实际打开或发生预期变化 |
 | 完整真机验收 | 基本操作之外，完成时钟、备忘录、审批、后台、锁屏、重启、网络切换和失败恢复等约定项目 |
 
@@ -54,7 +54,7 @@ flowchart LR
 
 ### 3.1 固定构建版本
 
-先核对工作树、分支和实际提交。应用与 Runner 分别由 `.github/workflows/ios-app.yml` 和 `.github/workflows/ios-runner.yml` 构建。使用同一已核对版本对应的制品；本地未发布提交应本地构建，不能用其他版本的“最新制品”代替。
+先核对工作树、分支和实际提交。应用由 `.github/workflows/ios-app.yml` 构建；只有走旧的 Runner 路径时才需要 `.github/workflows/ios-runner.yml` 构建的 Runner。使用同一已核对版本对应的制品；本地未发布提交应本地构建，不能用其他版本的“最新制品”代替。
 
 应用制品：
 
@@ -62,7 +62,7 @@ flowchart LR
 - `Poki-external-unsigned.ipa`：不包含隧道扩展，依赖外部本机连接。
 - `Poki-signing.zip`：用于重签名的具体 entitlement 文件，即系统签名权限配置。
 
-Runner 制品：`poki-runner-unsigned.ipa`。同一工作流另提供保留 XCTest 框架的版本，按安装方式选择。本轮成功路径使用普通版本，由手机上的开发者磁盘映像提供系统测试框架；Runner 自身依赖的框架仍须保留并签名。
+Runner 制品（仅 Runner 路径）：`poki-runner-unsigned.ipa`。同一工作流另提供保留 XCTest 框架的版本，按安装方式选择。2026-11-07 的成功路径使用普通版本，由手机上的开发者磁盘映像提供系统测试框架；Runner 自身依赖的框架仍须保留并签名。
 
 ### 3.2 配置自己的应用标识
 
@@ -74,7 +74,7 @@ Runner 制品：`poki-runner-unsigned.ipa`。同一工作流另提供保留 XCTe
 | 实时活动扩展 | `com.example.poki.widgets` |
 | 本机隧道扩展 | `com.example.poki.tunnel` |
 | App Group，共享容器 | `group.com.example.poki` |
-| Runner | `com.example.poki.WebDriverAgentRunner.xctrunner` |
+| Runner（仅 Runner 路径） | `com.example.poki.WebDriverAgentRunner.xctrunner` |
 
 Poki 和实时活动扩展需要同一个有效 App Group。完整版本的 Poki 和隧道扩展还需要 `packet-tunnel-provider` 权限。通配描述文件不能代替这些能力的匹配描述文件；外部连接版本免去隧道权限，但仍需正确处理共享组。
 
@@ -111,9 +111,9 @@ python3 native/ios-app/scripts/export-signing.py \
 
 外部连接版本将 `local` 换为 `external`。导出工具从已构建的 Info.plist 读取 App Group；不要将尚未解析的 `$(POKI_APP_GROUP)` 模板文字当成最终组名。重新生成 Xcode 项目后应重新检查签名输入。
 
-### 3.4 检查 Runner 的嵌套签名
+### 3.4 检查嵌套签名
 
-Poki 和 Runner 使用同一签名工具、团队和 Apple ID。检查主应用、扩展、测试包、动态库及框架中的每个 Mach-O 可执行文件。
+检查主应用、扩展、动态库及框架中的每个 Mach-O 可执行文件。走 Runner 路径时，Poki 和 Runner 使用同一签名工具、团队和 Apple ID，Runner 的测试包也要逐个检查。
 
 Runner 内的依赖顺序包括：
 
@@ -130,12 +130,13 @@ PokiRunner.app/
 
 ### 3.5 安装并完成系统准备
 
-通过既定签名安装工具、Xcode 设备窗口或本机已支持的安装工具安装两个应用。若使用当前 Xcode 的命令行入口：
+通过既定签名安装工具、Xcode 设备窗口或本机已支持的安装工具安装 Poki。若使用当前 Xcode 的命令行入口：
 
 ```sh
 xcrun devicectl device install app --device "$TEST_UDID" "$APP_PATH"
-xcrun devicectl device install app --device "$TEST_UDID" "$RUNNER_PATH"
 ```
+
+走 Runner 路径时，再用同一命令安装 `$RUNNER_PATH`，并用启动参数 `-automationPath runner` 启动 Poki（例如 `xcrun devicectl device process launch` 带这个参数）；这个参数只对这一次启动有效。
 
 `TEST_UDID` 必须来自当前任务指定的设备。先解锁，并由用户完成系统要求的信任确认。检查实际安装结果，不能仅凭安装器退出码判断。
 
@@ -144,9 +145,11 @@ xcrun devicectl device install app --device "$TEST_UDID" "$RUNNER_PATH"
 1. 设置 → 隐私与安全性 → 开发者模式；按系统要求重启并确认。
 2. 设置 → 开发者 → 启用 UI 自动化。
 3. 按系统实际要求处理开发者信任。某些团队签名没有“信任开发者”条目，不应将条目缺失直接判为错误。
-4. 打开 Poki；手动打开 Runner 时核对其引导画面，然后回到 Poki。自动化会话由 Poki 启动。
+4. 打开 Poki。自动化会话由 Poki 在自己的进程里打开。走 Runner 路径时，手动打开 Runner 核对其引导画面，然后回到 Poki。
 
-完成标准：两个应用已安装，签名完整，系统准备完成，Poki 能识别自己的 Runner。保留其他已安装自动化应用及其状态。
+只装 Poki、从没开过开发者模式的手机，第 1 步的菜单可能不出现：以前是装上 Runner 后才出现的。遇到时记录手机型号和系统版本，交回派任务的人，不另装 Runner 绕过。
+
+完成标准：Poki 已安装，签名完整，系统准备完成。Runner 路径另需 Runner 已安装、Poki 能识别它。保留其他已安装自动化应用及其状态。
 
 ## 4. 本机连接、手机配对和后台权限
 
@@ -183,9 +186,11 @@ xcrun devicectl device install app --device "$TEST_UDID" "$RUNNER_PATH"
 
 按 Poki 的 Setup 页面完成后台位置权限、通知和实时活动等系统提示。位置授权页可能含地图，演示素材避开此页面。保持 Poki 在后台，不从多任务切换器划掉它。
 
-准备开发者磁盘映像后开启 Poki。首次启动 Runner 可能要求用户再次输入设备密码以允许自动化。观察 connecting → pairing → launching → running；重启后的首次运行可能还有 mounting_ddi。
+准备开发者磁盘映像后开启 Poki。启动器经 connecting → pairing → running，重启后的首次运行可能还有 mounting_ddi；它只挂载映像，不经过 launching。随后 Poki 打开进程内会话，首次打开时 iOS 可能要求用户输入设备密码以允许自动化。完成标准是 Poki 日志出现 `in-process session ready`；出现 `in-process session not ready` 时，智能体的调用会立即收到失败原因，下一次调用、Poki 回到前台或智能体重新连接时 Poki 会再试。
 
-Poki 可能按空闲设置主动停止 Runner。出现休眠状态不等于会话失效；用新工具调用确认能否唤醒。记录当前空闲超时，进行后台存活检查时区分主动休眠和异常退出。
+进程内会话一直开到 Poki 退出，不按空闲停止，「Automation Running」横幅也一直显示。锁屏、切后台可能让会话失效；按设计下一次调用由 Poki 重新建立，这一条还没有真机验证。后台存活检查时记录失效后第一次调用的结果和用时。
+
+走 Runner 路径时，状态还会经过 launching，Poki 可能按空闲设置主动停止 Runner。出现休眠状态不等于会话失效；用新工具调用确认能否唤醒，并记录当前空闲超时。
 
 ## 5. 部署自己的中转
 
@@ -242,7 +247,7 @@ deploy/cf-relay/deploy.sh --name "$RELAY_NAME" \
 {"actions":[{"launch":"com.apple.mobiletimer"}]}
 ```
 
-这是 `do` 的参数，返回包含动作结果及一次屏幕读取。`look` 是独立看屏工具，`status` 读取 Runner 和中转状态。客户端若只暴露部分工具，按实际能力验证并记录，不能把私有测试脚本的调用冒充客户端调用。
+这是 `do` 的参数，返回包含动作结果及一次屏幕读取。`look` 是独立看屏工具，`status` 读取自动化会话和中转状态（输出里仍叫 runner）。客户端若只暴露部分工具，按实际能力验证并记录，不能把私有测试脚本的调用冒充客户端调用。
 
 完成标准：手机任务页显示云端主机，任务记录出现实际插件工具调用，手机产生对应结果。
 
@@ -260,10 +265,10 @@ deploy/cf-relay/deploy.sh --name "$RELAY_NAME" \
 | 项目 | 验证方式 |
 | --- | --- |
 | 时钟与备忘录 | 时钟添加一座城市；备忘录创建专用测试笔记，记录首末调用和结果 |
-| 后台 | Poki 后台五分钟，结合空闲超时判断保活和唤醒 |
+| 后台 | Poki 后台五分钟，核对会话仍在或失效后能重建；Runner 路径结合空闲超时判断保活和唤醒 |
 | 锁屏与重启 | 锁屏两分钟后解锁；重启后按系统要求恢复，记录恢复时间 |
 | 网络 | Wi-Fi 断开与恢复、蜂窝运行、首次挂载映像分别验证 |
-| 失败恢复 | Runner 被关闭、执行中断及手机离线时，核对错误含义、返回时限和下一次读取 |
+| 失败恢复 | 进程内会话失效（Runner 路径为 Runner 被关闭）、执行中断及手机离线时，核对错误含义、返回时限和下一次读取 |
 | 审批 | 专用测试照片上的删除操作、允许、拒绝、超时后重试、重复动作、阻止代理自批、密码输入隐藏 |
 | 实时活动 | 当前工具、结果缩略图、后台显示和结束状态 |
 
@@ -272,6 +277,8 @@ deploy/cf-relay/deploy.sh --name "$RELAY_NAME" \
 若要交付演示视频，删除审批段单独录制。录制从普通测试页面开始，避开连接器网址、账户和网络设置页面。脱敏检查通过后才能分享。没有真实录制的素材，交回时写“未录制”。
 
 ## 8. 实际遇到的故障与处理
+
+下表是 2026-11-07 在 Runner 路径上遇到的故障，涉及 Runner 的几行只适用于 Runner 路径。
 
 | 现象 | 检查与处理 | 确认修复的依据 |
 | --- | --- | --- |
@@ -286,11 +293,11 @@ deploy/cf-relay/deploy.sh --name "$RELAY_NAME" \
 
 错误提示中的“开发者不受信任”不能单独证明根因。本轮 Runner 的实际问题是操作时漏签嵌套框架，修正的是本地签名制品，不是仓库代码。
 
-已知边界：本轮没有处理 Runner 的 8100 端口对局域网开放问题。中转上的认证和审批不能代替对直接访问该端口的控制。这个边界应随交回保留。
+已知边界：Runner 路径下 Runner 的 8100 端口对局域网开放。中转上的认证和审批不能代替对直接访问该端口的控制，走 Runner 路径时这个边界应随交回保留。进程内路径不开这个端口。
 
 ## 9. 2026-11-07 的实际验证范围
 
-实际安装代码：`8bcd387`，基于原 iOS 应用段 `e806589`，包含本机连接、可配置签名组、复用现有 VPN 和配对保活修复。下面的结果绑定这个安装版本；审查分支后续更新的代码须另行核对。
+实际安装代码：`8bcd387`，基于原 iOS 应用段 `e806589`，包含本机连接、可配置签名组、复用现有 VPN 和配对保活修复。下面的结果绑定这个安装版本，走的是 Poki 加 Runner 两个应用的 Runner 路径；进程内路径没有包含在内，须另行验收。
 
 | 结果 | 本轮证据 |
 | --- | --- |
@@ -320,7 +327,7 @@ Skill 的仓库来源是 `skills/poki-standalone/`。安装时复制整个目录
 参考入口：
 
 - 仓库实现：`native/ios-app/`、`native/ios/PokiCore/`、`native/ios/PokiLoopback/`、`native/launcher/`。
-- 构建入口：`.github/workflows/ios-app.yml`、`.github/workflows/ios-runner.yml`。
+- 构建入口：`.github/workflows/ios-app.yml`；Runner 路径另有 `.github/workflows/ios-runner.yml`。
 - 中转部署：`deploy/cf-relay/deploy.sh`、`deploy/cf-relay/DEPLOY.md`。
 - 完整检查：`docs/device-test-checklist.md`。
 - OpenAI 官方说明：[自定义 MCP 插件配置](https://developers.openai.com/plugins/quickstart)、[云端环境与手机入口](https://learn.chatgpt.com/docs/environments/cloud-environments)、[MCP 接入方式](https://learn.chatgpt.com/docs/extend/mcp)。
