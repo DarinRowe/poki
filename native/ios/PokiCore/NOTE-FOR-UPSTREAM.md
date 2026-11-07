@@ -86,6 +86,9 @@ that no answer may halt the agent and from the first Poki Gym runs (`native/ios-
     gave a false end at row 180), uses its remaining time for the read after each swipe, and the
     read after it lists the found element, and it reads a swipe's result before swiping again (a
     250th-row miss); a cut listing counts what it left out by type.
+16. Scrolls drag to rest (with a drag back after an overshoot); a tap on a partly hidden element goes
+    to its visible part; a replaced field gets a new number; a note when focus moved; a sheet hint;
+    a refused launch is one plain line.
 
 Still not done: a `collect` or `expect` field, a `recover` action, and redaction of sensitive text
 (Zhehan: out of scope for now).

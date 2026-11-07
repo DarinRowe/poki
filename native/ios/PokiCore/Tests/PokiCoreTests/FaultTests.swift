@@ -695,6 +695,8 @@ final class GymTests: XCTestCase {
         XCTAssertFalse(wda.sent.contains("GET /element/active"), "focus is read from the tree, never asked of the runner")
         field.keyboard.value = false
         wda.set("POST /wda/tap") { _ in (200, ["value": .null]) }
+        // No keyboard and the keys went nowhere: the note stands.
+        wda.set("POST /wda/keys") { _ in (200, ["value": .null]) }
         let none = await core.call("do", ["actions": [["type": "xyz"]]])
         XCTAssertTrue(none.text.contains("no field was focused when the text went"), none.text)
     }
@@ -981,7 +983,7 @@ final class GymTests: XCTestCase {
         XCTAssertTrue(result.text.contains("scroll_to \"Row 45\": 4 swipes, found at [16,320,358,44]"), result.text)
         XCTAssertTrue(result.text.contains("found by scroll_to:") && result.text.contains("Cell \"Row 45\" [16,320,358,44] (tap "), result.text)
         XCTAssertGreaterThan(Date().timeIntervalSince(started), 3.5, "four 1 s swipes outlast the 3 s action cap: scroll_to has 12 s")
-        XCTAssertTrue(wda.bodies("POST /wda/pressAndDragWithVelocity").allSatisfy { $0["holdDuration"]?.double == 0.05 })
+        XCTAssertTrue(wda.bodies("POST /wda/pressAndDragWithVelocity").allSatisfy { $0["holdDuration"]?.double == 0.35 }, "a resting drag")
     }
 
     /// 300 rows in the gym: a swipe sent while the runner was still serving the read after the last
@@ -1052,6 +1054,105 @@ final class GymTests: XCTestCase {
         XCTAssertTrue(third.text.contains("5 swipes, found at [16,100,358,44]"), third.text)
         XCTAssertTrue(third.text.contains("found by scroll_to:") && third.text.contains("Cell \"Row 60\""), third.text)
         XCTAssertTrue(wda.sent.firstIndex(of: "GET /source").map { _ in true } ?? false)
+    }
+
+    /// The gym's 300-row list under a flick: three swipes went from item 104 to 184 (26 rows a swipe
+    /// on a 15-row screen), so item 150 was never on screen between two reads. scroll_to now drags
+    /// with a rest (the list stops under the finger), and when a read shares nothing with the read
+    /// before, a short drag back follows before the scroll goes on.
+    func testScrollToDragsBackWhenTheListMovedMoreThanAScreen() async {
+        let (core, wda, _) = makeCore { $0.toolDeadline = 20 }
+        let offset = LockedBox(0)
+        let drags = LockedBox<[(Double, Double, Double, Double)]>([])
+        func show() { wda.source((0..<10).map { ("Cell", "Row \(offset.value + $0)") }) }
+        wda.set("POST /wda/pressAndDragWithVelocity") { body in
+            let from = body?["fromY"]?.double ?? 0, to = body?["toY"]?.double ?? 0
+            drags.update { $0.append((body?["fromX"]?.double ?? 0, from, body?["toX"]?.double ?? 0, to)) }
+            // A finger going up moves the list 26 rows (momentum); the short one back, 7.
+            offset.update { $0 += to < from ? 26 : -7 }
+            show()
+            return (200, ["value": .null])
+        }
+        show()
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["scroll_to": "Row 20"]]])
+        XCTAssertTrue(result.text.contains("2 swipes, found at"), result.text)
+        XCTAssertTrue(result.text.contains("the list moved more than a screen after 1 swipe, so a short drag back followed each"), result.text)
+        XCTAssertTrue(result.text.contains("found by scroll_to:") && result.text.contains("\"Row 20\""), result.text)
+        let sent = drags.value
+        XCTAssertEqual(sent.count, 2)
+        XCTAssertLessThan(sent[0].3, sent[0].1, "the first drag goes up")
+        XCTAssertGreaterThan(sent[1].3, sent[1].1, "the corrective drag goes down")
+        XCTAssertLessThan(abs(sent[1].3 - sent[1].1), abs(sent[0].3 - sent[0].1), "the drag back is the shorter")
+        let bodies = wda.bodies("POST /wda/pressAndDragWithVelocity")
+        XCTAssertEqual(bodies.first?["holdDuration"]?.double, 0.35, "a resting drag, not a flick")
+    }
+
+    /// Settings' search field: the keyboard came after the focus wait, and the text had landed, but
+    /// the answer said it may have gone nowhere. The note stands only when the text did not read back.
+    func testAFocusNoteIsDroppedWhenTheTextReadBack() async {
+        let (core, wda, _) = makeCore()
+        let field = FaultTests.Field()
+        field.keyboard.value = false
+        field.install(wda)
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["type": "hello", "ref": 1]]])
+        XCTAssertTrue(result.text.contains("the field now reads \"hello\""), result.text)
+        XCTAssertFalse(result.text.contains("may have gone nowhere"), result.text)
+    }
+
+    /// Settings replaces its search field in search mode: the old number is gone and a new field is
+    /// listed. The read after the type names the field's new number.
+    func testTheReadAfterATypeNamesTheReplacedField() async {
+        let (core, wda, _) = makeCore()
+        wda.tree([Node("SearchField", "Search", [16, 64, 306, 37]), Node("Button", "General", [20, 322, 362, 44])], app: "Settings")
+        let look = await core.call("look", [:])
+        XCTAssertTrue(look.text.contains("1 SearchField \"Search\""), look.text)
+        wda.set("POST /wda/keys") { [wda] _ in
+            wda.tree([Node("Keyboard", nil, [0, 500, 390, 344]), Node("SearchField", "Search", [16, 64, 306, 37], value: "Wi-Fi 网络"), Node("Button", "Cancel", [333, 66, 53, 31]), Node("Button", "General", [20, 322, 362, 44])], app: "Settings")
+            return (200, ["value": .null])
+        }
+        let result = await core.call("do", ["actions": [["type": "Wi-Fi 网络", "ref": 1]]])
+        XCTAssertTrue(result.text.contains("the field now reads \"Wi-Fi 网络\""), result.text)
+        guard let line = result.text.split(separator: "\n").first(where: { $0.hasPrefix("the field typed into is now element ") }) else { return XCTFail(result.text) }
+        XCTAssertTrue(line.contains("(1 is gone: the app replaced the field)"), String(line))
+    }
+
+    /// Photos' Library button ran past the bottom of the screen: the tap went to the screen's very
+    /// edge, the point of it nearest its centre. Now the centre of its visible part is tapped.
+    func testAnElementCutByTheScreenIsTappedAtTheCentreOfItsVisiblePart() async {
+        let (core, wda, _) = makeCore()
+        wda.tree([Node("Button", "Library", [0, 700, 390, 600])], app: "Photos")
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["tap": 1]]])
+        let body = wda.bodies("POST /wda/tap").last
+        XCTAssertEqual(body?["x"]?.double, 195, result.text)
+        XCTAssertEqual(body?["y"]?.double, 772, result.text)
+        XCTAssertTrue(result.text.contains("its centre is off the screen, so the centre of its visible part was tapped"), result.text)
+    }
+
+    /// Photos' What's New sheet: back (an edge swipe) did nothing. The answer now says a sheet is up
+    /// and names its buttons.
+    func testBackOnASheetSaysWhatDismissesIt() async {
+        let (core, wda, _) = makeCore()
+        wda.tree([Node("Sheet", nil, [0, 200, 390, 644], [Node("StaticText", "What's New", [40, 240, 310, 40]), Node("Button", "Continue", [40, 760, 310, 50])])], app: "Photos")
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["back": true]]])
+        XCTAssertTrue(result.text.contains("a sheet is up (its buttons: "), result.text)
+        XCTAssertTrue(result.text.contains("\"Continue\"): back does not dismiss sheets, tap one of its buttons or drag it down"), result.text)
+    }
+
+    /// Notes is not on the CI simulator: the launch answered with the system's whole error dump.
+    /// Now one line.
+    func testALaunchOfAnAppThatIsNotInstalledIsOneLine() async {
+        let (core, wda, _) = makeCore()
+        _ = await core.call("look", [:])
+        let dump = "Error Domain=FBSOpenApplicationServiceErrorDomain Code=1 \"The request to open \"com.apple.mobilenotes\" failed.\" UserInfo={BSErrorCodeDescription=RequestDenied, NSUnderlyingError=0x600000c8 {Error Domain=FBSOpenApplicationErrorDomain Code=4 \"Application \"com.apple.mobilenotes\" is unknown to FrontBoard.\" UserInfo={BSErrorCodeDescription=InvalidRequest}}, NSLocalizedFailureReason=Application \"com.apple.mobilenotes\" is unknown to FrontBoard., NSLocalizedDescription=The request to open \"com.apple.mobilenotes\" failed.}"
+        wda.set("POST /wda/apps/activate") { _ in (500, ["value": ["error": "unknown error", "message": .string(dump)]]) }
+        let result = await core.call("do", ["actions": [["launch": "com.apple.mobilenotes"]]])
+        XCTAssertTrue(result.text.contains("launch com.apple.mobilenotes: no app with that bundle id is installed on this device"), result.text)
+        XCTAssertFalse(result.text.contains("FBSOpen"), result.text)
+        XCTAssertTrue(result.text.contains("not sent") || result.text.contains("not_sent"), result.text)
     }
 
     /// CI simulator, the keyboard's first use: the runner stood still for seconds, the focus reads

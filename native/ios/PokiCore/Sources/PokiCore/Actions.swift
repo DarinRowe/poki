@@ -84,7 +84,7 @@ extension Computer {
         let at = " at [\(Int(p.x.rounded())), \(Int(p.y.rounded()))]"
         guard hit.free else { return "\(at) (\(hit.over ?? "something") lies over all of its visible part in the tree; touched anyway: see whether it took)" }
         guard moved else { return "" }
-        return hit.over.map { "\(at) (its centre is under \($0) in the tree)" } ?? "\(at) (its centre is off the screen)"
+        return hit.over.map { "\(at) (its centre is under \($0) in the tree)" } ?? "\(at) (its centre is off the screen, so the centre of its visible part was tapped)"
     }
 
     func element(_ ref: Int) throws -> Element {
@@ -108,7 +108,7 @@ extension Computer {
         case "right": d = (1, 0)
         default: throw ActionFailure(message: "swipe must be up, down, left or right", delivery: .notSent)
         }
-        let half = (d.0 != 0 ? area.width : area.height) * (distance == "short" ? 0.2 : 0.35)
+        let half = (d.0 != 0 ? area.width : area.height) * (distance == "short" ? 0.2 : distance == "scroll" ? 0.3 : 0.35)
         let (cx, cy) = area.centre
         return (cx - d.0 * half, cy - d.1 * half, cx + d.0 * half, cy + d.1 * half)
     }
@@ -158,7 +158,9 @@ extension Computer {
             // 2 s, then type anyway and say when none was.
             let focusWait = min(2, max(0.2, until - now() - 1))
             let focused = await waitForFocus(seconds: focusWait, target: target)
-            let focusNote = focused ? "" : "; no field was focused when the text went (no keyboard came up in \(Int((focusWait * 1000).rounded())) ms), so it may have gone nowhere"
+            // The note stands only when the text did not read back: the keyboard of a search
+            // field in a navigation bar came after the wait, and the text had landed (gym, Settings).
+            func focusNote(_ landed: Bool) -> String { focused || landed ? "" : "; no field was focused when the text went (no keyboard came up in \(Int((focusWait * 1000).rounded())) ms), so it may have gone nowhere" }
             let hidden = describe(action).hasSuffix("(hidden)")
             let via = action["via"]?.string == "paste" ? "pasted" : "typed"
             let clear = action["clear"]?.bool ?? false
@@ -172,7 +174,8 @@ extension Computer {
             let reads = await fieldValue(target: target, holding: text, timeout: min(1.5, max(0.3, until - now() - 0.2)))
             let readBack = reads.map { hidden ? "; the field now holds \($0.count) characters" : "; the field now reads \"\($0.count > 200 ? String($0.prefix(190)) + "…" : $0)\"" }
                 ?? "; the field could not be read back (no focused field answered in time), so check the elements or the picture"
-            return ("type", "\(describe(action)) (\(via))\(readBack)\(focusNote)\(note)")
+            if let ref = action["ref"]?.int { typedInto = (ref, text) }
+            return ("type", "\(describe(action)) (\(via))\(readBack)\(focusNote(reads.map { $0.contains(text) } ?? false))\(note)")
         }
         if action["back"] != nil {
             return ("back", try await back(until: until))
@@ -276,9 +279,11 @@ extension Computer {
                 do { _ = try await runner.call("POST", "/wda/apps/terminate", ["bundleId": .string(bundle)], timeout: 6, countsAsMiss: false) }
                 catch let e as RunnerError where e.delivery == .notSent {}
                 catch let e as RunnerError { note = "; ending the app first did not answer in time (\(e.message)); the launch was sent anyway" }
-                _ = try await runner.call("POST", "/wda/apps/launch", ["bundleId": .string(bundle)], timeout: max(3, min(8, until - now() - 0.3)))
+                do { _ = try await runner.call("POST", "/wda/apps/launch", ["bundleId": .string(bundle)], timeout: max(3, min(8, until - now() - 0.3))) }
+                catch let e as RunnerError where e.delivery == .notSent { throw Self.launchRefused(bundle, e) }
             } else {
-                _ = try await runner.call("POST", "/wda/apps/activate", ["bundleId": .string(bundle)], timeout: 8)
+                do { _ = try await runner.call("POST", "/wda/apps/activate", ["bundleId": .string(bundle)], timeout: 8) }
+                catch let e as RunnerError where e.delivery == .notSent { throw Self.launchRefused(bundle, e) }
             }
             return ("launch", "launch \(bundle)\(fresh ? " (fresh)" : "")\(note)")
         }
@@ -291,6 +296,18 @@ extension Computer {
             return ("wait", "wait \(Int(seconds * 1000)) ms")
         }
         throw ActionFailure(message: "unknown action \(action.serialized())", delivery: .notSent)
+    }
+
+    /// A refused launch in one line: the system's error dump (FBSOpenApplication, several hundred
+    /// characters) says little more than that the app is not there (gym: Notes on a CI simulator).
+    static func launchRefused(_ bundle: String, _ e: RunnerError) -> ActionFailure {
+        let m = e.message
+        if m.contains("is unknown to FrontBoard") || m.contains("not installed") || m.contains("could not be found") || m.contains("NotFound") {
+            return ActionFailure(message: "launch \(bundle): no app with that bundle id is installed on this device", delivery: .notSent)
+        }
+        guard m.count > 220 else { return ActionFailure(message: m, delivery: .notSent) }
+        let quoted = m.range(of: #""[^"]{12,160}""#, options: .regularExpression).map { String(m[$0]) }
+        return ActionFailure(message: "launch \(bundle) was refused by the runner: \(quoted ?? String(m.prefix(200)) + "…")", delivery: .notSent)
     }
 
     /// The whole text as key presses in one request. Clearing deletes what the focused field holds
@@ -373,17 +390,25 @@ extension Computer {
     /// answer says which, and the model sees the result in the read. No app-specific rule.
     func back(until: Double) async throws -> String {
         let screen = try await screenSize(until: until)
+        // A sheet (a first-run "What's New", a share sheet) takes neither a back button nor the edge
+        // swipe: the answer says so and names its buttons (gym: Photos' sheet, back "sent" and
+        // nothing changed).
+        var sheetNote = ""
+        if let sheet = lastAll.first(where: { $0.type == "Sheet" && !$0.fromPicture }) {
+            let buttons = listed.filter { $0.element.type == "Button" && sheet.contains($0.element) }.prefix(4).map { "\($0.ref) \"\($0.element.text.prefix(30))\"" }.joined(separator: ", ")
+            sheetNote = "; a sheet is up\(buttons.isEmpty ? "" : " (its buttons: \(buttons))"): back does not dismiss sheets, tap one of its buttons or drag it down"
+        }
         let top = lastAll.filter { e in
             e.type == "Button" && e.frame.x < 70 && e.frame.y < 130 && e.frame.y + e.frame.height > 20 && e.frame.width < 180 && e.frame.height < 70 && !e.fromPicture
         }.sorted { ($0.frame.y, $0.frame.x) < ($1.frame.y, $1.frame.x) }
         if let button = top.first {
             let p = (x: button.frame.x + button.frame.width / 2, y: button.frame.y + button.frame.height / 2)
             try await tap(p)
-            return "back: tapped the top-left button \(button.text.isEmpty ? "" : "\"\(button.text)\" ")at [\(Int(p.x)), \(Int(p.y))]"
+            return "back: tapped the top-left button \(button.text.isEmpty ? "" : "\"\(button.text)\" ")at [\(Int(p.x)), \(Int(p.y))]\(sheetNote)"
         }
         let y = screen.height / 2
         try await gesture((2, y, screen.width * 0.6, y), seconds: 0.3, until: until)
-        return "back: no back button was listed in the top left, so an edge swipe from the left was sent (what most apps take as back)"
+        return "back: no back button was listed in the top left, so an edge swipe from the left was sent (what most apps take as back)\(sheetNote)"
     }
 
     /// What the field holds now (its value from the tree), or nil when no field is found or read.
@@ -505,8 +530,12 @@ extension Computer {
         // cannot pass between them however slow the runner is (seen in the gym: row 250 of 300
         // scrolled past unread over seven calls whose reads all came late, then "not found").
         var all = lastAll, swipes = 0, last: String?, still = 0, waited = false
-        func found(_ e: Element) -> String { scrollFound = e; return "\(swipes) swipes, found at \(e.frame.described) (its number is in the list below)" }
-        func notYet(_ why: String) -> String { "\(swipes) swipes, \(wanted) not seen yet; \(why): call scroll_to again to go on from here" }
+        // After a swipe whose read shares nothing with the read before (the list moved more than a
+        // screen), the next swipe is a short one back, so nothing is passed unread.
+        var corrective = false, corrected = false, overshoots = 0
+        func overshot() -> String { overshoots == 0 ? "" : " (the list moved more than a screen after \(overshoots) swipe\(overshoots == 1 ? "" : "s"), so a short drag back followed each)" }
+        func found(_ e: Element) -> String { scrollFound = e; return "\(swipes) swipes, found at \(e.frame.described) (its number is in the list below)\(overshot())" }
+        func notYet(_ why: String) -> String { "\(swipes) swipes, \(wanted) not seen yet; \(why): call scroll_to again to go on from here\(overshot())" }
         // A swipe sent while the runner is still serving the read after the last one would only
         // queue behind it and time out, and the whole scroll would come back unknown (seen in
         // the gym on 300 rows): the runner is waited for, and a swipe the runner did not confirm
@@ -527,6 +556,8 @@ extension Computer {
                     return notYet("the read after the last swipe did not come; nothing is swiped again until it has")
                 }
                 swipeUnread = false
+                corrective = !corrected && scrolledPastAScreen(from: all, to: seen.elements, in: region)
+                if corrective { overshoots += 1 }
                 let signature = seen.elements.map { "\($0.key)@\(Int($0.frame.y))" }.joined(separator: ";")
                 if signature == last, !waited {
                     // The end is declared only when two swipes in a row, each sent to a free runner and
@@ -547,14 +578,28 @@ extension Computer {
             guard swipes < max else { return notYet("that is \(max) swipes (max_swipes takes up to 15)") }
             guard until - now() > 1.6 else { return notYet("the action's time ran out before the list was through (\(Int(Self.scrollCap)) s)") }
             guard await runnerFree(margin: 1.6) else { return notYet("the runner is still finishing the read after the last swipe") }
+            // A resting drag of 60 % of the area, not a flick: a flick's momentum carried the gym's
+            // list 26 rows past a 15-row screen (the 70 % held for the finger, not the list), and
+            // the tree read while a list decelerates waits for it to stop. The drag ends with the
+            // finger held still, so the list stops where it is.
+            let path = corrective ? try swipePath(region, ["up": "down", "down": "up", "left": "right", "right": "left"][fingerGoes] ?? "down", "short") : try swipePath(region, fingerGoes, "scroll")
             do {
-                try await gesture(try swipePath(region, fingerGoes), seconds: 0.25, rest: 0.05, until: until - 0.8)
+                try await gesture(path, seconds: 0.5, rest: 0.35, until: until - 0.8)
             } catch let e as RunnerError where e.delivery == .unknown {
                 return notYet("the runner did not confirm the last swipe in time (\(e.message)), so it may still land")
             }
             swipes += 1
+            corrected = corrective
             await sleep(seconds: 0.1)
         }
+    }
+
+    /// Whether a read after a swipe shares nothing with the read before within the scroll area: the
+    /// list moved more than a screen, and what was between may have been passed.
+    func scrolledPastAScreen(from before: [Element], to after: [Element], in region: Rect) -> Bool {
+        func inside(_ es: [Element]) -> Set<String> { Set(es.filter { region.contains($0.frame.centre) && !$0.text.isEmpty && !Self.containers.contains($0.type) }.map(\.key)) }
+        let a = inside(before), b = inside(after)
+        return a.count >= 3 && b.count >= 3 && a.isDisjoint(with: b)
     }
 
     /// The time one scroll_to may take: more than an action, since it reports where it got to.

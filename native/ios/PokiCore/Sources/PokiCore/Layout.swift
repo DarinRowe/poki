@@ -46,8 +46,10 @@ struct Layout {
         let covering = covers(target)
         let over = covering.map(\.frame)
         func free(_ p: (x: Double, y: Double)) -> Bool { !over.contains { $0.contains(p) } }
-        let centre = target.frame.centre
-        if visible.contains(centre), free(centre) { return (centre, nil, true) }
+        // An element cut by the screen's edge is touched at the centre of its visible part, not at
+        // the point of it nearest its own centre (gym: a tap at the screen's bottom edge, y 874).
+        let centre = visible.contains(target.frame.centre) ? target.frame.centre : visible.centre
+        if free(centre) { return (centre, nil, true) }
         var best: (point: (x: Double, y: Double), distance: Double)?
         let steps = 9
         for i in 0..<steps {

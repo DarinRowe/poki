@@ -48,6 +48,9 @@ final class Computer: @unchecked Sendable {
     /// The element the last scroll_to found, so the read after it can give its number (it may be
     /// past the listing's limit: the gym's 1,507-element grid had its button at 1506).
     var scrollFound: Element?
+    /// The element the last type went to and its text, so the read after it can say which number the
+    /// field has now when the app replaced it (Settings' search field is a new element in search mode).
+    var typedInto: (ref: Int, text: String)?
 
     var lastElements: [Element] { listed.map(\.element) }
     var layout: Layout { Layout(all: lastAll, screen: size ?? ScreenSize(width: 10_000, height: 10_000)) }
@@ -287,6 +290,10 @@ final class Computer: @unchecked Sendable {
         if let changedLine { header.append(changedLine) }
         header += extra
         header.append(heading)
+        if let typed = typedInto, gone.contains(where: { $0.ref == typed.ref }), let i = shown.firstIndex(where: { Self.fieldTypes.contains($0.type) && ($0.value ?? "").contains(typed.text) }), let n = assigned[i] {
+            body.append("the field typed into is now element \(n) (\(typed.ref) is gone: the app replaced the field)")
+        }
+        typedInto = nil
         let footer = gone.isEmpty ? [] : ["gone since the last read: " + gone.prefix(20).map { "\($0.ref) \($0.element.type) \"\($0.element.text.prefix(40))\"" }.joined(separator: ", ")]
         // An answer that carries the screen is not an error, whatever happened to the actions: the
         // `error:` line says what, and the model goes on from the picture and the elements. Only an
@@ -391,6 +398,7 @@ final class Computer: @unchecked Sendable {
 
     func actNow(actions: [JSON], full: Bool) async -> ToolResult {
         scrollFound = nil
+        typedInto = nil
         var started = now()
         var until = started + config.toolDeadline
         if let blocked = await waitForRunner(until: until) { return blocked }

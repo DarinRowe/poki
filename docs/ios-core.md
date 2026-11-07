@@ -430,6 +430,29 @@ Each answer is facts only: the app in front, numbered elements, what each action
   cannot pass between them however late the reads come (the gym's 300 rows: seven calls each
   swiped once with the read after it never landing, so rows 245-259 were never seen, and the
   scroll ran to the end and said not found).
+- **A scroll is a resting drag, and an overshoot is dragged back.** `scroll_to` drags 60 % of
+  the scroll area in 0.5 s and holds the finger still before lifting, so the list stops where the
+  finger stops: a flick's momentum carried the gym's list 26 rows past a 15-row screen (the 70 %
+  held for the finger, not the list), and a tree read during a list's deceleration waits for it
+  to stop. When the read after a drag shares nothing with the read before inside the scroll
+  area, the list moved more than a screen, and a short drag back follows before the scroll goes
+  on; the answer says so: "(the list moved more than a screen after 1 swipe, so a short drag
+  back followed each)".
+- **The focus note stands only when the text did not read back.** "no field was focused when the
+  text went … may have gone nowhere" is dropped once the field reads the text (Settings' search
+  field in a navigation bar brought its keyboard up after the wait, with the text landed). When
+  the app replaced the field (Settings' search mode), the read after the type ends with "the
+  field typed into is now element 42 (3 is gone: the app replaced the field)".
+- **An element cut by the screen's edge is tapped in its visible part.** The tap goes to the
+  centre of the part on the screen, not to the point nearest the element's own centre (Photos'
+  Library button ran past the bottom and the tap went to the screen's edge); the answer says
+  "its centre is off the screen, so the centre of its visible part was tapped".
+- **Back says when a sheet is up.** `{back: true}` on a sheet (a first-run "What's New", a share
+  sheet) still sends what it sends and adds "a sheet is up (its buttons: 5 "Continue"): back does
+  not dismiss sheets, tap one of its buttons or drag it down".
+- **A refused launch is one line.** An app the device does not have answers "launch
+  com.apple.mobilenotes: no app with that bundle id is installed on this device" (not_sent), not
+  the system's error dump; any other refusal is cut to its quoted sentence.
 - **Typing has 9 s and never leaves the keys in doubt.** A type is a tap, a wait for the focus and
   the keys, plus a wait for a busy runner, so it has 9 s (the action cap otherwise). When under
   1.2 s is left for the keys they are not sent: `nothing was typed … send the type again`.
