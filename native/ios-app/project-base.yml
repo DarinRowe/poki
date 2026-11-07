@@ -25,7 +25,9 @@ settings:
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "5.0"
-    TARGETED_DEVICE_FAMILY: "1"
+    # iPhone and iPad; on iPad (and the iPhone Duo's inner display) Poki sits beside the app it drives
+    # in Split View, so iPad takes every orientation and any window size.
+    TARGETED_DEVICE_FAMILY: "1,2"
     DEBUG_INFORMATION_FORMAT: dwarf
     ENABLE_USER_SCRIPT_SANDBOXING: NO
 targets:
@@ -53,6 +55,7 @@ targets:
           UIColorName: AccentColor
           UIImageName: Bear
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
         NSSupportsLiveActivities: true
