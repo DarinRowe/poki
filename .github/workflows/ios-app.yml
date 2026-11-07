@@ -85,13 +85,10 @@ jobs:
             native/ios-app/scripts/package-app.sh \
               "build/app-$edition/Build/Products/Release-iphoneos/Poki.app" \
               "$edition" "out/$ipa" "$VERSION" "$BUILD"
+            python3 native/ios-app/scripts/export-signing.py \
+              "build/app-$edition/Build/Products/Release-iphoneos/Poki.app" \
+              "$edition" "out/signing/$edition"
           done
-          mkdir -p out/signing/local out/signing/external
-          cp native/ios-app/Poki/PokiLocal.entitlements out/signing/local/Poki.entitlements
-          cp native/ios-app/PokiTunnel/PokiTunnel.entitlements out/signing/local/
-          cp native/ios-app/PokiWidgets/PokiWidgets.entitlements out/signing/local/
-          cp native/ios-app/Poki/Poki.entitlements out/signing/external/
-          cp native/ios-app/PokiWidgets/PokiWidgets.entitlements out/signing/external/
           ditto -c -k --keepParent out/signing out/Poki-signing.zip
           (cd out && shasum -a 256 *.ipa | tee SHA256SUMS)
           for ipa in out/Poki-unsigned.ipa out/Poki-external-unsigned.ipa; do
