@@ -541,6 +541,11 @@ Each answer is facts only: the app in front, numbered elements, what each action
 - **The host's screenshot beside a busy runner gets 6 s, not 15.** A look under a wedged runner
   waited 18 s before it fell back; an answer at 6 s with the picture and the runner's state keeps
   the model moving. The 15 s stay for the path taken after a runner that was free gave none.
+- **A type waits for a busy runner as long as its action allows.** A type gave up after 3 s with
+  "the runner is still finishing an earlier GET /source" while 7 s of its 9 s were left; the
+  runner was serving this side's own leftover read from the look before, and the model paid a
+  round trip. The wait is now the action's remaining time less what the keys need (1.2 s plus
+  60 ms a key); "nothing was typed" comes only when the runner is not through by then.
 - **One element covering the screen with no parts in the tree says so.** Photos' home has its
   Library grid as one Button of 402x586 with the photos nowhere in WDA's XML (the SwiftUI grid is
   one accessibility element), so its centre is one photo among many. A Button, Cell, Image, Link

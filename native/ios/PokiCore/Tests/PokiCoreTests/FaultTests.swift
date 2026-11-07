@@ -1536,6 +1536,25 @@ final class GymTests: XCTestCase {
         XCTAssertEqual(wda.bodies("POST /wda/keys").count, 1)
     }
 
+    /// Gym: a type gave up on a busy runner after 3 s with 7 s of its action left (the runner was
+    /// serving this side's own leftover read from the look before) and cost a round trip. The wait
+    /// is now the action's remaining time less what the keys need.
+    func testTypingWaitsAsLongAsTheActionAllowsForABusyRunner() async {
+        let (core, wda, _) = makeCore { $0.actionCap = 3; $0.toolDeadline = 20; $0.readTimeout = 0.5 }
+        let field = FaultTests.Field()
+        field.keyboard.value = false
+        field.install(wda)
+        _ = await core.call("look", [:])
+        wda.delay("GET /source", 5)
+        wda.delay("GET /wda/activeAppInfo", 5)
+        let started = Date()
+        let result = await core.call("do", ["actions": [["type": "hello", "ref": 1]]])
+        XCTAssertFalse(result.text.contains("nothing was typed"), result.text)
+        XCTAssertEqual(wda.bodies("POST /wda/keys").count, 1, "the keys went once the runner was through: \(result.text)")
+        XCTAssertEqual(field.value.value, "hello")
+        XCTAssertLessThan(Date().timeIntervalSince(started), 16, result.text)
+    }
+
     /// CI simulator, the keyboard's first use: the runner stood still for seconds, the focus reads
     /// were given up on, and the keys sent behind them came back unknown (typed or not, the model
     /// cannot tell). Now a busy runner is waited for, and when it is not through nothing is typed.
@@ -1546,8 +1565,8 @@ final class GymTests: XCTestCase {
         field.install(wda)
         let look = await core.call("look", [:])
         XCTAssertTrue(look.text.contains("1 TextField \"Note\""), look.text)
-        wda.delay("GET /source", 6)
-        wda.delay("GET /wda/activeAppInfo", 6)
+        wda.delay("GET /source", 12)
+        wda.delay("GET /wda/activeAppInfo", 12)
         let result = await core.call("do", ["actions": [["type": "hello", "ref": 1]]])
         XCTAssertTrue(result.text.contains("nothing was typed: the runner is still finishing an earlier"), result.text)
         XCTAssertTrue(result.text.contains("was not sent"), result.text)

@@ -355,9 +355,12 @@ extension Computer {
         // The keys queue behind whatever the runner is still serving: the focus reads this side gave
         // up on while the keyboard came up (the CI simulator's runner stood still for seconds at the
         // keyboard's first use, and the keys sent behind those reads were "unknown"). A busy runner
-        // is waited for within the action's time; when it is not through, nothing is typed, so the
-        // text can be sent again safely.
-        if runner.busyWith != nil, await !runner.waitUntilFree(timeout: max(0.3, min(3, until - now() - 1))), let busy = runner.busyWith {
+        // is waited for within the action's time, less what the keys need (gym: a wait of 3 s gave
+        // up with 7 s of the action left, on a read of this side's own from the look before, and
+        // cost the model a round trip); when it is not through, nothing is typed, so the text can
+        // be sent again safely.
+        let keysNeed = 1.2 + 0.06 * Double(keys.count)
+        if runner.busyWith != nil, await !runner.waitUntilFree(timeout: max(0.3, until - now() - keysNeed)), let busy = runner.busyWith {
             throw ActionFailure(message: "nothing was typed: the runner is still finishing an earlier \(busy). Send the type again (with ref, so the field is tapped again) once it is through.", delivery: .notSent)
         }
         // The keys need their time; sent with less, they may land after the action's time is up
