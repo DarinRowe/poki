@@ -25,8 +25,11 @@ static NSDictionary *Run(NSString *mode, NSString *tag, NSString *text) {
         progress(@"read");
         out[@"close"] = [PKInProcess.shared close];
         progress(@"closed");
+        // A touch after close must not go through the closed session: it is refused, or it goes
+        // through a session opened for it (a new generation), as touch prepares one itself.
+        uint64_t beforeTouch = [PKInProcess.shared generation];
         PKOutcome *refused = [PKInProcess.shared touch:@[@[[PKTouchPoint at:CGPointMake(10, 10) offset:0], [PKTouchPoint at:CGPointMake(10, 10) offset:0.05]]] timeout:2];
-        out[@"closed_touch"] = @{@"delivery": @(refused.delivery), @"code": refused.code ?: @""};
+        out[@"closed_touch"] = @{@"delivery": @(refused.delivery), @"code": refused.code ?: @"", @"generation_before": @(beforeTouch), @"generation_after": @([PKInProcess.shared generation])};
         progress(@"touch refused");
         [NSThread sleepForTimeInterval:2];
         out[@"prepare2"] = [PKInProcess.shared prepare];

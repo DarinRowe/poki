@@ -299,7 +299,8 @@ static BOOL PKInstanceSignature(Class cls, SEL selector, const char *result, NSA
     NSTimeInterval started = NSProcessInfo.processInfo.systemUptime;
     uint64_t generation = _sessions.generation;
     BOOL closed = [_sessions close];
-    return @{@"closed": @(closed), @"generation": @(generation), @"seconds": @(NSProcessInfo.processInfo.systemUptime - started)};
+    return @{@"closed": @(closed), @"generation": @(generation), @"seconds": @(NSProcessInfo.processInfo.systemUptime - started),
+             @"detail": [_sessions closeDetail] ?: @""};
 }
 
 /// The prepared session and its generation, or why there is none.

@@ -100,7 +100,8 @@ static BOOL SRABI(id target, SEL selector, const char *result, NSArray<NSString 
     NSRecursiveLock *_lifecycleLock;
     id _observed, _token, _enabled;
     uint64_t _generation, _enabledGeneration;
-    BOOL _invalidated, _reused;
+    BOOL _invalidated, _reused, _handlerFired;
+    NSString *_closeDetail;
     NSMutableSet<NSString *> *_loaded;
 }
 - (instancetype)init {
@@ -128,12 +129,28 @@ static BOOL SRABI(id target, SEL selector, const char *result, NSArray<NSString 
     [_lifecycleLock lock];
     id session = _observed;
     BOOL open = session && !_invalidated && _token != nil;
-    _invalidated = YES; _enabled = nil; _enabledGeneration = 0;
+    _invalidated = YES; _enabled = nil; _enabledGeneration = 0; _handlerFired = NO;
     [_lifecycleLock unlock];
     if (!open) return NO;
     id link = [session respondsToSelector:@selector(connection)] ? [session connection] : nil;
-    if ([link respondsToSelector:@selector(invalidate)]) [link invalidate];
+    BOOL invalidated = [link respondsToSelector:@selector(invalidate)];
+    if (invalidated) [link invalidate];
+    // testmanagerd's side of the connection going away is what ends Automation Mode: the session's
+    // invalidation handler fires when it does. Waited for briefly, and reported (closeDetail).
+    BOOL fired = NO;
+    for (int i = 0; i < 100 && !fired; i++) {
+        [_lifecycleLock lock]; fired = _handlerFired; [_lifecycleLock unlock];
+        if (!fired) usleep(10000);
+    }
+    [_lifecycleLock lock];
+    _closeDetail = [NSString stringWithFormat:@"link=%@ invalidate=%@ handler_fired=%@",
+                    link ? NSStringFromClass([link class]) : @"none", invalidated ? @"yes" : @"no", fired ? @"yes" : @"no"];
+    [_lifecycleLock unlock];
+    NSLog(@"SRNativeSession close: %@", _closeDetail);
     return YES;
+}
+- (NSString *)closeDetail {
+    [_lifecycleLock lock]; NSString *value = _closeDetail; [_lifecycleLock unlock]; return value;
 }
 - (id)prepare:(NSError **)error {
     [_prepareLock lock];
@@ -178,12 +195,15 @@ static BOOL SRABI(id target, SEL selector, const char *result, NSArray<NSString 
     if ([promise error]) { if (error) *error = [promise error]; return nil; }
     id session = [promise value];
     [_lifecycleLock lock];
-    BOOL closed = _invalidated && session == _observed;
-    // With POKI_INPROCESS_OWNED_SESSION set, the shared session is never used for automation: a
-    // session of this process's own is opened, kept while it is current, and reopened after close.
+    // The session in use stays in use while it is current, whether it is XCTest's shared one or one
+    // of this process's own; the shared promise is read only for the first session. After a close
+    // (ours, or testmanagerd's) a session of this process's own is opened: the shared promise keeps
+    // holding the closed one, and enabling automation on it again hangs for a minute. With
+    // POKI_INPROCESS_OWNED_SESSION set, the shared session is never used at all.
     BOOL owned = getenv("POKI_INPROCESS_OWNED_SESSION") != NULL;
-    if (owned && _observed && !_invalidated && _token) session = _observed;
-    else if (owned) closed = YES;
+    BOOL closed;
+    if (_observed && !_invalidated && _token) { session = _observed; closed = NO; }
+    else closed = (_observed != nil && _invalidated) || owned;
     [_lifecycleLock unlock];
     if (closed) {
         // The shared promise still holds the session that was closed: open one of this process's
@@ -222,6 +242,7 @@ static BOOL SRABI(id target, SEL selector, const char *result, NSArray<NSString 
             [owner->_lifecycleLock lock];
             if (owner->_generation == generation) {
                 owner->_invalidated = YES; owner->_enabled = nil; owner->_enabledGeneration = 0;
+                owner->_handlerFired = YES;
             }
             [owner->_lifecycleLock unlock];
         }];

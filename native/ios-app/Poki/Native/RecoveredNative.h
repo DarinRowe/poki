@@ -21,6 +21,9 @@ NS_ASSUME_NONNULL_BEGIN
 // Ends the current session (and Automation Mode with it). YES when one was open. The next prepare
 // opens a new one, with a new generation.
 - (BOOL)close;
+/// What the last close found: the connection class, whether it could be invalidated, and whether
+/// the session's invalidation handler fired (testmanagerd saw it go).
+- (nullable NSString *)closeDetail;
 - (uint64_t)generation;
 - (BOOL)enableWasReused;
 @end

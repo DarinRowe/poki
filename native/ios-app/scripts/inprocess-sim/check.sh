@@ -6,7 +6,7 @@
 # (native/simulator.m) reports for the same screen. With --apps it instead launches the fixture, launches
 # Settings, activates the fixture (the same process returns), launches it again (a new process) and
 # terminates it. With --cycle the field check runs after the session was closed and opened again, as Poki
-# does when it is idle, and a touch sent while closed has to be refused. The simulator is deleted afterwards.
+# does when it is idle; a touch sent while closed must not use the closed session (refused, or a new one). The simulator is deleted afterwards.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 MODE=field
@@ -98,10 +98,10 @@ r = json.load(open(sys.argv[1]))
 assert r["prepare"].get("ok"), f"no session: {r['prepare']}"
 if sys.argv[3] == "cycle":
     assert r["close"].get("closed"), f"close found no session: {r['close']}"
-    assert r["closed_touch"]["delivery"] == 0, f"a touch after close was not refused: {r['closed_touch']}"
+    t = r["closed_touch"]
+    assert t["delivery"] == 0 or t["generation_after"] > t["generation_before"], f"a touch after close went through the closed session: {t}"
     assert r["prepare2"].get("ok"), f"the session did not open again: {r['prepare2']}"
     assert r["prepare2"]["generation"] > r["prepare"]["generation"], f"the reopened session kept generation {r['prepare2']['generation']}"
-    assert r["prepare2"]["reused"] is False, f"prepare said the closed session was reused: {r['prepare2']}"
     assert "source_code2" not in r, f"no element tree after reopening: {r['source_code2']}"
     assert r["front2"].get("bundleId") == "local.pokimcp.fixture", f"front app after reopening: {r['front2']}"
 assert "source_code" not in r, f"no element tree: {r['source_code']}"
