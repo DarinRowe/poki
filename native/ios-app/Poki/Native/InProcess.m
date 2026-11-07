@@ -123,6 +123,13 @@ static id PKForegroundElement(id ax, NSString *(^bundleForPID)(int)) {
         BOOL isSpringBoard = springBoardPID > 0 ? pid == springBoardPID : [bundleForPID(pid) isEqualToString:@"com.apple.springboard"];
         if (isSpringBoard) springBoard = element; else [candidates addObject:element];
     }
+    // Poki's own process is never the app being driven: beside the target app in Split View (iPad,
+    // iPhone Duo's inner display) it is set aside, so the other app is the front one.
+    if (candidates.count > 1) {
+        NSMutableArray *others = [NSMutableArray array];
+        for (id element in candidates) if (PKAXPid(element) != getpid()) [others addObject:element];
+        if (others.count) candidates = others;
+    }
     if (candidates.count == 1) return candidates.firstObject;
     if (!candidates.count) return springBoard ?: system;
     SEL hitTest = NSSelectorFromString(@"accessibilityElementForElementAtPoint:error:");
