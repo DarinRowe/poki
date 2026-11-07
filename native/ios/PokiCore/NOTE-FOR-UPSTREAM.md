@@ -82,6 +82,9 @@ that no answer may halt the agent and from the first Poki Gym runs (`native/ios-
 14. Typing waits for a busy runner or sends nothing (never `unknown`); a `do` never runs past its
     backstop; `wait_until: settled` starts from the fresh read before it; a read never waits on a
     session open; an explicit note when neither the runner nor the host gives a picture.
+15. `scroll_to` declares the end only after two unmoved swipes to a free runner (a 300-row gym list
+    gave a false end at row 180), uses its remaining time for the read after each swipe, and the
+    read after it lists the found element; a cut listing counts what it left out by type.
 
 Still not done: a `collect` or `expect` field, a `recover` action, and redaction of sensitive text
 (Zhehan: out of scope for now).
