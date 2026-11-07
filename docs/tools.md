@@ -55,6 +55,12 @@ Consecutive device calls do not require `acquire_device`. With one available dev
 
 Poki Agent starts its own stdio process with `POKI_MCP_TOOLS=all`. Its existing tool allowlist determines which tools reach its model.
 
+### One daemon, several clients
+
+`POKI_INPUT_LOCK=1` gives each MCP session its own queue instead of one queue for every session. Read-only tools run beside other sessions' work, capped by `POKI_MAX_CONCURRENT_READS` (default 4), and tools that change the screen take a lock on their device. The lock belongs to the device a call resolves to, so a session that names a phone and one that gives its UDID wait for each other. A call whose device is not known yet, such as a phone's name before this session has listed or used that phone, or a batch that reaches more than one device, locks every device. A call that cannot get the lock within `POKI_INPUT_LOCK_WAIT_MS` (default 30000 ms) fails with an error that names the session and tool holding it. The lock lives in one daemon; two daemons driving one phone are not supported.
+
+`POKI_MCP_CALL_LOG=<path>` appends one JSON line per finished tool call: the tool, how long it took, its verdict when it has one, and whether it failed. Arguments, text and images are never written, and the session appears only as a hash.
+
 ## Ask in plain language
 
 Ask your agent for the task you want done:
