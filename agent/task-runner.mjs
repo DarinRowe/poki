@@ -300,7 +300,7 @@ export class PhoneTask extends EventEmitter {
       this.snapshot.execution.verification = await verifyResult({
         prompt: [this.snapshot.prompt, this.snapshot.context].filter(Boolean).join('\n\n'), success, summary: this.finishClaim.summary, details: this.finishClaim.details, answer: this.finishClaim.answer,
         trace: this.trace, finalObservation: this.completionEvidence,
-        interactions: [],
+        interactions: this.snapshot.conversation.filter(entry => entry.role === 'user' && entry.state === 'taken' && entry !== this.snapshot.conversation[0]).map(({ at, text }) => ({ at, text })),
         modelConfig: this.modelConfig, signal: this.abort.signal,
         onWarning: warning => this.emit('warning', warning),
         onRequest: request => this.snapshot.metrics.requests.push({ ...request, purpose: 'verification' }),
