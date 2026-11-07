@@ -46,6 +46,9 @@ open native/ios-app/Poki.xcodeproj
   process at once instead of leaving it up for about 30 s.
 - Only Poki starts the runner. Opened by hand, Poki Runner starts no test (PokiRunnerHost,
   `native/ios-runner/host`) and sends the person to Poki.
+- Known issue: while the runner runs, it answers on port 8100 to any device on the same network,
+  with no credentials and without Poki's approvals (`native/ios-runner/README.md`). Turn Poki on only
+  on networks you trust. A pairing code between Poki and the runner is the planned fix.
 - The Live Activity starts from the foreground, because iOS does not allow it from the background:
   when Poki turns on, when pairing starts, and when a setup step opens Settings.
 
