@@ -10,10 +10,16 @@
   pull request into `poki/ios-integration`.
 - Pull before you push. Never force-push.
 
+**The default is one app.** Only Poki is installed. Poki automates the iPhone in its own process
+(the in-process session, through testmanagerd), with no Poki Runner and nothing listening on a port.
+Poki Runner is optional: a build with `--with-runner` in our packaging, and `-automationPath runner`
+at launch or the switch in Settings > Diagnostics, which takes effect when Poki starts again.
+
 ## How the branch was built
 
-It starts from `origin/dev/ios-standalone` (f8c4429) and merges our branches in dependency order, one
-merge commit per branch.
+Its base is `origin/dev/ios-standalone` at cdebb5d, Zhehan's latest head. The branch was built on
+f8c4429, and cdebb5d's commits came in with merge 11d3ee3. Our branches are merged in dependency
+order, one merge commit per branch.
 
 | Merge commit | Source branch | Source head | Notes |
 |---|---|---|---|
@@ -24,6 +30,10 @@ merge commit per branch.
 | 6ad912c | feat/esp-176-return | 9d36314 | |
 | f966a11 | fix/esp-173-inprocess-snapshot | b481314 | Its one Debug probe commit that fix/esp-175 did not carry. |
 | 718e28e | fix/esp-183-any-https-redirect | 44985f9 | Reviewed. |
+| 11d3ee3 | dev/ios-standalone | cdebb5d | Zhehan's new head. Computer.swift keeps both sides: the re-read after a launch and the timing line come first, then ESP-176's finish. |
+| 79ec23b | fix/esp-184-reconnect-approval | d58ad45 | Reviewed twice. Its commits were rebuilt on this branch's 9f4e2c5 without the beta packaging. cdebb5d's action caps move into its `actionCap`. |
+| a48d241 | fix/esp-160-type-log | 3a40072 | Reviewed three times. Rebuilt on 34d9013. See the known issue on the field read after a failed type. |
+| 9f2ce73 | feat/esp-152-single-app | 32876cc | Reviewed twice. Rebuilt without the beta packaging; its one commit that only touched that packaging is left out. |
 
 The branch also carries 28 commits from `origin/main` (up to 452f4bb) that our branches were based on.
 They are already public.
@@ -44,12 +54,16 @@ Heads taken from branches that are still being worked on. Later commits come in 
 | feat/esp-177-pi-ios | 1d1299b | yes |
 | feat/esp-176-return | 9d36314 | yes |
 | fix/esp-173-inprocess-snapshot | b481314 | yes |
-| fix/esp-184-reconnect-approval | c445bf1 | no: its head is a failing test, and the fix is not committed yet |
+| fix/esp-184-reconnect-approval | d58ad45 | yes |
+| fix/esp-160-type-log | 3a40072 | yes |
+| feat/esp-152-single-app | 32876cc | yes |
+| dev/ios-standalone | cdebb5d | yes |
 | feat/esp-156-voice | ebfbd0d | no: voice now runs look and do inside the app, so the Mac bridge's extra type_text tool is not needed |
 
-Our branches that contain the old commits (for example fix/esp-184-reconnect-approval, based on
-24e0dae) have to be rebased onto this branch before they come back. Otherwise the beta packaging and
-the unsquashed chat commits would return to the history.
+fix/esp-184, fix/esp-160 and feat/esp-152 were based on our old line (24e0dae or bd1ea68). Their
+commits were rebuilt on this branch's copies of those commits before they were merged. Any other
+branch based on the old line needs the same, or the beta packaging and the unsquashed chat commits
+would return to the history.
 
 ## What is in the branch
 
@@ -69,7 +83,13 @@ Commit ids are this branch's.
 | In-process automation: Poki reads trees, taps, types and opens, switches and ends apps from its own process through testmanagerd, without Poki Runner; the switch and probes are in Settings > Diagnostics | 0cd4010 to 33bbe66, 64f64b2 |
 | Chat page (iMessage style), Poki's details page, model settings and the voice page, a swipe apart | 7f463fa |
 | The chat's model loop is pi (PiSwift, MIT), with Anthropic, OpenAI, DeepSeek, Gemini and ChatGPT login; the direct Anthropic and OpenAI clients stay behind `-chatEngine direct` | a3a92a1, 5fe6e41, 410180a, ff7eadb, b408feb |
-| When a task ends, the phone goes back to the app it began in (`do` with `finish: true`, a client ending its session, or the app's idle stop) | 8140268, 6922c04, a9cfb4b, 938c534, e53f4fc |
+| When a task ends, the phone goes back to the app it began in (`do` with `finish: true`, a client ending its session, the chat's turn ending, or the app's idle stop) | 8140268, 6922c04, a9cfb4b, 938c534, e53f4fc, 021c8f8 |
+| Zhehan's cdebb5d: a launch reads until the launched app is in front, `wait_until` gets the time it asks for, and a long call says where its time went; with a test for a launch and a finish in one `do` | cdebb5d, 11d3ee3 |
+| `do` waits up to 115 s for the owner's approval (less behind a relay that gives up sooner) and runs in the same call once approved; the relay's request timeout is 180 s; the Live Activity's buttons do not open the app | 94b7899, c649804, 3b96a41, 2daf5c0, 4a415fd |
+| The built-in local connection reconnects with backoff after a failure or drop, unless the owner turned it off or another VPN is up (best effort) | f065911, 60b6d1d, 3f6a752, 7d94a88, 3c8e767, 17b7ca0, 457b733 |
+| A type that fails or times out is checked against the focused field before anything is sent again; the log keeps the failed step's error line without the typed text | 723abc1, 643bab2, 8dadf80, 76565b7, 53cc7af, 45fb12c, 7dae05a |
+| One app by default: the in-process session opens ahead of the first look, a session that fails to open answers at once and is tried again, the clipboard works in-process, and the runner's setup step and rows are hidden; the docs and the deployment skill install only Poki | 0329391, 4c26db5, 64a2f38, 66c1efa, 56287f2, 1b3c2e7, 291b107, ae6f5c8, b684bc8, dec76d6, c18e2aa, fd1a7fb, 9f2ce73 |
+| The hand-off card's content line is a fixed short line per kind; the chat keeps its setup bubble while a setup step is left; Poki 0.2.7 | 5defb45, 897517b, 49bdac9, 2f5695b |
 
 ## Verified on a real iPhone
 
@@ -83,6 +103,9 @@ Commit ids are this branch's.
   likely fix; it is not confirmed on the phone.
 - In-process path: the tap and type probes ran on the phone. A crash on accessibility notifications
   was found there and fixed (33bbe66). The typed text's read-back differed from what was sent.
+- Single app (feat/esp-152, its own build before 32876cc, not this merged build): with only Poki
+  installed, the first look read the screen in about 1.5 s with the session already open, Home went
+  to the Home Screen, and Chinese text read back as typed.
 - Taps from the Mac were dropped while the phone's `AssistiveTouchEnabledByiTunes` was true; short
   taps worked again once it was false.
 
@@ -105,21 +128,28 @@ Commit ids are this branch's.
   read-back differed on the phone.
 - ChatGPT login: the callback into the app's own 127.0.0.1:1455 has not been tried on a phone.
 - Anthropic, OpenAI and DeepSeek keys have not been tried through pi; only Gemini has.
-- The chat does not call `finishTask()` when its turn ends; the model's `do {finish: true}` and the
-  idle stop bring the phone back.
-- The hand-off card uses the approval colour rather than its own, and its line is cut to the
-  Live Activity's short length.
-- Zhehan's `AppModelTests` (PokiTests) were carried over but not run against the merged AppModel.
+- The hand-off card uses the approval colour rather than its own.
+- The app tests in PokiTests (Zhehan's `AppModelTests` and ESP-152's in-process tests) compile on
+  this branch but were not run here (`native/ios-app/scripts/app-tests.sh`).
+- After a failed type, the field is read through WDA's `GET /element/active` (fix/esp-160).
+  `dev/ios-standalone` stopped using that query for the focus wait before typing, because it hung the
+  CI simulator's runner for 19 s; the focus wait still uses tree reads. The read after a failure has
+  its own 3 s limit. Whether to move it to tree reads too is still to decide.
+- The in-process session's `placeholderValue` answer (7dae05a) has not been tried on a phone.
+- When the owner cancels the passcode prompt for the in-process session, the prompt can come back
+  within a moment instead of at the next call.
+- The runner path can only be chosen at launch from the Mac (`-automationPath runner`) or with the
+  switch in Diagnostics; the release notes do not say so yet.
 - `native/ios-app/Poki/Native/InProcess.m` warns about an undeclared selector
   (`requestSnapshotForElement:attributes:parameters:error:`); the build succeeds.
-- The approval wait and the local connection's reconnect (fix/esp-184) are not in this branch yet.
+- The approval wait and the reconnect need a phone: an approval that takes about 45 s through the
+  relay, a reconnect after a failure, and no reconnect after the connection is turned off in Settings.
 
 ## What we do next
 
-- One app without Poki Runner: the in-process path as the only path.
+- Decide whether releases still carry Poki Runner, now that one app is the default.
 - Chat entry and pi: acceptance on a real iPhone, with real keys and the ChatGPT login.
 - Voice with a real person speaking into the phone's microphone.
-- The local connection reconnects by itself, and `do` waits for the owner's approval (fix/esp-184).
 
 ## Suggested next steps for Zhehan
 
@@ -130,7 +160,7 @@ Commit ids are this branch's.
 | Check | Result |
 |---|---|
 | App, simulator build (Poki and PokiExternal) | BUILD SUCCEEDED for both (generic iOS Simulator, arm64) |
-| PokiCore tests | 137 tests, 0 failures |
+| PokiCore tests | 164 tests, 0 failures |
 | deploy/cf-relay tests | 12 tests, 0 failures |
 
 ## Commit id map
@@ -138,8 +168,8 @@ Commit ids are this branch's.
 <details>
 <summary>Source branch commits and their ids on this branch</summary>
 
-Several source ids on one row are commits that only touched the beta packaging. They were dropped,
-and their ids map to the commit that took their place.
+Several source ids on one row are either the first chat commits, squashed into one, or commits that
+only touched the beta packaging, which were dropped; their ids map to the commit that took their place.
 
 | Source branch commit | Integration branch commit | Message | Subject on this branch |
 |---|---|---|---|
@@ -210,8 +240,8 @@ and their ids map to the commit that took their place.
 | 08358c6 | 8bb99af | unchanged | Debug: a probe that opens, switches and closes an app through the in-process path |
 | ce3ec11 | 33bbe66 | unchanged | App: ignore AX notifications in the in-process path, whose handler throws outside a UI test |
 | 23f75e6 | e3f5d95 | translated | Merge fix/esp-175-inprocess-apps: in-process reading, typing and opening, switching and ending apps |
-| 2fcd645, 7b25384, 7f33685 | 7585d71 | translated | Merge feat/esp-156-voice (real-time voice) into the chat entry branch |
-| ce621da | 7f463fa | translated | iOS: chat page, Poki's details page, model settings and voice page (ESP-174, first version) |
+| 7f33685 | 7585d71 | translated | Merge feat/esp-156-voice (real-time voice) into the chat entry branch |
+| 7b25384, 2fcd645, ce621da | 7f463fa | squashed | iOS: chat page, Poki's details page, model settings and voice page (ESP-174, first version) |
 | cd60d51 | d16d0bb | translated | Merge the voice branch's change: do checks an element's identifier against the approval words too (ae8b942) |
 | ffeb3b3 | 539d4f7 | translated | Chat: use the Mac Poki Agent's prompt and its plan and finish tools |
 | ae6f9f5 | a3a92a1 | translated | Chat: OpenAI, defaulting to GPT-6.1 Sol with low reasoning |
@@ -232,5 +262,42 @@ and their ids map to the commit that took their place.
 | fc330fe | f966a11 | unchanged | Merge fix/esp-173-inprocess-snapshot: the two-path tree probe logs the front app |
 | 38438da | a5d2713 | translated | Relay: failing test for registration accepting any https callback (ESP-183) |
 | 44985f9 | a6dbf96 | translated | Relay: registration accepts any https callback; REDIRECT_HOSTS becomes an optional restriction (ESP-183) |
+
+Later merges (fix/esp-184, feat/esp-152, fix/esp-160):
+
+| Source branch commit | Integration branch commit | Message | Subject on this branch |
+|---|---|---|---|
+| 114f2d8 | 94b7899 | translated | PokiCore: failing tests for the approval wait (the default wait is shorter than a person's approval, and the wait outlasts the relay's limit) |
+| b788c23 | c649804 | translated | PokiCore: do keeps waiting while the approval card is up, and the same call runs once approved |
+| 33848b5 | 3b96a41 | translated | Live Activity: Allow, Deny and Stop state that they do not open the app |
+| d2c8b38 | f065911 | translated | PokiCore: failing tests for the built-in local connection's reconnect rules |
+| 63299c8 | 60b6d1d | translated | iOS: the built-in local connection reconnects after it fails or drops |
+| c445bf1 | 3f6a752 | translated | iOS: failing test, no reconnect when the tunnel stopped because the owner turned it off or another VPN took over |
+| 01e8fa1 | 7d94a88 | translated | iOS: no reconnect when the built-in connection is turned off in Settings or taken over by another VPN |
+| d9457a3 | 2daf5c0 | translated | PokiCore: failing tests, no actions run when the approval arrives in the relay's last seconds or after the call was cancelled |
+| 4d0b20a | 4a415fd | translated | PokiCore: an approval in the relay's last seconds leaves the actions for the next call, and a cancelled call no longer runs them once approved |
+| 3f2bbdc | 3c8e767 | translated | iOS: failing test for checking whether another VPN is already up before reconnecting |
+| 27d20f3 | 17b7ca0 | translated | iOS: coming to the front no longer starts the built-in connection; a reconnect stops and says so when another VPN is up |
+| d58ad45 | 457b733 | translated | Docs: the local connection's reconnect is best effort |
+| b9bce37 | 501870a | translated | Merge the in-process session (ESP-152, ESP-173, ESP-175) into fix/esp-168-setup-entry |
+| 9bc0000 | 0329391 | translated | App: the in-process accessibility notification stub no longer retains its number argument; Home sends a device event |
+| 9d9894b | 4c26db5 | translated | App: the in-process session answers PokiCore's clipboard read and write |
+| 883e355 | 64a2f38 | translated | App: the in-process path hides the runner's setup steps and status rows; a PokiCore end-to-end probe |
+| dacdee9 | none | dropped | It only touched the beta packaging. |
+| 2c82b25 | 66c1efa | translated | App: on the in-process path the setup guide says Poki, not Poki Runner |
+| 104385e | 56287f2 | translated | App: the in-process session opens ahead of time, so an agent's first look does not wait for it |
+| 6b1c109 | 1b3c2e7 | translated | App: a PokiTests app test target, and a failing test for an unreadable clipboard answered as empty |
+| f9ac84d | 291b107 | translated | App: the in-process session reports an unreadable clipboard as an error instead of empty |
+| a301d82 | ae6f5c8 | translated | App: failing test, an agent hears at once why the session did not open, and a retry starts |
+| 0c7ed64 | b684bc8 | translated | App: when the in-process session fails to open, the agent hears why at once, and the next call tries again |
+| 9360bf6 | dec76d6 | translated | App: the automation path is read once per launch; the in-process Debug section without callers is removed |
+| efe1667 | c18e2aa | translated | Docs: the docs and the deployment skill install only Poki by default; the runner is optional |
+| 32876cc | fd1a7fb | translated | App: on the in-process path the home screen no longer says the runner starts when an agent asks |
+| 97cdd8b | 723abc1 | translated | PokiCore: failing tests, a failed type logs its error line and reads the field before trying again |
+| 69ea8eb | 643bab2 | translated | PokiCore: a failed step's error line goes to the log; a type that fails or times out reads the focused field before trying again |
+| f9e8ff2 | 8dadf80 | translated | App: the log records a failed step's error line |
+| 36a6714 | 76565b7 | translated | PokiCore: a failed type's log line gives the state, not the field's content; an empty field's placeholder counts as empty; the tool description follows |
+| eea33a6 | 53cc7af | translated | PokiCore: failing tests for type recovery when the field reads its placeholder, the placeholder starts the text, or the placeholder cannot be read |
+| 3a40072 | 45fb12c | translated | PokiCore: a field reading its placeholder counts as typed, a placeholder that starts the text is not typed again, and an unreadable placeholder is said so |
 
 </details>
