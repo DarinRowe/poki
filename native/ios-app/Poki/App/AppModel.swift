@@ -313,7 +313,16 @@ final class AppModel {
         passcodeHint = runner.state == "launching" && launchingSince.map { Date().timeIntervalSince($0) > 10 } == true
         guard sessionOn, !runnerPaused, idleStopSeconds > 0, approvals.isEmpty, activityText == "Idle" else { return }
         if Date().timeIntervalSince(lastAgentActivity) >= Double(idleStopSeconds) {
-            pauseRunner(reason: "Stopped after \(idleStopSeconds / 60 > 0 ? "\(idleStopSeconds / 60) min" : "\(idleStopSeconds) s") without agent activity")
+            let reason = "Stopped after \(idleStopSeconds / 60 > 0 ? "\(idleStopSeconds / 60) min" : "\(idleStopSeconds) s") without agent activity"
+            // The task is over: the phone goes back to the app it began in while the runner can still
+            // switch apps, then the runner stops unless an agent came back meanwhile.
+            Task { [weak self, core] in
+                let line = await core.finishTask()
+                guard let self else { return }
+                if let line { self.log.add("runner", line) }
+                guard self.activityText == "Idle", Date().timeIntervalSince(self.lastAgentActivity) >= Double(self.idleStopSeconds) else { return }
+                self.pauseRunner(reason: reason)
+            }
         }
     }
 
