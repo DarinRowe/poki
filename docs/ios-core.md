@@ -576,8 +576,12 @@ Each answer is facts only: the app in front, numbered elements, what each action
   `sourceXML:maxDepth:maxChildren:` passes them to the AX snapshot request (maxDepth, maxChildren,
   maxArrayCount). What the watchdog does in-process: `forgetRunner` drops the session and
   `onUnhealthy` reaches AppModel's restart hook, which closes the in-process session and opens a
-  new one (`closeInProcess` + `warmInProcess`), so the session comes back on its own; the stalled
-  snapshot itself runs on in the AX server until it answers or the request's deadline passes.
+  new one (`closeInProcess` + `warmInProcess`), so the session comes back on its own. The stalled
+  snapshot held InProcessWDA's one serial queue, though, and every request after it (the gym's
+  dense screen: GET /source over 4.5 s, then a screenshot and an activeAppInfo 9 s old, until the
+  run was killed), as a wedged WebDriverAgent holds its thread: now the POST /session that opens
+  the new session gets a new queue when the request in flight is older than 8 s, and the held
+  request is left to end on its own, as a restarted runner leaves its old process.
 - **A type waits for a busy runner as long as its action allows.** A type gave up after 3 s with
   "the runner is still finishing an earlier GET /source" while 7 s of its 9 s were left; the
   runner was serving this side's own leftover read from the look before, and the model paid a
