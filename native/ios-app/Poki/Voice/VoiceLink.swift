@@ -51,6 +51,12 @@ final class VoiceLink: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelega
         guard let peer = factory.peerConnection(with: config, constraints: constraints, delegate: self) else { throw VoiceError.realtime(0, "WebRTC could not start") }
         self.peer = peer
         if microphone {
+            // Poki's background keep-alive may have left the shared session in .playback, which cannot
+            // record; set voice chat explicitly before the microphone track starts.
+            let session = RTCAudioSession.sharedInstance()
+            session.lockForConfiguration()
+            defer { session.unlockForConfiguration() }
+            try session.setConfiguration(RTCAudioSessionConfiguration.webRTC(), active: true)
             let mic = factory.audioTrack(with: factory.audioSource(with: constraints), trackId: "poki-mic")
             peer.add(mic, streamIds: ["poki-voice"])
         } else {
@@ -87,6 +93,32 @@ final class VoiceLink: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelega
         while channel?.readyState != .open {
             if Date() > deadline { throw VoiceError.timeout("Opening the voice connection") }
             try await Task.sleep(for: .milliseconds(20))
+        }
+    }
+
+    /// One log line about the audio session now, and one ~3 s later about what the microphone sent:
+    /// media-source totalSamplesDuration stays 0 when nothing is captured, whatever the room sounds like.
+    func diagnose(_ write: @escaping @MainActor (String) -> Void) {
+        let av = AVAudioSession.sharedInstance()
+        let now = "audio session \(av.category.rawValue) \(av.mode.rawValue), input available \(av.isInputAvailable), input channels \(av.inputNumberOfChannels), input \(av.currentRoute.inputs.map { "\($0.portType.rawValue) \($0.portName)" }.joined(separator: ", ")), output \(av.currentRoute.outputs.map { $0.portType.rawValue }.joined(separator: ", ")), webrtc active \(RTCAudioSession.sharedInstance().isActive), record permission \(AVAudioApplication.shared.recordPermission == .granted)"
+        Task { @MainActor in write(now) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+            guard let peer = self?.peer else { return }
+            peer.statistics { report in
+                var parts: [String] = []
+                for stat in report.statistics.values where (stat.values["kind"] as? String) == "audio" {
+                    let value = { (key: String) in stat.values[key].map { "\($0)" } ?? "none" }
+                    switch stat.type {
+                    case "media-source":
+                        parts.append("captured \(value("totalSamplesDuration")) s, level \(value("audioLevel"))")
+                    case "outbound-rtp":
+                        parts.append("sent \(value("bytesSent")) bytes in \(value("packetsSent")) packets")
+                    default: break
+                    }
+                }
+                let line = "microphone after 3 s: " + (parts.isEmpty ? "no audio stats" : parts.joined(separator: "; "))
+                Task { @MainActor in write(line) }
+            }
         }
     }
 

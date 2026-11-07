@@ -35,6 +35,11 @@ final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
         try? audio.start()
     }
 
+    /// A voice conversation needs the audio session for the microphone; the voice-chat session keeps
+    /// Poki running meanwhile. The silent audio comes back when it ends, if Poki is still on.
+    func pauseAudio() { audio.stop() }
+    func resumeAudio() { if isOn { try? audio.start() } }
+
     func stop() {
         guard isOn else { return }
         isOn = false

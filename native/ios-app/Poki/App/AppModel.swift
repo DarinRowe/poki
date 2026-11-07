@@ -91,7 +91,8 @@ final class AppModel {
                            phoneTool: { name, arguments in
                                let result = await core.tool(name, arguments: arguments)
                                return (result.text, result.isError)
-                           })
+                           },
+                           holdMicrophone: { [background] on in on ? background.pauseAudio() : background.resumeAudio() })
         let launcher = RustLauncher()
         self.launcher = launcher
         pairer = RustPairing()

@@ -219,10 +219,19 @@ final class VoiceModel {
     /// look and do, run by PokiCore on this phone (the relay's tools): name, JSON arguments → text, failed.
     private let phoneTool: @MainActor (String, String) async -> (String, Bool)
 
+    /// true while a conversation with the microphone is on: Poki's silent keep-alive audio steps aside
+    /// (its .playback session cannot record), and the voice-chat session keeps Poki running instead.
+    private let holdMicrophone: @MainActor (Bool) -> Void
+
     init(clearTap: @escaping @MainActor (String, String?, String?) async -> TapClearance,
-         phoneTool: @escaping @MainActor (String, String) async -> (String, Bool)) {
+         phoneTool: @escaping @MainActor (String, String) async -> (String, Bool),
+         holdMicrophone: @escaping @MainActor (Bool) -> Void = { _ in }) {
         self.clearTap = clearTap
         self.phoneTool = phoneTool
+        self.holdMicrophone = holdMicrophone
+    }
+    private var holdingMicrophone = false {
+        didSet { if holdingMicrophone != oldValue { holdMicrophone(holdingMicrophone) } }
     }
 
     var isOn: Bool { link != nil }
@@ -267,12 +276,15 @@ final class VoiceModel {
             let link = VoiceLink(onEvent: { [weak self] event in self?.handle(event, session: number) },
                                  onClosed: { [weak self] reason in self?.closed(reason, session: number) })
             self.link = link
+            if microphone { holdingMicrophone = true }
             try await link.connect(secret: token.value, microphone: microphone)
             link.setRemoteVolume(muted ? 0 : 1)
             log.add("voice", "connected (\(token.model)), session \(number)")
+            if microphone { link.diagnose { [log] line in log.add("voice", line) } }
         } catch {
             link?.close()
             link = nil
+            holdingMicrophone = false
             phase = .lost(error.localizedDescription)
             log.add("voice", "could not connect: \(error.localizedDescription)")
         }
@@ -282,6 +294,7 @@ final class VoiceModel {
     func stop() {
         link?.close()
         link = nil
+        holdingMicrophone = false
         ready = false
         activeResponse = nil
         wantsResponse = false
@@ -321,6 +334,7 @@ final class VoiceModel {
         guard number == session, link != nil else { return }
         link?.close()
         link = nil
+        holdingMicrophone = false
         ready = false
         activeResponse = nil
         wantsResponse = false
@@ -335,10 +349,12 @@ final class VoiceModel {
         guard number == session, let link, let type = event["type"] as? String else { return }
         switch type {
         case "session.created":
+            log.add("voice", "session created, session \(number)")
             ready = true
             phase = .listening
             catchUp(link)
         case "input_audio_buffer.speech_started":
+            if phase != .hearing { log.add("voice", "speech started") }
             phase = .hearing
         case "input_audio_buffer.speech_stopped":
             phase = .thinking
