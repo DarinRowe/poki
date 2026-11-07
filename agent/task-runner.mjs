@@ -148,10 +148,6 @@ export class PhoneTask extends EventEmitter {
         this.initialForeground = resultData(foreground);
       } catch (error) { this.#restoreWarning(error); }
       if (this.finished) return;
-      const modelStarted = performance.now();
-      await this.codex.open();
-      if (this.finished) { this.codex.close(); return; }
-      this.snapshot.metrics.modelSetupMilliseconds = performance.now() - modelStarted;
       let route = this.options.images?.length ? null : await this.routes.find(this.snapshot.prompt, this.snapshot.context);
       if (route) {
         await this.#announce(this.routes.render(route.opening, route.plan.texts));
@@ -206,6 +202,10 @@ export class PhoneTask extends EventEmitter {
         this.recovery = `Route stopped: ${outcome.handoff_reason}. Completed actions: ${outcome.checkpoint.completed_action_ids.join(', ')}. Do not relaunch the app or replay completed actions. Observe the current screen and continue. Last action outcome: ${outcome.checkpoint.action_outcome}. Observe before deciding.`;
         this.publish({ title: 'Page changed. Continuing from the current screen.' });
       }
+      const modelStarted = performance.now();
+      await this.codex.open();
+      if (this.finished) { this.codex.close(); return; }
+      this.snapshot.metrics.modelSetupMilliseconds = performance.now() - modelStarted;
       await this.#startModel(definitions);
     } catch (error) {
       if (error.code === 'device_setup') this.fail(error);
