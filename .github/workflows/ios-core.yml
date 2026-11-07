@@ -15,9 +15,6 @@ concurrency:
   # replaces only the run still waiting.
   cancel-in-progress: false
 
-env:
-  IDEVICE_COMMIT: 89702099f4d7552f704f93b4526756abda319ceb
-
 jobs:
   launcher:
     runs-on: macos-15
@@ -25,11 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Fetch idevice and apply Poki's patches
-        run: |
-          git init -q .deps/idevice
-          git -C .deps/idevice fetch -q --depth 1 https://github.com/jkcoxson/idevice "$IDEVICE_COMMIT"
-          git -C .deps/idevice checkout -q FETCH_HEAD
-          for patch in native/patches/*.patch; do git -C .deps/idevice apply "$PWD/$patch"; done
+        run: native/launcher/fetch-idevice.sh
       - name: Rust targets
         run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim
       - uses: actions/cache@v4
