@@ -388,7 +388,16 @@ public final class PokiCore: @unchecked Sendable {
         }
         let line = output.text.split(separator: "\n").first.map(String.init) ?? ""
         let thumbnail = computer.lastPNG.flatMap { try? host?.jpeg(fromPNG: $0, width: 96, quality: 0.5) }
-        emit(.toolFinished(activity, output.isError ? .failed(line) : .done(line), ToolFacts(app: computer.lastForeground?.describe, thumbnail: thumbnail)))
+        // The log keeps the `error:` line too, with what the call typed taken out (a runner's error can echo it).
+        var errorLine: String?
+        if output.isError, let found = output.text.split(separator: "\n").first(where: { $0.hasPrefix("error:") }) {
+            var text = String(found)
+            for typed in (args["actions"]?.array ?? []).compactMap({ $0["type"]?.text }).filter({ $0.count >= 2 }).sorted(by: { $0.count > $1.count }) {
+                text = text.replacingOccurrences(of: typed, with: "…")
+            }
+            errorLine = String(text.prefix(300))
+        }
+        emit(.toolFinished(activity, output.isError ? .failed(line) : .done(line), ToolFacts(app: computer.lastForeground?.describe, thumbnail: thumbnail, error: errorLine)))
         return output
     }
 

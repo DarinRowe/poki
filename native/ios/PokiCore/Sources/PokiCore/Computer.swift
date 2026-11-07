@@ -449,13 +449,54 @@ final class Computer: @unchecked Sendable {
                     why += runner.busyWith.map { "; the runner is still finishing an earlier \($0)" } ?? "; no session was open yet"
                 default: delivery = .unknown
                 }
+                // A type that failed or timed out may still have landed, or can be sent once more: what
+                // the field holds decides (see recoverType). Every other action that may have been
+                // delivered is never sent again by us.
+                var recoveryNote = ""
+                if let text = action["type"]?.text, action["via"]?.string != "paste", !(failure is ActionFailure), failure is RunnerError || failure is DeadlineExceeded {
+                    let recovered = await recoverType(action, text: text, why: why, until: until - config.readTimeout - 0.5)
+                    if let done = recovered.done {
+                        lastKind = "type"
+                        did.append("\(done) (sent, \(Int(((now() - began) * 1000).rounded())) ms)")
+                        continue
+                    }
+                    recoveryNote = recovered.note.isEmpty ? "" : "; \(recovered.note)"
+                }
                 did.append("\(action.serialized()) (\(delivery.rawValue), \(Int(((now() - began) * 1000).rounded())) ms)")
-                // An action that may have been delivered is never sent again by us, and nothing after it is sent.
-                error = "action \(index + 1) \(delivery == .unknown ? "may have been delivered" : "was not sent"): \(why)\(i + 1 < actions.count ? "; the actions after it were not sent" : "")"
+                // Nothing after a failed action is sent.
+                error = "action \(index + 1) \(delivery == .unknown ? "may have been delivered" : "was not sent"): \(why)\(recoveryNote)\(i + 1 < actions.count ? "; the actions after it were not sent" : "")"
                 break
             }
         }
         return (did, error, lastKind)
+    }
+
+    /// After a type that failed or timed out: what the focused field holds says what happened, so the
+    /// text is neither lost nor typed twice. The text is all there (the runner answered late or with an
+    /// error after typing): it counts as typed. Not there, and the field is empty or being cleared (so
+    /// a second try cannot double it): sent once more. Anything else, a half-typed or unreadable
+    /// field: not sent again, and the note says what the field holds. `done` is the step's text when
+    /// the text is in the field; `note` goes on the error otherwise.
+    func recoverType(_ action: JSON, text: String, why: String, until: Double) async -> (done: String?, note: String) {
+        guard until - now() > 1.2 else { return (nil, "") }
+        let hidden = describe(action).hasSuffix("(hidden)")
+        func shown(_ value: String) -> String { hidden ? "\(value.count) characters" : "\"\(value.count > 200 ? String(value.prefix(190)) + "…" : value)\"" }
+        guard let value = await focusedField(timeout: min(3, until - now() - 0.2))?.value else {
+            return (nil, "the field could not be read afterwards, so the text was not typed again")
+        }
+        if value.contains(text) {
+            return ("\(describe(action)) (typed); the runner answered late or with an error, and the field now reads \(shown(value))", "")
+        }
+        guard action["clear"]?.bool ?? false || value.isEmpty else {
+            return (nil, "the field holds \(shown(value)), which is not all of the text, so it was not typed again (a second try would double it)")
+        }
+        guard until - now() > 1.2 else { return (nil, "the field holds \(shown(value)); there was no time left to type again") }
+        do {
+            let (_, text) = try await withDeadline(until - now(), "the second try of the action") { [self] in try await perform(action, until: until) }
+            return ("\(text) (sent again after the first try failed: \(why))", "")
+        } catch {
+            return (nil, "the text was typed again once and that failed too: \(error)")
+        }
     }
 
     /// The answer when the sensitive part was not sent: text only when nothing went, else the read
