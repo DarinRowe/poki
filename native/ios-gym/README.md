@@ -18,7 +18,7 @@ Open a scenario with `xcrun simctl openurl <udid> pokigym://<scenario>`, or from
 | fullscreen | A WKWebView filling the screen with one link, Open, that sets its title to Opened |
 | nav | Push opens a page with the system back button; back sets "state: popped" |
 | interrupt | 300 rows, and an alert ("Just a moment", Not now) 2 s after the screen opens, in the middle of a scroll |
-| pay | A "Pay now" button (a payment: the agent's tap waits for the owner's approval) and a Cancel order button |
+| approval | A "Pay now" button (a payment: the agent's tap waits for the owner's approval) and a Cancel order button; the menu row avoids the payment words so only the button itself asks |
 
 Every screen shows "Gym: <scenario>" at the top and "state: <last event>" at the bottom, so an agent
 can tell where it is and what its last action did from the tree alone.

@@ -569,7 +569,8 @@ public final class GymScorecard {
         // 17. A payment button: do holds the tap for the owner's answer and says so when they decline;
         // once they allow it (here the host answers after a few seconds, as the owner would on the
         // Live Activity) the tap is sent in the same call.
-        a = await open("pay")
+        // (The menu row says "approval", not "pay": a row whose label named the payment would itself ask.)
+        a = await open("approval")
         if let pay = ref(in: a, "Pay now", type: "Button") {
             env.approveNext?(-2)
             let declined = await call("tap Pay now (declined after ~2 s)", "do", ["actions": [["tap": .number(Double(pay))]]], budget: 30)
