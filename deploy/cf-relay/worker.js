@@ -29,7 +29,8 @@ var DEFAULTS = {
   // requests a device object takes from the daily budget at a time
   ACCESS_TTL: 3600,
   REFRESH_TTL: 30 * 86400,
-  REDIRECT_HOSTS: "claude.ai,claude.com,chatgpt.com,chat.openai.com,localhost,127.0.0.1,www.cursor.com,poke.com"
+  REDIRECT_HOSTS: ""
+  // empty: any https callback; a comma-separated list narrows registration to those hosts
 };
 var limit = /* @__PURE__ */ __name((env, name) => env[name] !== void 0 && env[name] !== "" ? typeof DEFAULTS[name] === "number" ? Number(env[name]) : env[name] : DEFAULTS[name], "limit");
 var b64 = /* @__PURE__ */ __name((bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes))), "b64");
@@ -134,10 +135,11 @@ function redirectAllowed(env, uri) {
     return false;
   }
   if (url.hash) return false;
-  const hosts = String(limit(env, "REDIRECT_HOSTS")).split(",").map((h) => h.trim()).filter(Boolean);
   const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
   if (url.protocol === "http:") return loopback;
-  return url.protocol === "https:" && hosts.some((h) => url.hostname === h || url.hostname.endsWith(`.${h}`));
+  if (url.protocol !== "https:") return false;
+  const hosts = String(limit(env, "REDIRECT_HOSTS")).split(",").map((h) => h.trim()).filter(Boolean);
+  return hosts.length === 0 || hosts.some((h) => url.hostname === h || url.hostname.endsWith(`.${h}`));
 }
 __name(redirectAllowed, "redirectAllowed");
 async function readBody(request, max) {
@@ -158,7 +160,7 @@ async function register(env, request, label, secretHash) {
   }
   const uris = body.redirect_uris;
   if (!Array.isArray(uris) || uris.length === 0 || uris.length > 5 || !uris.every((u) => typeof u === "string" && redirectAllowed(env, u))) {
-    return oauthError(400, "invalid_redirect_uri", "redirect_uris must be https on an allowed host, or http on loopback");
+    return oauthError(400, "invalid_redirect_uri", "callback address not allowed: every redirect_uris entry must be https (on a host in REDIRECT_HOSTS when the relay sets it), or http on localhost, 127.0.0.1 or [::1]");
   }
   const name = typeof body.client_name === "string" ? body.client_name.slice(0, 64) : "MCP client";
   const issued = Math.floor(Date.now() / 1e3);

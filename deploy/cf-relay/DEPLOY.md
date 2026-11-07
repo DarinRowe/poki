@@ -33,7 +33,10 @@ Routing is by path on one hostname, so the relay works on a `workers.dev` addres
 
 The connector URL, meaning label plus secret, is the credential. The phone makes that secret, and the Worker never stores it. claude.ai requires OAuth before it will add a remote MCP, so the Worker runs the smallest compliant authorization server for each connector URL:
 
-- **Metadata and registration.** Both are stateless. The `client_id` is an HMAC-signed blob holding the label, `sha256(secret)`, the redirect URIs and the client name. Redirect URIs must be https on `REDIRECT_HOSTS`, or http on loopback. `www.cursor.com` is there for Grok Bot, whose MCP client registers a callback on it. `poke.com` is there for Poke, which does the same. The relay speaks Streamable HTTP only (`POST /mcp`) and does not support SSE.
+- **Metadata and registration.** Both are stateless. The `client_id` is an HMAC-signed blob holding the label, `sha256(secret)`, the redirect URIs and the client name. Registration accepts a callback on any https host, and on http only for `localhost`, `127.0.0.1` and `[::1]` (clients running on the same machine). Every other scheme, such as `javascript:`, and plain http on any other host are refused, as is a callback with a `#` fragment. Authorization does not depend on the callback host, because `/authorize` still needs the phone to confirm that `sha256(secret)` is in its `access` list and the connector URL is the credential. `/authorize` only redirects to a callback that was registered, and the code is bound to it.
+  - **Narrowing it (optional).** Set `REDIRECT_HOSTS` to a comma-separated list, for example `claude.ai,chatgpt.com`. Then an https callback must be on one of those hosts or a subdomain of one. Loopback http stays allowed. Unset or empty means the default above. With Wrangler, uncomment the `REDIRECT_HOSTS` line in `wrangler.toml` and deploy. On a deployed Worker you can also edit the plain-text variable in the Cloudflare dashboard or the settings API, which needs no code deploy, but a later `wrangler deploy` writes the value from `wrangler.toml` over it.
+  - **If a registration is refused.** `POST /register` answers 400 with `error: invalid_redirect_uri` and a description that begins `callback address not allowed`. That response always means the `redirect_uris` in the request, never the connector URL or the phone. Read the callback the client sent: it is not https, or it is http on a host that is not loopback, or it has a `#` fragment, or `REDIRECT_HOSTS` is set and does not list its host. A client that gets a different error, such as 404 or 413, has a different problem.
+  - The relay speaks Streamable HTTP only (`POST /mcp`) and does not support SSE.
 - **`/authorize`.** It asks the connected phone whether `sha256(secret)` is in its `access` list. If yes, it grants at once with a 302 carrying the code. If no, it returns `access_denied`; if the phone is offline, it returns 503. Codes are signed, bound to the client, the redirect and the PKCE challenge, and expire in 60 s.
 - **`/token`.** It checks PKCE and issues signed tokens bound to the label and `sha256(secret)`: access tokens last 1 h and refresh tokens 30 d. Nothing is stored.
 - **Revocation.** Every MCP request also checks the token's secret hash against the phone's live `access` list. Revoking a secret on the phone therefore ends every token issued for it at once.
@@ -57,7 +60,7 @@ Setting `ALLOW_SECRET_ONLY=1` also accepts MCP requests with no `Authorization` 
 | Plain text | `LABEL_DAILY` | `5000` (per label per UTC day) |
 | Plain text | `GLOBAL_DAILY` | `8000` (all labels per UTC day) |
 | Plain text | `GLOBAL_DAILY_SECONDS` | `80000` (estimated Durable Object awake seconds per UTC day) |
-| Plain text | `REDIRECT_HOSTS` | `claude.ai,claude.com,chatgpt.com,chat.openai.com,localhost,127.0.0.1,www.cursor.com,poke.com` |
+| Plain text | `REDIRECT_HOSTS` | optional; leave it out to accept any https callback, or list hosts to allow only those (for example `claude.ai,chatgpt.com`) |
 
 **Migration:** tag `v1`, `new_sqlite_classes = ["DeviceRelay", "Budget"]`.
 **Compatibility date:** `2025-10-01`.
@@ -79,8 +82,7 @@ Script upload metadata for the API (`PUT /accounts/{account}/workers/scripts/pok
     {"type": "plain_text", "name": "CONCURRENT", "text": "4"},
     {"type": "plain_text", "name": "LABEL_DAILY", "text": "5000"},
     {"type": "plain_text", "name": "GLOBAL_DAILY", "text": "8000"},
-    {"type": "plain_text", "name": "GLOBAL_DAILY_SECONDS", "text": "80000"},
-    {"type": "plain_text", "name": "REDIRECT_HOSTS", "text": "claude.ai,claude.com,chatgpt.com,chat.openai.com,localhost,127.0.0.1,www.cursor.com,poke.com"}
+    {"type": "plain_text", "name": "GLOBAL_DAILY_SECONDS", "text": "80000"}
   ],
   "migrations": {"new_tag": "v1", "new_sqlite_classes": ["DeviceRelay", "Budget"]},
   "observability": {"enabled": false}

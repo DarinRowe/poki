@@ -1,7 +1,7 @@
 // The Worker in workerd (Miniflare): a fake phone on the WebSocket, an MCP client over HTTP.
 import { SELF, env } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
-import { base32 } from '../src/index.js';
+import worker, { base32 } from '../src/index.js';
 
 const HOST = 'https://relay.example.com';
 const enc = new TextEncoder();
@@ -135,24 +135,35 @@ describe('OAuth and MCP', () => {
     const again = await signIn(c.id.label, c.secret);
     const code = new URL(again.authorized.headers.get('Location')).searchParams.get('code');
     expect((await tokens(again.as, again.client, b64u(crypto.getRandomValues(new Uint8Array(32))), code)).status).toBe(400);
-    const foreign = await SELF.fetch(again.as.registration_endpoint, { method: 'POST', body: JSON.stringify({ redirect_uris: ['https://evil.example/cb'] }) });
+    const foreign = await SELF.fetch(`${again.as.authorization_endpoint}?${new URLSearchParams({ response_type: 'code', client_id: c.client.client_id, redirect_uri: 'https://evil.example/cb', code_challenge: 'x'.repeat(43), code_challenge_method: 'S256' })}`, { redirect: 'manual' });
     expect(foreign.status).toBe(400);
     const otherSecret = newSecret();
     const elsewhere = c.mcp.replace(c.secret, otherSecret);
     expect((await call(elsewhere, c.token)).status).toBe(401);
   });
 
-  it('registers Grok Bot, whose MCP client uses a callback on www.cursor.com', async () => {
+  it('registers a callback on any https host or on loopback http, and refuses everything else', async () => {
     const c = await connected();
-    const grokBot = await SELF.fetch(c.as.registration_endpoint, { method: 'POST', body: JSON.stringify({ client_name: 'Grok Bot', redirect_uris: ['https://www.cursor.com/bot/mcp/oauth/callback'] }) });
-    expect(grokBot.status).toBe(201);
+    const register = redirect => SELF.fetch(c.as.registration_endpoint, { method: 'POST', body: JSON.stringify({ client_name: 'Client', redirect_uris: [redirect] }) });
+    for (const ok of ['https://agent.meta.ai/mcp/oauth/callback', 'https://poke.com/oauth/callback', 'https://www.cursor.com/bot/mcp/oauth/callback', 'http://localhost:3000/cb', 'http://127.0.0.1:8080/cb', 'http://[::1]:8080/cb']) {
+      expect([ok, (await register(ok)).status]).toEqual([ok, 201]);
+    }
+    for (const bad of ['javascript:alert(1)', 'http://evil.example/cb', 'ftp://agent.meta.ai/cb', 'https://agent.meta.ai/cb#frag', 'not a url']) {
+      expect([bad, (await register(bad)).status]).toEqual([bad, 400]);
+    }
+    const refused = await (await register('http://evil.example/cb')).json();
+    expect(refused.error).toBe('invalid_redirect_uri');
+    expect(refused.error_description).toMatch(/callback address/i);
   });
 
-  it('registers Poke, whose MCP client uses a callback on poke.com, and still refuses a foreign host', async () => {
+  it('REDIRECT_HOSTS, when set, allows only the listed hosts and their subdomains', async () => {
     const c = await connected();
-    const register = (redirect) => SELF.fetch(c.as.registration_endpoint, { method: 'POST', body: JSON.stringify({ client_name: 'Poke', redirect_uris: [redirect] }) });
-    expect((await register('https://poke.com/oauth/callback')).status).toBe(201);
-    expect((await register('https://evil.example.com/cb')).status).toBe(400);
+    const register = redirect => worker.fetch(new Request(c.as.registration_endpoint, { method: 'POST', body: JSON.stringify({ redirect_uris: [redirect] }) }), { ...env, REDIRECT_HOSTS: 'agent.meta.ai, poke.com' });
+    expect((await register('https://agent.meta.ai/cb')).status).toBe(201);
+    expect((await register('https://app.poke.com/cb')).status).toBe(201);
+    expect((await register('https://claude.ai/cb')).status).toBe(400);
+    expect((await register('https://notpoke.com/cb')).status).toBe(400);
+    expect((await register('http://localhost:3000/cb')).status).toBe(201);
   });
 
   it('an unknown secret is not found, and its authorization is denied', async () => {
