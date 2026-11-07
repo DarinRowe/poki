@@ -1,14 +1,22 @@
 // Source: poki-app gateway/fast/run.mjs at 9972d34.
 // Source: poki-mcp/client/fast/run.mjs. The plan loop is retained; App owns model handoff.
 import { FastSession } from './session.mjs';
-import { candidatesFor, succeeded, conditionsMatch } from './task.mjs';
+import { candidatesFor, succeeded, conditionsMatch, matching } from './task.mjs';
 
+// Tapping the status bar scrolls a page to its top. The bar is the band above the app's first element, never
+// taller than a twentieth of the screen; its left part holds the clock, clear of a notch or Dynamic Island.
+function statusBar({ width, height, elements }) {
+  const top = Math.min(height / 20, ...elements.map(e => (e.frame ?? e).y).filter(y => y > 0));
+  return Number.isFinite(width) && top > 0 ? { x: Math.round(width * 0.15), y: Math.round(top / 2) } : null;
+}
+const page = observation => JSON.stringify(observation.elements.map(e => [e.role ?? e.type, e.label ?? e.text]));
+const returnLimit = 4;
 const reasons = new Set(['device_unavailable', 'tool_failed', 'tool_protocol', 'unknown_outcome', 'scope_unavailable', 'outside_scope', 'structure_unavailable', 'stale_observation', 'ambiguous_target', 'no_candidates', 'step_precondition_failed', 'step_not_completed', 'final_condition_failed', 'task_changed']);
 export async function runFast({ task, alternatives = [], onSelect = () => {}, call, releaseLease = true, signal = new AbortController().signal }) {
   const mode = 'plan';
   const started = performance.now();
-  const stats = { mode, provider: null, model: null, model_calls: 0, model_ms: 0, tool_calls: 0, tool_ms: 0, scope_ms: 0, action_count: 0, scope_launch_count: 0, total_ms: 0 };
-  let session, lease, observation, lastAction, pending = false, reason = null, status = 'handoff';
+  const stats = { mode, provider: null, model: null, model_calls: 0, model_ms: 0, tool_calls: 0, tool_ms: 0, scope_ms: 0, action_count: 0, scope_launch_count: 0, return_count: 0, total_ms: 0 };
+  let session, lease, observation, lastAction, pending = false, reason = null, status = 'handoff', previousPage, scrolledToTop = false;
   const history = [], observedIds = new Set();
   let scopePid;
   const checkpoint = () => ({
@@ -61,7 +69,22 @@ export async function runFast({ task, alternatives = [], onSelect = () => {}, ca
       if (!history.length) {
         const plans = [task, ...alternatives];
         const selected = plans.findIndex(plan => plan.bundle_id === task.bundle_id && plan.device === task.device && conditionsMatch(plan.steps[0].when, current));
-        if (selected >= 0) { task = plans[selected]; onSelect(selected); }
+        if (selected >= 0) {
+          task = plans[selected]; onSelect(selected);
+          const first = task.steps[0].action;
+          // A start page keeps the scroll offset it was left with, and routes are recorded from its top.
+          const offsetMatters = stats.return_count || ['scroll', 'swipe'].includes(first.op) || first.label !== undefined && !matching(current.elements, first).length;
+          const bar = offsetMatters && !scrolledToTop && statusBar(current);
+          if (bar) {
+            scrolledToTop = true;
+            await session.call('tap', { device: task.device, ...bar, verify: false });
+            continue;
+          }
+        } else if (stats.return_count < returnLimit && page(current) !== previousPage) {
+          previousPage = page(current); stats.return_count++;
+          await session.call('go_back', { device: task.device });
+          continue;
+        }
       }
       if (history.length && !conditionsMatch(task.steps[history.length - 1].complete, current)) throw new Error('step_not_completed');
       if (history.length === task.steps.length) {
