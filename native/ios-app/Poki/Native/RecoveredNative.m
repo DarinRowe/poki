@@ -249,6 +249,10 @@ static BOOL SRABI(id target, SEL selector, const char *result, NSArray<NSString 
 @end
 
 NSDictionary *SRInsertText(id session, NSString *text, SRActionContext *context, NSError **error) {
+    return SRInsertTextAtSpeed(session, text, 120, context, error);
+}
+
+NSDictionary *SRInsertTextAtSpeed(id session, NSString *text, NSUInteger speed, SRActionContext *context, NSError **error) {
     if (!text.length || [text lengthOfBytesUsingEncoding:NSUTF8StringEncoding] > 1024 * 1024) {
         SRFail(error, @"invalid_text"); return nil;
     }
@@ -270,7 +274,8 @@ NSDictionary *SRInsertText(id session, NSString *text, SRActionContext *context,
         !SRABI(path, typing, "v", @[@"@", @"d", speedType, boolType])) {
         SRFail(error, @"text_event_abi_mismatch"); return nil;
     }
-    [path typeText:text atOffset:0 typingSpeed:120 shouldRedact:YES];
+    // typingSpeed is characters a second (1-240 kept; XCTest's own default is 60).
+    [path typeText:text atOffset:0 typingSpeed:MIN(240, MAX(1, speed)) shouldRedact:YES];
     id record = [[recordClass alloc] initWithName:@"Recovered text"];
     if (![record respondsToSelector:@selector(addPointerEventPath:)] ||
         ![session respondsToSelector:@selector(daemonProxy)]) {

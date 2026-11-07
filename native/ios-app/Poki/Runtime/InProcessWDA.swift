@@ -123,7 +123,10 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
             "POST /wda/keys": { [unowned self] body, _ in
                 let text = (body?["value"]?.array ?? []).compactMap(\.string).joined()
                 guard !text.isEmpty else { throw Refusal("invalid argument", "no keys given") }
-                return try self.answer(self.native.type(text, timeout: 3 + 0.06 * Double(text.count)))
+                // `frequency`: characters a second for this burst (PokiCore's Humanize types a word at
+                // a time at an uneven pace); without one, the fixed 120 of before.
+                let speed = UInt(max(1, min(240, body?["frequency"]?.int ?? 120)))
+                return try self.answer(self.native.type(text, typingSpeed: speed, timeout: 3 + Double(text.count) / Double(speed) + 0.02 * Double(text.count)))
             },
             "POST /wda/homescreen": { [unowned self] _, _ in try self.done(self.native.press("home")) },
             "POST /wda/lock": { [unowned self] _, _ in try self.done(self.native.press("lock")) },

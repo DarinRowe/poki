@@ -58,6 +58,8 @@ final class Computer: @unchecked Sendable {
     /// The element the last scroll_to found, so the read after it can give its number (it may be
     /// past the listing's limit: the gym's 1,507-element grid had its button at 1506).
     var scrollFound: Element?
+    /// Shapes touches and typing after a person's (see `Humanize`); off sends the legacy schedules.
+    var humanize: Humanize
     /// The element the last type went to and its text, so the read after it can say which number the
     /// field has now when the app replaced it (Settings' search field is a new element in search mode).
     var typedInto: (ref: Int, text: String)?
@@ -78,6 +80,7 @@ final class Computer: @unchecked Sendable {
         self.runner = runner
         self.host = host
         self.config = config
+        self.humanize = Humanize(enabled: config.humanize ?? Humanize.envEnabled)
         self.approvals = approvals
     }
 

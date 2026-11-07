@@ -46,6 +46,8 @@ typedef NS_ENUM(NSInteger, PKDelivery) {
 - (PKOutcome *)touch:(NSArray<NSArray<PKTouchPoint *> *> *)fingers timeout:(double)timeout;
 /// Types into whatever field has the keyboard focus. Does not focus or clear.
 - (PKOutcome *)type:(NSString *)text timeout:(double)timeout;
+/// The same at `speed` characters a second (PokiCore sends a `frequency` per burst; 120 without one).
+- (PKOutcome *)type:(NSString *)text typingSpeed:(NSUInteger)speed timeout:(double)timeout;
 /// Whether the screen can be read from here: the front app (accessibility), its element tree, and a
 /// screenshot, each timed. Keys per part: *_ok, *_seconds, *_error, and counts.
 - (NSDictionary<NSString *, id> *)readProbe;

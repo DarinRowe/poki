@@ -29,4 +29,8 @@ NS_ASSUME_NONNULL_BEGIN
 // The context must also validate the current session generation before dispatch.
 FOUNDATION_EXPORT NSDictionary * _Nullable SRInsertText(
     id session, NSString *text, SRActionContext *context, NSError **error);
+// The same at `speed` characters a second (XCTest's typingSpeed; 120 is SRInsertText's), so typed
+// text can come in bursts at a person's uneven pace (PokiCore's Humanize) rather than one fixed rate.
+FOUNDATION_EXPORT NSDictionary * _Nullable SRInsertTextAtSpeed(
+    id session, NSString *text, NSUInteger speed, SRActionContext *context, NSError **error);
 NS_ASSUME_NONNULL_END

@@ -636,6 +636,32 @@ swipe or drag (its synthesised touch runs its full duration on the main thread),
 pause and the read. The first read after a keyboard or a cold launch is over 4 s on the simulator
 and falls back to the picture.
 
+### Touches and typing shaped after a person's
+
+The owner's own apps must take Poki's input as the owner's. Some apps watch for scripted input (a
+tap that holds for exactly 50 ms without moving, drags in a straight line at one speed, text that
+arrives at a fixed 120 characters a second) and answer the owner's session with a captcha, a silent
+refusal or a logged-out account. `Humanize` (PokiCore, on by default) shapes each action after
+measured human movement and sends it as W3C pointer actions (`POST /actions`), which WebDriverAgent
+and Poki's in-process table both turn into one XCPointerEventPath with those waypoints:
+
+| Action | Plain | Shaped |
+|---|---|---|
+| tap | one point, 50 ms still | contact a normal 0.8 pt (at most 2) off the point, kept inside the element's middle half (a point chosen off the centre for a covered element keeps within 1 pt); press log-normal, median 75 ms, 50-140 ms; under 1 pt of drift before the lift |
+| swipe (flick) | two points, constant speed, 250 ms | the first 62 % of a minimum-jerk reach rescaled to arrive, so the finger lifts at 1.4× its mean speed and the list coasts; a 0.4-1.5 % sideways arc (≤ 6 pt), sub-point drift, samples every ~16 ms at uneven spacing; 15-40 ms of contact before it moves; the movement time is kept |
+| drag, scroll_to's drags (a rest after) | two points, then still | the full minimum-jerk profile, so the finger slows to a stop, then exactly still for the rest (the list stops where the finger stopped, as `scroll_to` assumes) |
+| long_press | one point for the time asked | the tap's contact scatter and drift; the hold exact |
+| pinch | two straight fingers, 500 ms | two shaped drags, the axis turned up to ±0.25 rad |
+| type | one `/wda/keys` call at 120 characters a second (in-process) or 60 (WDA) | word-sized bursts, each a `/wda/keys` call with a `frequency`: up to 40 characters, 12-40 a second (median 22) with 40-220 ms between words; longer, 40-80 a second with 20-60 ms gaps; text without spaces in bursts of 2-4; deletes in one burst at the keyboard's pace. When the bursts do not fit the action's time, one call as before |
+
+Speed is kept: a tap gains ~25 ms of hold, a drag 15-40 ms of contact; the settle pauses and reads
+are unchanged. Typing is the one trade (a 15-character phrase takes about a second instead of
+0.15 s); the in-process table reads the burst's `frequency` as XCTest's typingSpeed. A runner without
+`/actions` gets the plain endpoints. `POKI_HUMANIZE=off` (or `CoreConfig.humanize = false`) sends
+the exact plain schedules, which the gym runs beside the shaped ones; `POKI_HUMANIZE_SEED=<n>` makes
+a run repeatable. The MCP bridge on a Mac has the same idea behind `POKI_HUMANIZE` in upstream
+PR #11 for HID input; this is its counterpart for the phone's own XCTest path.
+
 ### Sensitive actions
 
 `SensitivityRules` (user-editable in the app, sensible defaults):

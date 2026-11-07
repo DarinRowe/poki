@@ -9,6 +9,12 @@ name: iOS gym
 on:
   # Manual only (Actions > Run workflow), so nothing runs on every push in this repository.
   workflow_dispatch:
+    inputs:
+      humanize:
+        description: "Touches and typing shaped after a person's (PokiCore's Humanize): on (the default) or off, for a speed comparison of the two on the same commit"
+        type: choice
+        options: [on, "off"]
+        default: on
   workflow_call:
 
 permissions:
@@ -135,7 +141,7 @@ jobs:
         working-directory: build/core/native/ios/PokiCore
         run: |
           set -o pipefail
-          POKI_PICTURES="$GITHUB_WORKSPACE/build/gym-pictures" POKI_WDA_START="$GITHUB_WORKSPACE/build/start-wda.sh" \
+          POKI_HUMANIZE="${{ inputs.humanize || 'on' }}" POKI_PICTURES="$GITHUB_WORKSPACE/build/gym-pictures" POKI_WDA_START="$GITHUB_WORKSPACE/build/start-wda.sh" \
             swift run -c release poki-gym-check 2>&1 | tee "$GITHUB_WORKSPACE/build/gym-scorecard.txt"
       - name: Summary
         if: always()
@@ -215,6 +221,8 @@ jobs:
           export SIMCTL_CHILD_POKI_SIMULATOR_DEVELOPER_DIR="$X"
           export SIMCTL_CHILD_DYLD_FRAMEWORK_PATH="$X/Library/Frameworks:$X/Library/PrivateFrameworks"
           export SIMCTL_CHILD_DYLD_LIBRARY_PATH="$X/usr/lib"
+          # Shaped or plain touches (PokiCore reads POKI_HUMANIZE; the workflow's input, on by default).
+          export SIMCTL_CHILD_POKI_HUMANIZE="${{ inputs.humanize || 'on' }}"
           echo "XCTest files in the simulator platform:"; find "$X/Library/Frameworks" "$X/Library/PrivateFrameworks" "$X/usr/lib" -maxdepth 1 \( -name 'XC*' -o -name 'lib_Testing*' \) 2>/dev/null
           xcrun simctl spawn "$UDID" log stream --style compact --predicate 'process == "Poki" AND (eventMessage BEGINSWITH "PokiGym" OR eventMessage BEGINSWITH "PokiInProcess")' > build/gym-inprocess.log 2>&1 &
           LOGPID=$!

@@ -389,6 +389,10 @@ static BOOL PKInstanceSignature(Class cls, SEL selector, const char *result, NSA
 }
 
 - (PKOutcome *)type:(NSString *)text timeout:(double)timeout {
+    return [self type:text typingSpeed:120 timeout:timeout];
+}
+
+- (PKOutcome *)type:(NSString *)text typingSpeed:(NSUInteger)speed timeout:(double)timeout {
     PKOutcome *refused;
     uint64_t generation = 0;
     id session = [self current:&generation outcome:&refused];
@@ -396,7 +400,7 @@ static BOOL PKInstanceSignature(Class cls, SEL selector, const char *result, NSA
     SRActionContext *context = [self contextFor:session generation:generation];
     NSTimeInterval started = NSProcessInfo.processInfo.systemUptime;
     NSError *error;
-    if (!SRInsertText(session, text, context, &error)) {
+    if (!SRInsertTextAtSpeed(session, text, speed, context, &error)) {
         return [PKOutcome delivery:PKDeliveryNotSent code:error.localizedDescription ?: @"text_not_sent" detail:nil];
     }
     return [self await:context timeout:timeout started:started generation:generation];
