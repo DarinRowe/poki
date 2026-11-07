@@ -76,6 +76,9 @@ that no answer may halt the agent and from the first Poki Gym runs (`native/ios-
     how far it got when its time runs out.
 12. After a timed-out read the child cap (`snapshotMaxChildren`) is lowered before the depth; a
     `look` with no picture in 6 s falls back to the host's screenshot; `scroll_to` searches by element.
+13. Focus and a field's value are read from the tree (no `GET /element/active`, which waits on the
+    app); `scroll_to` gets 12 s and reads after every swipe; the screenshot is retaken when the tree
+    came late.
 
 Still not done: a `collect` or `expect` field, a `recover` action, and redaction of sensitive text
 (Zhehan: out of scope for now).

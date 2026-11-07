@@ -1,6 +1,6 @@
 # Note for Joseph's agent: Poki on the iPhone, standalone (branch `dev/ios-standalone`)
 
-Written Nov 7 2026, 1:30 am ET, updated 4:30 am ET, for Joseph and the agent working for him. Zhehan is away and cannot
+Written Nov 7 2026, 1:30 am ET, updated 5:10 am ET, for Joseph and the agent working for him. Zhehan is away and cannot
 test further builds, so everything from this round is on this branch. It was developed on Zhehan's
 fork (ZhehanZhang/poki-remote) and consolidated here; nothing on `main` was changed and no PR is open.
 The companion branch `dev/mcp-agent-tools` carries the matching work on the Node MCP; its note is
@@ -50,7 +50,7 @@ All of it is new files under these paths, except a WebDriverAgent section in `TH
 | Path | What | Fork branch it came from (final commit) |
 |---|---|---|
 | `native/ios-app` | The app (0.2.3 plus the Nov 7 hand-off work), including the Live Activity | `dev/ios-app` c58d278, `dev/live-activity` 8654a1d |
-| `native/ios/PokiCore` | The on-phone MCP (`look`, `do`, `status`); its own note is `native/ios/PokiCore/NOTE-FOR-UPSTREAM.md` | `dev/ios-core` b90ed3b |
+| `native/ios/PokiCore` | The on-phone MCP (`look`, `do`, `status`); its own note is `native/ios/PokiCore/NOTE-FOR-UPSTREAM.md` | `dev/ios-core` 1424272 |
 | `native/launcher` | PokiLauncher (Rust, idevice): pairs, mounts the DDI, starts and supervises the runner | `dev/ios-core` 65f7595 |
 | `native/ios-runner` | WDA 16.15.3 submodule, branding, `PokiRunnerHost` | `dev/ios-runner` a3e80ea |
 | `deploy/cf-relay`, `native/ios/RelayCheck` | Workers relay and a client check | `dev/cf-relay` fb8876c |

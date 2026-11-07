@@ -75,7 +75,7 @@ final class Computer: @unchecked Sendable {
     /// only what changed since the read before (a `do`); `full` lists every element, as the tree has it.
     func readAndReply(until: Double, full: Bool, changes: Bool = false, did: [String] = [], error: String? = nil, extra: [String] = []) async -> ToolResult {
         let budget = max(0.8, min(config.readTimeout, until - now() - 0.2))
-        let reading = await runner.read(timeout: budget, extra: max(0, min(5, until - now() - budget - 3)), format: config.treeFormat)
+        let reading = await runner.read(timeout: budget, extra: max(0, min(4, until - now() - budget - 3)), format: config.treeFormat)
         if size == nil { _ = try? await screenSize(until: now() + 1.5) }
         let screen = size ?? ScreenSize(width: 10_000, height: 10_000)
         var notes = reading.notes
@@ -495,7 +495,7 @@ final class Computer: @unchecked Sendable {
         for (i, action) in actions.enumerated() {
             let index = offset + i
             // A launch gets 9 s; a fresh one (the app ended first, up to 6 s on its own) 14 s.
-            let cap = action["launch"] != nil ? max(config.actionCap, action["launch"]?["fresh"]?.bool == true ? 14 : 9) : config.actionCap
+            let cap = action["launch"] != nil ? max(config.actionCap, action["launch"]?["fresh"]?.bool == true ? 14 : 9) : action["scroll_to"] != nil ? max(config.actionCap, Self.scrollCap) : config.actionCap
             let actionsUntil = min(until - config.readTimeout - 0.5, now() + cap)
             let left = actionsUntil - now()
             if left < 0.3 {
