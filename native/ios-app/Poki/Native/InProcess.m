@@ -125,8 +125,8 @@ static id PKForegroundElement(id ax, NSString *(^bundleForPID)(int)) {
         BOOL isSpringBoard = springBoardPID > 0 ? pid == springBoardPID : [bundleForPID(pid) isEqualToString:@"com.apple.springboard"];
         if (isSpringBoard) springBoard = element; else [candidates addObject:element];
     }
-    // Poki's own process is never the app being driven: beside the target app in Split View (iPad,
-    // iPhone Duo's inner display) it is set aside, so the other app is the front one.
+    // Poki's own process is never the app being driven: beside the target app (the iPhone Duo's
+    // side-by-side apps, iPad windows) it is set aside, so the other app is the front one.
     if (candidates.count > 1) {
         NSMutableArray *others = [NSMutableArray array];
         for (id element in candidates) if (PKAXPid(element) != getpid()) [others addObject:element];
@@ -433,7 +433,7 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
     @try {
         NSData *png = [[[NSClassFromString(@"XCUIScreen") mainScreen] screenshot] PNGRepresentation];
         if (png.length) {
-            // The front app's part of the screen only, when it has a part (Split View).
+            // The front app's part of the screen only, when it has a part (beside another app).
             NSDictionary *info; id ax;
             id element = [self front:&info ax:&ax];
             if (element) [self noteViewport:[PKRequestSnapshot(ax, element, 1, 1, NULL) frame]];
@@ -506,8 +506,8 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
 }
 
 /// The front app's frame against the screen: a frame that is not the screen (within a few points) is
-/// the viewport. Split View on iPad gives each app a part of the screen; an alert or a sheet over a
-/// full-screen app still reports the full screen.
+/// the viewport. The Duo's side-by-side apps and iPad windows each have a part of the screen; an
+/// alert or a sheet over a full-screen app still reports the full screen.
 - (void)noteViewport:(CGRect)frame {
     CGRect screen = UIScreen.mainScreen.bounds;
     CGRect next = CGRectNull;

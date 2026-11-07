@@ -182,7 +182,7 @@ jobs:
             xcrun simctl spawn "$UDID" launchctl list > out/simulator/launchctl.txt 2>&1 || true
             grep -q 'nz.zheha.poki' out/simulator/launchctl.txt || { echo "::error::Poki died on the sample home screen ($look)"; crashed=1; }
           done
-          # The same screens on an iPad (regular width), where Poki sits beside the app it drives.
+          # The same screens on an iPad (regular width), where Poki sits in a window beside the app it drives.
           PADTYPE=$(xcrun simctl list devicetypes -j | python3 -c 'import json,sys;d=[x for x in json.load(sys.stdin)["devicetypes"] if x["name"].startswith("iPad Pro") and "11" in x["name"]];print(d[-1]["identifier"])')
           PAD=$(xcrun simctl create poki-pad "$PADTYPE" "$RUNTIME")
           xcrun simctl boot "$PAD" && xcrun simctl bootstatus "$PAD" -b

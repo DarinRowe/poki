@@ -63,7 +63,7 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
             },
             "DELETE /session": { _, _ in .null },
             "POST /appium/settings": { _, _ in .null },
-            // In Split View the front app's part of the screen is the screen the agent sees (viewport).
+            // Beside another app, the front app's part of the screen is the screen the agent sees (viewport).
             "GET /wda/screen": { [unowned self, screen] _, _ in
                 let viewport = self.native.viewport
                 let size = viewport.isNull ? screen : viewport.size
@@ -226,7 +226,7 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
     }
 
     private func touch(_ fingers: [[(CGPoint, Double)]]) throws -> JSON {
-        // Points are in the viewport the agent saw (Split View): moved back onto the screen.
+        // Points are in the viewport the agent saw (the driven app's part of the screen): moved back onto the screen.
         let viewport = native.viewport
         let shift = viewport.isNull ? CGPoint.zero : viewport.origin
         let paths = fingers.map { $0.map { PKTouchPoint.at(CGPoint(x: $0.0.x + shift.x, y: $0.0.y + shift.y), offset: $0.1) } }
