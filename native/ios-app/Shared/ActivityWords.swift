@@ -2,7 +2,8 @@ import Foundation
 
 /// The Live Activity's words, in English and Simplified Chinese (LiveActivity.xcstrings, carried by
 /// both the app and the widget extension), following the system language. The table is the Live
-/// Activity's own, so the app's other screens, which are English only, do not pick up these words.
+/// Activity's own; the app's other screens have theirs in Localizable.xcstrings. Home and All Steps
+/// borrow `label` for PokiCore's step labels.
 ///
 /// How much it says (ESP-162): a status word, one or two words (two to four Chinese characters), and
 /// one content line, at most four words (eight Chinese characters). How to do something is never

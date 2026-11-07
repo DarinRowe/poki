@@ -854,7 +854,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "点按 %@"
+            "value" : "轻点 %@"
           }
         }
       }
@@ -865,7 +865,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "点按屏幕"
+            "value" : "轻点屏幕"
           }
         }
       }
@@ -876,7 +876,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "点按“%@”"
+            "value" : "轻点“%@”"
           }
         }
       }
