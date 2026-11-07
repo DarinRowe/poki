@@ -16,8 +16,9 @@ result and the time next to each line.
   PokiTunnel. In Setup > Connect to this iPhone, tap Enable local connection and approve iOS's VPN
   prompt. The developer-service check passes; neither a saved profile nor VPN Connected alone counts.
 - [ ] Built-in: a normal web page still loads; no DNS or internet default route is installed by Poki.
-- [ ] Built-in: disconnect/reconnect, lock/unlock, and reboot recover after an explicit reconnect.
-  Opening Poki alone must not replace another active VPN. Choosing External app stops only Poki's VPN.
+- [ ] Built-in: disconnect/reconnect, lock/unlock, and reboot recover after an explicit reconnect (or,
+  with Poki on, Poki's own retry below). Opening Poki alone must not start the tunnel or replace another
+  active VPN. Choosing External app stops only Poki's VPN.
 - [ ] Built-in, with Poki on: turn Poki's VPN off in Settings > VPN. It stays off (the log says `ended on
   purpose`), the agent's runner status says to open Poki and tap Enable local connection, and names no
   proxy app. Tapping it while Poki is on brings the runner back within seconds. The same when another
@@ -26,7 +27,14 @@ result and the time next to each line.
   Xcode > Debug > Attach to Process, PokiTunnel, then stop the session). With no hand on the phone, the log
   shows `local VPN: failed`, `reconnecting in 1 s`, `connected`, `back: 10.7.0.1 answers again; starting
   the runner now`, and the next agent call works. If it keeps failing, it tries 8 times in about 2 minutes
-  (1, 2, 4, 8, 16, 30, 30, 30 s) and stops; opening Poki starts another round (GitHub issue 44).
+  (1, 2, 4, 8, 16, 30, 30, 30 s) and stops; then only Enable Local Connection in Setup starts it again.
+  Opening Poki dials nothing (GitHub issue 44).
+- [ ] Built-in, with Poki on, the tunnel fails and a different VPN (WireGuard, a work VPN) is turned on
+  before the retry comes: Poki does not dial. Setup says `Another VPN is on…`, Home shows it under
+  Needs attention, the log says `another VPN is on; not reconnecting`, and the other VPN stays connected.
+  Turning that VPN off and tapping Enable Local Connection brings the runner back, and the message goes.
+  (The check reads the interfaces iOS has network settings for; confirm it sees a real VPN, and sees none
+  with only Wi-Fi or cellular.)
 - [ ] Installed over 0.2.3 with a proxy app that was set up only in the proxy app (no connection
   chosen in Poki): Turn on says to choose a local connection first, and Setup > External app > Use
   the current VPN brings it back. Say this in the release notes for 0.2.3 users.

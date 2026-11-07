@@ -18,7 +18,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         // The app dials the tunnel again after a failure, but not after the owner turned it off in
         // Settings or another VPN took the single packet tunnel: it hears that from here.
         if TunnelStop.isOnPurpose(reason), let id = Bundle.main.bundleIdentifier {
-            CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), CFNotificationName((id + TunnelStop.notificationSuffix) as CFString), nil, nil, true)
+            CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), CFNotificationName((id + TunnelStopSignal.suffix) as CFString), nil, nil, true)
         }
         packets.async { self.running = false; completionHandler() }
     }

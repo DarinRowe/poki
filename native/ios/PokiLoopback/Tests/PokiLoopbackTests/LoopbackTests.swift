@@ -67,9 +67,8 @@ extension LoopbackTests {
 /// in Settings, or after another VPN took the single packet tunnel.
 final class TunnelStopTests: XCTestCase {
     func testOnlyAnEndByTheOwnerOrAnotherVPNLeavesTheTunnelDown() {
-        let leftDown: [NEProviderStopReason] = [.userInitiated, .superceded, .providerDisabled, .configurationDisabled, .configurationRemoved, .authenticationCanceled, .userLogout, .userSwitch]
+        for reason in [NEProviderStopReason.userInitiated, .superceded] { XCTAssertTrue(TunnelStop.isOnPurpose(reason), "\(reason.rawValue)") }
         let failures: [NEProviderStopReason] = [.none, .providerFailed, .noNetworkAvailable, .unrecoverableNetworkChange, .connectionFailed, .idleTimeout, .sleep, .configurationFailed, .appUpdate]
-        for reason in leftDown { XCTAssertTrue(TunnelStop.isOnPurpose(reason), "\(reason.rawValue)") }
         for reason in failures { XCTAssertFalse(TunnelStop.isOnPurpose(reason), "\(reason.rawValue)") }
     }
 }

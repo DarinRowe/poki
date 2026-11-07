@@ -24,6 +24,8 @@ final class AppModel {
     private(set) var approvals: [PendingApproval] = []
     private(set) var pairing: PairingEvent?
     private(set) var problem: String?
+    /// The text the local connection last put in `problem` (another VPN is on), so only that is cleared.
+    private var tunnelAttention: String?
     /// The agent's recent actions, newest last, for the home screen.
     private(set) var recentSteps: [RecentStep] = []
     /// The app the agent is in, from its last step.
@@ -125,6 +127,12 @@ final class AppModel {
         // check that follows lets `loopbackChanged` start the runner, as for any other recovery.
         tunnel.wanted = { [weak self] in self?.sessionOn == true && self?.setup.loopback == .builtIn }
         tunnel.onReconnected = { [weak self] in self?.loopback.check() }
+        // Poki leaves the owner's own VPN alone: the tunnel says so here, and the problem clears when it is back.
+        tunnel.onAttention = { [weak self] text in
+            guard let self else { return }
+            if let text { problem = text; tunnelAttention = text }
+            else if problem == tunnelAttention { problem = nil; tunnelAttention = nil }
+        }
         if !diskImage.isReady { Task { await diskImage.download() } }
         if UserDefaults.standard.string(forKey: "pokiSample") != nil { loadSample() }
         NotificationCenter.default.addObserver(forName: UIApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
@@ -154,7 +162,6 @@ final class AppModel {
         }
         Task {
             await tunnel.refresh()
-            tunnel.retryIfWanted()
             if wantsOn, !sessionOn, pairingPath != nil, diskImage.isReady { startSession(reconnectLocal: false) }
         }
         if let step = guiding, isDone(step) { stopGuide() }
