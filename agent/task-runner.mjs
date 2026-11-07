@@ -203,7 +203,9 @@ export class PhoneTask extends EventEmitter {
         this.publish({ title: 'Page changed. Continuing from the current screen.' });
       }
       const modelStarted = performance.now();
-      await this.codex.open();
+      // A learned route can hand off on a Mac with no model access; say so now instead of at the step deadline.
+      try { await this.codex.open(); }
+      catch (error) { this.fail(Object.assign(error, { code: 'model_setup' })); return; }
       if (this.finished) { this.codex.close(); return; }
       this.snapshot.metrics.modelSetupMilliseconds = performance.now() - modelStarted;
       await this.#startModel(definitions);
