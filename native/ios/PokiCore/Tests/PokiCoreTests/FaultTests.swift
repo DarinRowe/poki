@@ -24,6 +24,10 @@ final class FaultTests: XCTestCase {
         }
         func install(_ wda: FakeWDA, menu: Bool = true) {
             wda.set("GET /source") { [self] _ in (200, ["value": tree()]) }
+            wda.set("GET /element/active") { _ in (200, ["value": ["ELEMENT": "E1"]]) }
+            wda.set("GET /element/E1/attribute/value") { [value] _ in (200, ["value": .string(value.value)]) }
+            wda.set("GET /element/E1/attribute/placeholderValue") { _ in (200, ["value": .null]) }
+            wda.set("GET /element/E1/rect") { _ in (200, ["value": ["x": 16, "y": 100, "width": 358, "height": 44]]) }
             wda.set("POST /wda/keys") { [value] body in
                 for key in body?["value"]?.array ?? [] {
                     if key.string == "\u{8}" { value.update { if !$0.isEmpty { $0.removeLast() } } } else { value.update { $0 += key.string ?? "" } }
@@ -62,6 +66,226 @@ final class FaultTests: XCTestCase {
         XCTAssertEqual(field.value.value, text)
         XCTAssertTrue(result.text.contains("(typed); the field now reads \"\(text)\""), result.text)
         XCTAssertEqual(wda.bodies("POST /wda/getPasteboard").count, 0, "typing never touches the clipboard")
+    }
+
+    /// The runner's /wda/keys, scripted per call: (typed before it answers, answer).
+    private func keys(_ wda: FakeWDA, _ field: Field, _ script: [(typed: String, ok: Bool)]) {
+        let call = LockedBox(0)
+        wda.set("POST /wda/keys") { body in
+            let n = call.value; call.update { $0 += 1 }
+            let step = script[min(n, script.count - 1)]
+            field.value.update { $0 += step.typed }
+            if step.ok { return (200, ["value": .null]) }
+            return (500, ["value": ["error": "unknown error", "message": .string("could not type \(body?["value"]?.array?.compactMap(\.string).joined() ?? "")")]])
+        }
+    }
+
+    func testAFailedStepLogsItsErrorLineWithoutTheTypedText() async {
+        let (core, wda, _) = makeCore()
+        let field = Field()
+        field.install(wda)
+        keys(wda, field, [("", false)])
+        let events = LockedBox<[CoreEvent]>([])
+        Task { for await e in core.events { events.update { $0.append(e) } } }
+        _ = await core.call("look", [:])
+        _ = await core.call("do", ["actions": [["type": "door code 4412"]]])
+        let finished = await eventually { events.value.contains { if case .toolFinished(let a, _, _) = $0 { return a.name == "do" }; return false } }
+        XCTAssertTrue(finished)
+        guard case .toolFinished(_, _, let facts)? = events.value.last else { return XCTFail("\(events.value)") }
+        XCTAssertTrue(facts.error?.hasPrefix("error: action 1") == true, "\(facts.error ?? "no error line")")
+        XCTAssertFalse(facts.error?.contains("4412") ?? false, "the typed text stays out of the log")
+    }
+
+    func testATypeThatLandedButAnsweredWithAFailureCountsAsTyped() async {
+        let (core, wda, _) = makeCore()
+        let field = Field()
+        field.install(wda)
+        keys(wda, field, [("hello", false)])
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["type": "hello"]]])
+        XCTAssertFalse(result.isError, result.text)
+        XCTAssertEqual(field.value.value, "hello")
+        XCTAssertEqual(wda.bodies("POST /wda/keys").count, 1, "typed once: the field already held the text")
+        XCTAssertTrue(result.text.contains("the field now reads \"hello\""), result.text)
+    }
+
+    func testATypeThatDidNotLandIsSentAgainOnce() async {
+        let (core, wda, _) = makeCore()
+        let field = Field()
+        field.install(wda)
+        keys(wda, field, [("", false), ("hello", true)])
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["type": "hello"]]])
+        XCTAssertFalse(result.isError, result.text)
+        XCTAssertEqual(field.value.value, "hello")
+        XCTAssertEqual(wda.bodies("POST /wda/keys").count, 2)
+    }
+
+    func testAFailingTypeIsSentAgainOnlyOnce() async {
+        let (core, wda, _) = makeCore()
+        let field = Field()
+        field.install(wda)
+        keys(wda, field, [("", false)])
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["type": "hello"]]])
+        XCTAssertTrue(result.text.contains("\nerror: action 1"), result.text)
+        XCTAssertEqual(wda.bodies("POST /wda/keys").count, 2)
+    }
+
+    func testAHalfTypedFieldIsNotTypedIntoAgain() async {
+        let (core, wda, _) = makeCore()
+        let field = Field()
+        field.install(wda)
+        keys(wda, field, [("hel", false), ("hello", true)])
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["type": "hello"]]])
+        XCTAssertTrue(result.text.contains("\nerror: action 1"), result.text)
+        XCTAssertEqual(field.value.value, "hel", "a second try would have made it helhello")
+        XCTAssertEqual(wda.bodies("POST /wda/keys").count, 1)
+        XCTAssertTrue(result.text.contains("the field holds \"hel\""), result.text)
+    }
+
+    /// What the real runner answers (WDA's wdValue, with an empty string turned into nil): an empty field
+    /// reads as its placeholder, or null when it has none; the placeholder is also its own attribute.
+    private func realRunnerValue(_ wda: FakeWDA, _ field: Field, placeholder: String?, placeholderFails: Bool = false) {
+        wda.set("GET /element/E1/attribute/value") { _ in
+            let held = field.value.value
+            if !held.isEmpty { return (200, ["value": .string(held)]) }
+            return (200, ["value": placeholder.map(JSON.string) ?? .null])
+        }
+        wda.set("GET /element/E1/attribute/placeholderValue") { _ in
+            if placeholderFails { return (500, ["value": ["error": "unknown error", "message": "timed out"]]) }
+            return (200, ["value": placeholder.map(JSON.string) ?? .null])
+        }
+    }
+
+    /// Types `text` into the field and returns the answer and the error line the app log gets.
+    private func typeAndLog(_ core: PokiCore, _ text: String) async -> (answer: ToolResult, logged: String?) {
+        let events = LockedBox<[CoreEvent]>([])
+        Task { for await e in core.events { events.update { $0.append(e) } } }
+        _ = await core.call("look", [:])
+        let answer = await core.call("do", ["actions": [["type": .string(text)]]])
+        _ = await eventually { events.value.contains { if case .toolFinished(let a, _, _) = $0 { return a.name == "do" }; return false } }
+        guard case .toolFinished(_, _, let facts)? = events.value.last else { return (answer, nil) }
+        return (answer, facts.error)
+    }
+
+    func testAnEmptySearchFieldShowingItsPlaceholderIsTypedIntoAgain() async {
+        let (core, wda, _) = makeCore()
+        let field = Field()
+        field.install(wda)
+        realRunnerValue(wda, field, placeholder: "Search destinations")
+        keys(wda, field, [("", false), ("hello", true)])
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["type": "hello"]]])
+        XCTAssertFalse(result.isError, result.text)
+        XCTAssertEqual(field.value.value, "hello")
+        XCTAssertEqual(wda.bodies("POST /wda/keys").count, 2, "the placeholder is not text: one more try")
+    }
+
+    func testAnEmptyFieldThatReadsNullIsTypedIntoAgain() async {
+        let (core, wda, _) = makeCore()
+        let field = Field()
+        field.install(wda)
+        realRunnerValue(wda, field, placeholder: nil)
+        keys(wda, field, [("", false), ("hello", true)])
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["type": "hello"]]])
+        XCTAssertFalse(result.isError, result.text)
+        XCTAssertEqual(field.value.value, "hello")
+        XCTAssertEqual(wda.bodies("POST /wda/keys").count, 2)
+    }
+
+    func testAFailingTypeInAPlaceholderFieldIsNeverCalledHalfTyped() async {
+        let (core, wda, _) = makeCore()
+        let field = Field()
+        field.install(wda)
+        realRunnerValue(wda, field, placeholder: "Search destinations")
+        keys(wda, field, [("", false)])
+        let (answer, logged) = await typeAndLog(core, "hello")
+        XCTAssertTrue(answer.text.contains("\nerror: action 1"), answer.text)
+        XCTAssertEqual(wda.bodies("POST /wda/keys").count, 2)
+        XCTAssertFalse(answer.text.contains("Search destinations"), "the placeholder is not what the field holds: \(answer.text)")
+        XCTAssertTrue(logged?.contains("field empty") == true, logged ?? "no error line")
+    }
+
+    func testTheLogNamesAHalfTypedFieldButNeverItsContent() async {
+        let (core, wda, _) = makeCore()
+        let field = Field()
+        field.install(wda)
+        keys(wda, field, [("door code 44", false), ("door code 4412", true)])
+        let (answer, logged) = await typeAndLog(core, "door code 4412")
+        XCTAssertEqual(wda.bodies("POST /wda/keys").count, 1, "half typed: not typed again")
+        XCTAssertTrue(answer.text.contains("door code 44"), "the model is told what the field holds: \(answer.text)")
+        XCTAssertTrue(logged?.contains("field has other text") == true, logged ?? "no error line")
+        XCTAssertFalse(logged?.contains("door") ?? true, logged ?? "")
+        XCTAssertFalse(logged?.contains("44") ?? true, logged ?? "")
+    }
+
+    func testTheLogNeverHoldsTheOwnersOwnTextFromTheField() async {
+        let (core, wda, _) = makeCore()
+        let field = Field()
+        field.install(wda)
+        field.value.value = "Dear Sam, my bank PIN is 9931"
+        keys(wda, field, [("", false)])
+        let (answer, logged) = await typeAndLog(core, " see you")
+        XCTAssertEqual(wda.bodies("POST /wda/keys").count, 1)
+        XCTAssertTrue(answer.text.contains("bank PIN is 9931"), "the model is told what the field holds: \(answer.text)")
+        XCTAssertTrue(logged?.contains("field has other text") == true, logged ?? "no error line")
+        XCTAssertFalse(logged?.contains("Sam") ?? true, logged ?? "")
+        XCTAssertFalse(logged?.contains("9931") ?? true, logged ?? "")
+    }
+
+    func testATextThatEqualsThePlaceholderIsNotTypedTwice() async {
+        let (core, wda, _) = makeCore()
+        let field = Field()
+        field.install(wda)
+        realRunnerValue(wda, field, placeholder: "三亚")
+        keys(wda, field, [("三亚", false), ("三亚", true)])
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["type": "三亚"]]])
+        XCTAssertFalse(result.isError, result.text)
+        XCTAssertEqual(field.value.value, "三亚", "the first try landed: a second would make 三亚三亚")
+        XCTAssertEqual(wda.bodies("POST /wda/keys").count, 1)
+    }
+
+    func testAPlaceholderThatStartsTheTextDoesNotMakeAHalfTypedFieldEmpty() async {
+        let (core, wda, _) = makeCore()
+        let field = Field()
+        field.install(wda)
+        realRunnerValue(wda, field, placeholder: "Search")
+        keys(wda, field, [("Search", false), ("Search apps", true)])
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["type": "Search apps"]]])
+        XCTAssertTrue(result.text.contains("\nerror: action 1"), result.text)
+        XCTAssertEqual(field.value.value, "Search", "a second try would make SearchSearch apps")
+        XCTAssertEqual(wda.bodies("POST /wda/keys").count, 1)
+    }
+
+    func testAPlaceholderThatContainsTheTextDoesNotCountAsTypedText() async {
+        let (core, wda, _) = makeCore()
+        let field = Field()
+        field.install(wda)
+        realRunnerValue(wda, field, placeholder: "Search destinations")
+        keys(wda, field, [("", false), ("Search", true)])
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["type": "Search"]]])
+        XCTAssertFalse(result.isError, result.text)
+        XCTAssertEqual(field.value.value, "Search", "the empty field only showed a longer placeholder: the text still has to go in")
+        XCTAssertEqual(wda.bodies("POST /wda/keys").count, 2)
+    }
+
+    func testAFieldWhosePlaceholderCannotBeReadIsNotTypedIntoAgainAndSaysSo() async {
+        let (core, wda, _) = makeCore()
+        let field = Field()
+        field.install(wda)
+        realRunnerValue(wda, field, placeholder: "Search destinations", placeholderFails: true)
+        keys(wda, field, [("", false), ("hello", true)])
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["type": "hello"]]])
+        XCTAssertTrue(result.text.contains("\nerror: action 1"), result.text)
+        XCTAssertEqual(wda.bodies("POST /wda/keys").count, 1)
+        XCTAssertTrue(result.text.contains("placeholder could not be read"), result.text)
     }
 
     func testPasteIsTheBackupAndPutsTheOwnersClipboardBack() async {

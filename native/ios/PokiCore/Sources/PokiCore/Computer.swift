@@ -42,6 +42,9 @@ final class Computer: @unchecked Sendable {
     var lastForeground: Foreground?
     var size: ScreenSize?
     var lastPNG: Data?
+    /// The latest failed step's error, worded for the app log: what the field held is named by case
+    /// only (see recoverType). Core takes it after each call.
+    let failureLog = LockedBox<String?>(nil)
     var lastTree: String?
     var lastPicture: PictureSketch?
     /// Where the owner asked: the app in front at the task's first look or do, and the MCP session
@@ -676,7 +679,9 @@ final class Computer: @unchecked Sendable {
     func run(_ actions: [JSON], started: Double, until: Double, numberedFrom offset: Int = 0) async -> (did: [String], error: String?, lastKind: String?) {
         var did: [String] = []
         var error: String?
+        var logError: String?
         var lastKind: String?
+        defer { if let line = logError ?? error { failureLog.value = line } }
         for (i, action) in actions.enumerated() {
             let index = offset + i
             let cap = actionCap(action)
@@ -712,13 +717,95 @@ final class Computer: @unchecked Sendable {
                     why += runner.busyWith.map { "; the runner is still finishing an earlier \($0)" } ?? "; no session was open yet"
                 default: delivery = .unknown
                 }
+                // A type that failed or timed out may still have landed, or can be sent once more: what
+                // the field holds decides (see recoverType). Every other action that may have been
+                // delivered is never sent again by us.
+                var recoveryNote = "", recoveryLog = ""
+                if let text = action["type"]?.text, action["via"]?.string != "paste", !(failure is ActionFailure), failure is RunnerError || failure is DeadlineExceeded {
+                    let recovered = await recoverType(action, text: text, why: why, until: until - config.readTimeout - 0.5)
+                    if let done = recovered.done {
+                        lastKind = "type"
+                        did.append("\(done) (sent, \(Int(((now() - began) * 1000).rounded())) ms)")
+                        continue
+                    }
+                    recoveryNote = recovered.note.isEmpty ? "" : "; \(recovered.note)"
+                    recoveryLog = recovered.logNote.isEmpty ? "" : "; \(recovered.logNote)"
+                }
                 did.append("\(action.serialized()) (\(delivery.rawValue), \(Int(((now() - began) * 1000).rounded())) ms)")
-                // An action that may have been delivered is never sent again by us, and nothing after it is sent.
-                error = "action \(index + 1) \(delivery == .unknown ? "may have been delivered" : "was not sent"): \(why)\(i + 1 < actions.count ? "; the actions after it were not sent" : "")"
+                // Nothing after a failed action is sent.
+                let head = "action \(index + 1) \(delivery == .unknown ? "may have been delivered" : "was not sent"): \(why)"
+                let tail = i + 1 < actions.count ? "; the actions after it were not sent" : ""
+                error = head + recoveryNote + tail
+                logError = head + recoveryLog + tail
                 break
             }
         }
         return (did, error, lastKind)
+    }
+
+    /// After a type that failed or timed out: what the focused field holds says what happened, so the
+    /// text is neither lost nor typed twice. The text is all there (the runner answered late or with an
+    /// error after typing): it counts as typed. The field is empty (a placeholder is nothing) or being
+    /// cleared, so a second try cannot double it: sent once more. Anything else, another person's text,
+    /// a half-typed or unreadable field: not sent again. `done` is the step's text when the text is in
+    /// the field. `note` goes on the answer to the model and may quote the field; `logNote` goes on the
+    /// line the app log keeps and only ever says which case it was, never what the field holds.
+    ///
+    /// The real runner answers an empty field with its placeholder, so a value is read as text first
+    /// (the value is the target text, or holds it) and as a placeholder second. A value equal to the
+    /// placeholder is empty unless the text begins with it: then a first try may have landed that
+    /// much, and the field is left alone rather than risk typing the text twice.
+    func recoverType(_ action: JSON, text: String, why: String, until: Double) async -> (done: String?, note: String, logNote: String) {
+        guard until - now() > 1.2 else { return (nil, "", "no time left to check the field") }
+        let hidden = describe(action).hasSuffix("(hidden)")
+        func shown(_ value: String) -> String { hidden ? "\(value.count) characters" : "\"\(value.count > 200 ? String(value.prefix(190)) + "…" : value)\"" }
+        func typed(_ held: String) -> (done: String?, note: String, logNote: String) {
+            ("\(describe(action)) (typed); the runner answered late or with an error, and the field now reads \(shown(held))", "", "")
+        }
+        enum Doubt { case none, mayBeThePlaceholder, placeholderUnread }
+        var value = ""
+        var doubt = Doubt.none
+        switch await readField(until: until) {
+        case .unreadable:
+            return (nil, "the field could not be read afterwards, so the text was not typed again", "field unreadable, not typed again")
+        case .empty:
+            break
+        case .text(let held, let id):
+            // Exactly the text: typed, or the placeholder is this very text. Either way it is not typed twice.
+            if held == text { return typed(held) }
+            switch await placeholder(ofField: id, until: until) {
+            case .text(let shownPlaceholder) where shownPlaceholder == held:
+                if text.hasPrefix(held) { value = held; doubt = .mayBeThePlaceholder }
+            case let known:
+                if held.contains(text) { return typed(held) }
+                value = held
+                if known == .unreadable { doubt = .placeholderUnread }
+            }
+        }
+        let state: String
+        switch doubt {
+        case .none: state = value.isEmpty ? "field empty" : "field has other text"
+        case .mayBeThePlaceholder: state = "field reads its placeholder or the start of the text"
+        case .placeholderUnread: state = "field has text, placeholder unreadable"
+        }
+        guard action["clear"]?.bool ?? false || value.isEmpty else {
+            let reason: String
+            switch doubt {
+            case .none: reason = "the field holds \(shown(value)), which is not all of the text"
+            case .mayBeThePlaceholder: reason = "the field reads \(shown(value)), which is either its placeholder or the start of the text"
+            case .placeholderUnread: reason = "the field reads \(shown(value)); its placeholder could not be read, so it is not known whether that is text"
+            }
+            return (nil, "\(reason), so it was not typed again (a second try could double it)", "\(state), not typed again")
+        }
+        guard until - now() > 1.2 else {
+            return (nil, value.isEmpty ? "the field is empty; there was no time left to type again" : "the field holds \(shown(value)); there was no time left to type again", "\(state), no time left to type again")
+        }
+        do {
+            let (_, text) = try await withDeadline(until - now(), "the second try of the action") { [self] in try await perform(action, until: until) }
+            return ("\(text) (sent again after the first try failed: \(why))", "", "")
+        } catch {
+            return (nil, "the text was typed again once and that failed too: \(error)", "\(state), typed again once and that failed too")
+        }
     }
 
     /// The answer when the sensitive part was not sent: text only when nothing went, else the read

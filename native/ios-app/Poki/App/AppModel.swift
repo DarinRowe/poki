@@ -566,13 +566,13 @@ final class AppModel {
                 }
                 state.headline = summary
             }
-        case .toolFinished(let summary, let delivery, let app, let thumbnail):
+        case .toolFinished(let summary, let delivery, let app, let thumbnail, let error):
             lastAgentActivity = Date()
             stepUnderWay = nil
             lastAction = "\(summary) · \(delivery)"
             activityText = "Idle"
             let failed = delivery.hasPrefix("failed")
-            log.add("agent", "\(failed ? "failed" : "done"): \(summary) · \(delivery.prefix(160))")
+            log.add("agent", "\(failed ? "failed" : "done"): \(summary) · \(delivery.prefix(160))" + (error.map { " · \($0)" } ?? ""))
             if let app { currentApp = app }
             recentSteps.append(RecentStep(text: summary, app: app, failure: failed ? delivery : nil, at: Date()))
             if recentSteps.count > 20 { recentSteps.removeFirst(recentSteps.count - 20) }

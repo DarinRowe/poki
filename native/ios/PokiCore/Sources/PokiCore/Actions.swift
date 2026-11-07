@@ -411,6 +411,42 @@ extension Computer {
         return "back: no back button was listed in the top left, so an edge swipe from the left was sent (what most apps take as back)\(sheetNote)"
     }
 
+    /// What the focused field holds, as far as a retry decision needs it.
+    enum FieldReading: Equatable {
+        /// Nothing in it: the runner answered null or an empty string.
+        case empty
+        /// What the runner read back, raw, and the field's id. The real runner answers an empty field
+        /// with its placeholder, so this may be a placeholder; `placeholder(ofField:until:)` tells.
+        case text(String, id: String)
+        case unreadable
+    }
+
+    enum Placeholder: Equatable {
+        case text(String)
+        case absent
+        case unreadable
+    }
+
+    /// Each read gets what is left of `until`, up to 3 s, so three reads never run past it.
+    func readField(until: Double) async -> FieldReading {
+        func timeout() -> Double { min(3, until - now() - 0.2) }
+        guard timeout() > 0.2,
+              let active = try? await runner.call("GET", "/element/active", timeout: timeout(), countsAsMiss: false),
+              let id = active["ELEMENT"]?.string ?? active["element-6066-11e4-a52e-4f735466cecf"]?.string,
+              timeout() > 0.2,
+              let value = try? await runner.call("GET", "/element/\(id)/attribute/value", timeout: timeout(), countsAsMiss: false) else { return .unreadable }
+        if case .null = value { return .empty }
+        guard let text = value.string else { return .unreadable }
+        return text.isEmpty ? .empty : .text(text, id: id)
+    }
+
+    func placeholder(ofField id: String, until: Double) async -> Placeholder {
+        let timeout = min(3, until - now() - 0.2)
+        guard timeout > 0.2, let value = try? await runner.call("GET", "/element/\(id)/attribute/placeholderValue", timeout: timeout, countsAsMiss: false) else { return .unreadable }
+        if case .null = value { return .absent }
+        return value.string.map(Placeholder.text) ?? .unreadable
+    }
+
     /// What the field holds now (its value from the tree), or nil when no field is found or read.
     func fieldValue(target: Element?, holding: String? = nil, timeout: Double) async -> String? {
         let seen = await fieldOnScreen(target: target, holding: holding, timeout: timeout)

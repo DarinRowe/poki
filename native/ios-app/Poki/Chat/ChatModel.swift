@@ -275,7 +275,7 @@ final class ChatModel {
                 for i in steps.indices where steps[i].state == .current { steps[i].state = .done }
                 steps.append(PlanStep(ActivityWords.label(summary)))
             }
-        case .toolFinished(let summary, let delivery, _, _):
+        case .toolFinished(let summary, let delivery, _, _, _):
             guard summary != "Look at the screen", modelPlan == nil else { return }
             let failed = delivery.hasPrefix("failed")
             let waiting = delivery.contains("approval_required")
