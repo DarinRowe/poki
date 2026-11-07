@@ -580,6 +580,34 @@ final class ReturnToOriginTests: XCTestCase {
         }
     }
 
+    /// One do that launches an app and finishes the task: the launched app is slow to come to the
+    /// front, so the read is made again until it is (cdebb5d), and only then does the phone go back
+    /// to the app the task began in (ESP-176). The answer shows the work's screen, not the origin's.
+    func testALaunchThatFinishesReadsTheLaunchedAppBeforeGoingBack() async {
+        let (core, wda, _) = makeCore()
+        let front = LockedBox("ai.x.grok"), pending = LockedBox<String?>(nil), lagging = LockedBox(0)
+        wda.set("GET /wda/activeAppInfo") { _ in
+            if let target = pending.value {
+                if lagging.update({ $0 += 1; return $0 }) > 2 { front.value = target; pending.value = nil }
+            }
+            return (200, ["value": ["bundleId": .string(front.value), "name": .string(front.value)]])
+        }
+        for key in ["POST /wda/apps/activate", "POST /wda/apps/launch"] {
+            wda.set(key) { body in
+                let bundle = body?["bundleId"]?.string ?? front.value
+                if bundle == "ai.x.grok" { front.value = bundle } else { pending.value = bundle; lagging.value = 0 }
+                return (200, ["value": .null])
+            }
+        }
+        _ = await core.call("look", [:])
+        let done = await core.call("do", ["actions": [["launch": "com.apple.weather"]], "finish": true])
+        XCTAssertFalse(done.isError, done.text)
+        XCTAssertTrue(done.text.hasPrefix("app: com.apple.weather"), "the answer shows the launched app's screen: \(done.text)")
+        XCTAssertTrue(done.text.contains("was not in front yet"), done.text)
+        XCTAssertTrue(done.text.contains("finish: back in"), done.text)
+        XCTAssertEqual(front.value, "ai.x.grok", "the phone ends where the task began")
+    }
+
     func testFinishWhereTheTaskBeganSendsNothing() async {
         let (core, wda, _) = makeCore()
         _ = phone(wda, front: "ai.x.grok")

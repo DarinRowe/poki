@@ -54,6 +54,10 @@ final class Computer: @unchecked Sendable {
     /// The element the last type went to and its text, so the read after it can say which number the
     /// field has now when the app replaced it (Settings' search field is a new element in search mode).
     var typedInto: (ref: Int, text: String)?
+    /// How much of the picture changed in the latest read while the elements did not (nil when the
+    /// elements changed too, or nothing did): a whole new picture over an unchanged tree is the old
+    /// app's tree under the new app's screen (gym: Photos launched from Safari).
+    var pictureOnlyShare: Double?
 
     var lastElements: [Element] { listed.map(\.element) }
     var layout: Layout { Layout(all: lastAll, screen: size ?? ScreenSize(width: 10_000, height: 10_000)) }
@@ -124,8 +128,12 @@ final class Computer: @unchecked Sendable {
                 let box = [change.x * screen.width, change.y * screen.height, change.width * screen.width, change.height * screen.height].map { Int($0.rounded()) }
                 where_ = ", in \(max(1, Int((change.share * 100).rounded()))) % of it, within [\(box.map(String.init).joined(separator: ", "))]"
             }
+            pictureOnlyShare = nil
             if tree != before { changedLine = "screen_changed: true (the elements changed)" }
-            else if pictureChanged == true { changedLine = "screen_changed: true (only the picture changed\(where_); the elements are the same)" }
+            else if pictureChanged == true {
+                changedLine = "screen_changed: true (only the picture changed\(where_); the elements are the same)"
+                if let now = picture, let last = lastPicture { pictureOnlyShare = now.change(from: last)?.share }
+            }
             else { changedLine = "screen_changed: false (the elements\(pictureChanged == false ? " and the picture" : "") are the same as in the read before)" }
         }
         if treeRead { lastTree = tree }
@@ -405,6 +413,8 @@ final class Computer: @unchecked Sendable {
         scrollFound = nil
         typedInto = nil
         var started = now()
+        let callStarted = started
+        var approvalWaited = 0.0
         var until = started + config.toolDeadline
         if let blocked = await waitForRunner(until: until) { return blocked }
         // The app the owner is in before anything is sent: the read before may be another task's.
@@ -490,6 +500,7 @@ final class Computer: @unchecked Sendable {
                 let waited = now() - asked
                 until += waited
                 started += waited
+                approvalWaited += waited
                 // The owner's approval can open Poki: the app comes back before anything is sent into Poki.
                 if let back = await bringBack(from: before, why: "after the approval", check: true) { extra.append(back) }
                 let sentFirst = at > 0 ? " Actions 1 to \(at) were sent (below)." : ""
@@ -509,7 +520,9 @@ final class Computer: @unchecked Sendable {
             }
         }
 
+        let actionsStarted = now()
         let (moreDid, moreError, moreKind) = await run(toRun, started: started, until: until, numberedFrom: actions.count - toRun.count)
+        let actionsTook = now() - actionsStarted
         did += moreDid
         error = moreError
         lastKind = moreKind ?? lastKind
@@ -520,6 +533,9 @@ final class Computer: @unchecked Sendable {
                 did.append("paused \(Int((pause * 1000).rounded())) ms before reading")
             }
         }
+        let readStarted = now()
+        // What the model saw last, so a read made again in this call still compares with it.
+        let seenTree = lastTree, seenPicture = lastPicture
         var result = await readAndReply(until: until, full: full, changes: true, did: did, error: error, extra: (approvedNote.map { [$0] } ?? []) + extra)
         // The read shows Poki in front where another app was being worked in: a tap at the top of
         // the screen landed on Poki's Live Activity in the Dynamic Island. The app comes back and
@@ -527,6 +543,31 @@ final class Computer: @unchecked Sendable {
         if config.isPoki(lastForeground), !toRun.contains(where: { $0["launch"] != nil }), until - now() > config.readTimeout + 1,
            let back = await bringBack(from: before, why: "after the actions (a tap near the top of the screen lands on Poki's Live Activity in the Dynamic Island)", check: false) {
             result = await readAndReply(until: until, full: full, changes: true, did: did, error: error, extra: (approvedNote.map { [$0] } ?? []) + extra + [back])
+        }
+        // After a launch the runner's tree can still be the old app's while the picture is the new
+        // app's (gym: Photos launched from Safari answered Safari's whole tree under Photos' screen,
+        // twice). The read is made again, within the call, until the launched app is in front, or
+        // when the whole picture changed over an unchanged tree.
+        let launched = toRun.compactMap { $0["launch"].flatMap { $0.string ?? $0["bundle"]?.string } }.last
+        var rereads = 0
+        while rereads < 3, until - now() > config.readTimeout + 1 {
+            let notYetInFront = launched.map { lastForeground?.bundleID != nil && lastForeground?.bundleID != $0 } ?? false
+            let stalePicture = (pictureOnlyShare ?? 0) >= 0.9
+            guard notYetInFront || stalePicture else { break }
+            rereads += 1
+            await sleep(seconds: 0.4)
+            let why = notYetInFront ? "\(launched!) was not in front yet" : "the whole picture had changed while the elements had not (an app's tree can lag its screen)"
+            lastTree = seenTree
+            lastPicture = seenPicture
+            result = await readAndReply(until: until, full: full, changes: true, did: did, error: error, extra: (approvedNote.map { [$0] } ?? []) + extra + ["the screen was read again (\(rereads)): \(why)"])
+        }
+        // A call that took far longer than its parts says where the time went (gym: a wait_until
+        // whose parts said 5 s answered after 29.8 s).
+        let total = now() - callStarted
+        let readTook = now() - readStarted
+        let parts = (prepared - callStarted) + actionsTook + readTook + approvalWaited
+        if total >= 8 || total - parts > 2 {
+            result.text += "\ntook: \(Self.seconds(total)) s in all: \(Self.seconds(prepared - callStarted)) s before the actions (runner start, busy wait, lock check), \(Self.seconds(actionsTook)) s actions, \(Self.seconds(readTook)) s read\(approvalWaited > 0 ? ", \(Self.seconds(approvalWaited)) s the owner's approval" : "")\(total - parts > 2 ? ", \(Self.seconds(total - parts)) s elsewhere" : "")"
         }
         // The read above is the work's last screen; the owner then sees their own app again.
         if finish, error == nil {
@@ -571,6 +612,8 @@ final class Computer: @unchecked Sendable {
         }
     }
 
+    static func seconds(_ t: Double) -> String { String(format: "%.1f", max(0, t)) }
+
     /// When Poki itself is in front although the model was working in another app, that app is
     /// activated again, and the line says so. nil when nothing had to be done.
     func bringBack(from before: Foreground?, why: String, check: Bool) async -> String? {
@@ -597,7 +640,10 @@ final class Computer: @unchecked Sendable {
             let index = offset + i
             // A launch gets 9 s; a fresh one (the app ended first, up to 6 s on its own) 14 s.
             // A type is a tap, a wait for the focus and the keys (and a wait for a busy runner): 9 s.
-            let cap = action["launch"] != nil ? max(config.actionCap, action["launch"]?["fresh"]?.bool == true ? 14 : 9) : action["scroll_to"] != nil ? max(config.actionCap, Self.scrollCap) : action["type"] != nil ? max(config.actionCap, 9) : config.actionCap
+            // A wait_until gets the time it asks for (up to 10 s) plus a read: 8000 ms asked
+            // became 6000 under the action cap (gym, an app relaunch under the wait).
+            let waitAsked = min(10, max(0.2, (action["wait_until"]?["ms"]?.double ?? 3000) / 1000))
+            let cap = action["launch"] != nil ? max(config.actionCap, action["launch"]?["fresh"]?.bool == true ? 14 : 9) : action["scroll_to"] != nil ? max(config.actionCap, Self.scrollCap) : action["type"] != nil ? max(config.actionCap, 9) : action["wait_until"] != nil ? max(config.actionCap, waitAsked + 1.5) : config.actionCap
             let actionsUntil = min(until - config.readTimeout - 0.5, now() + cap)
             let left = actionsUntil - now()
             if left < 0.3 {

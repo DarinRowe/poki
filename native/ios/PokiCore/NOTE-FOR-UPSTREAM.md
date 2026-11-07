@@ -89,6 +89,8 @@ that no answer may halt the agent and from the first Poki Gym runs (`native/ios-
 16. Scrolls drag to rest (with a drag back after an overshoot); a tap on a partly hidden element goes
     to its visible part; a replaced field gets a new number; a note when focus moved; a sheet hint;
     a refused launch is one plain line.
+17. A launch reads again until the app is in front; `wait_until` gets its own time; long calls
+    carry a `took:` line.
 
 Still not done: a `collect` or `expect` field, a `recover` action, and redaction of sensitive text
 (Zhehan: out of scope for now).
