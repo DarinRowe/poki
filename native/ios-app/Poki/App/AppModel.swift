@@ -631,8 +631,14 @@ final class AppModel {
     }
 
     private func handle(_ event: ShellEvent) {
-        // Events after Turn off (the core's own "stopped") are not for the screen.
-        guard sessionOn else { return }
+        // Events after Turn off (the core's own "stopped") are not for the screen. An approval is
+        // the exception: a call that asks one (the on-device chat, the gym probe) waits on the
+        // owner's answer whether or not Poki is on, and dropping it left that call waiting for the
+        // whole approval time.
+        switch event {
+        case .approvalRequested, .approvalEnded: break
+        default: guard sessionOn else { return }
+        }
         onShellEvent?(event)
         switch event {
         case .relay(let status):
