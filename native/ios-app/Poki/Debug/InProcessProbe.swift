@@ -10,7 +10,9 @@ import UIKit
 /// `-pokiInProcess later -pokiProbeX 200 -pokiProbeY 300 -pokiProbeDelay 8` waits, then taps that
 /// point and types, whatever app is in front by then;
 /// `-automationPath runner -pokiInProcess source -pokiProbeDelay 10` waits, then keeps the front app's
-/// tree as read by Poki Runner and by Poki's own process.
+/// tree as read by Poki Runner and by Poki's own process;
+/// `-pokiInProcess apps -pokiProbeApp BUNDLE` launches that app, launches Settings, activates the app,
+/// launches it again and terminates it, noting the front app and its pid after each.
 @MainActor
 final class InProcessProbe: ObservableObject {
     static let shared = InProcessProbe()
@@ -42,6 +44,7 @@ final class InProcessProbe: ObservableObject {
             case "separate": await separateTrial()
             case "port": await portCheck()
             case "source": await sourceBothPaths(model: model)
+            case "apps": await appsCycle(defaults.string(forKey: "pokiProbeApp") ?? "local.pokimcp.fixture")
             case "bench": await benchmark(model: model, rounds: defaults.integer(forKey: "pokiBenchRounds") > 0 ? defaults.integer(forKey: "pokiBenchRounds") : 5)
             default: await prepareOnly()
             }
@@ -123,6 +126,28 @@ final class InProcessProbe: ObservableObject {
         note("read back in the front app: \(value == Self.sample ? "same as sent" : appended ? "sent text appended to what the field held" : value.map { "differs (\($0.count) characters)" } ?? "no focused field")",
              ["step": "read_back_front", "same": value == Self.sample, "appended": appended, "focused": value != nil, "characters": value?.count ?? 0])
         await read()
+    }
+
+    func appsCycle(_ bundle: String) async {
+        guard begin("open, switch and close \(bundle)") else { return }
+        defer { end() }
+        guard await prepare() else { return }
+        let background = UIApplication.shared.beginBackgroundTask(withName: "In-process probe")
+        defer { UIApplication.shared.endBackgroundTask(background) }
+        for (action, target) in [("launch", bundle), ("launch", "com.apple.Preferences"), ("activate", bundle), ("launch", bundle), ("terminate", bundle)] {
+            let result = await withCheckedContinuation { (c: CheckedContinuation<[String: Any], Never>) in
+                queue.async {
+                    let t = ProcessInfo.processInfo.systemUptime
+                    let code = PKInProcess.shared().app(target, action: action)
+                    Thread.sleep(forTimeInterval: 1)
+                    let front = PKInProcess.shared().frontApp()
+                    c.resume(returning: ["code": code ?? "", "seconds": ProcessInfo.processInfo.systemUptime - t,
+                                         "front": front["bundleId"] as? String ?? "", "front_pid": front["pid"] as? Int ?? 0])
+                }
+            }
+            note("\(action) \(target): \((result["code"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "done"), front \(result["front"] ?? "?") pid \(result["front_pid"] ?? 0)",
+                 result.merging(["step": "app", "action": action, "bundle": target]) { a, _ in a })
+        }
     }
 
     private func frontField() async -> CGPoint? {
