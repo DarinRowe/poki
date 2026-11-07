@@ -179,6 +179,11 @@ static BOOL SRABI(id target, SEL selector, const char *result, NSArray<NSString 
     id session = [promise value];
     [_lifecycleLock lock];
     BOOL closed = _invalidated && session == _observed;
+    // With POKI_INPROCESS_OWNED_SESSION set, the shared session is never used for automation: a
+    // session of this process's own is opened, kept while it is current, and reopened after close.
+    BOOL owned = getenv("POKI_INPROCESS_OWNED_SESSION") != NULL;
+    if (owned && _observed && !_invalidated && _token) session = _observed;
+    else if (owned) closed = YES;
     [_lifecycleLock unlock];
     if (closed) {
         // The shared promise still holds the session that was closed: open one of this process's

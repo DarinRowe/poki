@@ -34,6 +34,9 @@ jobs:
         run: POKI_CHECK_OUT=out/apps native/ios-app/scripts/inprocess-sim/check.sh --apps
       - name: Idle cycle check (close, refuse, reopen)
         run: POKI_CHECK_OUT=out/cycle native/ios-app/scripts/inprocess-sim/check.sh --cycle
+      - name: Idle cycle check with Poki's own session (not XCTest's shared one)
+        if: always()
+        run: POKI_INPROCESS_OWNED_SESSION=1 POKI_CHECK_OUT=out/cycle-owned native/ios-app/scripts/inprocess-sim/check.sh --cycle
       - uses: actions/upload-artifact@v4
         if: always()
         with:

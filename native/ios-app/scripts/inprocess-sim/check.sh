@@ -50,6 +50,8 @@ xcrun simctl install "$UDID" "$FIXTURE"
 export SIMCTL_CHILD_POKI_SIMULATOR_DEVELOPER_DIR="$X"
 export SIMCTL_CHILD_DYLD_FRAMEWORK_PATH="$X/Library/Frameworks:$X/Library/PrivateFrameworks"
 export SIMCTL_CHILD_DYLD_LIBRARY_PATH="$X/usr/lib"
+# POKI_INPROCESS_OWNED_SESSION=1 makes Poki open its own daemon session instead of XCTest's shared one.
+[ -n "${POKI_INPROCESS_OWNED_SESSION:-}" ] && export SIMCTL_CHILD_POKI_INPROCESS_OWNED_SESSION=1
 DOCS="$(xcrun simctl get_app_container "$UDID" local.poki.inprocess-check data)/Documents"
 if [ "$MODE" = apps ]; then
   xcrun simctl launch "$UDID" local.poki.inprocess-check -mode apps -tag apps -delay 2 >/dev/null
@@ -77,6 +79,15 @@ xcrun simctl launch "$UDID" local.poki.inprocess-check -mode "$MODE" -tag field 
 sleep 3
 xcrun simctl launch "$UDID" local.pokimcp.fixture >/dev/null
 for _ in $(seq 90); do [ -s "$DOCS/field.json" ] && break; sleep 1; done
+if [ ! -s "$DOCS/field.json" ]; then
+  echo "::error::the check app wrote no result in 90 s"
+  [ -s "$DOCS/field-progress.json" ] && { echo "progress:"; cat "$DOCS/field-progress.json"; }
+  echo "check app running: $(xcrun simctl spawn "$UDID" launchctl list | grep -c 'local.poki.inprocess-check' || true)"
+  for f in $(ls -t ~/Library/Logs/DiagnosticReports/InProcessCheck* 2>/dev/null | head -1); do echo "== crash $f"; head -60 "$f"; done
+  xcrun simctl spawn "$UDID" log show --last 3m --predicate 'process == "InProcessCheck" OR process == "testmanagerd"' --style compact 2>/dev/null | tail -60 || true
+  OUT="${POKI_CHECK_OUT:-}"; if [ -n "$OUT" ]; then mkdir -p "$OUT"; cp "$DOCS"/field* "$OUT/" 2>/dev/null || true; cp ~/Library/Logs/DiagnosticReports/InProcessCheck* "$OUT/" 2>/dev/null || true; fi
+  exit 1
+fi
 echo "{\"id\":\"$UDID\",\"op\":\"ax\"}" | "$WORK/simulator" > "$WORK/reference.json"
 OUT="${POKI_CHECK_OUT:-}"
 if [ -n "$OUT" ]; then mkdir -p "$OUT"; cp "$DOCS"/field* "$WORK/reference.json" "$OUT/"; xcrun simctl io "$UDID" screenshot "$OUT/screen.png" >/dev/null 2>&1 || true; fi

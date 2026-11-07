@@ -20,12 +20,19 @@ static NSDictionary *Run(NSString *mode, NSString *tag, NSString *text) {
     if (code) out[@"source_code"] = code;
     Write([tag stringByAppendingString:@".xml"], before ?: @"");
     if ([mode isEqualToString:@"cycle"]) {
+        // Progress is written after each step, so a crash or a hang says how far it got.
+        void (^progress)(NSString *) = ^(NSString *step) { out[@"progress"] = step; Write([tag stringByAppendingString:@"-progress.json"], out); };
+        progress(@"read");
         out[@"close"] = [PKInProcess.shared close];
+        progress(@"closed");
         PKOutcome *refused = [PKInProcess.shared touch:@[@[[PKTouchPoint at:CGPointMake(10, 10) offset:0], [PKTouchPoint at:CGPointMake(10, 10) offset:0.05]]] timeout:2];
         out[@"closed_touch"] = @{@"delivery": @(refused.delivery), @"code": refused.code ?: @""};
+        progress(@"touch refused");
         [NSThread sleepForTimeInterval:2];
         out[@"prepare2"] = [PKInProcess.shared prepare];
+        progress(@"reopened");
         out[@"front2"] = [PKInProcess.shared frontApp];
+        progress(@"front read");
         before = [PKInProcess.shared sourceXML:NULL code:&code];
         if (code) out[@"source_code2"] = code;
         Write([tag stringByAppendingString:@"-reopened.xml"], before ?: @"");
