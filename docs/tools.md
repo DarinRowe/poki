@@ -93,7 +93,7 @@ Installing apps, opening URLs, and reading the clipboard trigger a macOS approva
 
 ## Optional action verification
 
-`tap`, `tap_text`, `swipe`, and `scroll` accept `verify: false`. These calls omit the reads that compare the screen before and after an action. Their results include `verified: false` and do not confirm that the app accepted the input. Omitting `verify`, or setting it to `true`, keeps the default verification.
+`tap`, `tap_text`, `swipe`, `scroll`, and `go_back` accept `verify: false`. These calls omit the reads that compare the screen before and after an action. Their results include `verified: false` and do not confirm that the app accepted the input. Omitting `verify`, or setting it to `true`, keeps the default verification.
 
 `tap_text` still reads the current screen to locate its target. With verification disabled, it uses the first matching position without waiting for two stable positions. Coordinate actions still obtain the current display dimensions. This option does not promise a call with no device reads.
 
