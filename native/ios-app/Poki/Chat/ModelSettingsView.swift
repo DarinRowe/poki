@@ -11,7 +11,7 @@ import SwiftUI
 struct ModelSettingsView: View {
     @Environment(\.dismiss) private var dismiss
     var openAgents: () -> Void
-    @State private var model = ModelKeys.selectedModel
+    @State private var model = "\(ModelKeys.selectedProvider.rawValue)/\(ModelKeys.selectedModel)"
     @State private var editing: ModelProvider?
     @State private var version = ModelKeys.saved
 
@@ -31,8 +31,10 @@ struct ModelSettingsView: View {
                     Text("Model").font(.system(size: 17)).fixedSize()
                     Spacer()
                     Picker("Model", selection: $model) {
-                        ForEach(ModelProvider.anthropic.models) { choice in
-                            Text(choice.name).tag(choice.id)
+                        ForEach(ModelProvider.allCases.filter(\.wired)) { provider in
+                            ForEach(provider.models) { choice in
+                                Text(choice.name).tag("\(provider.rawValue)/\(choice.id)")
+                            }
                         }
                     }
                     .labelsHidden()
@@ -40,7 +42,12 @@ struct ModelSettingsView: View {
                 }
                 .padding(.vertical, 4).padding(.leading, 16).padding(.trailing, 4)
                 .groupCard().padding(.horizontal, 16).padding(.bottom, 18)
-                .onChange(of: model) { _, new in ModelKeys.selectedModel = new; ModelKeys.selectedProvider = .anthropic }
+                .onChange(of: model) { _, new in
+                    let parts = new.split(separator: "/", maxSplits: 1).map(String.init)
+                    guard parts.count == 2, let provider = ModelProvider(rawValue: parts[0]) else { return }
+                    ModelKeys.selectedProvider = provider
+                    ModelKeys.selectedModel = parts[1]
+                }
 
                 GroupedSection(title: "YOUR API KEY", footer: "Keys stay in this iPhone’s Keychain. Poki sends each key only to its own provider.") {
                     ForEach(Array(ModelProvider.allCases.enumerated()), id: \.element) { i, provider in
@@ -124,11 +131,11 @@ private struct KeyEntry: View {
                     Text("\(provider.name) key")
                 } footer: {
                     if !provider.wired {
-                        Text("Poki keeps the key now; chatting with \(provider.name) comes in an update. Until then the chat uses Anthropic.")
+                        Text("Poki keeps the key now; chatting with \(provider.name) comes in an update. Until then, choose Anthropic or OpenAI.")
                     } else if ModelKeys.hasKey(provider) {
                         Text("A key is saved. Enter a new one to replace it.")
                     } else {
-                        Text("Create a key at console.anthropic.com, then paste it here.")
+                        Text(verbatim: provider.keyHelp)
                     }
                 }
                 if failed { Text("The keychain did not take the key. Try again.").foregroundStyle(Color(.systemRed)) }
@@ -153,7 +160,8 @@ private struct KeyEntry: View {
         do {
             if provider == .custom { ModelKeys.customURL = url.trimmingCharacters(in: .whitespaces) }
             if !key.isEmpty { try ModelKeys.save(key, for: provider) }
-            if provider.wired { ModelKeys.selectedProvider = provider }
+            // A new key picks its provider; the model page's picker switches between providers with keys.
+            if provider.wired, !key.isEmpty { ModelKeys.selectedProvider = provider }
             key = ""
             dismiss()
         } catch {

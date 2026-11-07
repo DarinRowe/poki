@@ -1,7 +1,7 @@
 import Foundation
 
-/// The model providers the chat can use with the owner's own key (ESP-171 board "M Model"). Anthropic is
-/// wired; the others store their key and address now and are wired in the next step.
+/// The model providers the chat can use with the owner's own key (ESP-171 board "M Model"). Anthropic and
+/// OpenAI are wired; the others store their key and address now and are wired in a later step.
 enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
     case anthropic, openai, gemini, openrouter, custom
     var id: String { rawValue }
@@ -38,7 +38,7 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
     }
 
     /// The chat runs on this provider today.
-    var wired: Bool { self == .anthropic }
+    var wired: Bool { self == .anthropic || self == .openai }
 
     /// What a key looks like, for the field's placeholder.
     var keyPrompt: String {
@@ -58,7 +58,18 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
             ChatModelChoice(id: "claude-opus-5-5", name: "Claude Opus 5.5"),
             ChatModelChoice(id: "claude-haiku-5-5", name: "Claude Haiku 5.5"),
         ]
+        // The Mac Poki Agent's pi loop model (ESP-62).
+        case .openai: [ChatModelChoice(id: "gpt-6.1-sol", name: "GPT-6.1 Sol")]
         default: []
+        }
+    }
+
+    /// Where the owner creates a key.
+    var keyHelp: String {
+        switch self {
+        case .anthropic: String(localized: "Create a key at console.anthropic.com, then paste it here.")
+        case .openai: String(localized: "Create a key at platform.openai.com, then paste it here.")
+        default: ""
         }
     }
 }
@@ -105,10 +116,15 @@ enum ModelKeys {
         set { UserDefaults.standard.set(newValue.rawValue, forKey: "chat.provider") }
     }
 
-    /// Claude Sonnet 5.5 unless the owner picks another (ESP-174's task).
+    /// Each provider's model: its first (Claude Sonnet 5.5, GPT-6.1 Sol) unless the owner picks another.
+    static func model(for provider: ModelProvider) -> String {
+        let saved = UserDefaults.standard.string(forKey: "chat.model.\(provider.rawValue)")
+        return saved.flatMap { id in provider.models.contains { $0.id == id } ? id : nil } ?? provider.models.first?.id ?? ""
+    }
+
     static var selectedModel: String {
-        get { UserDefaults.standard.string(forKey: "chat.model") ?? "claude-sonnet-5-5" }
-        set { UserDefaults.standard.set(newValue, forKey: "chat.model") }
+        get { model(for: selectedProvider) }
+        set { UserDefaults.standard.set(newValue, forKey: "chat.model.\(selectedProvider.rawValue)") }
     }
 
     static var selectedModelName: String {

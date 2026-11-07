@@ -331,6 +331,16 @@
         }
       }
     },
+    "Add a model key first: tap my picture, then Model.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先添加模型密钥：轻点头像，再选择“模型”。"
+          }
+        }
+      }
+    },
     "Add it to the tun inbound in your sing-box profile, then reload the profile.": {
       "extractionState": "manual",
       "localizations": {
@@ -348,16 +358,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "在客户端中将此地址添加为远程 MCP 服务器。Poki 运行期间，任何持有此地址的人都能控制此 iPhone。请妥善保管，如有泄露请在此处撤销。"
-          }
-        }
-      }
-    },
-    "Add your Anthropic key first: tap my picture, then Model.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "请先添加 Anthropic 密钥：轻点头像，再选择“模型”。"
           }
         }
       }
@@ -754,16 +754,6 @@
         }
       }
     },
-    "Claude declined this request.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Claude 拒绝了此请求。"
-          }
-        }
-      }
-    },
     "Claude, Codex, and other MCP clients tap and type for you. You see every step and approve anything sensitive.": {
       "localizations": {
         "zh-Hans": {
@@ -913,6 +903,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "在 console.anthropic.com 创建密钥并粘贴至此处。"
+          }
+        }
+      }
+    },
+    "Create a key at platform.openai.com, then paste it here.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 platform.openai.com 创建密钥并粘贴至此。"
           }
         }
       }
@@ -2171,6 +2171,36 @@
         }
       }
     },
+    "OpenAI answered %lld: %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenAI 返回错误（%lld）：%@"
+          }
+        }
+      }
+    },
+    "OpenAI did not accept the key. Check it in Poki › Model.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenAI 密钥无效。请前往“Poki”›“模型”检查。"
+          }
+        }
+      }
+    },
+    "OpenAI says the key has hit its rate limit. Try again in a minute.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请求过于频繁，请稍后再试。"
+          }
+        }
+      }
+    },
     "Opening tunnel": {
       "extractionState": "manual",
       "localizations": {
@@ -2405,12 +2435,12 @@
         }
       }
     },
-    "Poki could not reach Anthropic: %@": {
+    "Poki could not reach %@: %@": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "无法连接 Anthropic：%@"
+            "value": "无法连接 %@：%@"
           }
         }
       }
@@ -2445,12 +2475,12 @@
         }
       }
     },
-    "Poki keeps the key now; chatting with %@ comes in an update. Until then the chat uses Anthropic.": {
+    "Poki keeps the key now; chatting with %@ comes in an update. Until then, choose Anthropic or OpenAI.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "密钥已保存。后续更新将支持使用 %@ 对话，目前默认使用 Anthropic。"
+            "value": "密钥已保存。%@ 对话功能将在后续更新中推出，目前请选择 Anthropic 或 OpenAI。"
           }
         }
       }
@@ -3362,6 +3392,16 @@
         }
       }
     },
+    "The model declined this request.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模型无法处理此请求。"
+          }
+        }
+      }
+    },
     "The phone no longer accepts Poki’s pairing (%@). Pair again in Setup; it takes a minute.": {
       "localizations": {
         "zh-Hans": {
@@ -3429,6 +3469,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "此 Anthropic 密钥不支持调用 %@。"
+          }
+        }
+      }
+    },
+    "This OpenAI key can’t use %@.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此 OpenAI 密钥无权调用 %@。"
+          }
+        }
+      }
+    },
+    "This OpenAI key has no credit left. Check billing at platform.openai.com.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此 OpenAI 密钥额度不足，请前往 platform.openai.com 查看账单。"
           }
         }
       }

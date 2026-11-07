@@ -96,7 +96,7 @@ final class ChatModel {
         let model = ModelKeys.selectedModel
         // Another model starts a new conversation on the model's side; the chat on screen stays.
         if client?.signature != "\(provider.rawValue)/\(model)" {
-            client = AnthropicClient(key: key, model: model)
+            client = provider == .openai ? OpenAIClient(key: key, model: model) : AnthropicClient(key: key, model: model)
         }
         guard let client else { return }
         client.say(text)
