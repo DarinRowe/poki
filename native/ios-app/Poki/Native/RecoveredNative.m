@@ -2,7 +2,7 @@
 #import <dlfcn.h>
 #import <unistd.h>
 
-// Private selectors observed in NativeHIDProbe, not declarations from a public SDK.
+// Selectors found by inspecting XCTest private classes at run time (NativeHIDProbe), not the public SDK.
 @interface NSObject (SRObservedPrivateAPI)
 + (id)sharedSessionPromiseAndImplicitlyInitiateSession:(BOOL)start;
 - (BOOL)promiseFulfilled;

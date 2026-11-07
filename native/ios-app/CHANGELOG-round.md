@@ -2,6 +2,28 @@
 
 What changed in each round, and what still needs the phone. Newest first.
 
+## Integration (2026-11-08, poki/ios-integration), version 0.2.7
+
+Our branches merged onto Zhehan's dev/ios-standalone (cdebb5d). 0.2.5 and 0.2.6 were our beta builds; this is the first version from the shared branch.
+
+Changed:
+- App screens in the website's design language, with Simplified Chinese; setup one tap away from every screen.
+- Chat page with pi as the model loop (Anthropic, OpenAI, DeepSeek, Gemini, ChatGPT login), Poki's details page, model settings and the voice page.
+- Built-in local connection for using the iPhone on its own; it reconnects with backoff after a failure or drop, unless the owner turned it off or another VPN is up.
+- In-process automation through testmanagerd, without Poki Runner, behind a switch in Settings > Diagnostics.
+- When a task ends (do with finish, a client ending its session, the chat's turn ending, or the idle stop), the phone goes back to the app the task began in.
+- do waits up to 115 s for the owner's approval (less behind a relay that gives up sooner) and runs in the same call once approved; the Live Activity's Allow, Deny and Stop do not open the app.
+- PokiCore from cdebb5d: a launch reads until the launched app is in front; wait_until gets the time it asks for; a long call says where its time went.
+- The relay accepts any https callback; its default request timeout is 180 s.
+- The hand-off card's content line is a fixed short line per kind; the agent's own note is in the alert and the issue row.
+- The chat shows the setup bubble while a step is left after pairing.
+
+Needs the phone:
+- Chat with pi on real keys and the ChatGPT login; voice with a person speaking.
+- The local connection's reconnect after a failure, and no reconnect after it is turned off in Settings.
+- An approval that takes about 45 s, through the relay.
+- The in-process path's tree compared with Poki Runner's.
+
 ## Round 8 (2026-11-07, unattended gym round, 1:30-5:00 am ET), version 0.2.4
 
 Changed:
