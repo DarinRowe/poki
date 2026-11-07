@@ -42,11 +42,8 @@ definitions.push(['poki_mcp_status', 'Report Poki MCP version, current Git commi
 
 // The computer-use profile (POKI_TOOL_PROFILE=cua, cua.mjs): look and do, plus device and status tools.
 for (const [name, description, schema, readOnlyHint] of cua.definitions) definitions.push([name, description, z.fromJSONSchema(schema), readOnlyHint]);
-export const profile = (env = process.env) => env.POKI_TOOL_PROFILE ?? 'default';
+const profile = (env = process.env) => env.POKI_TOOL_PROFILE ?? 'default';
 const listedFor = name => (name === 'cua' ? cua.tools : defaultTools);
-
-// The tools a tools/list answer names under this process's settings.
-export const listedNames = (env = process.env) => definitions.map(([name]) => name).filter(name => env.POKI_MCP_TOOLS === 'all' || listedFor(profile(env)).has(name));
 
 export function createServer(call) {
   const computerUse = profile() === 'cua', listed = listedFor(profile());

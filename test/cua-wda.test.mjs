@@ -4,7 +4,6 @@ import { createServer } from 'node:http';
 import { once } from 'node:events';
 import sharp from 'sharp';
 import { Devices } from '../src/device.mjs';
-import { flatten } from '../src/cua-wda.mjs';
 
 // A stand-in for WebDriverAgent on a phone: W3C sessions plus the WDA routes the backend uses, over
 // a two-screen app (a home screen with its icon, a note with a title field).
@@ -43,7 +42,7 @@ async function fakeWda(t) {
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   t.after(() => server.close());
-  return { state, url: `http://127.0.0.1:${server.address().port}` };
+  return { state, server, url: `http://127.0.0.1:${server.address().port}` };
 }
 
 class AnyPhone extends Devices {
@@ -55,14 +54,6 @@ class AnyPhone extends Devices {
 const text = result => result.content.find(block => block.type === 'text').text;
 const numberOf = (result, label) => Number(text(result).split('\n').find(line => line.includes(`"${label}`))?.match(/^[+ ](\d+) /)?.[1]);
 
-test('WDA source flattens to visible elements in points, without the application root', () => {
-  const elements = flatten({ type: 'XCUIElementTypeApplication', rect: { x: 0, y: 0, width: 10, height: 10 }, children: [
-    { type: 'XCUIElementTypeButton', label: '7', rect: { x: 1, y: 2, width: 3, height: 4 }, isVisible: '1' },
-    { type: 'XCUIElementTypeOther', label: 'gone', rect: { x: 1, y: 2, width: 3, height: 4 }, isVisible: '0' },
-    { type: 'XCUIElementTypeStaticText', label: 'flat', rect: { x: 0, y: 0, width: 0, height: 4 } }] });
-  assert.deepEqual(elements.map(e => [e.type, e.label, e.x, e.y, e.width, e.height]), [['Button', '7', 1, 2, 3, 4]]);
-});
-
 test('look and do answer the same way on WebDriverAgent: numbered elements, screenshot, actions sent', { timeout: 20000 }, async t => {
   const wda = await fakeWda(t);
   const saved = { backend: process.env.POKI_CUA_BACKEND, url: process.env.POKI_WDA_URL };
@@ -73,6 +64,7 @@ test('look and do answer the same way on WebDriverAgent: numbered elements, scre
   assert.match(text(home), /^app: SpringBoard/m);
   assert.match(text(home), /Icon "Jot" \[20,80,50,50\]/);
   assert.doesNotMatch(text(home), /Hidden/);
+  assert.doesNotMatch(text(home), /^[+ ]\d+ Application/m, 'the application root is not an element');
   assert.ok(home.content.some(block => block.type === 'image'));
   const note = await phone.call('do', { actions: [{ tap: numberOf(home, 'Jot') }] });
   assert.match(text(note), /did: tap \d+ \(sent/);
@@ -114,10 +106,17 @@ test('an input WDA refuses is not_sent, and one it never answered is unknown', {
   assert.equal(lost.outcome, 'unknown');
 });
 
-test('a runner that refuses connections is reported as down, and nothing is retried', { timeout: 20000 }, async () => {
-  const { Wda } = await import('../src/cua-wda.mjs');
-  const closed = createServer(); closed.listen(0, '127.0.0.1'); await once(closed, 'listening');
-  const port = closed.address().port; closed.close(); await once(closed, 'close');
-  const wda = new Wda(`http://127.0.0.1:${port}`);
-  await assert.rejects(wda.call('GET', '/window/size'), error => /not running.*connection refused/.test(error.message) && error.delivered === 'not_sent');
+test('a runner that stops taking connections is reported as down, its action not sent and nothing after it', { timeout: 20000 }, async t => {
+  const wda = await fakeWda(t);
+  process.env.POKI_CUA_BACKEND = 'wda'; process.env.POKI_WDA_URL = wda.url;
+  t.after(() => { delete process.env.POKI_CUA_BACKEND; delete process.env.POKI_WDA_URL; });
+  const phone = new AnyPhone();
+  await phone.call('look', {});
+  wda.server.close(); wda.server.closeAllConnections(); await once(wda.server, 'close');
+  const down = await phone.call('do', { actions: [{ tap: [45, 105] }, { button: 'home' }] });
+  assert.equal(down.isError, true);
+  assert.match(text(down), /\{"tap":\[45,105\]\} \(not_sent, \d+ ms\)/);
+  assert.match(text(down), /WebDriverAgent is not running at .* \(connection refused\)/);
+  assert.match(text(down), /the actions after it were not sent/);
+  assert.doesNotMatch(text(down), /button home/);
 });

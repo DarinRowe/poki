@@ -14,7 +14,7 @@ class WdaError extends Error {
   constructor(message, { status, delivered } = {}) { super(message); this.status = status; this.delivered = delivered; }
 }
 
-export class Wda {
+class Wda {
   constructor(url, { fetch: fetcher = globalThis.fetch, timeoutMs = 15000 } = {}) {
     this.url = String(url).replace(/\/+$/, ''); this.fetch = fetcher; this.timeoutMs = timeoutMs;
   }
@@ -53,7 +53,7 @@ export class Wda {
 }
 
 // WDA's JSON source as a flat list in the shape the bridge's accessibility read has.
-export function flatten(root) {
+function flatten(root) {
   const out = [];
   const walk = (node, depth) => {
     if (!node || typeof node !== 'object') return;
