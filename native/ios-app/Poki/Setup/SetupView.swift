@@ -8,6 +8,7 @@ import UniformTypeIdentifiers
 struct SetupView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var scheme
     @State private var index: Int
     private let steps = SetupStep.allCases
 
@@ -40,7 +41,13 @@ struct SetupView: View {
                 .scrollBounceBehavior(.basedOnSize)
             }
         }
-        .safeAreaInset(edge: .bottom) { mainButton.padding(.horizontal, 20) }
+        // The button sits in its own bar in the page colour, so a long page (an open proxy app at a
+        // larger text size) scrolls up out from under it instead of showing through around it.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            mainButton.padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 8)
+                .frame(maxWidth: .infinity)
+                .background(Site.page(scheme).ignoresSafeArea(edges: .bottom))
+        }
         .onChange(of: checkedByPhone) { was, now in
             if !was, now, step != .loopback { advanceSoon() }
         }
