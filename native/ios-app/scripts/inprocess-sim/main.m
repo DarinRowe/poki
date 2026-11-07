@@ -37,6 +37,26 @@ static NSDictionary *Run(NSString *mode, NSString *tag, NSString *text) {
     return out;
 }
 
+/// Opens, switches and ends apps with Poki's in-process code: launch the fixture, launch Settings,
+/// activate the fixture (the same process comes back), launch it again (a new process), terminate it.
+static NSDictionary *Apps(NSString *fixture) {
+    NSMutableArray *steps = [NSMutableArray array];
+    void (^step)(NSString *, NSString *) = ^(NSString *action, NSString *bundle) {
+        NSTimeInterval t = NSProcessInfo.processInfo.systemUptime;
+        NSString *code = [PKInProcess.shared app:bundle action:action];
+        [NSThread sleepForTimeInterval:1];
+        NSDictionary *front = [PKInProcess.shared frontApp];
+        [steps addObject:@{@"action": action, @"bundle": bundle, @"code": code ?: @"", @"seconds": @(NSProcessInfo.processInfo.systemUptime - t),
+                           @"front": front[@"bundleId"] ?: @"", @"front_pid": front[@"pid"] ?: @0}];
+    };
+    step(@"launch", fixture);
+    step(@"launch", @"com.apple.Preferences");
+    step(@"activate", fixture);
+    step(@"launch", fixture);
+    step(@"terminate", fixture);
+    return @{@"steps": steps};
+}
+
 @interface SceneDelegate : UIResponder <UIWindowSceneDelegate>
 @property (nonatomic) UIWindow *window;
 @end
@@ -66,7 +86,7 @@ static NSDictionary *Run(NSString *mode, NSString *tag, NSString *text) {
     dispatch_async(dispatch_queue_create("check", DISPATCH_QUEUE_SERIAL), ^{
         NSDictionary *prepare = [PKInProcess.shared prepare];
         if (delay > 0) [NSThread sleepForTimeInterval:delay];
-        NSMutableDictionary *out = [Run(mode, tag, text) mutableCopy];
+        NSMutableDictionary *out = [([mode isEqualToString:@"apps"] ? Apps([args stringForKey:@"fixture"] ?: @"local.pokimcp.fixture") : Run(mode, tag, text)) mutableCopy];
         out[@"prepare"] = prepare;
         Write([tag stringByAppendingString:@".json"], out);
     });

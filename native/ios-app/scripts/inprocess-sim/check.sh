@@ -1,11 +1,15 @@
 #!/bin/bash
-# check.sh [NATIVE_DIR]
+# check.sh [--apps] [NATIVE_DIR]
 # On a new simulator, Poki's in-process code (NATIVE_DIR, default this checkout's Poki/Native) reads the
 # fixture app's element tree, taps its text field, types, and reads the value and keyboard focus back.
 # The tree must hold every labelled element that the simulator's own accessibility reader
-# (native/simulator.m) reports for the same screen. The simulator is deleted afterwards.
+# (native/simulator.m) reports for the same screen. With --apps it instead launches the fixture, launches
+# Settings, activates the fixture (the same process returns), launches it again (a new process) and
+# terminates it. The simulator is deleted afterwards.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
+MODE=field
+if [ "${1:-}" = "--apps" ]; then MODE=apps; shift; fi
 REPO="$(cd "$HERE/../../../.." && pwd)"
 NATIVE="$(cd "${1:-$REPO/native/ios-app/Poki/Native}" && pwd)"
 X="$(xcode-select -p)/Platforms/iPhoneSimulator.platform/Developer"
@@ -44,10 +48,32 @@ xcrun simctl install "$UDID" "$FIXTURE"
 export SIMCTL_CHILD_POKI_SIMULATOR_DEVELOPER_DIR="$X"
 export SIMCTL_CHILD_DYLD_FRAMEWORK_PATH="$X/Library/Frameworks:$X/Library/PrivateFrameworks"
 export SIMCTL_CHILD_DYLD_LIBRARY_PATH="$X/usr/lib"
+DOCS="$(xcrun simctl get_app_container "$UDID" local.poki.inprocess-check data)/Documents"
+if [ "$MODE" = apps ]; then
+  xcrun simctl launch "$UDID" local.poki.inprocess-check -mode apps -tag apps -delay 2 >/dev/null
+  for _ in $(seq 120); do [ -s "$DOCS/apps.json" ] && break; sleep 1; done
+  OUT="${POKI_CHECK_OUT:-}"; if [ -n "$OUT" ]; then mkdir -p "$OUT"; cp "$DOCS/apps.json" "$OUT/"; fi
+  cat "$DOCS/apps.json"
+  RUNNING="$(xcrun simctl spawn "$UDID" launchctl list | grep -c 'UIKitApplication:local.pokimcp.fixture\[' || true)"
+  python3 - "$DOCS/apps.json" "$RUNNING" <<'PY'
+import json, sys
+r = json.load(open(sys.argv[1]))
+assert r["prepare"].get("ok"), f"no session: {r['prepare']}"
+s = r["steps"]
+fixture, settings = "local.pokimcp.fixture", "com.apple.Preferences"
+for i, (action, bundle, front) in enumerate([("launch", fixture, fixture), ("launch", settings, settings), ("activate", fixture, fixture), ("launch", fixture, fixture)]):
+    assert s[i]["code"] == "" and s[i]["front"] == front, f"step {i + 1} {action} {bundle}: {s[i]}"
+assert s[2]["front_pid"] == s[0]["front_pid"], f"activate started a new process: {s[0]['front_pid']} then {s[2]['front_pid']}"
+assert s[3]["front_pid"] != s[0]["front_pid"], f"launch kept the running process {s[3]['front_pid']}"
+assert s[4]["code"] == "" and s[4]["front"] != fixture, f"terminate: {s[4]}"
+assert sys.argv[2] == "0", f"the fixture still runs after terminate ({sys.argv[2]} launchd jobs)"
+PY
+  echo "in-process launch, launch, activate, relaunch and terminate passed"
+  exit 0
+fi
 xcrun simctl launch "$UDID" local.poki.inprocess-check -mode field -tag field -delay 8 -text "$TEXT" >/dev/null
 sleep 3
 xcrun simctl launch "$UDID" local.pokimcp.fixture >/dev/null
-DOCS="$(xcrun simctl get_app_container "$UDID" local.poki.inprocess-check data)/Documents"
 for _ in $(seq 60); do [ -s "$DOCS/field.json" ] && break; sleep 1; done
 echo "{\"id\":\"$UDID\",\"op\":\"ax\"}" | "$WORK/simulator" > "$WORK/reference.json"
 OUT="${POKI_CHECK_OUT:-}"
