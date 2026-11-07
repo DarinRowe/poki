@@ -4,12 +4,8 @@
 // THIRD_PARTY_NOTICES.md.
 import SwiftUI
 
-/// Poki's brand colours, used by the app's screens.
-enum Brand {
-    static let blue = Color(red: 0x20 / 255, green: 0x84 / 255, blue: 0xFD / 255)
-}
-
-/// The website's colours (poki-site, ESP-139's token table and its final board 02).
+/// The website's colours (poki-site, ESP-139's token table and its final boards 01 to 05): the one
+/// table the app's screens and the Live Activity both draw with.
 enum Site {
     static let blue = Color(hex: 0x0077FD)
     /// Blue text on white: the text of a white capsule button.
@@ -18,6 +14,26 @@ enum Site {
     static let sky = Color(hex: 0x5AA7FF)
     static let ok = Color(hex: 0x5BE37A)
     static let bad = Color(hex: 0xFF5F57)
+    /// The page in dark mode (the docs site's blue); the boards draw light mode only.
+    static let night = Color(hex: 0x0A2F6B)
+    /// White text on blue, second and third level (--site-c3, --site-c4).
+    static let c3 = Color.white.opacity(0.84)
+    static let c4 = Color.white.opacity(0.72)
+    /// Glass on blue: the card, the capsule and badge fill, the edge (with a brighter top line).
+    static let glass = Color.white.opacity(0.08)
+    static let glass2 = Color.white.opacity(0.16)
+    static let edge = Color.white.opacity(0.28)
+    static let edgeTop = Color.white.opacity(0.55)
+    /// Inside the white cards: text, secondary text, placeholder and values, dividers.
+    static let text = Color(hex: 0x111111)
+    static let text2 = Color(hex: 0x6B6B70)
+    static let text3 = Color(hex: 0x8A8A8E)
+    static let hair = Color(hex: 0xE0E1E9)
+    /// Light blue: tags, secondary buttons and the countdown on white.
+    static let tint = Color(hex: 0xE5F1FF)
+    /// Green and red text on white.
+    static let okInk = Color(hex: 0x12A150)
+    static let danger = Color(hex: 0xD93A32)
 }
 
 /// What a piece of the Live Activity is coloured by. Each face picks one; the surface's palette says

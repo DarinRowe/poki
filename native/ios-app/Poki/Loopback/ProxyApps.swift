@@ -31,15 +31,15 @@ enum ProxyApps {
     static let all: [ProxyApp] = [
         ProxyApp(id: "surge", name: "Surge", scheme: "surge", minimumVersion: "5.23.0",
                  install: .url(URL(string: "surge:///install-module?url=\(encoded(modulesBase.appendingPathComponent("poki-loopback.sgmodule")))")!),
-                 steps: ["Tap Install module, then confirm in Surge.", "Turn the Poki Device Loopback module on.", "Turn on Enhanced Mode: the loopback only works in Enhanced Mode."]),
+                 steps: ["Tap Install Module, then confirm in Surge.", "Turn on the Poki Device Loopback module.", "Turn on Enhanced Mode (required for loopback)."]),
         ProxyApp(id: "loon", name: "Loon", scheme: "loon", minimumVersion: "3.5.3",
                  install: .url(URL(string: "loon://import?plugin=\(encoded(modulesBase.appendingPathComponent("poki-loopback.lpx")))")!),
-                 steps: ["Tap Install plugin, then confirm in Loon.", "Make sure the plugin is enabled and Loon's VPN is on."]),
+                 steps: ["Tap Install Plugin, then confirm in Loon.", "Make sure the plugin and Loon VPN are turned on."]),
         ProxyApp(id: "shadowrocket", name: "Shadowrocket", scheme: "shadowrocket", minimumVersion: "",
-                 install: .toggle("Settings > Other > Include route 10.7.0.1/32"),
-                 steps: ["Open Shadowrocket.", "Go to Settings > Other and turn on Include route 10.7.0.1/32. If it is missing, update Shadowrocket.", "Keep Shadowrocket connected."]),
+                 install: .toggle("Settings › Other › Include route 10.7.0.1/32"),
+                 steps: ["Open Shadowrocket.", "Go to Settings › Other and turn on Include route 10.7.0.1/32 (update Shadowrocket if missing).", "Keep Shadowrocket connected."]),
         ProxyApp(id: "sing-box", name: "sing-box", scheme: "sing-box", minimumVersion: "1.12.0",
                  install: .snippet("\"loopback_address\": [\"10.7.0.1\"]"),
-                 steps: ["Copy the line below.", "Add it to the tun inbound of your sing-box profile, then reload the profile.", "Keep IPv6 out of the tun address list."]),
+                 steps: ["Copy the line below.", "Add it to the tun inbound in your sing-box profile, then reload the profile.", "Keep IPv6 out of the tun address list."]),
     ]
 }

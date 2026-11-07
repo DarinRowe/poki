@@ -1,0 +1,279 @@
+/* The app's screens in Simplified Chinese, from ESP-139's Chinese boards 01, 03 and 04. The Live
+   Activity keeps its own words in Shared/en.lproj; the widget has no Chinese yet. */
+
+/* Shared */
+"On" = "开启";
+"Off" = "关闭";
+"Settings" = "设置";
+"Done" = "完成";
+"Close" = "关闭";
+"Back" = "返回";
+"Name" = "名称";
+"Open Settings" = "打开“设置”";
+"Try Again" = "重试";
+"Copy" = "拷贝";
+"Copied" = "已拷贝";
+"Stop" = "停止";
+"Status" = "状态";
+"Relay" = "中转";
+"Runner" = "Runner";
+"Loopback" = "回环";
+"%lld of %lld" = "%lld/%lld";
+
+/* Status words */
+"Online" = "在线";
+"Connecting" = "正在连接";
+"Offline" = "离线";
+"Checking…" = "正在检查…";
+"No Answer" = "无应答";
+"Not started" = "未启动";
+"Sleeping" = "休眠";
+"Checking pairing" = "正在检查配对";
+"Opening tunnel" = "正在打开隧道";
+"Preparing" = "正在准备";
+"Starting" = "正在启动";
+"Running" = "运行中";
+"Needs loopback" = "需要回环";
+"Stopped" = "已停止";
+
+/* Home, first run */
+"Your agents can use this iPhone." = "你的智能体可以使用这台 iPhone。";
+"Claude, Codex, and other MCP clients tap and type for you. You see every step and approve anything sensitive." = "Claude、Codex 等 MCP 客户端替你点按和输入。每一步都清晰可见，敏感操作须经你批准。";
+"Set Up This iPhone" = "设置此 iPhone";
+"No computer required." = "无需电脑。";
+"setup-steps" = "%lld 个步骤";
+"Add your agent" = "添加智能体";
+"1 link" = "1 个链接";
+"Set Up Poki" = "设置 Poki";
+"About 5 minutes. Everything stays on this iPhone." = "约需 5 分钟。所有数据均保留在此 iPhone 上。";
+
+/* Home, at work */
+"Approval Required" = "需要批准";
+"Don’t Allow" = "不允许";
+"Allow" = "允许";
+"%@ in %@" = "正在“%2$@”中%1$@";
+"sending a message" = "发送信息";
+"Paused for you" = "已为你暂停";
+"Working" = "正在执行";
+"Last step" = "上一步";
+"Waiting for the agent" = "正在等待智能体";
+"Step %lld" = "第 %lld 步";
+"%@, Step %lld" = "%@，第 %lld 步";
+"The latest screen" = "最新画面";
+"All Steps" = "所有步骤";
+"%lld steps" = "%lld 步";
+"%@, %lld missed" = "%1$@，%2$lld 步失败";
+
+/* Home, standing by */
+"Poki Is Off" = "Poki 已关闭";
+"Ready" = "就绪";
+"Almost Ready" = "即将就绪";
+"Turn on so your agents can use this iPhone." = "开启后，智能体即可使用此 iPhone。";
+"Agents can reach this iPhone, but Poki can’t tap until Loopback is on." = "智能体已可连接此 iPhone，但开启回环后 Poki 才能执行点按。";
+"Fix the item below so your agents can use this iPhone." = "处理下方问题后，智能体即可使用此 iPhone。";
+"The runner starts when an agent asks." = "智能体发出请求时，Runner 会自动启动。";
+"Ready for the agent’s next step." = "正在等待智能体的下一步。";
+"Finished in %@" = "已在“%@”中完成";
+"Finished" = "已完成";
+"%lld steps in %@" = "%1$lld 步，用时 %2$@";
+
+/* Home, issues */
+"Open Setup" = "打开设置引导";
+"The runner stopped" = "Runner 已停止";
+"Poki starts it again on the next agent request." = "智能体下次发出请求时，Poki 会重新启动它。";
+"Waiting for the internet" = "正在等待网络连接";
+"Loopback is off" = "回环已关闭";
+"Turn on your proxy app with the Poki module, or connect LocalDevVPN." = "在代理 App 中启用 Poki 模块，或连接 LocalDevVPN。";
+"Pair this iPhone again" = "重新配对此 iPhone";
+"The phone no longer accepts Poki’s pairing (%@). Pair again in Setup; it takes a minute." = "此 iPhone 不再接受 Poki 的配对（%@）。请在设置引导中重新配对，只需一分钟。";
+"Enter the passcode if the iPhone asks" = "iPhone 要求时请输入锁屏密码";
+"iOS asks for the passcode before UI Automation after Poki Runner was force-closed or the iPhone restarted. Enter it once; Poki carries on by itself." = "Poki Runner 被强制退出或 iPhone 重新启动后，iOS 会先要求输入锁屏密码，再允许 UI 自动化。只需输入一次，Poki 会自动继续。";
+"Agents can’t reach this iPhone" = "智能体无法连接此 iPhone";
+"Poki is offline. Check that the phone has internet; Poki reconnects by itself." = "Poki 已离线。请检查此 iPhone 的网络连接，Poki 会自动重新连接。";
+"Poki can’t stay on in the background" = "Poki 无法在后台保持运行";
+"Allow location access for Poki (Settings › Poki › Location › Always). Poki uses it only to keep running; it never records where you are." = "请允许 Poki 访问位置信息（设置 › Poki › 位置 › 始终）。Poki 仅用它保持运行，绝不记录你的位置。";
+"Needs attention" = "需要处理";
+"Live Activity is off" = "实时活动已关闭";
+"Enter your relay's address first (Settings › Relay). Poki has no default relay." = "请先在“设置 › 中转”中输入你的中转地址。Poki 没有默认中转。";
+
+/* Loopback details */
+"Looking for this iPhone at 10.7.0.1." = "正在 10.7.0.1 查找此 iPhone。";
+"Your proxy app's tunnel is on, but 10.7.0.1 is not reflected. Turn on the Poki module or route, then reconnect the proxy." = "代理 App 的隧道已开启，但 10.7.0.1 没有被反射。请开启 Poki 模块或路由，然后重新连接代理。";
+"Nothing answers at 10.7.0.1. Turn on your proxy app (with the Poki module) or LocalDevVPN." = "10.7.0.1 没有应答。请开启代理 App（含 Poki 模块）或 LocalDevVPN。";
+
+/* All steps */
+"%@. Started at %@." = "%1$@。始于%2$@。";
+"Steps from your agent appear here and on the Lock Screen." = "智能体的操作步骤会显示在此处和锁定屏幕上。";
+"Waiting for Approval" = "等待批准";
+
+/* Sample steps for screenshots (-pokiSample) */
+"Messages" = "信息";
+"Home Screen" = "主屏幕";
+"Open Messages" = "打开“信息”";
+"Tap the chat with Mom" = "轻点与妈妈的对话";
+"Type “On my way”" = "输入“在路上了”";
+"Tap at 212, 640" = "轻点 (212, 640)";
+"Tap “Send”" = "轻点“发送”";
+"Send “On my way” to Mom" = "给妈妈发送“在路上了”";
+"failed: nothing changed" = "失败：画面无变化";
+
+/* Setup */
+"Install Poki Runner" = "安装 Poki Runner";
+"The helper app that taps and types for your agent. Poki starts it; you never open it." = "替智能体执行点按和输入的辅助 App。由 Poki 自动启动，无需手动打开。";
+"Install **Poki Runner** (poki-runner-unsigned.ipa) with the same tool and Apple ID you used for Poki." = "使用与安装 Poki 相同的工具和 Apple ID 安装 **Poki Runner** (poki-runner-unsigned.ipa)。";
+"Open **Settings › General › VPN & Device Management**, tap your Apple ID, then tap **Trust**." = "打开“**设置 › 通用 › VPN 与设备管理**”，轻点你的 Apple ID，然后轻点“**信任**”。";
+"Don’t open Poki Runner yourself. Poki starts it when an agent needs this iPhone." = "请勿手动打开 Poki Runner。智能体需要使用此 iPhone 时，Poki 会自动启动它。";
+"With a free Apple ID, self-signed apps expire after 7 days and are limited to 3 at a time; Poki and Poki Runner use 2. Free accounts also can’t sign a VPN, so Loopback requires your proxy app or LocalDevVPN." = "使用免费 Apple ID 自签名的 App 会在 7 天后过期，且最多同时安装 3 个（Poki 和 Poki Runner 占 2 个）。免费账户也无法签名 VPN，因此需要通过代理 App 或 LocalDevVPN 提供回环。";
+"Poki Runner is installed and trusted" = "已安装并信任 Poki Runner";
+"Continue" = "继续";
+
+"Turn On Developer Mode" = "开启开发者模式";
+"Allows this iPhone to run Poki Runner." = "允许此 iPhone 运行 Poki Runner。";
+"Open **Settings › Privacy & Security › Developer Mode**. It appears once Poki Runner is installed." = "打开“**设置 › 隐私与安全性 › 开发者模式**”。安装 Poki Runner 后会显示此选项。";
+"Turn on Developer Mode, then tap **Restart**." = "开启“开发者模式”，然后轻点“**重新启动**”。";
+"After restarting, unlock this iPhone and tap **Turn On**." = "重新启动后，解锁此 iPhone 并轻点“**打开**”。";
+"Developer Mode is on" = "已开启开发者模式";
+
+"Turn On Loopback" = "开启回环";
+"Allows Poki to reach this iPhone’s developer services through your proxy app." = "允许 Poki 通过你常用的代理 App 连接此 iPhone 的开发者服务。";
+"Loopback is on" = "回环已开启";
+"Tunnel on, no answer" = "隧道已开，无应答";
+"Not on yet" = "尚未开启";
+"Checking 10.7.0.1 every few seconds…" = "每隔几秒检查一次 10.7.0.1…";
+"Use Your Proxy App" = "使用你的代理 App";
+"In Use" = "使用中";
+"Installed" = "已安装";
+"%@ or later" = "%@ 或更高版本";
+"Install Poki Module" = "安装 Poki 模块";
+"Install Poki Plugin" = "安装 Poki 插件";
+"Open %@" = "打开 %@";
+"Free on the App Store" = "App Store 免费提供";
+"Tap Install Module, then confirm in Surge." = "轻点“安装模块”，然后在 Surge 中确认。";
+"Turn on the Poki Device Loopback module." = "开启 Poki Device Loopback 模块。";
+"Turn on Enhanced Mode (required for loopback)." = "开启增强模式（回环仅在增强模式下可用）。";
+"Tap Install Plugin, then confirm in Loon." = "轻点“安装插件”，然后在 Loon 中确认。";
+"Make sure the plugin and Loon VPN are turned on." = "确保该插件已启用且 Loon 的 VPN 已开启。";
+"Open Shadowrocket." = "打开 Shadowrocket。";
+"Go to Settings › Other and turn on Include route 10.7.0.1/32 (update Shadowrocket if missing)." = "前往“设置 › 其他”并开启“包含路由 10.7.0.1/32”（若无此选项请更新 Shadowrocket）。";
+"Keep Shadowrocket connected." = "保持 Shadowrocket 处于连接状态。";
+"Copy the line below." = "拷贝下方配置。";
+"Add it to the tun inbound in your sing-box profile, then reload the profile." = "将其添加到 sing-box 配置的 tun 入站中，然后重新加载配置。";
+"Keep IPv6 out of the tun address list." = "请勿在 tun 地址列表中包含 IPv6。";
+"No proxy app? Install LocalDevVPN, a free loopback app built for this." = "没有代理 App？请安装专为此设计的免费回环 App LocalDevVPN。";
+"Open it and tap Connect. It uses the VPN slot and replaces any active VPN while on." = "打开并轻点“连接”。它会占用系统 VPN 通道，开启期间会替换其他 VPN。";
+"Get LocalDevVPN on the App Store" = "在 App Store 获取 LocalDevVPN";
+
+"Pair This iPhone" = "配对此 iPhone";
+"Gives Poki its own key to this iPhone. The key stays on this device." = "为 Poki 生成访问此 iPhone 的专属密钥。密钥仅保留在本机上。";
+"Connect to Wi‑Fi and tap **Start Pairing**. Allow local network access when prompted." = "连接无线局域网并轻点“**开始配对**”。出现提示时，请允许访问本地网络。";
+"Poki will open Settings. Go to **Privacy & Security › Developer Mode** and tap **Pair with Poki**." = "Poki 将打开“设置”。前往“**隐私与安全性 › 开发者模式**”并轻点“**与 Poki 配对**”。";
+"Enter the code shown here and on the Lock Screen." = "输入此处或锁定屏幕上显示的配对码。";
+"Start Pairing" = "开始配对";
+"Pair Again" = "重新配对";
+"Waiting for Settings. Tap Pair with Poki there." = "正在等待“设置”。请在“设置”中轻点“与 Poki 配对”。";
+"Open **Settings › Privacy & Security › Developer Mode**." = "打开“**设置 › 隐私与安全性 › 开发者模式**”。";
+"Tap **Pair with Poki** and enter the code shown here and on the Lock Screen." = "轻点“**与 Poki 配对**”，并输入此处或锁定屏幕上显示的配对码。";
+"Cancel Pairing" = "取消配对";
+"The phone no longer accepts this pairing: %@" = "此 iPhone 不再接受当前配对：%@";
+"This happens after a restore, a reset of Location & Privacy, or when the phone forgot Poki. Pair again; the old key is replaced." = "恢复 iPhone、还原“位置与隐私”或 iPhone 忘记 Poki 后会出现这种情况。重新配对即可，旧密钥会被替换。";
+"Paired. The phone accepted it at %@." = "已配对。iPhone 于 %@ 接受了配对。";
+"Paired. Checked the next time the runner starts." = "已配对。Runner 下次启动时会再次检查。";
+"Other Ways" = "其他方式";
+"Import Pairing File" = "导入配对文件";
+"Invalid Pairing File: %@" = "配对文件无效：%@";
+"Enter this code in Settings. It also appears on the Lock Screen." = "在“设置”中输入此配对码。配对码也会显示在锁定屏幕上。";
+"Developer Disk Image Ready" = "开发者磁盘映像已就绪";
+"Downloading Developer Disk Image: %@" = "正在下载开发者磁盘映像：%@";
+"Download Developer Disk Image" = "下载开发者磁盘映像";
+"Download Again" = "重新下载";
+
+"Allow UI Automation" = "允许 UI 自动化";
+"Allows Poki Runner to control other apps." = "允许 Poki Runner 操作其他 App。";
+"Open **Settings › Developer**. It appears once Developer Mode is on." = "打开“**设置 › 开发者**”。开启开发者模式后会显示此选项。";
+"Turn on **Enable UI Automation**." = "开启“**启用 UI 自动化**”。";
+"UI Automation is on" = "已开启 UI 自动化";
+
+"Keep Poki Running" = "保持 Poki 后台运行";
+"Keeps Poki connected in the background and shows its activity on the Lock Screen." = "让 Poki 在后台保持连接，并在锁定屏幕上显示实时活动。";
+"Location" = "位置";
+"iOS requires a background mode to keep apps running. Poki uses lowest-accuracy location and shows the location indicator while active." = "iOS 要求 App 声明特定用途才能在后台持续运行。Poki 会以最低精度使用定位服务，并在运行期间显示定位指示器。";
+"Location allowed. Poki stays active in the background and never records your location." = "已允许访问位置信息。Poki 会在后台保持运行，且绝不记录你的位置。";
+"Location Services is off for Poki, so iOS will suspend it shortly after you leave the app." = "Poki 的定位服务已关闭，离开 App 后 iOS 会很快将其挂起。";
+"Allow Location Access" = "允许访问位置信息";
+"Live Activities are on" = "已开启实时活动";
+"Live Activities are off" = "实时活动已关闭";
+"Poki shows steps, pairing codes, and approvals on the Lock Screen." = "Poki 会在锁定屏幕上显示操作步骤、配对码和批准请求。";
+"Live Activities are off for Poki. Turn them on to view agent steps and approve sensitive actions." = "Poki 的“实时活动”已关闭。开启后即可查看智能体操作并批准敏感操作。";
+"The first time Poki Runner starts after a restart, iOS asks for your passcode to allow automation. Enter it once; Poki never sees it." = "iPhone 重新启动后首次启动 Poki Runner 时，iOS 会要求输入锁屏密码以允许自动化操作。只需输入一次，Poki 无法读取该密码。";
+
+/* Settings */
+"This iPhone" = "此 iPhone";
+"The relay forwards requests to this iPhone while Poki is open or in the background. It stores nothing; when offline, clients receive an error." = "当 Poki 打开或在后台运行时，中转服务器会将请求转发至此 iPhone。服务器不存储任何数据；设备离线时，客户端会收到明确的错误提示。";
+"Agents" = "智能体";
+"Name, e.g., Claude" = "名称，例如 Claude";
+"Add" = "添加";
+"Revoke Access" = "撤销访问权限";
+"Set your relay address first: each agent’s address is on your relay." = "请先设置中转地址：每个智能体的地址都在你的中转上。";
+"Poki cannot access the keychain and has no relay key yet. Reinstall Poki with your signing tool, then reopen Settings." = "Poki 无法访问钥匙串，因此尚无中转密钥。请使用签名工具重新安装 Poki，然后重新打开设置。";
+"Poki couldn’t read its relay key from the keychain (%@)." = "Poki 无法从钥匙串读取中转密钥（%@）。";
+"Stop When Idle For" = "闲置多久后停止";
+"30 seconds" = "30 秒";
+"1 minute" = "1 分钟";
+"2 minutes" = "2 分钟";
+"5 minutes" = "5 分钟";
+"Never" = "永不";
+"%lld s" = "%lld 秒";
+"Start Now" = "立即启动";
+"Stop Runner" = "停止 Runner";
+"iOS shows the automation banner only while the runner is active. Poki starts it when needed and stops it when idle. Don’t close Poki Runner while an agent is working." = "仅当 Runner 运行时，iOS 才会显示自动化横幅。Poki 会在智能体请求时启动它，并在闲置时停止。智能体工作期间请勿关闭 Poki Runner。";
+"Not Set" = "未设置";
+"Setup" = "设置引导";
+"Diagnostics" = "诊断";
+"Logs, checks, background hold, addresses, and Live Activity preview." = "日志、连接检查、后台保活、网络地址与实时活动预览。";
+
+/* Relay */
+"Relay Address" = "中转地址";
+"Save" = "保存";
+"That is not a relay address. Enter the address deploy.sh printed, such as https://poki-relay.you.workers.dev." = "这不是中转地址。请输入 deploy.sh 输出的地址，例如 https://poki-relay.you.workers.dev。";
+"Poki has no default relay. Deploy your own to your Cloudflare account with deploy/cf-relay/deploy.sh from the Poki repository, then enter the address it prints. Screenshots and taps pass only through that relay." = "Poki 没有默认中转。请用 Poki 仓库中的 deploy/cf-relay/deploy.sh 把中转部署到你自己的 Cloudflare 账户，再输入它输出的地址。截图和点按只经过这个中转。";
+
+/* Agent */
+"QR code of the address" = "地址二维码";
+"Copy Address" = "拷贝地址";
+"Add this URL as a remote MCP server in your client. Anyone with this link can control this iPhone while Poki is running. Keep it private, and revoke it here if compromised." = "在客户端中将此地址添加为远程 MCP 服务器。Poki 运行期间，任何持有此地址的人都能控制此 iPhone。请妥善保管，如有泄露请在此处撤销。";
+"Added" = "添加日期";
+
+/* Diagnostics */
+"Log" = "日志";
+"Copy Log" = "拷贝日志";
+"Share" = "共享";
+"Poki log" = "Poki 日志";
+"%lld lines" = "%lld 行";
+"Live Activity Preview" = "实时活动预览";
+"Runner starts and stops, agent steps, approvals, and connection changes. Password field entries are never logged." = "记录 Runner 启停、智能体步骤、批准状态及连接变化。密码栏中输入的内容绝不会记入日志。";
+"Proxy Loopback Interface" = "代理回环接口";
+"No IPv6 on this interface" = "此接口无 IPv6";
+"IPv6 present: %@" = "有 IPv6：%@";
+"No interface has a 10.7.0.x address. Check that your proxy app is on and its loopback module is enabled." = "没有接口拥有 10.7.0.x 地址。请检查代理 App 是否开启，以及回环模块是否启用。";
+"Checks" = "检查";
+"%@: %@" = "%1$@：%2$@";
+"Reflected lockdown" = "反射 lockdown";
+"Reflected RemotePairing" = "反射 RemotePairing";
+"Reflected arbitrary port" = "反射任意端口";
+"Connected" = "已连接";
+"Refused" = "被拒绝";
+"Failed" = "失败";
+"Waiting" = "等待中";
+"Timeout" = "超时";
+"No address" = "无地址";
+"Running…" = "正在运行…";
+"Run Checks" = "运行检查";
+"Background Hold" = "后台保活";
+"Port on 10.7.0.1" = "10.7.0.1 端口";
+"Experiment" = "实验模式";
+"None" = "无";
+"Silent audio" = "静音音频";
+"Start Hold" = "开始保活测试";
+"Tap Start, leave the app for a while, then return. The log records suspension gaps and connection closures." = "轻点“开始”，离开 App 一段时间后再返回。日志会记录挂起时段及连接断开的时间。";
+"Addresses" = "网络地址";
+"Clear" = "清除";

@@ -120,7 +120,10 @@ extension SetupStep {
 struct RecentStep: Identifiable, Equatable {
     let id = UUID()
     var text: String
-    var detail: String
-    var ok: Bool
+    /// The app it happened in, as PokiCore names it.
+    var app: String?
+    /// Why it did not go through: PokiCore's delivery, "failed: nothing changed".
+    var failure: String?
+    var ok: Bool { failure == nil }
     var at: Date
 }

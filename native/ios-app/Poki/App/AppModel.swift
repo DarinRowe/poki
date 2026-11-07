@@ -24,6 +24,8 @@ final class AppModel {
     private(set) var problem: String?
     /// The agent's recent actions, newest last, for the home screen.
     private(set) var recentSteps: [RecentStep] = []
+    /// The app the agent is in, from its last step.
+    private(set) var currentApp: String?
     /// The runner is stopped until the next agent request (idle, or the owner tapped Stop runner).
     private(set) var runnerPaused = false
     /// Stop the runner after this long without agent activity; 0 never stops it.
@@ -97,7 +99,7 @@ final class AppModel {
         }
         loopback.onChange = { [weak self] old, new in self?.loopbackChanged(from: old, to: new) }
         if !diskImage.isReady { Task { await diskImage.download() } }
-        if UserDefaults.standard.bool(forKey: "pokiSample") { loadSample() }
+        if UserDefaults.standard.string(forKey: "pokiSample") != nil { loadSample() }
         NotificationCenter.default.addObserver(forName: UIApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.appWillTerminate() }
         }
@@ -137,17 +139,43 @@ final class AppModel {
 
     var deviceName: String { UIDevice.current.name }
 
-    /// `-pokiSample YES`: sample steps and an approval, only for the build's screenshots of the home
-    /// screen. Nothing is started.
+    /// `-pokiSample B` (YES is B), `C` or `PIN`: the home screen states of ESP-139 board 01 with sample
+    /// steps and an approval, only for the build's screenshots. Nothing is started: B and D look like a
+    /// session at work, C like one standing by (the loopback check stays live, so a simulator shows it
+    /// off). A relay address and two connectors are added the normal way when there are none.
     private func loadSample() {
+        let scene = UserDefaults.standard.string(forKey: "pokiSample")?.uppercased() ?? "B"
+        // PIN: setup's pairing page with a sample code, as if Settings had asked for one.
+        if scene == "PIN" { pairing = .pin("482913"); return }
         let now = Date()
+        let messages = String(localized: "Messages")
+        if relayAddress == nil { _ = setRelay("https://your-relay.example") }
+        if identity.secrets.isEmpty, relayAddress != nil {
+            _ = addConnector(name: "Claude")
+            _ = addConnector(name: "Codex")
+        }
+        Thumbnail.previewImage = ActivityPreview.sampleScreen()
+        sessionOn = true
+        relayStatus = .ready
+        currentApp = messages
+        if scene == "C" {
+            runnerPaused = true
+            runner = RunnerStatus(state: "standby", detail: "It starts when an agent asks.")
+            recentSteps = (0..<12).map { i in
+                RecentStep(text: String(localized: "Tap “Send”"), app: messages, at: now.addingTimeInterval(Double(i - 11) * 84 / 11 - 300))
+            }
+            return
+        }
+        runner = RunnerStatus(state: "running")
         recentSteps = [
-            RecentStep(text: "Open WeChat", detail: "In WeChat", ok: true, at: now.addingTimeInterval(-70)),
-            RecentStep(text: "Tap “Search”, then type “Mom”", detail: "In WeChat", ok: true, at: now.addingTimeInterval(-52)),
-            RecentStep(text: "Tap at 212, 640", detail: "In WeChat · Didn't go through", ok: false, at: now.addingTimeInterval(-30)),
-            RecentStep(text: "Type “On my way”", detail: "In WeChat", ok: true, at: now.addingTimeInterval(-12)),
+            RecentStep(text: String(localized: "Open Messages"), app: String(localized: "Home Screen"), at: now.addingTimeInterval(-70)),
+            RecentStep(text: String(localized: "Tap the chat with Mom"), app: messages, at: now.addingTimeInterval(-52)),
+            RecentStep(text: String(localized: "Type “On my way”"), app: messages, at: now.addingTimeInterval(-41)),
+            RecentStep(text: String(localized: "Tap at 212, 640"), app: messages, failure: String(localized: "failed: nothing changed"), at: now.addingTimeInterval(-30)),
         ]
-        approvals = [PendingApproval(id: "sample", app: "WeChat", summary: "Tap “Send”", reason: "sending a message (\"send\")", expires: now.addingTimeInterval(45))]
+        activityText = String(localized: "Tap “Send”")
+        approvals = [PendingApproval(id: "sample", app: messages, summary: String(localized: "Send “On my way” to Mom"),
+                                     reason: "sending a message (\"send\")", expires: now.addingTimeInterval(25))]
     }
 
     // MARK: Session
@@ -373,9 +401,8 @@ final class AppModel {
             activityText = "Idle"
             let failed = delivery.hasPrefix("failed")
             log.add("agent", "\(failed ? "failed" : "done"): \(summary) · \(delivery.prefix(160))")
-            let place = app.map { "In \($0)" }
-            let detail = failed ? ([place, "Didn't go through"].compactMap { $0 }.joined(separator: " · ")) : (place ?? "Done")
-            recentSteps.append(RecentStep(text: summary, detail: detail, ok: !failed, at: Date()))
+            if let app { currentApp = app }
+            recentSteps.append(RecentStep(text: summary, app: app, failure: failed ? delivery : nil, at: Date()))
             if recentSteps.count > 20 { recentSteps.removeFirst(recentSteps.count - 20) }
             activity.record(step: summary, ok: !failed)
             activity.update { state in state.app = app ?? state.app }
@@ -558,10 +585,11 @@ final class AppModel {
     var setupComplete: Bool { SetupStep.allCases.allSatisfy(isDone) }
 
     var activityProblem: String? { activity.lastError }
+    var activitiesEnabled: Bool { activity.enabled }
 
     // MARK: Relay and connectors
 
-    static let noRelay = "Enter your relay's address first (Connect). Poki has no default relay."
+    static let noRelay = "Enter your relay's address first (Settings › Relay). Poki has no default relay."
 
     /// Saves the relay address the person entered; false when it is not one. A running session moves
     /// to the new relay at once.

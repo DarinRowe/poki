@@ -36,7 +36,7 @@ xcodegen generate --spec native/ios-app/project.yml
 open native/ios-app/Poki.xcodeproj
 ```
 
-`-pokiScreen home|setup|connect|debug|activity` opens that screen at launch.
+`-pokiScreen home|setup|connect|debug|activity|steps|status|connector` opens that screen at launch (setup as its full-screen flow, connect as the Settings sheet, debug as Diagnostics inside it); `-pokiSetupStep N` opens setup at step N, and `-pokiSample B|C` fills Home with sample steps and an approval, and `-pokiSample PIN` shows a sample pairing code, for screenshots only.
 
 ## How it runs
 

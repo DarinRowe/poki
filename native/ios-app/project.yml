@@ -42,7 +42,7 @@ targets:
         NSSupportsLiveActivitiesFrequentUpdates: true
         # Geist (SIL OFL 1.1, Shared/Fonts) for the Live Activity, in both bundles: the widget
         # extension draws the island and falls back to SF Pro without its own copy.
-        UIAppFonts: [Geist-Regular.ttf, Geist-SemiBold.ttf, Geist-Bold.ttf, Geist-Black.ttf]
+        UIAppFonts: [Geist-Regular.ttf, Geist-Medium.ttf, Geist-SemiBold.ttf, Geist-Bold.ttf, Geist-Black.ttf]
         # While Poki is on, background location (with the blue location pill) keeps the app, and with it
         # the relay connection and the launcher, running; silent audio is the fallback. Poki never reads
         # or sends the location itself.
@@ -89,7 +89,7 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
-        UIAppFonts: [Geist-Regular.ttf, Geist-SemiBold.ttf, Geist-Bold.ttf, Geist-Black.ttf]
+        UIAppFonts: [Geist-Regular.ttf, Geist-Medium.ttf, Geist-SemiBold.ttf, Geist-Bold.ttf, Geist-Black.ttf]
     entitlements:
       path: PokiWidgets/PokiWidgets.entitlements
       properties:
