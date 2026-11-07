@@ -114,7 +114,8 @@ class Mcp {
 const isPoki = id => typeof id === 'string' && (id === 'nz.zheha.poki' || id.startsWith('nz.zheha.poki.'));
 const ownAppRefusal = "only the phone's owner can approve, by tapping it on the phone themselves; Poki takes no taps inside the Poki app. Nothing was tapped.";
 
-const names = e => [e.label, e.text, e.value].filter(s => typeof s === 'string' && s.trim());
+// Every name tap_text matches on (src/interaction.mjs), so the phone checks what the tap would match.
+const names = e => [e.label, e.text, e.value, e.identifier, e.placeholder].filter(s => typeof s === 'string' && s.trim());
 
 // What tap_text would tap, read without touching the phone: Poki MCP's own matching on the screen.
 async function tapTarget(mcp, wanted) {

@@ -198,8 +198,10 @@ public final class PokiCore: @unchecked Sendable {
         // Like `do`: a tap withdraws the request still waiting, so two taps never wait side by side.
         if let pending = approvals.pending { approvals.withdraw(id: pending.id) }
         let element = Element(type: "Other", label: text, value: nil, identifier: nil, frame: Rect(x: 0, y: 0, width: 0, height: 0), depth: 0)
-        guard let reason = config.sensitive.reason(touching: element, typing: false, app: app, secureOnScreen: false) else { return .clear }
-        let approval = approvals.request(app: app.describe, summary: "Tap “\(text)”", reason: reason, fingerprint: "tap:\(UUID().uuidString)")
+        // No readable text: the rules cannot tell what it does, so the owner is asked.
+        let unreadable = text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard let reason = unreadable && config.sensitive.enabled ? "a tap on something with no readable text" : config.sensitive.reason(touching: element, typing: false, app: app, secureOnScreen: false) else { return .clear }
+        let approval = approvals.request(app: app.describe, summary: unreadable ? "Tap something with no text" : "Tap “\(text)”", reason: reason, fingerprint: "tap:\(UUID().uuidString)")
         switch await approvals.wait(id: approval.id, seconds: seconds) {
         case .approved?:
             _ = approvals.consumeGrant(fingerprint: approval.fingerprint)
