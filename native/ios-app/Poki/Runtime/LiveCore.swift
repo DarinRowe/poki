@@ -24,6 +24,7 @@ final class LiveCore: CoreSession {
         pump = Task { [core] in
             for await event in core.events { continuation.yield(Self.map(event)) }
         }
+        core.onSession { signal in continuation.yield(.session(signal)) }
     }
 
     deinit { pump?.cancel() }
@@ -37,6 +38,8 @@ final class LiveCore: CoreSession {
         await core.clearTap(on: text, inApp: bundleID, named: name, waiting: seconds)
     }
     func accessChanged() { core.accessChanged() }
+    /// The app's own MCP tools (ask_poki), after look, do and status.
+    func setHostTools(_ tools: [HostTool]) { core.setHostTools(tools) }
     func tool(_ name: String, arguments: String) async -> ToolResult { await core.tool(name, arguments: arguments) }
     /// `look`, `do` or `status` for the chat's model loop inside the app.
     func callTool(_ name: String, arguments: String) async -> PokiCore.ToolAnswer { await core.callTool(name, arguments: arguments) }
@@ -49,11 +52,11 @@ final class LiveCore: CoreSession {
         case .relay(.connecting): return .relay(.connecting)
         case .relay(.ready): return .relay(.ready)
         case .relay(.offline(let why)): return .relay(.offline(why))
-        case .toolStarted(let activity): return .toolStarted(name: activity.name, summary: activity.summary)
+        case .toolStarted(let activity): return .toolStarted(name: activity.name, summary: activity.summary, session: activity.session)
         case .toolFinished(let activity, let outcome, let facts):
             let delivery: String
             switch outcome { case .done(let text): delivery = text; case .failed(let text): delivery = "failed: \(text)" }
-            return .toolFinished(summary: activity.summary, delivery: delivery, app: facts.app, thumbnail: facts.thumbnail, error: facts.error)
+            return .toolFinished(summary: activity.summary, delivery: delivery, app: facts.app, thumbnail: facts.thumbnail, error: facts.error, session: activity.session)
         case .approvalRequested(let approval):
             return .approvalRequested(PendingApproval(id: approval.id, app: approval.app, summary: approval.summary, reason: approval.reason, expires: approval.expires))
         case .approvalEnded(let id, let approved): return .approvalEnded(id: id, approved: approved)

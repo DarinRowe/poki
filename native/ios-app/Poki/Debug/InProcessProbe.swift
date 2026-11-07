@@ -53,6 +53,7 @@ final class InProcessProbe: ObservableObject {
             case "apps": await appsCycle(defaults.string(forKey: "pokiProbeApp") ?? "local.pokimcp.fixture")
             case "tools": await toolsCycle(model: model, app: defaults.string(forKey: "pokiProbeApp") ?? "local.pokimcp.fixture")
             case "gym": await gymScorecard(model: model)
+            case "chat": await chatCycle(model: model)
             case "bench": await benchmark(model: model, rounds: defaults.integer(forKey: "pokiBenchRounds") > 0 ? defaults.integer(forKey: "pokiBenchRounds") : 5)
             default: await prepareOnly()
             }
@@ -285,6 +286,47 @@ final class InProcessProbe: ObservableObject {
         NSLog("PokiGym %@", report)
         note("gym scorecard: \(scorecard.rows.filter { $0.ms > 0 }.count) calls, \(scorecard.failures.count) failures", ["step": "gym", "failures": scorecard.failures])
         try? transcript.lines.joined(separator: "\n").write(to: documents.appendingPathComponent("gym-scorecard.txt"), atomically: true, encoding: .utf8)
+    }
+
+    /// `-pokiInProcess chat -pokiProbeModelURL http://127.0.0.1:8765/v1`: Poki's own agent end to end on
+    /// this path. The chat is pointed at an OpenAI-compatible endpoint (on CI, a scripted model on the
+    /// Mac), the owner sends a task, pi runs it with look and do on the phone, the session is saved; then an
+    /// outside agent's `ask_poki` runs a second task as a hand-off. Into Documents/inprocess-probe.json.
+    func chatCycle(model: AppModel) async {
+        guard begin("chat with Poki's agent") else { return }
+        defer { end() }
+        guard await prepare() else { return }
+        model.inProcessReadyForProbe()
+        let background = UIApplication.shared.beginBackgroundTask(withName: "Chat probe")
+        defer { UIApplication.shared.endBackgroundTask(background) }
+        let defaults = UserDefaults.standard
+        ModelKeys.customURL = defaults.string(forKey: "pokiProbeModelURL") ?? "http://127.0.0.1:8765/v1"
+        ModelKeys.customModel = defaults.string(forKey: "pokiProbeModel") ?? "poki-mock"
+        ModelKeys.selectedProvider = .custom
+        AskPoki.refresh()
+        guard let chat = AskPoki.chat else { note("no chat", ["step": "chat_missing"]); return }
+        chat.newConversation()
+        let task = defaults.string(forKey: "pokiProbeTask") ?? "Open the Poki fixture app and tell me what it shows."
+        let t0 = ProcessInfo.processInfo.systemUptime
+        chat.send(task)
+        for _ in 0..<1200 where chat.running { try? await Task.sleep(for: .milliseconds(250)) }
+        let seconds = ProcessInfo.processInfo.systemUptime - t0
+        let replies: [String] = chat.entries.compactMap { if case .poki(let text) = $0.kind { text } else { nil } }
+        let problems: [String] = chat.entries.compactMap { if case .note(.problem(let why)) = $0.kind { why } else { nil } }
+        note("chat task: \(chat.calls.count) tool calls in \(String(format: "%.1f", seconds)) s, \(replies.count) replies, \(problems.count) problems",
+             ["step": "chat", "running": chat.running, "seconds": seconds, "calls": chat.calls.map { ["name": $0.name, "ok": $0.ok, "ms": $0.ms] },
+              "replies": replies, "problems": problems])
+        // Saved like any conversation: the Sessions list shows it.
+        try? await Task.sleep(for: .seconds(1))
+        let saved = SessionStore.shared.session(chat.sessionID)
+        note("chat session saved: \(saved != nil)", ["step": "chat_saved", "saved": saved != nil, "entries": saved?.entries.count ?? 0, "calls": saved?.calls.count ?? 0])
+        // An outside agent hands a task over.
+        let t1 = ProcessInfo.processInfo.systemUptime
+        let handoff = await model.phoneToolWithPicture("ask_poki", arguments: "{\"task\":\"Open the Poki fixture app and tell me what it shows.\"}")
+        note("ask_poki: \(handoff.isError ? "failed" : "ok") in \(String(format: "%.1f", ProcessInfo.processInfo.systemUptime - t1)) s",
+             ["step": "ask_poki", "error": handoff.isError, "text": String(handoff.text.prefix(4000))])
+        let handoffs = SessionStore.shared.sessions.filter { $0.kind == .handoff }
+        note("hand-off sessions saved: \(handoffs.count)", ["step": "handoff_saved", "count": handoffs.count, "entries": handoffs.first?.entries.count ?? 0])
     }
 
     /// The scorecard's log, kept for Documents/gym-scorecard.txt.

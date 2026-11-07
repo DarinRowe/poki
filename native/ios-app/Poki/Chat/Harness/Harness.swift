@@ -26,6 +26,13 @@ enum Harness {
 
     static var instructions: String { [PokiCore.toolInstructions, system].joined(separator: "\n\n") }
 
+    /// The instructions for a task: the above, then what memory and routines know about it (empty
+    /// until dev/agent-routines adds `PokiCore.memoryBrief(for:)` through `ChatModel.beforeTask`).
+    @MainActor static func instructions(for task: String) -> String {
+        let brief = ChatModel.beforeTask?(task) ?? ""
+        return brief.isEmpty ? instructions : [instructions, brief].joined(separator: "\n\n")
+    }
+
     static let tools: [ToolSpec] = phoneTools + [reportPlan, finishTask]
 
     /// PokiCore's catalog: look, do and status.

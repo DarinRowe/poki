@@ -154,6 +154,29 @@ public struct ToolActivity: Sendable, Equatable {
     public var name: String
     public var summary: String
     public var started: Date
+    /// The MCP session that made the call (its `mcp-session-id`), nil for a caller inside the app.
+    public var session: String? = nil
+}
+
+/// An MCP client's session: begun by `initialize`, ended by its DELETE (or never, when the client just
+/// goes away). The app lists them next to its own chats.
+public enum SessionSignal: Sendable, Equatable {
+    /// `client` and `version` are the client's own `clientInfo` from initialize.
+    case started(id: String, client: String, version: String?)
+    case ended(id: String)
+}
+
+/// A tool the app adds to the MCP catalog (`ask_poki`, the in-app agent). It is listed after look, do and
+/// status and runs in `call()` outside the one-call-at-a-time gate, since it makes its own look and do
+/// calls. `schemaJSON` is the inputSchema as a JSON object.
+public struct HostTool: Sendable {
+    public var name: String
+    public var description: String
+    public var schemaJSON: String
+    public var run: @Sendable (_ arguments: String, _ session: String?) async -> PokiCore.ToolAnswer
+    public init(name: String, description: String, schemaJSON: String, run: @escaping @Sendable (_ arguments: String, _ session: String?) async -> PokiCore.ToolAnswer) {
+        self.name = name; self.description = description; self.schemaJSON = schemaJSON; self.run = run
+    }
 }
 
 public enum ToolOutcome: Sendable, Equatable {
@@ -240,6 +263,14 @@ public final class PokiCore: @unchecked Sendable {
     private let gate = Gate()
     private let sessions = LockedBox<Set<String>>([])
     var relay: RelayClient?
+    /// The app's tools, after look, do and status in tools/list.
+    private let hostTools = LockedBox<[HostTool]>([])
+    private let sessionSignal = LockedBox<(@Sendable (SessionSignal) -> Void)?>(nil)
+
+    /// Replaces the app's tools (none: only look, do and status are listed).
+    public func setHostTools(_ tools: [HostTool]) { hostTools.value = tools }
+    /// Told when an MCP client's session starts or ends.
+    public func onSession(_ handler: @escaping @Sendable (SessionSignal) -> Void) { sessionSignal.value = handler }
 
     public init(config: CoreConfig, host: CoreHost, transport: HTTPTransport = URLSessionTransport()) {
         self.config = config
@@ -368,7 +399,11 @@ public final class PokiCore: @unchecked Sendable {
         case "GET": return RelayResponse(id: request.id, status: 405, headers: ["allow": "POST, DELETE"], body: "")
         case "DELETE":
             // The client ended its session: when it began the task, the task is over too.
-            if let s = request.headers["mcp-session-id"] { _ = sessions.update { $0.remove(s) }; _ = await endTask(session: s) }
+            if let s = request.headers["mcp-session-id"] {
+                _ = sessions.update { $0.remove(s) }
+                sessionSignal.value?(.ended(id: s))
+                _ = await endTask(session: s)
+            }
             return RelayResponse(id: request.id, status: 200, headers: [:], body: "")
         case "POST": break
         default: return RelayResponse(id: request.id, status: 405, headers: ["allow": "POST, DELETE"], body: "")
@@ -403,6 +438,8 @@ public final class PokiCore: @unchecked Sendable {
             let version = Self.protocolVersions.contains(asked) ? asked : Self.protocolVersions[0]
             let newSession = UUID().uuidString.lowercased()
             sessions.update { _ = $0.insert(newSession) }
+            let info = message["params"]?["clientInfo"]
+            sessionSignal.value?(.started(id: newSession, client: info?["name"]?.string ?? "An agent", version: info?["version"]?.string))
             return (result([
                 "protocolVersion": .string(version),
                 "capabilities": ["tools": ["listChanged": false]],
@@ -411,7 +448,7 @@ public final class PokiCore: @unchecked Sendable {
             ]), newSession)
         case "notifications/initialized", "notifications/cancelled": return (nil, nil)
         case "ping": return (isNotification ? nil : result(.object([:])), nil)
-        case "tools/list": return (result(["tools": .array(Self.tools)]), nil)
+        case "tools/list": return (result(["tools": .array(Self.tools + hostTools.value.map(\.listing))]), nil)
         case "tools/call":
             let name = message["params"]?["name"]?.string ?? ""
             let args = message["params"]?["arguments"] ?? .object([:])
@@ -464,10 +501,15 @@ public final class PokiCore: @unchecked Sendable {
 
     func call(_ name: String, _ args: JSON, session: String? = nil, answerBy: Double? = nil) async -> ToolResult {
         if name == "status" { return status() }
-        guard name == "look" || name == "do" else { return ToolResult(text: "unknown tool \(name); the tools are look, do and status", jpeg: nil, isError: true) }
+        if let tool = hostTools.value.first(where: { $0.name == name }) {
+            // Outside the gate: the app's tool makes its own look and do calls, one at a time as any.
+            let answer = await tool.run(args.serialized(), session)
+            return ToolResult(text: answer.text, jpeg: answer.jpeg, isError: answer.isError)
+        }
+        guard name == "look" || name == "do" else { return ToolResult(text: "unknown tool \(name); the tools are \((["look", "do", "status"] + hostTools.value.map(\.name)).joined(separator: ", "))", jpeg: nil, isError: true) }
         let received = now()
         computer.lastCallTook = nil
-        let activity = ToolActivity(id: UUID().uuidString, name: name, summary: name == "do" ? computer.labels(args["actions"]?.array ?? []) : "Look at the screen", started: Date())
+        let activity = ToolActivity(id: UUID().uuidString, name: name, summary: name == "do" ? computer.labels(args["actions"]?.array ?? []) : "Look at the screen", started: Date(), session: session)
         // One tool call at a time per phone; a second waits briefly, then says what the first is doing.
         guard await gate.enter(waiting: config.busyWait) else {
             // The screenshot is served apart from the runner's queue, so a busy answer still shows
@@ -550,4 +592,13 @@ final class Gate: @unchecked Sendable {
         }
     }
     func leave() { lock.lock(); held = false; lock.unlock() }
+}
+
+
+extension HostTool {
+    /// The tool as tools/list shows it.
+    var listing: JSON {
+        let schema = (try? JSON.parse(schemaJSON)) ?? ["type": "object"]
+        return ["name": .string(name), "description": .string(description), "inputSchema": schema]
+    }
 }

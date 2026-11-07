@@ -92,7 +92,7 @@ final class AppModel {
     /// look, do or status run here as a relay call would be (the Debug probe's end-to-end check).
     /// The probe opened the in-process session itself (on the simulator there is no launcher), so
     /// PokiCore may act now.
-    func inProcessReadyForProbe() { inProcessSession = .open; host.update(runner: .running) }
+    func inProcessReadyForProbe() { inProcessSession = .open; host.update(runner: .running); probeDriven = true }
 
     func phoneTool(_ name: String, arguments: String) async -> (text: String, isError: Bool) {
         let result = await core.tool(name, arguments: arguments)
@@ -104,8 +104,14 @@ final class AppModel {
         await core.callTool(name, arguments: arguments)
     }
 
-    /// The chat watches the steps and approvals of the task it runs.
-    var onShellEvent: ((ShellEvent) -> Void)?
+    /// The chats watch the steps and approvals of the task they run (the in-app chat and an outside
+    /// agent's hand-off each have one).
+    private var shellObservers: [(ShellEvent) -> Void] = []
+    func addShellObserver(_ observer: @escaping (ShellEvent) -> Void) { shellObservers.append(observer) }
+    /// A Debug probe drives PokiCore on the simulator without a runner session (the chat's end-to-end check).
+    private(set) var probeDriven = false
+    /// The app's MCP tools (ask_poki), set by AskPoki.
+    func setHostTools(_ tools: [HostTool]) { core.setHostTools(tools) }
 
     init(launcher: RunnerLauncher = RustLauncher(), pairer: DevicePairing = RustPairing()) {
         ActivityController.endAll()
@@ -631,14 +637,17 @@ final class AppModel {
     }
 
     private func handle(_ event: ShellEvent) {
+        // Every outside agent's session and step goes into the Sessions list, on or off.
+        SessionStore.shared.observe(event, approvals: approvals)
         // Events after Turn off (the core's own "stopped") are not for the screen.
-        guard sessionOn else { return }
-        onShellEvent?(event)
+        guard sessionOn || probeDriven else { return }
+        for observer in shellObservers { observer(event) }
         switch event {
+        case .session: break
         case .relay(let status):
             if status != relayStatus { log.add("relay", "\(status)") }
             relayStatus = status
-        case .toolStarted(_, let summary):
+        case .toolStarted(_, let summary, _):
             lastAgentActivity = Date()
             stepUnderWay = (summary, Date())
             activityText = summary
@@ -651,7 +660,7 @@ final class AppModel {
                 }
                 state.headline = summary
             }
-        case .toolFinished(let summary, let delivery, let app, let thumbnail, let error):
+        case .toolFinished(let summary, let delivery, let app, let thumbnail, let error, _):
             lastAgentActivity = Date()
             stepUnderWay = nil
             lastAction = "\(summary) · \(delivery)"
@@ -713,6 +722,7 @@ final class AppModel {
     }
 
     func runTool(_ name: String, arguments: String) async -> PokiCore.ToolAnswer {
+        if probeDriven { return await core.callTool(name, arguments: arguments) }
         if !sessionOn { startSession() }
         guard sessionOn else {
             let why = problem ?? "Poki is off."

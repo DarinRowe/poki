@@ -117,6 +117,7 @@ private struct KeyEntry: View {
     var provider: ModelProvider
     @State private var key = ""
     @State private var url = ModelKeys.customURL
+    @State private var modelID = ModelKeys.customModel
     @State private var failed = false
 
     var body: some View {
@@ -125,7 +126,8 @@ private struct KeyEntry: View {
                 if provider == .custom {
                     Section {
                         TextField("https://…/v1", text: $url).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
-                    } header: { Text("Address") }
+                        TextField("Model, such as llama-4-maverick", text: $modelID).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    } header: { Text("Address and model") }
                 }
                 Section {
                     SecureField(provider.keyPrompt, text: $key).textInputAutocapitalization(.never).autocorrectionDisabled()
@@ -155,12 +157,16 @@ private struct KeyEntry: View {
     }
 
     private var canSave: Bool {
-        provider == .custom ? URL(string: url.trimmingCharacters(in: .whitespaces))?.scheme?.hasPrefix("http") == true : !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        provider == .custom ? URL(string: url.trimmingCharacters(in: .whitespaces))?.scheme?.hasPrefix("http") == true && !modelID.trimmingCharacters(in: .whitespaces).isEmpty : !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func save() {
         do {
-            if provider == .custom { ModelKeys.customURL = url.trimmingCharacters(in: .whitespaces) }
+            if provider == .custom {
+                ModelKeys.customURL = url.trimmingCharacters(in: .whitespaces)
+                ModelKeys.customModel = modelID.trimmingCharacters(in: .whitespaces)
+                if key.isEmpty { ModelKeys.selectedProvider = .custom }
+            }
             if !key.isEmpty { try ModelKeys.save(key, for: provider) }
             // A new key picks its provider; the model page's picker switches between providers with keys.
             if provider.wired, !key.isEmpty { ModelKeys.selectedProvider = provider }

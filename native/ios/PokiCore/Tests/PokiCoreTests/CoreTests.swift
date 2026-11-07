@@ -488,6 +488,47 @@ final class MCPTests: XCTestCase {
         XCTAssertEqual(host.warmUps.value, 1)
     }
 
+    /// The app hears about each client's session (its name from clientInfo) and adds its own tools to
+    /// the catalog; an app tool runs with the caller's session and the gate left free for its own calls.
+    func testSessionsAreReportedAndHostToolsListedAndCalled() async throws {
+        let (core, _, _) = makeCore()
+        let signals = LockedBox<[SessionSignal]>([])
+        core.onSession { signal in signals.update { $0.append(signal) } }
+        let seen = LockedBox<String?>(nil)
+        core.setHostTools([HostTool(name: "ask_poki", description: "Hand a task to Poki.", schemaJSON: #"{"type":"object","properties":{"task":{"type":"string"}},"required":["task"]}"#) { [core] arguments, session in
+            seen.value = session
+            let inner = await core.callTool("look", arguments: "{}")
+            return PokiCore.ToolAnswer(text: "done: \(arguments) · inner \(inner.isError ? "failed" : "ok")", jpeg: nil, isError: false)
+        }])
+        let initialized = await post(core, ["jsonrpc": "2.0", "id": 1, "method": "initialize", "params": ["protocolVersion": "2025-06-18", "clientInfo": ["name": "claude-ai", "version": "1.2"]]])
+        let session = try XCTUnwrap(initialized.headers["mcp-session-id"])
+        XCTAssertEqual(signals.value, [.started(id: session, client: "claude-ai", version: "1.2")])
+        let list = try JSON.parse(await post(core, ["jsonrpc": "2.0", "id": 2, "method": "tools/list"], session: session).body)
+        XCTAssertEqual(list["result"]?["tools"]?.array?.compactMap { $0["name"]?.string }, ["look", "do", "status", "ask_poki"])
+        XCTAssertEqual(list["result"]?["tools"]?[3]?["inputSchema"]?["required"]?[0], "task")
+        let call = try JSON.parse(await post(core, ["jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": ["name": "ask_poki", "arguments": ["task": "read the time"]]], session: session).body)
+        let text = call["result"]?["content"]?[0]?["text"]?.string ?? ""
+        XCTAssertTrue(text.contains("read the time") && text.contains("inner ok"), text)
+        XCTAssertEqual(seen.value, session)
+        _ = await core.handle(RelayRequest(id: "d", method: "DELETE", headers: ["mcp-session-id": session], body: ""))
+        XCTAssertEqual(signals.value.last, .ended(id: session))
+        core.setHostTools([])
+        let after = try JSON.parse(await post(core, ["jsonrpc": "2.0", "id": 4, "method": "tools/list"]).body)
+        XCTAssertEqual(after["result"]?["tools"]?.array?.count, 3)
+    }
+
+    /// Each tool event carries the session that made the call, so the app can show it in that session.
+    func testToolEventsCarryTheCallersSession() async throws {
+        let (core, _, _) = makeCore()
+        let started = LockedBox<[String?]>([])
+        let listen = Task { for await event in core.events { if case .toolStarted(let a) = event { started.update { $0.append(a.session) } } } }
+        defer { listen.cancel() }
+        _ = await core.call("look", [:], session: "s1")
+        _ = await core.callTool("look", arguments: "{}")
+        for _ in 0..<50 where started.value.count < 2 { try await Task.sleep(nanoseconds: 20_000_000) }
+        XCTAssertEqual(started.value, ["s1", nil])
+    }
+
     func testGetIsNotAllowed() async {
         let (core, _, _) = makeCore()
         let r = await core.handle(RelayRequest(id: "r", method: "GET", headers: [:], body: ""))

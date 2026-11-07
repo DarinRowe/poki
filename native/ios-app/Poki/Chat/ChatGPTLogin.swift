@@ -187,7 +187,7 @@ struct ChatGPTSignIn: View {
                 Section {
                     Button("Sign In with ChatGPT") { run { try await login.signIn() } }.disabled(working)
                 } footer: {
-                    Text("Poki uses your ChatGPT plan, the way Codex does. The sign-in stays in this iPhone’s Keychain.")
+                    Text("Poki uses your ChatGPT plan, the way Codex does. The sign-in stays in this iPhone’s Keychain. An OpenAI API key works too, as a backup: add it under OpenAI.")
                 }
                 Section {
                     if let device {

@@ -3,8 +3,8 @@ import PokiCore
 import SwiftUI
 
 /// One thing in the conversation, in the order it is drawn.
-struct ChatEntry: Identifiable, Equatable {
-    enum Kind: Equatable {
+struct ChatEntry: Identifiable, Equatable, Codable {
+    enum Kind: Equatable, Codable {
         /// "Today 9:41 AM" above a conversation.
         case time(Date)
         case you(String, delivered: Bool)
@@ -13,23 +13,28 @@ struct ChatEntry: Identifiable, Equatable {
         case plan([PlanStep])
         /// One grey line, centred: waiting for, or the result of, an approval.
         case note(ChatNote)
+        /// An outside agent's own look or do, as one grey line (`ok` nil while it runs).
+        case step(String, ok: Bool?)
+        /// An outside agent's request to Poki (`ask_poki`), on the requester's side.
+        case request(String, from: String)
     }
     let id: UUID
     var kind: Kind
+    var at: Date = Date()
     init(_ kind: Kind) { id = UUID(); self.kind = kind }
 
     var isPoki: Bool { switch kind { case .poki, .plan: true; default: false } }
 }
 
-struct PlanStep: Identifiable, Equatable {
-    enum State: Equatable { case current, waiting, done, failed }
+struct PlanStep: Identifiable, Equatable, Codable {
+    enum State: String, Equatable, Codable { case current, waiting, done, failed }
     let id: UUID
     var text: String
     var state: State
     init(_ text: String, state: State = .current) { id = UUID(); self.text = text; self.state = state }
 }
 
-enum ChatNote: Equatable {
+enum ChatNote: Equatable, Codable {
     case waiting
     case approved(Date)
     case declined
@@ -44,8 +49,23 @@ enum ChatNote: Equatable {
 @MainActor
 @Observable
 final class ChatModel {
-    private(set) var entries: [ChatEntry] = []
+    private(set) var entries: [ChatEntry] = [] { didSet { persist() } }
     private(set) var running = false
+    /// The model has the turn: nothing from it yet since the owner's message or the last tool answer
+    /// (the chat shows the typing bubble).
+    private(set) var awaitingModel = false
+    /// This conversation in the Sessions list.
+    private(set) var sessionID = UUID().uuidString.lowercased()
+    /// An in-app chat, or a task an outside agent handed to Poki (`ask_poki`).
+    let kind: SavedSession.Kind
+    /// The agent that handed the task over, for `.handoff`.
+    let requester: String?
+    /// The tool calls of this conversation, for "save a routine from this session" (SessionStore.record).
+    private(set) var calls: [CallRecord] = []
+    /// Memory and routines (dev/agent-routines): extra instructions for a task, read before pi's first turn.
+    static var beforeTask: (@MainActor (String) -> String)?
+    /// Told when a task ends, with its calls and finish_task's verdict.
+    static var afterTask: (@MainActor (TaskRecord) -> Void)?
     /// A board's sample conversation, for screenshots.
     let isSample = UserDefaults.standard.string(forKey: "pokiChat") != nil
     private let app: AppModel
@@ -68,41 +88,119 @@ final class ChatModel {
     /// A task stops after this many model turns: a loop that goes nowhere still ends.
     static let maxTurns = 60
 
-    init(app: AppModel) {
+    init(app: AppModel, kind: SavedSession.Kind = .poki, requester: String? = nil, sessionID: String? = nil) {
         self.app = app
-        if let scene = UserDefaults.standard.string(forKey: "pokiChat") { loadSample(scene) } else { greet() }
-        app.onShellEvent = { [weak self] event in self?.observe(event) }
+        if let sessionID { self.sessionID = sessionID }
+        self.kind = kind
+        self.requester = requester
+        app.addShellObserver { [weak self] event in self?.observe(event) }
+        if kind == .handoff { return }
+        if let scene = UserDefaults.standard.string(forKey: "pokiChat") { loadSample(scene); return }
+        // The last in-app conversation comes back at launch, as in Messages.
+        if let last = SessionStore.shared.latestPoki(), Date().timeIntervalSince(last.updated) < 12 * 3600 {
+            restore(last)
+        } else {
+            greet()
+        }
     }
 
-    private func greet() {
-        entries = [ChatEntry(.time(Date())),
-                   ChatEntry(.poki(String(localized: "Hi, I’m Poki. Tell me what to do on this iPhone."))),
-                   ChatEntry(.poki(String(localized: "I’ll ask before anything you can’t undo.")))]
+    private var greeting: [ChatEntry] {
+        [ChatEntry(.time(Date())),
+         ChatEntry(.poki(String(localized: "Hi, I’m Poki. Tell me what to do on this iPhone."))),
+         ChatEntry(.poki(String(localized: "I’ll ask before anything you can’t undo.")))]
     }
+
+    private func greet() { entries = greeting }
 
     func newConversation() {
         stop()
         loop = nil
         client = nil
+        calls = []
         planID = nil; noteID = nil; modelPlan = nil
+        sessionID = UUID().uuidString.lowercased()
         greet()
+    }
+
+    /// Opens a saved in-app conversation again. The words come back; the model starts with what is on
+    /// screen as context only from the next message on (pi's messages are not kept on disk).
+    func restore(_ session: SavedSession) {
+        guard session.kind == .poki, !running else { return }
+        loop = nil
+        client = nil
+        planID = nil; noteID = nil; modelPlan = nil
+        sessionID = session.id
+        calls = session.calls
+        entries = session.entries.isEmpty ? greeting : session.entries
+    }
+
+    /// The conversation as the Sessions list keeps it. Greeting-only conversations are not saved.
+    private func persist() {
+        guard !isSample, entries.contains(where: { if case .you = $0.kind { return true }; if case .request = $0.kind { return true }; return false }) else { return }
+        SessionStore.shared.save(chat: self)
+    }
+
+    var savedCalls: [CallRecord] { calls }
+
+    /// The first thing asked, for the Sessions row.
+    var title: String {
+        for entry in entries {
+            switch entry.kind {
+            case .you(let text, _), .request(let text, _): return text
+            default: continue
+            }
+        }
+        return String(localized: "New conversation")
     }
 
     // MARK: Sending
 
-    func send(_ text: String) {
+    func send(_ text: String) { send(text, again: false) }
+
+    /// The last message again, after a problem (the Retry button under it).
+    func retry() {
+        guard !running, let last = entries.last(where: { if case .you = $0.kind { return true }; return false }), case .you(let text, _) = last.kind else { return }
+        while let tail = entries.last, case .note(.problem) = tail.kind { entries.removeLast() }
+        send(text, again: true)
+    }
+
+    /// The conversation ended on a problem the owner can try again.
+    var canRetry: Bool {
+        guard !running, let tail = entries.last, case .note(.problem) = tail.kind else { return false }
+        return entries.contains { if case .you = $0.kind { return true }; return false }
+    }
+
+    private var lastOwnerText: String?
+
+    private func send(_ text: String, again: Bool) {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !running else { return }
-        let you = ChatEntry(.you(text, delivered: false))
-        entries.append(you)
+        // Another conversation (an outside agent's hand-off) is working the phone: one task at a time.
+        if kind == .poki, let busy = ChatModel.delegatedBusy {
+            entries.append(ChatEntry(.you(text, delivered: false)))
+            add(.note(.problem(String(localized: "Poki is working on a task for \(busy). Try again when it’s done."))))
+            return
+        }
+        // A pause of half an hour or more gets its own time line, as in Messages.
+        if !again, let lastAt = entries.last?.at, Date().timeIntervalSince(lastAt) > 1800 { entries.append(ChatEntry(.time(Date()))) }
+        let you: ChatEntry
+        if again, let last = entries.last(where: { if case .you = $0.kind { return true }; return false }) {
+            you = last
+        } else {
+            you = ChatEntry(kind == .handoff ? .request(text, from: requester ?? "") : .you(text, delivered: false))
+            entries.append(you)
+        }
+        lastOwnerText = text
+        if kind == .poki { Haptics.sent() }
         let provider = ModelKeys.selectedProvider
-        guard provider.wired, let key = ModelKeys.key(provider) else {
+        guard provider.wired, let key = ModelKeys.key(provider) ?? (provider == .custom && ModelKeys.hasUsableKey ? "none" : nil) else {
             add(.poki(provider.signsIn ? String(localized: "Sign in to ChatGPT first: tap my picture, then Model.")
                                        : String(localized: "Add a model key first: tap my picture, then Model.")))
             return
         }
         let model = ModelKeys.selectedModel
         running = true
+        awaitingModel = true
         stopAsked = false
         planID = nil; noteID = nil; modelPlan = nil
         if Self.direct, provider == .anthropic || provider == .openai {
@@ -117,6 +215,7 @@ final class ChatModel {
                 await self?.run(client, delivered: you.id)
                 self?.logEnd("direct", outcome: nil)
                 self?.running = false
+                self?.awaitingModel = false
             }
             return
         }
@@ -127,7 +226,7 @@ final class ChatModel {
         }
         // Another model starts a new loop that carries the conversation over.
         if loop?.provider != provider || loop?.model.id != piModel.id {
-            loop = PiLoop(provider: provider, model: piModel, instructions: Harness.instructions, tools: Harness.tools,
+            loop = PiLoop(provider: provider, model: piModel, instructions: Harness.instructions(for: text), tools: Harness.tools,
                           carrying: loop?.messages ?? []) { [weak self] call in
                 guard let self else { return PokiCore.ToolAnswer(text: "Task stopped. Action not executed.", jpeg: nil, isError: true) }
                 return await self.perform(call)
@@ -138,11 +237,14 @@ final class ChatModel {
         task = Task { [weak self] in
             let outcome = await loop.run(text, maxTurns: Self.maxTurns) { text in
                 self?.markDelivered(you.id)
+                self?.awaitingModel = false
                 self?.add(.poki(text))
             }
             self?.ended(outcome, delivered: you.id)
             self?.logEnd("pi", outcome: outcome)
             self?.running = false
+            self?.awaitingModel = false
+            self?.lastOutcome = outcome
         }
     }
 
@@ -160,7 +262,36 @@ final class ChatModel {
         let verdict = finished.map { $0 ? "success" : "failure" } ?? "not called"
         let ending = outcome.map { if case .failed = $0 { "failed" } else { "\($0)" } } ?? (stopAsked ? "stopped" : "ended")
         AppLog.shared.add("chat", "task ended: \(engine), \(ending) after \(seconds) s, \(toolCalls) tool calls, finish_task \(verdict)")
+        let record = TaskRecord(session: sessionID, task: lastOwnerText ?? "", calls: Array(calls.suffix(toolCalls)), success: finished,
+                                summary: finishSummary, seconds: Date().timeIntervalSince(taskStart))
+        Self.afterTask?(record)
+        SessionStore.shared.taskEnded(sessionID, success: finished, stopped: stopAsked)
+        if kind == .poki, finished == true { Haptics.done() }
     }
+
+    private var lastOutcome: PiLoop.Outcome?
+    private var finishSummary: String?
+
+    /// Runs a task an outside agent handed over (`ask_poki`) and answers with Poki's last words, how the
+    /// task ended, and finish_task's summary.
+    func runDelegated(_ task: String) async -> (text: String, success: Bool?) {
+        ChatModel.delegatedBusy = requester ?? String(localized: "an agent")
+        defer { ChatModel.delegatedBusy = nil }
+        lastOutcome = nil
+        send(task)
+        while running { try? await Task.sleep(for: .milliseconds(100)) }
+        let replies = entries.compactMap { entry -> String? in if case .poki(let text) = entry.kind { return text }; return nil }
+        var lines: [String] = []
+        if let finishSummary { lines.append("result: \(finished == true ? "done" : "not done"): \(finishSummary)") }
+        if let last = replies.last { lines.append("Poki said: \(last)") }
+        if case .failed(let why)? = lastOutcome { lines.append("error: \(why)") }
+        if lastOutcome == nil, let tail = entries.last, case .note(.problem(let why)) = tail.kind { lines.append("error: \(why)") }
+        if lines.isEmpty { lines.append("Poki ended without an answer.") }
+        return (lines.joined(separator: "\n"), finished)
+    }
+
+    /// The display name of the agent whose hand-off is running, while one runs.
+    static var delegatedBusy: String?
 
     private func ended(_ outcome: PiLoop.Outcome, delivered youID: UUID) {
         finishPlan()
@@ -228,6 +359,16 @@ final class ChatModel {
 
     /// The phone's tools go to PokiCore; the harness's two are answered here, as task-runner.mjs answers them.
     private func perform(_ call: ToolCall) async -> PokiCore.ToolAnswer {
+        awaitingModel = false
+        let started = Date()
+        let answer = await performCall(call)
+        calls.append(CallRecord(name: call.name, arguments: call.arguments, answer: String(answer.text.prefix(2000)), ms: Int(Date().timeIntervalSince(started) * 1000), ok: !answer.isError))
+        if !stopAsked { awaitingModel = true }
+        persist()
+        return answer
+    }
+
+    private func performCall(_ call: ToolCall) async -> PokiCore.ToolAnswer {
         toolCalls += 1
         let args = (call.arguments.data(using: .utf8).flatMap { try? JSONSerialization.jsonObject(with: $0) }) as? [String: Any] ?? [:]
         switch call.name {
@@ -238,10 +379,11 @@ final class ChatModel {
             showPlan(steps, current: current)
             return PokiCore.ToolAnswer(text: Harness.planPublished, jpeg: nil, isError: false)
         case "finish_task":
-            guard let success = args["success"] as? Bool, args["summary"] is String else {
+            guard let success = args["success"] as? Bool, let summary = args["summary"] as? String else {
                 return PokiCore.ToolAnswer(text: Harness.invalidResult, jpeg: nil, isError: true)
             }
             finished = success
+            finishSummary = summary
             updatePlan { steps in
                 for i in steps.indices where steps[i].state == .current || steps[i].state == .waiting { steps[i].state = success ? .done : .failed }
             }
@@ -269,14 +411,15 @@ final class ChatModel {
     private func observe(_ event: ShellEvent) {
         guard running else { return }
         switch event {
-        case .toolStarted(let name, let summary):
+        case .toolStarted(let name, let summary, let session):
+            guard session == nil else { return }
             guard name == "do", modelPlan == nil else { return }
             updatePlan { steps in
                 for i in steps.indices where steps[i].state == .current { steps[i].state = .done }
                 steps.append(PlanStep(ActivityWords.label(summary)))
             }
-        case .toolFinished(let summary, let delivery, _, _, _):
-            guard summary != "Look at the screen", modelPlan == nil else { return }
+        case .toolFinished(let summary, let delivery, _, _, _, let session):
+            guard session == nil, summary != "Look at the screen", modelPlan == nil else { return }
             let failed = delivery.hasPrefix("failed")
             let waiting = delivery.contains("approval_required")
             updatePlan { steps in
@@ -311,7 +454,7 @@ final class ChatModel {
             updatePlan { steps in
                 for i in steps.indices where steps[i].state == .waiting { steps[i].state = .current }
             }
-        case .relay: break
+        case .relay, .session: break
         }
     }
 
@@ -344,7 +487,10 @@ final class ChatModel {
         }
     }
 
-    private func add(_ kind: ChatEntry.Kind) { entries.append(ChatEntry(kind)) }
+    private func add(_ kind: ChatEntry.Kind) {
+        if case .poki = kind, self.kind == .poki, running { Haptics.received() }
+        entries.append(ChatEntry(kind))
+    }
 
     private func markDelivered(_ id: UUID) {
         guard let i = entries.firstIndex(where: { $0.id == id }), case .you(let text, false) = entries[i].kind else { return }
@@ -357,7 +503,7 @@ final class ChatModel {
     /// screenshots only. Nothing is sent.
     private func loadSample(_ scene: String) {
         let start = Calendar.current.date(bySettingHour: 9, minute: 41, second: 0, of: Date()) ?? Date()
-        greet()
+        entries = greeting
         entries[0] = ChatEntry(.time(start))
         guard scene != "empty" else { return }
         let you = String(localized: "Text Mom “On my way”")
@@ -382,4 +528,33 @@ final class ChatModel {
                        ChatEntry(.poki(String(localized: "Sent. Mom has it. Anything else?")))]
         }
     }
+}
+
+
+/// One tool call of a conversation, without its picture.
+struct CallRecord: Codable, Equatable {
+    var name: String
+    var arguments: String
+    var answer: String
+    var ms: Int
+    var ok: Bool
+}
+
+/// A finished task, for memory and routines.
+struct TaskRecord {
+    var session: String
+    var task: String
+    var calls: [CallRecord]
+    /// finish_task's verdict; nil when the model never called it.
+    var success: Bool?
+    var summary: String?
+    var seconds: Double
+}
+
+/// Light taps for the chat, as Messages gives them.
+@MainActor
+enum Haptics {
+    static func sent() { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+    static func received() { UIImpactFeedbackGenerator(style: .soft).impactOccurred(intensity: 0.6) }
+    static func done() { UINotificationFeedbackGenerator().notificationOccurred(.success) }
 }

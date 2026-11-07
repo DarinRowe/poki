@@ -10,39 +10,67 @@ struct ChatView: View {
     var openVoice: () -> Void
     var openSetup: () -> Void
     var openModel: () -> Void
+    /// Back to the Sessions list, when the chat was opened from it.
+    var back: (() -> Void)? = nil
 
     var body: some View {
         VStack(spacing: 0) {
-            MessageListHeader(dark: false, openDetails: openDetails)
-            ScrollView {
-                VStack(spacing: 4) {
-                    Spacer(minLength: 0)
-                    ForEach(Array(chat.entries.enumerated()), id: \.element.id) { i, entry in
-                        row(entry, at: i).id(entry.id)
-                    }
-                    if needsSetup { SetupBubble(paired: model.pairingPath != nil, openSetup: openSetup) }
-                }
-                .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 10)
-                .frame(maxWidth: .infinity)
-                .containerRelativeFrame(.vertical, alignment: .bottom) { height, _ in height }
-                .animation(PlanMotion.enter, value: chat.entries)
+            MessageListHeader(dark: false, subtitle: ModelKeys.selectedModelName, back: back, openDetails: openDetails)
+            ChatTranscript(entries: chat.entries, typing: chat.awaitingModel, canRetry: chat.canRetry, retry: chat.retry) {
+                if needsSetup { SetupBubble(paired: model.pairingPath != nil, openSetup: openSetup) }
             }
-            .defaultScrollAnchor(.bottom)
-            .scrollDismissesKeyboard(.interactively)
             ComposerInputView(running: chat.running, send: chat.send, stop: chat.stop, openVoice: openVoice, openModel: openModel, newConversation: chat.newConversation)
             ModeLabels(page: .chat, dark: false)
         }
         .background(Color(.systemBackground))
+        .toolbar(.hidden, for: .navigationBar)
     }
 
     /// Setup is not finished (nothing paired yet, or a step left after pairing, such as UI Automation):
     /// the chat says so, one tap from setup, as the old Home's Setup row did.
     private var needsSetup: Bool { (model.pairingPath == nil || model.setupStepsLeft) && !model.sessionOn && !chat.running && !chat.isSample }
+}
+
+/// The bubbles of one conversation: an in-app chat, a hand-off from an outside agent, or an outside
+/// agent's own steps (grey lines). Used by the chat and by a saved session.
+struct ChatTranscript<Footer: View>: View {
+    var entries: [ChatEntry]
+    var typing = false
+    var canRetry = false
+    var retry: () -> Void = {}
+    @ViewBuilder var footer: () -> Footer
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 4) {
+                Spacer(minLength: 0)
+                ForEach(Array(entries.enumerated()), id: \.element.id) { i, entry in
+                    row(entry, at: i).id(entry.id)
+                }
+                if typing {
+                    HStack { TypingBubble(); Spacer(minLength: .messageInsetPadding) }
+                        .padding(.top, 4).transition(.opacity.combined(with: .scale(scale: 0.8, anchor: .bottomLeading)))
+                }
+                if canRetry {
+                    Button(action: retry) { Label("Try Again", systemImage: "arrow.clockwise").font(.system(size: 13, weight: .semibold)) }
+                        .buttonStyle(.bordered).buttonBorderShape(.capsule).tint(Site.blue).padding(.top, 2).padding(.bottom, 6)
+                }
+                footer()
+            }
+            .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 10)
+            .frame(maxWidth: .infinity)
+            .containerRelativeFrame(.vertical, alignment: .bottom) { height, _ in height }
+            .animation(PlanMotion.enter, value: entries)
+            .animation(.easeOut(duration: 0.2), value: typing)
+        }
+        .defaultScrollAnchor(.bottom)
+        .scrollDismissesKeyboard(.interactively)
+    }
 
     @ViewBuilder private func row(_ entry: ChatEntry, at i: Int) -> some View {
         switch entry.kind {
         case .time(let date):
-            Text("\(Text("Today").fontWeight(.semibold)) \(date.formatted(date: .omitted, time: .shortened))")
+            Text(ChatTime.header(date))
                 .font(.system(size: 12)).foregroundStyle(ChatColor.secondary)
                 .padding(.bottom, 6).frame(maxWidth: .infinity)
         case .you(let text, let delivered):
@@ -55,6 +83,16 @@ struct ChatView: View {
                         .transition(.opacity)
                 }
             }
+            .padding(.top, startsRun(i) ? 10 : 0)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        case .request(let text, let from):
+            VStack(alignment: .trailing, spacing: 2) {
+                if startsRun(i) || i == 0 {
+                    Text(verbatim: from).font(.system(size: 11, weight: .medium)).foregroundStyle(ChatColor.secondary).padding(.horizontal, 14)
+                }
+                MessageBubble(direction: .outgoing, text: text, tail: isLast(i, poki: false))
+            }
+            .frame(maxWidth: .infinity, alignment: .trailing)
             .padding(.top, startsRun(i) ? 10 : 0)
             .transition(.move(edge: .bottom).combined(with: .opacity))
         case .poki(let text):
@@ -70,15 +108,17 @@ struct ChatView: View {
             .transition(PlanMotion.stepTransition)
         case .note(let note):
             NoteLine(note: note)
+        case .step(let text, let ok):
+            StepLine(text: text, ok: ok)
         }
     }
 
     /// The last bubble from that side in the conversation has the small corner (the boards).
     private func isLast(_ i: Int, poki: Bool) -> Bool {
-        !chat.entries[(i + 1)...].contains { entry in
+        !entries[(i + 1)...].contains { entry in
             switch entry.kind {
             case .poki, .plan: poki
-            case .you: !poki
+            case .you, .request: !poki
             default: false
             }
         }
@@ -87,15 +127,89 @@ struct ChatView: View {
     /// A bubble after the other side's (or the time) leaves 10 pt more.
     private func startsRun(_ i: Int) -> Bool {
         guard i > 0 else { return false }
-        let mine = chat.entries[i].isPoki
-        for entry in chat.entries[..<i].reversed() {
+        let mine = entries[i].isPoki
+        for entry in entries[..<i].reversed() {
             switch entry.kind {
             case .note: continue
-            case .time: return false
+            case .time, .step: return true
             default: return entry.isPoki != mine
             }
         }
         return false
+    }
+}
+
+extension ChatTranscript where Footer == EmptyView {
+    init(entries: [ChatEntry]) { self.init(entries: entries, footer: { EmptyView() }) }
+}
+
+/// "Today 9:41 AM", "Yesterday 6:02 PM", "Monday 8:15 AM", "Oct 3, 8:15 AM", as Messages writes them.
+enum ChatTime {
+    static func header(_ date: Date) -> AttributedString {
+        let calendar = Calendar.current
+        let time = date.formatted(date: .omitted, time: .shortened)
+        let day: String
+        if calendar.isDateInToday(date) { day = String(localized: "Today") }
+        else if calendar.isDateInYesterday(date) { day = String(localized: "Yesterday") }
+        else if let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: date), to: calendar.startOfDay(for: Date())).day, days < 7 {
+            day = date.formatted(.dateTime.weekday(.wide))
+        } else {
+            day = date.formatted(.dateTime.month(.abbreviated).day())
+        }
+        var bold = AttributedString(day)
+        bold.font = .system(size: 12, weight: .semibold)
+        return bold + AttributedString(" \(time)")
+    }
+
+    /// The Sessions list's right-hand time: "9:41 AM", "Yesterday", "Monday", "10/3/26".
+    static func row(_ date: Date) -> String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) { return date.formatted(date: .omitted, time: .shortened) }
+        if calendar.isDateInYesterday(date) { return String(localized: "Yesterday") }
+        if let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: date), to: calendar.startOfDay(for: Date())).day, days < 7 {
+            return date.formatted(.dateTime.weekday(.wide))
+        }
+        return date.formatted(date: .numeric, time: .omitted)
+    }
+}
+
+/// Three dots that rise in turn: the model is working on its answer.
+struct TypingBubble: View {
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1 / 30)) { context in
+            let t = context.date.timeIntervalSinceReferenceDate
+            HStack(spacing: 4) {
+                ForEach(0..<3) { i in
+                    let phase = (sin((t * 2 * .pi / 1.2) - Double(i) * 0.9) + 1) / 2
+                    Circle().fill(ChatColor.secondary.opacity(0.45 + 0.45 * phase)).frame(width: 8, height: 8).offset(y: -3 * phase)
+                }
+            }
+            .padding(.vertical, 13).padding(.horizontal, 15)
+            .background(ChatColor.incoming, in: UnevenRoundedRectangle(topLeadingRadius: .cornerRadius, bottomLeadingRadius: .tailRadius,
+                                                                       bottomTrailingRadius: .cornerRadius, topTrailingRadius: .cornerRadius, style: .continuous))
+        }
+        .accessibilityLabel(Text("Poki is typing"))
+    }
+}
+
+/// An outside agent's own step: one grey line, centred, ticked when it went through.
+private struct StepLine: View {
+    var text: String
+    var ok: Bool?
+    var body: some View {
+        HStack(spacing: 5) {
+            switch ok {
+            case true?: Image(systemName: "checkmark").font(.system(size: 10, weight: .bold)).foregroundStyle(ChatColor.green)
+            case false?: Image(systemName: "xmark").font(.system(size: 10, weight: .bold)).foregroundStyle(Color(.systemRed))
+            case nil: ProgressView().controlSize(.mini)
+            }
+            Text(text).lineLimit(2)
+        }
+        .font(.system(size: 12)).foregroundStyle(ChatColor.secondary)
+        .multilineTextAlignment(.center)
+        .padding(.vertical, 3)
+        .frame(maxWidth: .infinity)
+        .transition(.opacity)
     }
 }
 
@@ -107,6 +221,10 @@ struct ChatView: View {
 // chevron, no video button, and a view of its own instead of a toolbar item.
 struct MessageListHeader: View {
     var dark: Bool
+    /// The model answering, under the name (the chat); nil on the voice page.
+    var subtitle: String? = nil
+    var title: String = "Poki"
+    var back: (() -> Void)? = nil
     var openDetails: () -> Void
 
     var body: some View {
@@ -114,7 +232,7 @@ struct MessageListHeader: View {
             VStack(spacing: 4) {
                 PokiAvatar(size: 56)
                 HStack(alignment: .firstTextBaseline, spacing: 3) {
-                    Text(verbatim: "Poki")
+                    Text(verbatim: title)
                         .font(.system(size: 12))
                         .foregroundStyle(dark ? Color.white : Color(.label))
                     Image(systemName: "chevron.right")
@@ -124,13 +242,26 @@ struct MessageListHeader: View {
                         .frame(width: 5, height: 8)
                         .foregroundStyle(dark ? Color.white.opacity(0.7) : ChatColor.secondary)
                 }
+                if let subtitle, !subtitle.isEmpty {
+                    Text(verbatim: subtitle).font(.system(size: 11)).foregroundStyle(ChatColor.secondary).lineLimit(1)
+                }
             }
             .padding(.top, 2).padding(.bottom, 8)
             .frame(maxWidth: .infinity)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(Text("Poki, details"))
+        .accessibilityLabel(Text("\(title), details"))
+        .overlay(alignment: .topLeading) {
+            if let back {
+                Button(action: back) {
+                    Image(systemName: "chevron.left").font(.system(size: 20, weight: .semibold)).foregroundStyle(Site.blue)
+                        .frame(width: 44, height: 44).contentShape(.rect)
+                }
+                .buttonStyle(.plain).padding(.leading, 6)
+                .accessibilityLabel(Text("Sessions"))
+            }
+        }
         .background {
             if !dark {
                 Rectangle().fill(.bar).ignoresSafeArea(edges: .top)

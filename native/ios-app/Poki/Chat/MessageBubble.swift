@@ -16,8 +16,9 @@ struct MessageBubble: View {
             if direction == .outgoing {
                 Spacer(minLength: .messageInsetPadding)
             }
-            Text(text)
+            Text(rendered)
                 .font(.system(size: 17))
+                .tint(direction == .incoming ? Site.blue : .white)
                 .fixedSize(horizontal: false, vertical: true)
                 .foregroundStyle(foregroundStyle)
                 .padding(.vertical, .messageVerticalPadding)
@@ -32,6 +33,15 @@ struct MessageBubble: View {
                 Spacer(minLength: .messageInsetPadding)
             }
         }
+    }
+
+    /// Poki's words as Markdown (bold, italics, code, links), as models write them; the owner's as typed.
+    private var rendered: AttributedString {
+        guard direction == .incoming, text.contains(where: { "*_`[".contains($0) }),
+              let markdown = try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) else {
+            return AttributedString(text)
+        }
+        return markdown
     }
 
     private var shape: UnevenRoundedRectangle {

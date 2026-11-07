@@ -8,8 +8,11 @@ import PokiCore
 /// Activity draws.
 enum ShellEvent: Sendable {
     case relay(RelayStatus)
-    case toolStarted(name: String, summary: String)
-    case toolFinished(summary: String, delivery: String, app: String?, thumbnail: Data?, error: String?)
+    /// `session` is the MCP client's session that made the call; nil for the app's own callers (the chat).
+    case toolStarted(name: String, summary: String, session: String?)
+    case toolFinished(summary: String, delivery: String, app: String?, thumbnail: Data?, error: String?, session: String?)
+    /// An MCP client's session began (initialize) or ended (its DELETE).
+    case session(SessionSignal)
     case approvalRequested(PendingApproval)
     case approvalEnded(id: String, approved: Bool?)
     /// The model handed a screen to the owner (a passcode, a password, a verification, a payment, other).
