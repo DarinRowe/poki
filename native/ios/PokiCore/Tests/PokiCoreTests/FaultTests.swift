@@ -409,6 +409,45 @@ final class FaultTests: XCTestCase {
         let result = await core.call("do", ["actions": [["wait_until": ["settled": true, "ms": 500]]]])
         XCTAssertTrue(result.text.contains("wait_until: the screen held still after"), result.text)
     }
+
+    /// The soak on CI (call 101): a look after a timed-out read wanted smaller limits, and setting
+    /// them opened a session, which hung; the look waited 3 s on it past its read and answered from
+    /// the backstop. The limits go with the next open instead; a look never waits on an open for them.
+    func testALookNeverWaitsOnASessionOpenForTheSnapshotLimits() async {
+        let (core, wda, _) = makeCore { $0.readTimeout = 1; $0.toolDeadline = 4 }
+        _ = await core.call("look", [:])
+        wda.delay("GET /source", 2.5)
+        let slow = await core.call("look", [:])
+        XCTAssertTrue(slow.text.contains("no element tree"), slow.text)
+        wda.source([("Button", "General"), ("Button", "Privacy")])
+        core.runner.forgetSession()
+        wda.delay("POST /session", 10)
+        let started = Date()
+        let look = await core.call("look", [:])
+        XCTAssertLessThan(Date().timeIntervalSince(started), 2.5, look.text)
+        XCTAssertTrue(look.text.contains("1 Button"), look.text)
+        XCTAssertFalse(look.text.hasPrefix("error:"), look.text)
+    }
+
+    /// CI simulator (ios-core run 48): a read took 4.5 s, two did not fit the action's 6 s, and the
+    /// wait ran out of its time as "unknown". The read before the call, when fresh, is the first
+    /// sample; a wait never runs out as unknown (it sends nothing).
+    func testWaitUntilSettledTakesTheFreshReadBeforeItAndNeverEndsUnknown() async {
+        let (core, wda, _) = makeCore { $0.readTimeout = 1.5; $0.toolDeadline = 8; $0.actionCap = 3 }
+        wda.delay("GET /source", 1.2)
+        _ = await core.call("look", [:])
+        let started = Date()
+        let result = await core.call("do", ["actions": [["wait_until": "settled"]]])
+        XCTAssertTrue(result.text.contains("wait_until: the screen held still after"), result.text)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 5, "one read, matched against the look before")
+
+        // The screen changed since the read before, and only one slow read fits: the wait says so, and nothing is unknown.
+        wda.source([("Button", "Other"), ("Button", "Screen")])
+        wda.delay("GET /source", 1.6)
+        let changed = await core.call("do", ["actions": [["wait_until": "settled"]]])
+        XCTAssertTrue(changed.text.contains("wait_until: not seen within") && changed.text.contains("(1 reads)"), changed.text)
+        XCTAssertFalse(changed.text.contains("unknown"), changed.text)
+    }
 }
 
 /// The owner's Mail test on the phone (Nov 6 2026, 10:34 pm ET): a launch sent while the runner was

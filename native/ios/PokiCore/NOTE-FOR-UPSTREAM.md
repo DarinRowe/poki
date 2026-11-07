@@ -79,6 +79,9 @@ that no answer may halt the agent and from the first Poki Gym runs (`native/ios-
 13. Focus and a field's value are read from the tree (no `GET /element/active`, which waits on the
     app); `scroll_to` gets 12 s and reads after every swipe; the screenshot is retaken when the tree
     came late.
+14. Typing waits for a busy runner or sends nothing (never `unknown`); a `do` never runs past its
+    backstop; `wait_until: settled` starts from the fresh read before it; a read never waits on a
+    session open; an explicit note when neither the runner nor the host gives a picture.
 
 Still not done: a `collect` or `expect` field, a `recover` action, and redaction of sensitive text
 (Zhehan: out of scope for now).
