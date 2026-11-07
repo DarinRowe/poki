@@ -30,7 +30,7 @@ export class MessageRunner {
     if (this.task && !this.task.finished) {
       if (text.toLowerCase() === '/stop') { await this.task.stop(); return; }
       this.task.steer(text);
-      await this.send('Added to the current task. Send /stop to stop it now.');
+      void this.send('Added to the current task. Send /stop to stop it now.');
       return;
     }
     if (this.finished) await this.finished;
