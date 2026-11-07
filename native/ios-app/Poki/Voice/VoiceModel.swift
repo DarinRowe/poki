@@ -116,6 +116,18 @@ struct TurnClock {
     var spoken: Date?
     var callNames: [String] = []
     var reply = ""
+    /// Tokens the turn's responses used, from `response.done` (text_in, audio_in, text_cached, audio_cached, text_out, audio_out).
+    var tokens: [String: Int] = [:]
+
+    mutating func add(usage: [String: Any]) {
+        let input = usage["input_token_details"] as? [String: Any] ?? [:]
+        let cached = input["cached_tokens_details"] as? [String: Any] ?? [:]
+        let output = usage["output_token_details"] as? [String: Any] ?? [:]
+        for (key, source, field) in [("text_in", input, "text_tokens"), ("audio_in", input, "audio_tokens"), ("text_cached", cached, "text_tokens"),
+                                     ("audio_cached", cached, "audio_tokens"), ("text_out", output, "text_tokens"), ("audio_out", output, "audio_tokens")] {
+            tokens[key, default: 0] += source[field] as? Int ?? 0
+        }
+    }
 
     func ms(_ step: KeyPath<TurnClock, Date?>) -> Int? {
         guard let said, let at = self[keyPath: step] else { return nil }
@@ -278,8 +290,9 @@ final class VoiceModel {
         case "response.created":
             activeResponse = (event["response"] as? [String: Any])?["id"] as? String
         case "response.done":
-            let id = (event["response"] as? [String: Any])?["id"] as? String
-            if id == activeResponse { activeResponse = nil }
+            let response = event["response"] as? [String: Any]
+            if let usage = response?["usage"] as? [String: Any] { clock.add(usage: usage) }
+            if response?["id"] as? String == activeResponse { activeResponse = nil }
             flush()
         case "response.output_audio_transcript.done":
             if let text = event["transcript"] as? String, !text.isEmpty {
@@ -397,10 +410,11 @@ final class VoiceModel {
             await start(microphone: false)
             if await until(10, { self.ready }), let pcm = try? await bridge.utterance(n) {
                 say(pcm24k: pcm)
-                let ok = await until(40, { self.clock.spoken != nil && !self.clock.reply.isEmpty && self.phase == .listening })
+                let ok = await until(40, { self.clock.spoken != nil && !self.clock.reply.isEmpty && self.phase == .listening && self.activeResponse == nil })
                 report["ok"] = ok
                 report["calls"] = clock.callNames
                 report["reply"] = clock.reply
+                report["tokens"] = clock.tokens
                 report["ms"] = ["heard": clock.ms(\.heard), "call": clock.ms(\.call), "toolDone": clock.ms(\.toolDone), "delivered": clock.ms(\.delivered), "spoken": clock.ms(\.spoken)].compactMapValues { $0 }
             } else {
                 report["ok"] = false
