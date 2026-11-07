@@ -74,6 +74,8 @@ that no answer may halt the agent and from the first Poki Gym runs (`native/ios-
     tree read that times out is read again at half depth within the same call; a WKWebView with
     none of its page in the tree is listed as collapsed with the picture's text; `scroll_to` says
     how far it got when its time runs out.
+12. After a timed-out read the child cap (`snapshotMaxChildren`) is lowered before the depth; a
+    `look` with no picture in 6 s falls back to the host's screenshot; `scroll_to` searches by element.
 
 Still not done: a `collect` or `expect` field, a `recover` action, and redaction of sensitive text
 (Zhehan: out of scope for now).
