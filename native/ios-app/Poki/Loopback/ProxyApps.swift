@@ -12,6 +12,9 @@ struct ProxyApp: Identifiable, Hashable {
     let minimumVersion: String
     let install: Install
     let steps: [String]
+    /// The setup comes from the app's own documentation (true), or from what users and other
+    /// loopback tools report (false): the page says so, and the live check above the list is the proof.
+    var documented = true
 
     var isInstalled: Bool {
         guard let url = URL(string: "\(scheme)://") else { return false }
@@ -40,7 +43,20 @@ enum ProxyApps {
                  steps: ["Tap Install Plugin, then confirm in Loon.", "Make sure the plugin and Loon VPN are turned on."]),
         ProxyApp(id: "shadowrocket", name: "Shadowrocket", scheme: "shadowrocket", minimumVersion: "",
                  install: .toggle("Settings › Other › Include route 10.7.0.1/32"),
-                 steps: ["Open Shadowrocket.", "Go to Settings › Other and turn on Include route 10.7.0.1/32 (update Shadowrocket if missing).", "Keep Shadowrocket connected."]),
+                 steps: ["Open Shadowrocket.", "Go to Settings › Other and turn on Include route 10.7.0.1/32 (update Shadowrocket if missing).", "Keep Shadowrocket connected."],
+                 documented: false),
+        ProxyApp(id: "stash", name: "Stash", scheme: "stash", minimumVersion: "",
+                 install: .snippet("tun:\n  loopback-address:\n    - 10.7.0.1"),
+                 steps: ["Open Stash. If its TUN or override settings have a loopback or 10.7.0.1 option, turn it on.", "Otherwise add the lines below to an override (Settings › Overrides) and enable it.", "Reconnect Stash and keep it connected."],
+                 documented: false),
+        ProxyApp(id: "quantumult-x", name: "Quantumult X", scheme: "quantumult-x", minimumVersion: "",
+                 install: .snippet("reflected_routes = 10.7.0.1/32"),
+                 steps: ["Copy the line below.", "Add it to the [general] section of your Quantumult X profile and save.", "Reconnect Quantumult X and keep it connected."],
+                 documented: false),
+        ProxyApp(id: "clashmi", name: "Clash Mi", scheme: "clashmi", minimumVersion: "",
+                 install: .snippet("tun:\n  loopback-address:\n    - 10.7.0.1"),
+                 steps: ["Copy the lines below.", "Add them to the tun section of your Clash Mi profile, import it, then connect.", "Keep Clash Mi connected. Users report this works on iOS 26.3 and failed on 26.4; the check above tells."],
+                 documented: false),
         ProxyApp(id: "sing-box", name: "sing-box", scheme: "sing-box", minimumVersion: "1.12.0",
                  install: .snippet("\"loopback_address\": [\"10.7.0.1\"]"),
                  steps: ["Copy the line below.", "Add it to the tun inbound in your sing-box profile, then reload the profile.", "Keep IPv6 out of the tun address list."]),

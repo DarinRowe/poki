@@ -300,6 +300,10 @@ private struct LoopbackPage: View {
         .whiteCard()
         .padding(.horizontal, 20)
         .disabled(externalLocked)
+        if let chosen = model.setup.proxyApp, !model.loopback.isWorking, model.setup.loopback == .proxy {
+            let name = ProxyApps.all.first { $0.id == chosen }?.name ?? "LocalDevVPN"
+            SetupFootnote(text: "\(name) is chosen, but nothing answers at 10.7.0.1 right now. Open \(name), make sure it is connected with the loopback on, then come back; this page updates by itself.")
+        }
         otherWays
         Color.clear.frame(height: 0).onAppear {
             if open == nil { open = model.setup.proxyApp }
@@ -407,14 +411,14 @@ private struct LoopbackPage: View {
         }
     }
 
-    private func rowHeader(_ name: String, tag: Text?, tagInUse: Bool, sub: Text?, id: String) -> some View {
+    private func rowHeader(_ name: String, tag: Text?, tagInUse: Bool, tagBad: Bool = false, sub: Text?, id: String) -> some View {
         Button { withAnimation(.snappy) { open = open == id ? nil : id } } label: {
             HStack(spacing: 10) {
                 Text(verbatim: name).site(17, line: 22).foregroundStyle(Site.text)
                 if let tag {
-                    tag.site(11, .semibold, line: 14).foregroundStyle(tagInUse ? Site.okInk : Site.ink)
+                    tag.site(11, .semibold, line: 14).foregroundStyle(tagInUse ? Site.okInk : tagBad ? Color(hex: 0xB42318) : Site.ink)
                         .padding(.vertical, 2).padding(.horizontal, 7)
-                        .background(tagInUse ? Color(hex: 0x3CCF7A).opacity(0.16) : Site.tint, in: .rect(cornerRadius: 6))
+                        .background(tagInUse ? Color(hex: 0x3CCF7A).opacity(0.16) : tagBad ? Color(hex: 0xF04438).opacity(0.14) : Site.tint, in: .rect(cornerRadius: 6))
                 }
                 if let sub { sub.site(13, line: 16).foregroundStyle(Site.text3) }
                 Spacer(minLength: 0)
@@ -428,11 +432,21 @@ private struct LoopbackPage: View {
     @ViewBuilder private func proxyRow(_ app: ProxyApp) -> some View {
         let chosen = model.setup.proxyApp == app.id
         let expanded = open == app.id
-        rowHeader(app.name, tag: chosen ? Text("In Use") : app.isInstalled ? Text("Installed") : nil, tagInUse: chosen,
+        // The tag says what is true now: the chosen app is "Working" only while 10.7.0.1 answers;
+        // chosen and silent reads "Not Answering" (the card above says what to do).
+        let working = chosen && model.loopback.isWorking
+        rowHeader(app.name, tag: working ? Text("Working") : chosen ? Text("Not Answering") : app.isInstalled ? Text("Installed") : nil, tagInUse: working, tagBad: chosen && !working,
                   sub: expanded && !app.minimumVersion.isEmpty ? Text("\(app.minimumVersion) or later") : nil, id: app.id)
         if expanded {
             VStack(alignment: .leading, spacing: 10) {
                 NumberedLines(lines: app.steps, onWhite: true)
+                if !app.documented {
+                    Text("As reported by users of \(app.name); not checked against its documentation. The check at the top tells whether it works.")
+                        .site(12, line: 16).foregroundStyle(Site.text3).fixedSize(horizontal: false, vertical: true)
+                }
+                if chosen, !working, case .snippet = app.install {
+                    inkLink("Open \(app.name)") { if let url = URL(string: "\(app.scheme)://") { UIApplication.shared.open(url) } }
+                }
                 switch app.install {
                 case .url(let url):
                     inkLink(app.id == "surge" ? "Install Poki Module" : "Install Poki Plugin") { choose(app); UIApplication.shared.open(url) }
@@ -458,7 +472,9 @@ private struct LoopbackPage: View {
 
     @ViewBuilder private var localDevVPN: some View {
         let id = "localdevvpn"
-        rowHeader("LocalDevVPN", tag: model.setup.proxyApp == id ? Text("In Use") : nil, tagInUse: true, sub: Text("Free on the App Store"), id: id)
+        let chosen = model.setup.proxyApp == id
+        let working = chosen && model.loopback.isWorking
+        rowHeader("LocalDevVPN", tag: working ? Text("Working") : chosen ? Text("Not Answering") : nil, tagInUse: working, tagBad: chosen && !working, sub: Text("Free on the App Store"), id: id)
         if open == id {
             VStack(alignment: .leading, spacing: 10) {
                 NumberedLines(lines: [
@@ -504,6 +520,7 @@ private struct PairingPage: View {
         case .advertising?: return nil
         case .failed?: return MainAction(title: "Try Again") { pair($0) }
         default:
+            guard SetupStep.onDevicePairing else { return nil }
             if model.pairingTrouble != nil { return MainAction(title: "Pair Again") { pair($0) } }
             if model.pairingPath == nil { return MainAction(title: "Start Pairing") { pair($0) } }
             return nil
@@ -545,7 +562,7 @@ private struct PairingPage: View {
                 if let trouble = model.pairingTrouble {
                     VStack(alignment: .leading, spacing: 8) {
                         NoteLine(symbol: "exclamationmark.triangle", text: String(localized: "The phone no longer accepts this pairing: \(trouble)"))
-                        Text("This happens after a restore, a reset of Location & Privacy, or when the phone forgot Poki. Pair again; the old key is replaced.")
+                        Text(SetupStep.onDevicePairing ? "This happens after a restore, a reset of Location & Privacy, or when the phone forgot Poki. Pair again; the old key is replaced." : "This happens after a restore, a reset of Location & Privacy, or when the phone forgot Poki. Pair again from Poki Setup on your computer and send the new file here; the old key is replaced.")
                             .site(13, line: 18).foregroundStyle(Site.c3).fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(16).frame(maxWidth: .infinity, alignment: .leading).glassCard()
@@ -556,14 +573,21 @@ private struct PairingPage: View {
                                 ?? String(localized: "Paired. Checked the next time the runner starts."))
                         .padding(16).frame(maxWidth: .infinity, alignment: .leading).glassCard()
                         .padding(.horizontal, 20).padding(.top, 24)
-                } else {
+                } else if SetupStep.onDevicePairing {
                     InstructionsCard(lines: [
                         "Connect to Wi‑Fi and tap **Start Pairing**. Allow local network access when prompted.",
                         "Poki will open Settings. Go to **Privacy & Security › Developer Mode** and tap **Pair with Poki**.",
                         "Enter the code shown here and on the Lock Screen.",
                     ])
+                } else {
+                    fromComputer
                 }
             }
+        }
+        if let note = model.pairingNote {
+            NoteLine(symbol: note.hasPrefix(String(localized: "Pairing file received.")) ? "checkmark.circle.fill" : "info.circle",
+                     color: note.hasPrefix(String(localized: "Pairing file received.")) ? Site.ok : .white, text: note)
+                .padding(.horizontal, 36).padding(.top, 10)
         }
         diskImage.padding(.horizontal, 20).padding(.top, 14)
         SectionCaption(text: "OTHER WAYS")
@@ -588,8 +612,19 @@ private struct PairingPage: View {
     }
 
     private var cancelShown: Bool { if case .pin? = model.pairing { true } else { false } }
-    /// Paired and fine: pairing again is the other way.
-    private var pairAgainShown: Bool { model.pairing == nil && model.pairingTrouble == nil && model.pairingPath != nil }
+    /// Paired and fine: pairing again is the other way (on the phone itself, iOS 27 and later).
+    private var pairAgainShown: Bool { SetupStep.onDevicePairing && model.pairing == nil && model.pairingTrouble == nil && model.pairingPath != nil }
+
+    /// Before iOS 27 the phone cannot pair with itself: the pairing file is made on a computer with
+    /// Poki Setup (or any tool that writes a lockdown pairing file) and sent here.
+    @ViewBuilder private var fromComputer: some View {
+        InstructionsCard(lines: [
+            "Pairing on the phone itself needs iOS 27; this iPhone runs iOS \(UIDevice.current.systemVersion). Pair it from a computer instead.",
+            "Open **Poki Setup** on your Mac or PC, connect this iPhone by cable, and tap **Pair**. Tap **Trust** on the iPhone when asked.",
+            "Send the pairing file here: scan the code Poki Setup shows with the Camera, AirDrop the file to this iPhone and open it with Poki, or tap **Import Pairing File** below.",
+        ])
+        SetupFootnote(text: "No Poki Setup yet? Any lockdown pairing file works: pymobiledevice3, jitterbugpair or StikPair make one. Import it below.")
+    }
 
     private func code(_ pin: String) -> some View {
         VStack(spacing: 14) {

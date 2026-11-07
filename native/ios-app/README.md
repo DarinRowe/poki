@@ -174,9 +174,12 @@ connection explicitly; an existing service response alone does not finish the se
   change an external VPN configuration or start its local VPN merely because the app opened. While
   Poki is on, its own tunnel is dialled again after a failure (see above), and stops when it detects another VPN (best effort, as above).
 - **Proxy app**: Surge (module, `surge:///install-module?url=`), Loon (plugin,
-  `loon://import?plugin=`), Shadowrocket (its "Include route 10.7.0.1/32" toggle) or sing-box (one
-  line in the tun inbound). Files in `deploy/proxy-modules/`, served from the fork's raw GitHub URL
-  for now (`ProxyApps.modulesBase`).
+  `loon://import?plugin=`), Shadowrocket (its "Include route 10.7.0.1/32" toggle), sing-box (one
+  line in the tun inbound), and, as users report rather than as their makers document, Stash and
+  Clash Mi (`loopback-address` in the tun section) and Quantumult X (`reflected_routes` in
+  `[general]`); those entries say so on the page. Files and sources in `deploy/proxy-modules/`,
+  served from the fork's raw GitHub URL for now (`ProxyApps.modulesBase`). Each row's tag is live:
+  the chosen app reads Working while 10.7.0.1 answers and Not Answering while it does not.
 - **External build without a proxy app**: LocalDevVPN (App Store). This is an additional app and
   must be tested with the installed iOS version. It may displace another packet-tunnel VPN.
 
@@ -184,6 +187,25 @@ The setup step completes only when a TCP connection to the phone's RemotePairing
 service succeeds. Selecting an app, saving a profile or a VPN's Connected label alone never completes
 it. Built-in VPN transport cannot be validated in the Simulator. See [the design and acceptance
 checks](../../docs/ios-loopback.md).
+
+## Pairing by iOS version, and the pairing file's life
+
+Pairing on the phone itself (Settings > Privacy & Security > Developer Mode > Pair with Poki) exists
+from iOS 27 (`SetupStep.onDevicePairing`). On earlier versions the pairing page shows the other way
+only: pair from a computer with Poki Setup (or pymobiledevice3, jitterbugpair, StikPair), then send
+the file to the phone. Poki takes a pairing file three ways besides Import Pairing File:
+
+- A file opened with Poki from AirDrop or Files (`CFBundleDocumentTypes`: property lists and
+  `.mobiledevicepairing`).
+- `poki://pairing?url=http://<computer on the LAN>:<port>/<file>&sha256=<hex>`: Poki fetches the
+  file over the local network and checks the digest; Poki Setup shows this link as a code for the
+  Camera. `poki://pairing?data=<base64url>` carries a small file in the link itself.
+- `poki://setup?relay=<origin>` sets the relay address Poki Setup configured.
+
+The pairing file and the setup state are mirrored into the Keychain (`SetupVault`,
+`ThisDeviceOnly`). An update keeps the container anyway; a delete-and-reinstall, or a sideloading
+tool that could not keep the container, gets both back on the first launch as long as the same team
+signs the app, so the owner is not sent through setup again.
 
 ## Device test checklist
 

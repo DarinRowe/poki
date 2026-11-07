@@ -113,5 +113,11 @@ extension RelayAddress {
 }
 
 extension Data {
+    /// base64url (RFC 4648 §5) without padding, as `base64URL` makes it.
+    init?(base64URL text: String) {
+        var s = text.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        while s.count % 4 != 0 { s += "=" }
+        self.init(base64Encoded: s)
+    }
     var base64URL: String { base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "") }
 }

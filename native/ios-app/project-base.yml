@@ -75,7 +75,18 @@ targets:
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
         NSBonjourServices: [_remotepairing-pairable-host._tcp, _remotepairing-manual-pairing._tcp]
-        LSApplicationQueriesSchemes: [karing, surge, loon, shadowrocket, sing-box]
+        LSApplicationQueriesSchemes: [karing, surge, loon, shadowrocket, sing-box, stash, quantumult-x, clashmi]
+        # A pairing file sent by AirDrop, Files or Poki Setup opens in Poki (Setup > Pair This iPhone).
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Pairing File
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [nz.zheha.poki.pairing, com.apple.property-list]
+        UTImportedTypeDeclarations:
+          - UTTypeIdentifier: nz.zheha.poki.pairing
+            UTTypeDescription: iPhone pairing file
+            UTTypeConformsTo: [public.data]
+            UTTypeTagSpecification:
+              public.filename-extension: [mobiledevicepairing]
         ITSAppUsesNonExemptEncryption: false
     entitlements:
       path: Poki/Poki.entitlements

@@ -7,6 +7,9 @@ What changed in each round, and what still needs the phone. Newest first.
 Changed:
 - In-process path: the automation session is closed after the idle time, from Stop and when Poki is turned off, so iOS's "Automation Running" banner shows only while an agent works, as on the runner path. The next agent request opens a new session (new generation; an action meant for the old one is refused). A restart PokiCore asks for closes and reopens the session instead of being ignored. `scripts/inprocess-sim/check.sh --cycle` checks close, refusal while closed, reopen, read, tap and type on a simulator, and CI runs all three check modes.
 - The idle stop applies to the in-process path too (Settings > Stop When Idle For).
+- Setup, loopback page: the chosen app's tag is live (Working while 10.7.0.1 answers, Not Answering while it does not, with a line saying what to do); Stash, Quantumult X and Clash Mi added as users report them (marked "as reported", with the lines to add); Egern left out for want of a documented setting.
+- Setup, pairing page: on iOS 26 and earlier, where the phone cannot pair with itself, the page shows pairing from a computer (Poki Setup) and the ways to send the file; Start Pairing and Pair Again appear only on iOS 27 and later. A pairing file opened from AirDrop or Files, or sent by `poki://pairing?url=…&sha256=…` from Poki Setup, lands in Poki; `poki://setup?relay=…` sets the relay.
+- The pairing file and the setup state are kept in the Keychain as well, so a reinstall or a re-sign by a sideloading tool does not send the owner through setup again.
 
 Needs the phone:
 - That the banner goes within seconds of the idle stop, and that reopening asks for no passcode within the same boot.

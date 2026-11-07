@@ -1,3 +1,4 @@
+import CryptoKit
 import PokiCore
 import SwiftUI
 import UIKit
@@ -103,6 +104,9 @@ final class AppModel {
 
     init(launcher: RunnerLauncher = RustLauncher(), pairer: DevicePairing = RustPairing()) {
         ActivityController.endAll()
+        // A reinstall emptied the container: the pairing file comes back from the Keychain (and the
+        // setup state did the same in `SetupState.load`), so the owner is not sent through setup again.
+        if SetupVault.restorePairingIfMissing() { AppLog.shared.add("pairing", "pairing file restored from the Keychain after a reinstall") }
         let core = LiveCore(host: host, transport: automationPath == .inProcess ? InProcessWDA(screen: UIScreen.main.bounds.size) : URLSessionTransport())
         self.core = core
         // Voice taps get the same rules and approval card as an agent's `do`.
@@ -822,13 +826,62 @@ final class AppModel {
     func importPairingFile(from url: URL) throws {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        let data = try Data(contentsOf: url)
+        try importPairingFile(try Data(contentsOf: url), how: "imported")
+    }
+
+    /// A pairing file as bytes: from Files, AirDrop, a `poki://pairing` link or Poki Setup on a computer.
+    func importPairingFile(_ data: Data, how: String) throws {
         // A lockdown pairing plist or an RPPairing file; both are property lists.
         _ = try PropertyListSerialization.propertyList(from: data, format: nil)
         try data.write(to: AppFiles.pairingFile, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        SetupVault.storePairing(data)
         setup.pairingFile = AppFiles.pairingFile.path
         pairingTrouble = nil; pairingVerifiedAt = nil
-        log.add("pairing", "pairing file imported")
+        pairingNote = String(localized: "Pairing file received.")
+        log.add("pairing", "pairing file \(how)")
+    }
+
+    /// What the last pairing link or file did, for the pairing page.
+    var pairingNote: String?
+
+    /// A link Poki was opened with. `poki://pairing?url=…[&sha256=…]` fetches a pairing file (Poki
+    /// Setup serves it on the local network and shows the link as a code); `poki://pairing?data=…`
+    /// carries one in base64url; `poki://setup?relay=…` sets the relay. A file URL is a pairing file
+    /// opened from AirDrop or Files. Returns the setup step to show, or nil when the link was none of these.
+    func open(link url: URL) -> SetupStep? {
+        if url.isFileURL {
+            do { try importPairingFile(from: url) } catch { pairingNote = String(localized: "Invalid Pairing File: \(error.localizedDescription)") }
+            try? FileManager.default.removeItem(at: url)
+            return .pairing
+        }
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        func item(_ name: String) -> String? { items.first { $0.name == name }?.value }
+        switch url.host() {
+        case "pairing":
+            if let text = item("data"), let data = Data(base64URL: text) {
+                do { try importPairingFile(data, how: "received by link") } catch { pairingNote = String(localized: "Invalid Pairing File: \(error.localizedDescription)") }
+            } else if let from = item("url").flatMap(URL.init(string:)), ["http", "https"].contains(from.scheme ?? "") {
+                let expected = item("sha256")?.lowercased()
+                pairingNote = String(localized: "Fetching the pairing file from \(from.host() ?? "your computer")…")
+                Task {
+                    do {
+                        let (data, _) = try await URLSession.shared.data(from: from)
+                        if let expected, SHA256.hash(data: data).map({ String(format: "%02x", $0) }).joined() != expected {
+                            throw NSError(domain: "poki", code: 1, userInfo: [NSLocalizedDescriptionKey: String(localized: "the file does not match the link")])
+                        }
+                        try importPairingFile(data, how: "fetched from \(from.host() ?? "?")")
+                    } catch { pairingNote = String(localized: "Could not get the pairing file: \(error.localizedDescription)") }
+                }
+            } else {
+                pairingNote = String(localized: "The pairing link carried no file.")
+            }
+            return .pairing
+        case "setup":
+            // Poki Setup hands over the relay it configured (the Cloudflare proxy); the chat shows it.
+            if let relay = item("relay") { log.add("relay", setRelay(relay) ? "set by link" : "link carried no relay address") }
+            return nil
+        default: return nil
+        }
     }
 
     func startPairing() {
@@ -888,6 +941,7 @@ final class AppModel {
             pairingKeepAlive.stop()
             try? (url as NSURL).setResourceValue(URLFileProtection.completeUntilFirstUserAuthentication, forKey: .fileProtectionKey)
             setup.pairingFile = url.path
+            if let data = try? Data(contentsOf: url) { SetupVault.storePairing(data) }
             pairingTrouble = nil; pairingVerifiedAt = nil
             log.add("pairing", "paired on the phone")
             activity.update { $0.phase = .idle; $0.pin = nil; $0.headline = "Paired" }

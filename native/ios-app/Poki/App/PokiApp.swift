@@ -68,7 +68,12 @@ struct RootView: View {
             // Pairing is not interrupted: it stays on the pairing step, where the PIN is.
             guard !model.pairingUnderWay else { return }
             settings = nil; setupStart = nil; details = nil
-            if url.host() == "voice" { page = .voice; model.voice.open(url) } else { page = .chat }
+            // A pairing file or a setup link (from Poki Setup on a computer, AirDrop or Files) opens
+            // setup at that step, where the result is shown.
+            if let step = model.open(link: url) {
+                page = .chat
+                setupStart = SetupStart(index: SetupStep.shown.firstIndex(of: step) ?? 0)
+            } else if url.host() == "voice" { page = .voice; model.voice.open(url) } else { page = .chat }
         }
         .onAppear(perform: openLaunchScreen)
         .task {
