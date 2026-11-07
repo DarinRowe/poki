@@ -7,7 +7,7 @@ import { join, extname, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import sharp from 'sharp';
-import { root, stateDir, idevice } from './config.mjs';
+import { root, stateDir, idevice, noUsbDevice } from './config.mjs';
 import { definitions } from './tools.mjs';
 import { platformTool, inventorySimulators, simulatorModels, readSettings, closePlatform } from './platform.mjs';
 import { interaction, promptWarning, readScreen, screenChanged, justReadMs } from './interaction.mjs';
@@ -355,7 +355,10 @@ export class Devices {
       switch (name) {
         case 'acquire_device': return text(await this.coordinator.acquire(this, await this.target(false), args.ttl_seconds ?? 120));
         case 'poki_mcp_status': return text({ update: await updateNotice(), implementation: `Poki MCP ${version}`, ...await buildInfo(), registered_device_tools: 50, observation_tools: 1, management_tools: 4, transport_tools: 2, total_tools: definitions.length, devices: (await this.inventory()).length, selected: this.selected ?? null, approval_mode: process.env.POKI_MCP_APPROVAL_MODE === 'allow' ? 'operator-preapproved' : 'ask-human' });
-        case 'list_devices': return text({ devices: await this.describeDevices(args.include_all_simulators), ...(args.include_all_simulators ? { simulator_models: await simulatorModels() } : {}) });
+        case 'list_devices': {
+          const devices = await this.describeDevices(args.include_all_simulators);
+          return text({ devices, ...(devices.some(d => d.kind === 'physical') ? {} : { notice: noUsbDevice }), ...(args.include_all_simulators ? { simulator_models: await simulatorModels() } : {}) });
+        }
         case 'disconnect_device':
         case 'reconnect_device': {
           const target = await this.target();

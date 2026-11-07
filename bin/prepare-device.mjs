@@ -3,13 +3,14 @@ import { execFile } from 'node:child_process';
 import { parseArgs, promisify } from 'node:util';
 import { access } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { root, idevice } from '../src/config.mjs';
+import { root, idevice, noUsbDevice } from '../src/config.mjs';
 
 const fail = message => { console.error(message); process.exit(1); };
 const execute = promisify(execFile);
 const { values: options, positionals } = parseArgs({ allowPositionals: true, options: { image: { type: 'string' } } });
 const { stdout } = await execute('python3', [join(root, 'native/devices.py')], { timeout: 8000 });
 const ids = [...new Set(JSON.parse(stdout).map(d => d.id).filter(Boolean))];
+if (!ids.length) fail(noUsbDevice);
 const selected = positionals[0] ?? (ids.length === 1 ? ids[0] : undefined);
 if (!selected || !ids.includes(selected)) fail('Connect one unlocked, trusted iPhone, or pass a connected device id.');
 const call = async args => execute(idevice, ['--udid', selected, ...args], { timeout: 120000, maxBuffer: 8 * 1024 * 1024 });
