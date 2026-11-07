@@ -354,9 +354,9 @@ final class AppModel {
     private func coreState(of status: RunnerStatus) -> RunnerState {
         let preLaunch = ["connecting", "pairing", "tunnel", "waiting_network", "standby", "idle"].contains(status.state)
         if preLaunch, !loopback.isWorking, loopback.state != .checking || status.state == "waiting_network" {
-            let since = loopback.droppedAt.map { " since \(Self.clock.string(from: $0))" } ?? ""
-            let why = loopback.state == .noAnswer ? "the proxy app's tunnel is on but does not reflect 10.7.0.1" : "the loopback at 10.7.0.1 is not answering"
-            return .starting("waiting for the loopback\(since): \(why). The owner turns the proxy app's tunnel (Surge, Loon, Shadowrocket or sing-box) back on; the runner starts again by itself within seconds of that. Nothing on the phone changes meanwhile")
+            return .waitingForLoopback(since: loopback.droppedAt.map(Self.clock.string(from:)),
+                                       tunnelWithoutAnswer: loopback.state == .noAnswer,
+                                       connection: setup.loopback == .builtIn ? .builtIn : .external)
         }
         return status.coreState
     }

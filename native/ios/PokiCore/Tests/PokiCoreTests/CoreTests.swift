@@ -33,6 +33,27 @@ final class BasicsTests: XCTestCase {
     }
 }
 
+/// What the agent reads while the loopback is down: the owner's way back depends on the connection.
+final class LoopbackWaitTests: XCTestCase {
+    func testTheBuiltInConnectionSendsTheOwnerBackToPokiNotToAProxyApp() {
+        XCTAssertEqual(
+            RunnerState.waitingForLoopback(since: "14:02:11", tunnelWithoutAnswer: false, connection: .builtIn),
+            .starting("waiting for the loopback since 14:02:11: Poki's local connection is off, or another VPN app replaced it. The owner opens Poki and taps Enable local connection in Setup, or turns Poki's VPN back on in iOS Settings > VPN; the runner starts again by itself within seconds of that. Nothing on the phone changes meanwhile"))
+        XCTAssertEqual(
+            RunnerState.waitingForLoopback(since: nil, tunnelWithoutAnswer: true, connection: .builtIn),
+            .starting("waiting for the loopback: Poki's local connection is on, but this iPhone's developer services do not answer at 10.7.0.1. The owner opens Poki and taps Enable local connection in Setup, or turns Poki's VPN back on in iOS Settings > VPN; the runner starts again by itself within seconds of that. Nothing on the phone changes meanwhile"))
+    }
+
+    func testAProxyAppKeepsItsOwnInstructions() {
+        XCTAssertEqual(
+            RunnerState.waitingForLoopback(since: "14:02:11", tunnelWithoutAnswer: false, connection: .external),
+            .starting("waiting for the loopback since 14:02:11: the loopback at 10.7.0.1 is not answering. The owner turns the proxy app's tunnel (Surge, Loon, Shadowrocket or sing-box) back on; the runner starts again by itself within seconds of that. Nothing on the phone changes meanwhile"))
+        XCTAssertEqual(
+            RunnerState.waitingForLoopback(since: nil, tunnelWithoutAnswer: true, connection: .external),
+            .starting("waiting for the loopback: the proxy app's tunnel is on but does not reflect 10.7.0.1. The owner turns the proxy app's tunnel (Surge, Loon, Shadowrocket or sing-box) back on; the runner starts again by itself within seconds of that. Nothing on the phone changes meanwhile"))
+    }
+}
+
 final class ToolTests: XCTestCase {
     func testLookListsElementsWithAPicture() async {
         let (core, _, _) = makeCore()

@@ -18,6 +18,9 @@ result and the time next to each line.
 - [ ] Built-in: a normal web page still loads; no DNS or internet default route is installed by Poki.
 - [ ] Built-in: disconnect/reconnect, lock/unlock, and reboot recover after an explicit reconnect.
   Opening Poki alone must not replace another active VPN. Choosing External app stops only Poki's VPN.
+- [ ] Built-in, with Poki on: turn Poki's VPN off in Settings > VPN. The agent's runner status says to
+  open Poki and tap Enable local connection, and names no proxy app. Tapping it while Poki is on brings
+  the runner back within seconds.
 - [ ] External build: no PokiTunnel is embedded and no built-in enable button is offered. Continue
   with an external option below. Use this build when Network Extension signing is unavailable.
 - [ ] Or LocalDevVPN (App Store) on, for people without a proxy app.

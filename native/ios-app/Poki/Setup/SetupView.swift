@@ -377,12 +377,14 @@ struct LoopbackContent: View {
         }
     }
 
+    /// Also while Poki is on with the built-in connection: reconnecting it is how the owner recovers
+    /// when it drops mid-session (the agent is told to tap this), and it changes no choice.
     private var enableButton: some View {
         Button("Enable local connection", systemImage: "arrow.triangle.2.circlepath") {
             model.chooseConnection(.builtIn)
             Task { try? await model.tunnel.connect(); model.loopback.check() }
         }
-        .disabled(model.tunnel.busy || model.connectionInUse)
+        .disabled(model.tunnel.busy || (model.connectionInUse && model.setup.loopback != .builtIn))
     }
 
     private func proxyRow(_ app: ProxyApp) -> some View {

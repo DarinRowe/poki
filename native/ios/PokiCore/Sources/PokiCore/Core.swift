@@ -55,6 +55,33 @@ public enum RunnerState: Sendable, Equatable {
     }
 }
 
+/// How the phone reaches its own developer services at 10.7.0.1.
+public enum LocalConnection: Sendable, Equatable {
+    /// Poki's own packet tunnel, in the local-VPN build. It does not reconnect by itself.
+    case builtIn
+    /// The owner's proxy app (or a loopback app) reflects 10.7.0.1.
+    case external
+}
+
+extension RunnerState {
+    /// The runner is waiting for the loopback: what the agent reads, with when it stopped answering
+    /// (`since`, a clock time) and how the owner brings it back on this connection. `tunnelWithoutAnswer`:
+    /// a 10.7.0.x interface is up, but nothing answers through it.
+    public static func waitingForLoopback(since: String?, tunnelWithoutAnswer: Bool, connection: LocalConnection) -> RunnerState {
+        let since = since.map { " since \($0)" } ?? ""
+        let why: String, fix: String
+        switch connection {
+        case .builtIn:
+            why = tunnelWithoutAnswer ? "Poki's local connection is on, but this iPhone's developer services do not answer at 10.7.0.1" : "Poki's local connection is off, or another VPN app replaced it"
+            fix = "The owner opens Poki and taps Enable local connection in Setup, or turns Poki's VPN back on in iOS Settings > VPN"
+        case .external:
+            why = tunnelWithoutAnswer ? "the proxy app's tunnel is on but does not reflect 10.7.0.1" : "the loopback at 10.7.0.1 is not answering"
+            fix = "The owner turns the proxy app's tunnel (Surge, Loon, Shadowrocket or sing-box) back on"
+        }
+        return .starting("waiting for the loopback\(since): \(why). \(fix); the runner starts again by itself within seconds of that. Nothing on the phone changes meanwhile")
+    }
+}
+
 /// The relay's signing key: Ed25519, kept in the keychain on the phone.
 public protocol RelayKey: Sendable {
     /// The raw 32-byte public key.
