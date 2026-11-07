@@ -13,6 +13,25 @@ enum AutomationPath: String, CaseIterable, Identifiable {
     }
 }
 
+/// Poki's own automation session, once the launcher has mounted the disk image (ESP-152).
+enum InProcessSession: Equatable {
+    case opening
+    case open
+    /// prepare answered no: its code and detail.
+    case failed(code: String, detail: String)
+
+    /// What PokiCore reads while the launcher runs. A failure is answered at once, with its fix.
+    var agentState: RunnerState {
+        switch self {
+        case .open: return .running
+        case .opening: return .starting("opening the in-process session; it takes a few seconds the first time")
+        case .failed(let code, let detail):
+            return .failed("the in-process session could not be opened (\(code)\(detail.isEmpty ? "" : ": \(detail)")); Poki tries again on the next call",
+                           fix: "Open Poki and, if iOS asks, enter the passcode to allow automation")
+        }
+    }
+}
+
 /// The WebDriverAgent requests PokiCore sends, answered in Poki's own process by `PKInProcess`: no
 /// runner app, no HTTP, no port. Each request is one table entry, answered in WDA's JSON shape, so
 /// PokiCore's `Runner` (its deadlines, its one session, its retry on a lost session) works unchanged.

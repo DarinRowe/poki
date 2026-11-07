@@ -87,7 +87,7 @@ final class AppModel {
     /// look, do or status run here as a relay call would be (the Debug probe's end-to-end check).
     /// The probe opened the in-process session itself (on the simulator there is no launcher), so
     /// PokiCore may act now.
-    func inProcessReadyForProbe() { host.update(runner: .running) }
+    func inProcessReadyForProbe() { inProcessSession = .open; host.update(runner: .running) }
 
     func phoneTool(_ name: String, arguments: String) async -> (text: String, isError: Bool) {
         let result = await core.tool(name, arguments: arguments)
@@ -125,6 +125,9 @@ final class AppModel {
         }
         host.onWake { [weak self] in Task { @MainActor in self?.wakeRunner() } }
         host.onWarmUp { [weak self] in Task { @MainActor in self?.warmInProcess("an agent connected") } }
+        if automationPath == .inProcess {
+            host.onRetry { [weak self] in Task { @MainActor in self?.warmInProcess("an agent's call after a failed open") } }
+        }
         // Allow and Deny on the Live Activity run in this process and come straight here.
         ApprovalIntentBridge.install { [weak self] decision in
             guard let self else { return false }
@@ -154,16 +157,21 @@ final class AppModel {
         }
     }
 
-    /// Whether the in-process session answered prepare in this process (ESP-152).
-    private var inProcessReady = false
+    /// The in-process session as prepare last answered it in this process (ESP-152).
+    private var inProcessSession = InProcessSession.opening
     private var inProcessWarming = false
 
     /// Opens (or checks) the in-process session off the main thread before an agent needs it: when
-    /// the launcher has mounted the disk image, when Poki comes to the front, and when an agent
-    /// connects. prepare is idempotent: a session already open answers "reused" in milliseconds.
+    /// the launcher has mounted the disk image, when Poki comes to the front, when an agent
+    /// connects, and when an agent's call finds the last try failed. prepare is idempotent: a session
+    /// already open answers "reused" in milliseconds.
     func warmInProcess(_ why: String) {
         guard automationPath == .inProcess, sessionOn, runner.isRunning, !inProcessWarming else { return }
         inProcessWarming = true
+        if case .failed = inProcessSession {
+            inProcessSession = .opening
+            host.update(runner: coreState(of: runner))
+        }
         DispatchQueue.global(qos: .userInitiated).async {
             let result = PKInProcess.shared().prepare()
             Task { @MainActor [weak self] in
@@ -173,7 +181,7 @@ final class AppModel {
                 let seconds = String(format: "%.2f", result["seconds"] as? Double ?? 0)
                 self.log.add("runner", ok ? "in-process session ready for \(why) (generation \(result["generation"] ?? 0), \((result["reused"] as? Bool) == true ? "already open" : "opened"), \(seconds) s)"
                                           : "in-process session not ready for \(why): \(result["code"] ?? "unknown") after \(seconds) s")
-                self.inProcessReady = ok
+                self.inProcessSession = ok ? .open : .failed(code: "\(result["code"] ?? "unknown")", detail: result["detail"] as? String ?? "")
                 if self.sessionOn { self.host.update(runner: self.coreState(of: self.runner)) }
             }
         }
@@ -464,8 +472,8 @@ final class AppModel {
     /// is the same thing: waiting for the tunnel, said with the time it went and what to do.
     private func coreState(of status: RunnerStatus) -> RunnerState {
         // In-process, a running launcher only mounted the disk image; tools wait for the session.
-        if automationPath == .inProcess, status.state == "running", !inProcessReady {
-            return .starting("opening the in-process session; it takes a few seconds the first time")
+        if automationPath == .inProcess, status.state == "running", inProcessSession != .open {
+            return inProcessSession.agentState
         }
         let preLaunch = ["connecting", "pairing", "tunnel", "waiting_network", "standby", "idle"].contains(status.state)
         if preLaunch, !loopback.isWorking, loopback.state != .checking || status.state == "waiting_network" {
