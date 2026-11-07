@@ -362,6 +362,16 @@
         }
       }
     },
+    "Add your %@ key: tap my picture, then Model.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请添加 %@ 密钥：轻点头像，再选择“模型”。"
+          }
+        }
+      }
+    },
     "Add your agent": {
       "localizations": {
         "zh-Hans": {
@@ -897,12 +907,32 @@
         }
       }
     },
+    "Create a key at aistudio.google.com, then paste it here.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 aistudio.google.com 创建密钥并粘贴到此处。"
+          }
+        }
+      }
+    },
     "Create a key at console.anthropic.com, then paste it here.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "在 console.anthropic.com 创建密钥并粘贴至此处。"
+          }
+        }
+      }
+    },
+    "Create a key at platform.deepseek.com, then paste it here.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 platform.deepseek.com 创建密钥并粘贴到此处。"
           }
         }
       }
@@ -923,6 +953,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "自定义地址"
+          }
+        }
+      }
+    },
+    "DeepSeek V4 Pro (no screenshots)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DeepSeek V4 Pro（不支持图像识别）"
           }
         }
       }
@@ -1166,6 +1206,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "处理下方问题后，智能体即可使用此 iPhone。"
+          }
+        }
+      }
+    },
+    "For a code, first turn on device code sign-in for Codex in ChatGPT › Settings › Security. Then enter the code on auth.openai.com/codex/device.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用验证码登录前，请先在 ChatGPT 的“设置 › 安全”中启用 Codex 设备码登录，然后前往 auth.openai.com/codex/device 输入验证码。"
           }
         }
       }
@@ -2161,6 +2211,16 @@
         }
       }
     },
+    "Open the Sign-In Page": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开登录页面"
+          }
+        }
+      }
+    },
     "Open the chat with Mom": {
       "localizations": {
         "zh-Hans": {
@@ -2191,12 +2251,62 @@
         }
       }
     },
+    "OpenAI did not give a sign-in code (%lld).": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法从 OpenAI 获取登录码（%lld）。"
+          }
+        }
+      }
+    },
+    "OpenAI did not hand over the sign-in.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未收到 OpenAI 的登录响应。"
+          }
+        }
+      }
+    },
+    "OpenAI has not turned on code sign-in for this account. Use the browser sign-in.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此账号未启用验证码登录，请改用浏览器登录。"
+          }
+        }
+      }
+    },
+    "OpenAI refused the sign-in code (%lld).": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenAI 拒绝了此登录码（%lld）。"
+          }
+        }
+      }
+    },
     "OpenAI says the key has hit its rate limit. Try again in a minute.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "请求过于频繁，请稍后再试。"
+          }
+        }
+      }
+    },
+    "OpenAI's answer to the sign-in code was not readable.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法解析 OpenAI 的登录码响应。"
           }
         }
       }
@@ -2542,6 +2652,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "智能体下次发出请求时，Poki 会重新启动它。"
+          }
+        }
+      }
+    },
+    "Poki uses your ChatGPT plan, the way Codex does. The sign-in stays in this iPhone’s Keychain.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Poki 与 Codex 一样，共享你的 ChatGPT 订阅额度。登录信息仅保存在此 iPhone 的钥匙串中。"
           }
         }
       }
@@ -2964,6 +3084,86 @@
         }
       }
     },
+    "Sign In": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登录"
+          }
+        }
+      }
+    },
+    "Sign In with ChatGPT": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用 ChatGPT 登录"
+          }
+        }
+      }
+    },
+    "Sign Out": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "退出登录"
+          }
+        }
+      }
+    },
+    "Sign in to ChatGPT again: tap my picture, then Model.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请重新登录 ChatGPT：轻点头像，再选择“模型”。"
+          }
+        }
+      }
+    },
+    "Sign in to ChatGPT first: tap my picture, then Model.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先登录 ChatGPT：轻点头像，再选择“模型”。"
+          }
+        }
+      }
+    },
+    "Sign-in code %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登录码 %@"
+          }
+        }
+      }
+    },
+    "Sign-in was cancelled.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登录已取消。"
+          }
+        }
+      }
+    },
+    "Signed in": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已登录"
+          }
+        }
+      }
+    },
     "Silent audio": {
       "extractionState": "manual",
       "localizations": {
@@ -3382,6 +3582,16 @@
         }
       }
     },
+    "The keychain did not take the sign-in. Try again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法将登录信息保存到钥匙串，请重试。"
+          }
+        }
+      }
+    },
     "The latest screen": {
       "localizations": {
         "zh-Hans": {
@@ -3459,6 +3669,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Runner 已停止"
+          }
+        }
+      }
+    },
+    "The sign-in code ran out. Start again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登录码已过期，请重试。"
           }
         }
       }
@@ -3762,6 +3982,16 @@
         }
       }
     },
+    "Use a Code Instead": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "改用验证码登录"
+          }
+        }
+      }
+    },
     "VOICE": {
       "localizations": {
         "zh-Hans": {
@@ -4004,6 +4234,16 @@
         }
       }
     },
+    "pi has no model %@ for %@.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "pi 中未找到 %2$@ 的模型 %1$@。"
+          }
+        }
+      }
+    },
     "sending a message": {
       "extractionState": "manual",
       "localizations": {
@@ -4021,6 +4261,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld 个步骤"
+          }
+        }
+      }
+    },
+    "the request failed.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请求失败。"
           }
         }
       }

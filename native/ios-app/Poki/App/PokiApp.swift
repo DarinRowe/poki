@@ -9,6 +9,9 @@ struct PokiApp: App {
         // PokiLauncher (Rust) and the relay write to sockets the other side may have closed. In an app,
         // unlike a Rust executable, nothing ignores SIGPIPE, and it would end the whole app.
         signal(SIGPIPE, SIG_IGN)
+        #if DEBUG && targetEnvironment(simulator)
+        TestCredential.importIfGiven()
+        #endif
         let model = AppModel()
         _model = State(initialValue: model)
         _chat = State(initialValue: ChatModel(app: model))

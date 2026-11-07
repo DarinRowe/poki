@@ -49,7 +49,9 @@ final class ChatModel {
     /// A board's sample conversation, for screenshots.
     let isSample = UserDefaults.standard.string(forKey: "pokiChat") != nil
     private let app: AppModel
-    /// The model's side of the conversation, in its provider's form.
+    /// The model's side of the conversation: pi's loop (ESP-177), or for Anthropic and OpenAI, unless
+    /// `-chatEngine pi`, the provider's own API in its own form.
+    private var loop: PiLoop?
     private var client: ModelClient?
     /// The plan the model published with report_plan; the bubble shows its steps up to the current one.
     private var modelPlan: [String]?
@@ -76,6 +78,7 @@ final class ChatModel {
 
     func newConversation() {
         stop()
+        loop = nil
         client = nil
         planID = nil; noteID = nil; modelPlan = nil
         greet()
@@ -90,22 +93,62 @@ final class ChatModel {
         entries.append(you)
         let provider = ModelKeys.selectedProvider
         guard provider.wired, let key = ModelKeys.key(provider) else {
-            add(.poki(String(localized: "Add a model key first: tap my picture, then Model.")))
+            add(.poki(provider.signsIn ? String(localized: "Sign in to ChatGPT first: tap my picture, then Model.")
+                                       : String(localized: "Add a model key first: tap my picture, then Model.")))
             return
         }
         let model = ModelKeys.selectedModel
-        // Another model starts a new conversation on the model's side; the chat on screen stays.
-        if client?.signature != "\(provider.rawValue)/\(model)" {
-            client = provider == .openai ? OpenAIClient(key: key, model: model) : AnthropicClient(key: key, model: model)
-        }
-        guard let client else { return }
-        client.say(text)
         running = true
         stopAsked = false
         planID = nil; noteID = nil; modelPlan = nil
+        if Self.direct, provider == .anthropic || provider == .openai {
+            // Another model starts a new conversation on the model's side; the chat on screen stays.
+            if client?.signature != "\(provider.rawValue)/\(model)" {
+                client = provider == .openai ? OpenAIClient(key: key, model: model) : AnthropicClient(key: key, model: model)
+            }
+            guard let client else { return }
+            client.say(text)
+            task = Task { [weak self] in
+                await self?.run(client, delivered: you.id)
+                self?.running = false
+            }
+            return
+        }
+        guard let piModel = provider.piModel(model) else {
+            running = false
+            add(.note(.problem(String(localized: "pi has no model \(model) for \(provider.name)."))))
+            return
+        }
+        // Another model starts a new loop that carries the conversation over.
+        if loop?.provider != provider || loop?.model.id != piModel.id {
+            loop = PiLoop(provider: provider, model: piModel, instructions: Harness.instructions, tools: Harness.tools,
+                          carrying: loop?.messages ?? []) { [weak self] call in
+                guard let self else { return PokiCore.ToolAnswer(text: "Task stopped. Action not executed.", jpeg: nil, isError: true) }
+                return await self.perform(call)
+            }
+        }
+        guard let loop else { return }
         task = Task { [weak self] in
-            await self?.run(client, delivered: you.id)
+            let outcome = await loop.run(text, maxTurns: Self.maxTurns) { text in
+                self?.markDelivered(you.id)
+                self?.add(.poki(text))
+            }
+            self?.ended(outcome, delivered: you.id)
             self?.running = false
+        }
+    }
+
+    /// Anthropic and OpenAI keep their own APIs, the phone acceptance path, until pi has run with their
+    /// keys; `-chatEngine pi` sends them through pi too. ChatGPT, DeepSeek and Gemini always run on pi.
+    private static var direct: Bool { UserDefaults.standard.string(forKey: "chatEngine") != "pi" }
+
+    private func ended(_ outcome: PiLoop.Outcome, delivered youID: UUID) {
+        finishPlan()
+        switch outcome {
+        case .done: markDelivered(youID)
+        case .stopped: add(.poki(String(localized: "Stopped.")))
+        case .overTurns: add(.poki(String(localized: "I stopped after \(Self.maxTurns) steps. Tell me how to go on.")))
+        case .failed(let words): add(.note(.problem(words)))
         }
     }
 
@@ -113,6 +156,7 @@ final class ChatModel {
     func stop() {
         guard running else { return }
         stopAsked = true
+        loop?.stop()
         task?.cancel()
     }
 

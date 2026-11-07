@@ -192,12 +192,18 @@ final class AppModel {
     func startSession() {
         guard !sessionOn else { return }
         problem = nil
+        #if targetEnvironment(simulator)
+        // A simulator has no pairing, disk image or launcher: the runner is WebDriverAgent started on
+        // the Mac (see `launchRunner`).
+        let pairing = pairingPath ?? ""
+        #else
         guard let pairing = pairingPath else { problem = "Pair this iPhone first (Setup)."; return }
+        #endif
         // The chat's own model loop needs no relay; agents on a computer do.
         let relay = relayAddress
         guard relay != nil || ModelKeys.hasUsableKey else { problem = Self.noRelay; return }
         if !inFront { loopback.resume(every: 6) }
-        guard diskImage.isReady, diskImage.recheck() else {
+        guard Self.onSimulator || diskImage.isReady && diskImage.recheck() else {
             problem = "The developer disk image is not downloaded yet (Setup > Pair). It is needed once."
             Task { await diskImage.download() }
             return
@@ -224,7 +230,7 @@ final class AppModel {
         if !inFront { loopback.pause() }
         log.add("session", "turned off: ending the runner")
         core.stop()
-        Task { await RunnerProbe.shutdown() }
+        if !Self.onSimulator { Task { await RunnerProbe.shutdown() } }
         launcher.stop()
         confirmRunnerEnded()
         idleTimer?.invalidate(); idleTimer = nil
@@ -239,11 +245,28 @@ final class AppModel {
 
     func restartRunner() { launcher.restart() }
 
+    #if targetEnvironment(simulator)
+    static let onSimulator = true
+    #else
+    static let onSimulator = false
+    #endif
+
     private func launchRunner() {
+        #if targetEnvironment(simulator)
+        // On a simulator, WebDriverAgent runs from Xcode on the Mac (`xcodebuild test` of
+        // WebDriverAgentRunner, as in .github/workflows/ios-core.yml) and answers on 127.0.0.1:8100.
+        Task { [weak self] in
+            let up = await RunnerProbe.answers()
+            self?.runnerChanged(up ? RunnerStatus(state: "running") :
+                RunnerStatus(state: "failed", detail: "WebDriverAgent is not answering on 127.0.0.1:8100", fix: "Start WebDriverAgentRunner on this simulator from Xcode"))
+        }
+        return
+        #else
         guard let launcherConfig else { return }
         do {
             try launcher.start(config: launcherConfig) { [weak self] status in Task { @MainActor in self?.runnerChanged(status) } }
         } catch { runnerChanged(RunnerStatus(state: "failed", detail: "\(error)")) }
+        #endif
     }
 
     /// Stops the runner, and with it iOS's automation banner, while the relay stays connected; the
@@ -253,7 +276,7 @@ final class AppModel {
         log.add("runner", "stopping: \(reason)")
         // The runner is asked to shut itself down (it ends its test and exits) and the launcher's
         // session is closed; the launcher also ends the process through the developer services.
-        Task { await RunnerProbe.shutdown() }
+        if !Self.onSimulator { Task { await RunnerProbe.shutdown() } }
         launcher.stop()
         standBy(reason: reason)
         confirmRunnerEnded()
@@ -263,6 +286,8 @@ final class AppModel {
     /// once a second for 30 s. The log says how long it took. If it is still there after 10 s, the
     /// home screen says so, and the notice goes away by itself the moment the runner is gone.
     private func confirmRunnerEnded() {
+        // A simulator's runner belongs to Xcode on the Mac and stays up.
+        guard !Self.onSimulator else { return }
         endCheck += 1
         let check = endCheck
         Task { [weak self] in

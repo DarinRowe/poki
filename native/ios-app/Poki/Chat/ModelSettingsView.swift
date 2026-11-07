@@ -13,6 +13,7 @@ struct ModelSettingsView: View {
     var openAgents: () -> Void
     @State private var model = "\(ModelKeys.selectedProvider.rawValue)/\(ModelKeys.selectedModel)"
     @State private var editing: ModelProvider?
+    @State private var signingIn = false
     @State private var version = ModelKeys.saved
 
     var body: some View {
@@ -67,6 +68,7 @@ struct ModelSettingsView: View {
         .background(Color(.systemGroupedBackground))
         .toolbar(.hidden, for: .navigationBar)
         .sheet(item: $editing, onDismiss: { version = ModelKeys.saved }) { provider in KeyEntry(provider: provider) }
+        .sheet(isPresented: $signingIn, onDismiss: { version = ModelKeys.saved; model = "\(ModelKeys.selectedProvider.rawValue)/\(ModelKeys.selectedModel)" }) { ChatGPTSignIn() }
     }
 
     // OllamaModelSelectionView's row: icon, name, the whole row tappable.
@@ -83,14 +85,14 @@ struct ModelSettingsView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             if hasKey {
                 Text(verbatim: "✓").font(.system(size: 17, weight: .semibold)).foregroundStyle(Site.blue)
-                    .accessibilityLabel(Text("Key added"))
+                    .accessibilityLabel(provider.signsIn ? Text("Signed in") : Text("Key added"))
             } else {
-                Text(provider == .custom ? "Add URL" : "Add Key").font(.system(size: 17)).foregroundStyle(Site.blue)
+                Text(provider == .custom ? "Add URL" : provider.signsIn ? "Sign In" : "Add Key").font(.system(size: 17)).foregroundStyle(Site.blue)
             }
         }
         .padding(.vertical, 9).padding(.horizontal, 16)
         .contentShape(.rect)
-        .onTapGesture { editing = provider }
+        .onTapGesture { if provider.signsIn { signingIn = true } else { editing = provider } }
         .accessibilityAddTraits(.isButton)
     }
 
