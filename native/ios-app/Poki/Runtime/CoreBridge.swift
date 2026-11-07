@@ -9,7 +9,7 @@ import PokiCore
 enum ShellEvent: Sendable {
     case relay(RelayStatus)
     case toolStarted(name: String, summary: String)
-    case toolFinished(summary: String, delivery: String, app: String?, thumbnail: Data?)
+    case toolFinished(summary: String, delivery: String, app: String?, thumbnail: Data?, error: String?)
     case approvalRequested(PendingApproval)
     case approvalEnded(id: String, approved: Bool?)
 }
