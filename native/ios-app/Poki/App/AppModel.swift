@@ -12,6 +12,7 @@ final class AppModel {
     /// The person's own relay (Connect). Poki has no default relay and sends nothing until one is set.
     private(set) var relayAddress = RelayAddress.saved
     let loopback = LoopbackMonitor()
+    let tunnel = LoopbackTunnel()
     let background = BackgroundKeeper()
     let diskImage = DiskImageStore()
     private(set) var runner = RunnerStatus.idle
@@ -63,6 +64,16 @@ final class AppModel {
     private let activity = ActivityController()
     let log = AppLog.shared
     private var eventsTask: Task<Void, Never>?
+    private var sessionStartTask: Task<Void, Never>?
+    private(set) var sessionStarting = false
+
+    var connectionInUse: Bool {
+        if sessionOn || sessionStarting { return true }
+        switch pairing {
+        case .advertising?, .pin?: return true
+        default: return false
+        }
+    }
 
     init() {
         core = LiveCore(host: host)
@@ -108,7 +119,10 @@ final class AppModel {
         if sessionOn, let step = stepUnderWay, Date().timeIntervalSince(step.started) < 20 {
             log.add("app", "Poki came to the front during a step (\(step.summary)): a tap hit the Live Activity")
         }
-        if wantsOn, !sessionOn, pairingPath != nil, diskImage.isReady { startSession() }
+        Task {
+            await tunnel.refresh()
+            if wantsOn, !sessionOn, pairingPath != nil, diskImage.isReady { startSession(reconnectLocal: false) }
+        }
         if let step = guiding, isDone(step) { stopGuide() }
     }
 
@@ -143,7 +157,40 @@ final class AppModel {
 
     // MARK: Session
 
-    func startSession() {
+    func chooseConnection(_ method: SetupState.Loopback) {
+        guard !connectionInUse, !tunnel.busy else { return }
+        if method == .proxy { tunnel.disconnect() }
+        setup.loopback = method
+        setup.proxyApp = nil
+        loopback.check()
+    }
+
+    func startSession(reconnectLocal: Bool = true) {
+        guard !sessionOn, !sessionStarting else { return }
+        if setup.loopback == .none {
+            problem = "Choose and enable a local connection first (Setup)."
+            return
+        }
+        if setup.loopback == .builtIn, !tunnel.connected {
+            guard reconnectLocal else {
+                problem = "The local connection is off. Turn Poki on to reconnect, or choose an external connection in Setup."
+                return
+            }
+            sessionStarting = true
+            sessionStartTask = Task {
+                defer { sessionStarting = false; sessionStartTask = nil }
+                do {
+                    try await tunnel.connect()
+                    try Task.checkCancellation()
+                    loopback.check()
+                    beginSession()
+                } catch is CancellationError { }
+                catch { problem = error.localizedDescription }
+            }
+        } else { beginSession() }
+    }
+
+    private func beginSession() {
         guard !sessionOn else { return }
         problem = nil
         guard let pairing = pairingPath else { problem = "Pair this iPhone first (Setup)."; return }
@@ -171,13 +218,18 @@ final class AppModel {
     }
 
     func stopSession() {
-        guard sessionOn else { return }
+        sessionStartTask?.cancel()
         wantsOn = false
+        guard sessionOn else {
+            if setup.loopback == .builtIn { tunnel.disconnect() }
+            return
+        }
         if !inFront { loopback.pause() }
         log.add("session", "turned off: ending the runner")
         core.stop()
         Task { await RunnerProbe.shutdown() }
         launcher.stop()
+        if setup.loopback == .builtIn { tunnel.disconnect() }
         confirmRunnerEnded()
         idleTimer?.invalidate(); idleTimer = nil
         runnerPaused = false; host.setPaused(false)
@@ -443,6 +495,10 @@ final class AppModel {
     }
 
     func startPairing() {
+        guard loopback.isWorking else {
+            pairing = .failed("Enable a local connection in Setup and wait for the connection check to pass, then try pairing again.")
+            return
+        }
         pairing = .advertising
         // Started now, while Poki is in front: the PIN arrives while the person is in Settings, when
         // iOS no longer lets Poki start a Live Activity.
@@ -505,7 +561,7 @@ final class AppModel {
         switch step {
         case .runner: setup.runnerInstalled
         case .developerMode: setup.developerMode
-        case .loopback: loopback.isWorking || setup.loopbackChosen
+        case .loopback: loopback.isWorking
         case .pairing: pairingPath != nil && pairingTrouble == nil && diskImage.isReady
         case .automation: setup.uiAutomation
         case .background: background.allowed && activity.enabled

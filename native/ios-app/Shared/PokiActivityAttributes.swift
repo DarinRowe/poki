@@ -70,7 +70,7 @@ struct PendingApproval: Codable, Hashable {
 }
 
 enum SharedContainer {
-    static let appGroup = "group.nz.zheha.poki"
+    static let appGroup = Bundle.main.object(forInfoDictionaryKey: "PokiAppGroup") as? String ?? "group.nz.zheha.poki"
     static var url: URL? { FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroup) }
     static var thumbnailURL: URL? { url?.appendingPathComponent("activity-thumbnail.jpg") }
     static var defaults: UserDefaults { UserDefaults(suiteName: appGroup) ?? .standard }

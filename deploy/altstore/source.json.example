@@ -9,7 +9,7 @@
   "sourceURL": "https://raw.githubusercontent.com/JosssphZhou/poki/main/deploy/altstore/source.json",
   "apps": [
     {
-      "name": "Poki",
+      "name": "Poki (external connection)",
       "bundleIdentifier": "nz.zheha.poki",
       "developerName": "Poki",
       "subtitle": "Your iPhone, for your AI agent.",
@@ -24,7 +24,7 @@
           "buildVersion": "RUN_NUMBER",
           "date": "2026-11-06T00:00:00Z",
           "localizedDescription": "See CHANGELOG.md.",
-          "downloadURL": "https://github.com/JosssphZhou/poki/releases/download/ios-v0.1.0/Poki-0.1.0-RUN_NUMBER.ipa",
+          "downloadURL": "https://github.com/JosssphZhou/poki/releases/download/ios-v0.1.0/Poki-external-0.1.0-RUN_NUMBER.ipa",
           "size": 0,
           "minOSVersion": "26.0"
         }

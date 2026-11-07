@@ -4,5 +4,8 @@ PokiWidgets/Assets.xcassets/
 # Written by xcodegen from project.yml.
 Poki/Info.plist
 Poki/Poki.entitlements
+Poki/PokiLocal.entitlements
 PokiWidgets/Info.plist
 PokiWidgets/PokiWidgets.entitlements
+PokiTunnel/Info.plist
+PokiTunnel/PokiTunnel.entitlements

@@ -41,6 +41,9 @@ jobs:
           # The C ABI's symbols, for the log (the app's link step is the real check).
           (nm -g native/launcher/target/aarch64-apple-ios/release/libpoki_launcher.a 2>/dev/null | grep -E '_poki_(launcher|pair|string)_' | sort -u) || echo "nm listed no poki_ symbols"
 
+      - name: Local connection tests
+        run: swift test --package-path native/ios/PokiLoopback
+
       - name: PokiCore tests
         timeout-minutes: 12
         run: swift test --package-path native/ios/PokiCore
@@ -58,45 +61,45 @@ jobs:
           native/ios-app/scripts/make-assets.sh
           brew install xcodegen
           xcodegen generate --spec native/ios-app/project.yml
+          xcodegen generate --spec native/ios-app/project-external.yml
 
-      - name: Version (from the release tag, else native/ios-app/VERSION and this run's number)
-        run: |
-          VERSION="${{ inputs.version }}"; BUILD="${{ inputs.build }}"
-          [ -n "$VERSION" ] || VERSION=$(cat native/ios-app/VERSION)
-          [ -n "$BUILD" ] || BUILD="${{ github.run_number }}"
-          echo "MARKETING_VERSION=$VERSION" >> "$GITHUB_ENV"
-          echo "CURRENT_PROJECT_VERSION=$BUILD" >> "$GITHUB_ENV"
-          echo "Poki $VERSION ($BUILD)"
-
-      - name: Build (iOS device SDK, unsigned)
-        run: |
-          set -o pipefail
-          mkdir -p build
-          xcodebuild build \
-            -project native/ios-app/Poki.xcodeproj \
-            -scheme Poki -configuration Release \
-            -destination generic/platform=iOS \
-            -derivedDataPath build/app \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO \
-            MARKETING_VERSION="$MARKETING_VERSION" CURRENT_PROJECT_VERSION="$CURRENT_PROJECT_VERSION" \
-            ARCHS=arm64 | tee build/app.log | grep -E "error:|BUILD (SUCCEEDED|FAILED)|\*\* " || true
-          test -d build/app/Build/Products/Release-iphoneos/Poki.app
-
-      - name: Package the IPA
+      - name: Build and package both connection options (unsigned)
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_BUILD: ${{ inputs.build }}
         run: |
           set -euo pipefail
-          APP=build/app/Build/Products/Release-iphoneos/Poki.app
-          test ! -e "$APP/PlugIns/PokiTunnel.appex"
-          test -d "$APP/PlugIns/PokiWidgets.appex"
-          rm -rf Payload out && mkdir -p Payload out
-          ditto "$APP" Payload/Poki.app
-          find Payload -name '*.dSYM' -prune -exec rm -rf {} +
-          ditto -c -k --keepParent --norsrc Payload out/Poki-unsigned.ipa
+          mkdir -p build out
+          VERSION="${RELEASE_VERSION:-$(cat native/ios-app/VERSION)}"
+          BUILD="${RELEASE_BUILD:-${{ github.run_number }}}"
+          for edition in local external; do
+            project=Poki
+            ipa=Poki-unsigned.ipa
+            if [ "$edition" = external ]; then project=PokiExternal; ipa=Poki-external-unsigned.ipa; fi
+            xcodebuild build \
+              -project "native/ios-app/$project.xcodeproj" -scheme Poki -configuration Release \
+              -destination generic/platform=iOS -derivedDataPath "build/app-$edition" \
+              CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO ARCHS=arm64 \
+              MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$BUILD" \
+              2>&1 | tee "build/app-$edition.log" | grep -E "error:|BUILD (SUCCEEDED|FAILED)|\*\* "
+            native/ios-app/scripts/package-app.sh \
+              "build/app-$edition/Build/Products/Release-iphoneos/Poki.app" \
+              "$edition" "out/$ipa" "$VERSION" "$BUILD"
+          done
+          mkdir -p out/signing/local out/signing/external
+          cp native/ios-app/Poki/PokiLocal.entitlements out/signing/local/Poki.entitlements
+          cp native/ios-app/PokiTunnel/PokiTunnel.entitlements out/signing/local/
+          cp native/ios-app/PokiWidgets/PokiWidgets.entitlements out/signing/local/
+          cp native/ios-app/Poki/Poki.entitlements out/signing/external/
+          cp native/ios-app/PokiWidgets/PokiWidgets.entitlements out/signing/external/
+          ditto -c -k --keepParent out/signing out/Poki-signing.zip
           (cd out && shasum -a 256 *.ipa | tee SHA256SUMS)
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' Payload/Poki.app/Info.plist
-          V=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Payload/Poki.app/Info.plist)
-          B=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' Payload/Poki.app/Info.plist)
-          echo "Poki $V ($B)"; test "$V" = "$MARKETING_VERSION" && test "$B" = "$CURRENT_PROJECT_VERSION"
+          for ipa in out/Poki-unsigned.ipa out/Poki-external-unsigned.ipa; do
+            unzip -p "$ipa" Payload/Poki.app/Info.plist > build/ipa-Info.plist
+            V=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' build/ipa-Info.plist)
+            B=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' build/ipa-Info.plist)
+            echo "$ipa: Poki $V ($B)"; test "$V" = "$VERSION" && test "$B" = "$BUILD"
+          done
 
       # The app on the iOS Simulator: it launches, stays up, and draws its first screen. The launcher
       # cannot reach a simulator's developer services, so this checks the shell, not automation.
@@ -180,4 +183,4 @@ jobs:
         if: always()
         with:
           name: app-build-log
-          path: build/app.log
+          path: build/app-*.log

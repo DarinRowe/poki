@@ -3,6 +3,13 @@
 Reviewed 2026-11-06 against origin/dev/ios-app (ios-app.yml, ios-runner.yml, native/ios-app/project.yml)
 and dev/ios-core. Nothing here was run on the phone.
 
+## Local connection update (2026-11-07)
+
+The built-in tunnel, its app/extension entitlement configuration and the separate external-connection
+build are implemented. This supersedes the missing-target portion of finding 1 below; supported
+signing, actual developer-service access, VPN coexistence, background recovery and the complete
+phone checklist still require device evidence. The original findings below are historical.
+
 ## Findings
 
 | # | What | Severity | Fix |

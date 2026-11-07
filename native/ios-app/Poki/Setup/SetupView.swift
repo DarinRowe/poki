@@ -161,7 +161,7 @@ struct RunnerContent: View {
             "Open **Settings > General > VPN & Device Management**, tap your Apple ID and tap **Trust**.",
             "Don't open Poki Runner yourself. Poki starts it when an agent needs the phone.",
         ])
-        Text("With a free Apple ID, apps you sign yourself expire after 7 days and only 3 can be installed at a time; Poki and Poki Runner use two. A free Apple ID also can't sign a VPN, so the loopback comes from your proxy app or LocalDevVPN.")
+        Text("With a free Apple ID, apps you sign yourself expire after 7 days and only 3 can be installed at a time; Poki and Poki Runner use two. For free Apple ID signing, install the external-connection build and use LocalDevVPN or a compatible VPN app.")
             .font(.footnote).foregroundStyle(.secondary)
         SettingsButton(step: .runner)
         ConfirmRow(title: "Poki Runner is installed and trusted", isOn: $model.setup.runnerInstalled)
@@ -314,8 +314,71 @@ struct LoopbackContent: View {
             }
         }
         .onAppear { monitor.resume() }
-        ForEach(ProxyApps.all) { app in proxyRow(app) }
-        localDevVPN
+        connectionChoice
+        if model.setup.loopback == .proxy || !model.tunnel.available {
+            ForEach(ProxyApps.all) { app in proxyRow(app) }
+            localDevVPN
+        } else {
+            builtIn
+        }
+    }
+
+    @ViewBuilder private var connectionChoice: some View {
+        if model.tunnel.available {
+            Picker("Local connection", selection: Binding(
+                get: { model.setup.loopback == .proxy ? .proxy : .builtIn },
+                set: { model.chooseConnection($0) }
+            )) {
+                Text("Built-in").tag(SetupState.Loopback.builtIn)
+                Text("External app").tag(SetupState.Loopback.proxy)
+            }
+            .pickerStyle(.segmented)
+            .disabled(model.connectionInUse || model.tunnel.busy)
+        } else {
+            #if targetEnvironment(simulator)
+            Text("The built-in connection runs on a physical iPhone. External connection options are shown below.")
+                .font(.footnote).foregroundStyle(.secondary)
+            #else
+            Text("This build uses an external connection. For the built-in connection, install the local-VPN build with signing that supports Network Extensions.")
+                .font(.footnote).foregroundStyle(.secondary)
+            #endif
+        }
+        if model.connectionInUse {
+            Text("Stop Poki and finish pairing before changing the local connection.")
+                .font(.footnote).foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder private var builtIn: some View {
+        Text("No extra app needed. Poki connects only to this iPhone; your normal internet traffic and DNS stay on their usual routes.")
+            .font(.subheadline)
+        Text("iOS shows this as a VPN. Enabling it may disconnect another VPN app. To keep a compatible VPN, choose External app instead.")
+            .font(.footnote).foregroundStyle(.secondary)
+        switch model.tunnel.state {
+        case .connecting:
+            HStack { ProgressView(); Text("Connecting to this iPhone…") }
+            Button("Cancel connection", role: .cancel) { model.tunnel.disconnect() }
+                .disabled(model.tunnel.busy || model.connectionInUse)
+        case .disconnecting:
+            HStack { ProgressView(); Text("Disconnecting…") }
+        case .connected:
+            StatusLine(text: "Local VPN connected. The check above confirms developer access.", symbol: "network", color: Brand.blue)
+            Button("Disconnect local connection") { model.tunnel.disconnect() }
+                .disabled(model.connectionInUse || model.tunnel.busy)
+        case .failed(let message):
+            StatusLine(text: message, symbol: "exclamationmark.triangle.fill", color: .orange)
+            enableButton
+        case .off: enableButton
+        case .unavailable: EmptyView()
+        }
+    }
+
+    private var enableButton: some View {
+        Button("Enable local connection", systemImage: "arrow.triangle.2.circlepath") {
+            model.chooseConnection(.builtIn)
+            Task { try? await model.tunnel.connect(); model.loopback.check() }
+        }
+        .disabled(model.tunnel.busy || model.connectionInUse)
     }
 
     private func proxyRow(_ app: ProxyApp) -> some View {
@@ -346,18 +409,19 @@ struct LoopbackContent: View {
                 else if app.isInstalled { Text("Installed").font(.caption).foregroundStyle(.secondary) }
             }
         }
+        .disabled(model.connectionInUse || model.tunnel.busy)
     }
 
     private var localDevVPN: some View {
         DisclosureGroup {
             Instructions(lines: [
                 "No proxy app? Install **LocalDevVPN**, a free loopback app made for this.",
-                "Open it and tap **Connect**. It uses the VPN slot, so it replaces any other VPN while it is on.",
+                "Open it and tap **Connect**, then return to Poki. It may disconnect another VPN app.",
             ])
             Link(destination: URL(string: "https://apps.apple.com/app/id6755608044")!) {
                 Label("Get LocalDevVPN on the App Store", systemImage: "arrow.down.app")
             }
-            .simultaneousGesture(TapGesture().onEnded { model.setup.loopback = .proxy; model.setup.proxyApp = "localdevvpn" })
+            .simultaneousGesture(TapGesture().onEnded { model.chooseConnection(.proxy); model.setup.proxyApp = "localdevvpn" })
         } label: {
             HStack {
                 Text("LocalDevVPN")
@@ -366,10 +430,11 @@ struct LoopbackContent: View {
                 if model.setup.proxyApp == "localdevvpn" { Text("In use").font(.caption.weight(.semibold)).foregroundStyle(.green) }
             }
         }
+        .disabled(model.connectionInUse || model.tunnel.busy)
     }
 
     private func choose(_ app: ProxyApp) {
-        model.setup.loopback = .proxy
+        model.chooseConnection(.proxy)
         model.setup.proxyApp = app.id
         model.guide(.loopback)
     }

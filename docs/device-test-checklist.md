@@ -10,8 +10,16 @@ result and the time next to each line.
 - [ ] Developer Mode on (Settings → Privacy & Security → Developer Mode).
 - [ ] Note the iOS version and whether the phone is on Wi-Fi or cellular for each step.
 
-## 1. Loopback (one of these)
+## 1. Loopback (choose one; no proxy app is required with the built-in connection)
 
+- [ ] Built-in: install the local-VPN build with Network Extensions provisioned for both Poki and
+  PokiTunnel. In Setup > Connect to this iPhone, tap Enable local connection and approve iOS's VPN
+  prompt. The developer-service check passes; neither a saved profile nor VPN Connected alone counts.
+- [ ] Built-in: a normal web page still loads; no DNS or internet default route is installed by Poki.
+- [ ] Built-in: disconnect/reconnect, lock/unlock, and reboot recover after an explicit reconnect.
+  Opening Poki alone must not replace another active VPN. Choosing External app stops only Poki's VPN.
+- [ ] External build: no PokiTunnel is embedded and no built-in enable button is offered. Continue
+  with an external option below. Use this build when Network Extension signing is unavailable.
 - [ ] Or LocalDevVPN (App Store) on, for people without a proxy app.
 - [ ] Or Shadowrocket "Include route 10.7.0.1/32" on, with Shadowrocket connected.
 - [ ] Or Surge Enhanced Mode with the Poki module (`10.7.0.1 = reflect`), or Loon's plugin, or sing-box `loopback_address`.

@@ -50,8 +50,8 @@ struct StopRunnerIntent: LiveActivityIntent {
 
 /// Decisions in flight between the intent and the app.
 enum ApprovalMailbox {
-    static let notification = "nz.zheha.poki.approval"
-    static let stopRunner = "nz.zheha.poki.stop-runner"
+    static let notification = SharedContainer.appGroup + ".approval"
+    static let stopRunner = SharedContainer.appGroup + ".stop-runner"
     private static let key = "approval.decisions"
 
     static func post(id: String, approved: Bool) {

@@ -2,7 +2,7 @@ import Foundation
 import Network
 
 /// Live loopback status: every few seconds while Poki is in front (and on demand), a TCP connect to
-/// lockdown at 10.7.0.1:62078, which only answers when the proxy app (or LocalDevVPN) reflects
+/// developer services at 10.7.0.1, which only answer when Poki or an external VPN reflects
 /// 10.7.0.1 back to this phone. Also whether Wi-Fi is up, which the phone's developer services need.
 @MainActor
 @Observable
@@ -60,7 +60,10 @@ final class LoopbackMonitor {
         guard !running else { return }
         running = true
         Task {
-            let result = await probe(label: "loopback", host: "10.7.0.1", port: 62078, timeout: 1.5)
+            var result = await probe(label: "loopback", host: "10.7.0.1", port: 49152, timeout: 1.5)
+            if result.outcome != "connected" {
+                result = await probe(label: "loopback", host: "10.7.0.1", port: 62078, timeout: 1.5)
+            }
             running = false
             let next: State = result.outcome == "connected" ? .working(ms: result.milliseconds) : loopbackInterface() == nil ? .off : .noAnswer
             // Only a change is published, so the screens are not redrawn every 3 s (a redraw while
@@ -70,6 +73,7 @@ final class LoopbackMonitor {
                 state = next; checkedAt = Date()
                 if case .working = old, !isWorking { droppedAt = Date() }
                 if isWorking { droppedAt = nil }
+                AppLog.shared.add("loopback", "developer service: \(next)")
                 onChange?(old, next)
             }
         }
@@ -88,8 +92,8 @@ final class LoopbackMonitor {
         switch state {
         case .checking: "Looking for this iPhone at 10.7.0.1."
         case .working(let ms): "This iPhone answers at 10.7.0.1 (\(ms) ms)." + (onWiFi ? "" : " Connect to Wi-Fi: the developer services need it.")
-        case .noAnswer: "Your proxy app's tunnel is on, but 10.7.0.1 is not reflected. Turn on the Poki module or route, then reconnect the proxy."
-        case .off: "Nothing answers at 10.7.0.1. Turn on your proxy app (with the Poki module) or LocalDevVPN."
+        case .noAnswer: "The local interface is present, but this iPhone's developer services do not answer. Check Developer Mode and Wi-Fi, then reconnect the local connection."
+        case .off: "This iPhone does not answer yet. Enable Poki's local connection, or choose an external connection in Setup."
         }
     }
 }

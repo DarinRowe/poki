@@ -14,13 +14,14 @@ The runner (WebDriverAgent, built by `.github/workflows/ios-runner.yml`) is a se
 |---|---|
 | `Poki/App` | App entry, tabs, Home, the app model (on/off, runner sleep and wake, events, approvals, pairing, setup steps) |
 | `Poki/Setup` | Setup, one guided page with live checks |
-| `Poki/Loopback` | Live 10.7.0.1 check, proxy app detection and one-tap module install |
+| `Poki/Loopback` | Local VPN configuration and status, live developer-service checks, external VPN choices |
 | `Poki/Activity` | Live Activity controller (state, steps, thumbnail in the App Group) |
 | `Poki/Connect` | Relay identity (Ed25519 key, label, connector secrets in the keychain), MCP address with QR |
 | `Poki/Runtime` | PokiCore and PokiLauncher glue, background keep-alive (location, then silent audio) |
 | `Poki/Debug` | 10.7.0.1 checks, the background hold test, the Live Activity preview |
 | `Shared` | Live Activity attributes and views, the Approve/Deny/Stop App Intents (app and widget) |
 | `PokiWidgets` | The Live Activity widget |
+| `PokiTunnel` | Local-only IPv4 TCP packet tunnel; no server, DNS or internet default route |
 
 PokiCore (Swift, `native/ios/PokiCore`) and PokiLauncher (Rust with a C ABI, `native/launcher`) are described in `docs/ios-core.md`. Poki has no default relay: the person deploys their own (`deploy/cf-relay/DEPLOY.md`) and enters its address in the Connect tab.
 
@@ -58,16 +59,47 @@ open native/ios-app/Poki.xcodeproj
 |---|---|---|
 | App Groups `group.nz.zheha.poki` | Live Activity thumbnail, approvals between widget and app | Signing tools rewrite group ids per Apple ID; that works as long as both targets get the same rewritten group. |
 
-There is no built-in VPN for now: a sideloaded app cannot use the Network Extension (it needs
-TestFlight or the App Store).
+| Network Extensions `packet-tunnel-provider` | Built-in local connection | Required in both Poki and PokiTunnel, with a matching provisioning profile for each bundle. A wildcard profile is insufficient. |
+
+The default `project.yml` builds Poki with its local VPN. Use signing that supports Network
+Extensions (including properly provisioned paid-team development/ad-hoc distribution). Free Personal
+Team signing cannot provision this capability. Re-signing must preserve the entitlement in both the
+app and its extension. CI includes the generated entitlements in `Poki-signing.zip`.
+
+For a team that does not own the default identifiers, set `POKI_BUNDLE_ID`, `POKI_APP_GROUP` and
+optionally `POKI_DISPLAY_NAME` in Xcode or the `xcodebuild` invocation. Register the App Group and
+associate it with both the app and widget identifiers in the developer portal before provisioning.
+The app and widget read that same group from their built Info.plist; approval notifications are
+namespaced to it. Do not reuse another app's group just to make signing pass.
+
+`project-external.yml` builds the same app without the tunnel or its Network Extension entitlement:
+
+```sh
+xcodegen generate --spec native/ios-app/project-external.yml
+open native/ios-app/PokiExternal.xcodeproj
+```
+
+CI produces `Poki-unsigned.ipa` and `Poki-external-unsigned.ipa`. Choose one, then install Poki Runner
+with the same signing. The external build retains the App Group requirement for approvals and
+thumbnails; it does not solve other free-account signing restrictions.
 
 ## Loopback choices
 
+- **Built-in (default)**: Setup > Connect to this iPhone > Enable local connection. Approve iOS's
+  VPN configuration prompt. Poki reflects only IPv4 TCP to `10.7.0.1/32`; normal internet routes and
+  DNS are unchanged. The connection may displace another packet-tunnel VPN. Poki never silently
+  changes an external VPN configuration or starts its local VPN merely because the app opened.
 - **Proxy app**: Surge (module, `surge:///install-module?url=`), Loon (plugin,
   `loon://import?plugin=`), Shadowrocket (its "Include route 10.7.0.1/32" toggle) or sing-box (one
   line in the tun inbound). Files in `deploy/proxy-modules/`, served from the fork's raw GitHub URL
   for now (`ProxyApps.modulesBase`).
-- **No proxy app**: LocalDevVPN (free, App Store), which takes the VPN slot.
+- **External build without a proxy app**: LocalDevVPN (App Store). This is an additional app and
+  must be tested with the installed iOS version. It may displace another packet-tunnel VPN.
+
+The setup step completes only when a TCP connection to the phone's RemotePairing or lockdown
+service succeeds. Selecting an app, saving a profile or a VPN's Connected label alone never completes
+it. Built-in VPN transport cannot be validated in the Simulator. See [the design and acceptance
+checks](../../docs/ios-loopback.md).
 
 ## Device test checklist
 

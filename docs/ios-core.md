@@ -25,9 +25,9 @@ Three interfaces, each owned by one side:
 | 1. Relay frames (Worker ⇄ phone) | `deploy/cf-relay` (Worker), PokiCore (phone) |
 | 2. PokiCore Swift API | PokiCore; used by the app (`native/ios-app`) |
 | 3. PokiLauncher C ABI | PokiLauncher (`native/launcher`); used by the app |
-| 4. What the launcher needs from the loopback | the user's proxy module (`deploy/proxy-modules`), or a built-in packet tunnel later |
+| 4. What the launcher needs from the loopback | PokiTunnel (`native/ios-app/PokiTunnel`), or the user's external VPN |
 
-Version: 1.1 (2026-11-06: on-device pairing in §3, ToolFacts on toolFinished in §2, tunnel facts in §4, keep-alive). Every change to a section below bumps its version and is announced to the other threads.
+Version: 1.2 (2026-11-07: built-in loopback and separate external-connection build in §4; 2026-11-06: on-device pairing in §3, ToolFacts on toolFinished in §2, tunnel facts in §4, keep-alive). Every change to a section below bumps its version and is announced to the other threads.
 
 ## 1. Relay frames, v1
 
@@ -463,8 +463,16 @@ destination swapped. The phone needs nothing else from it: no UDP, no IPv6, no D
 no other addresses. The ports used are 49152 or 62078, plus one dynamic tunnel port per session that
 the phone picks.
 
-- A built-in packet tunnel (not in the app yet; `docs/release-review.md` item 1) would use: interface address 10.7.0.2/24, includedRoutes 10.7.0.1/32
-  only, IPv4 only, no DNS settings, no IPv6, MTU 1500. Every packet to 10.7.0.1 goes back with source
-  and destination swapped.
+- The built-in `PokiTunnel` uses interface `10.7.0.2/32`, includes only `10.7.0.1/32`, excludes
+  the default route, and sets MTU 1500. No DNS, IPv6 or proxy settings are installed. `PokiLoopback`
+  validates IPv4/TCP packets from `10.7.0.2` to `10.7.0.1`, rejects fragments and malformed headers,
+  and swaps addresses without changing ports, payload or checksums. It has no external socket.
+- The owner enables it in Setup and approves iOS's VPN prompt. `LoopbackTunnel` manages only the
+  profile whose provider identifier matches the embedded extension (including rewritten signing
+  identifiers). It never auto-starts on app foregrounding. An explicit Turn Poki on can reconnect a
+  previously selected built-in connection; Stop turns off only Poki's own tunnel.
+- Both the app and extension require provisioned Network Extension entitlements. The separate
+  `project-external.yml` omits the tunnel and that entitlement. See `docs/ios-loopback.md` for signing,
+  coexistence, and device acceptance.
 - Surge / Loon: `10.7.0.1 = reflect` with the route included and IPv6 VIF off. sing-box:
   `loopback_address: ["10.7.0.1"]`. Shadowrocket: "Include route 10.7.0.1/32".
