@@ -17,13 +17,8 @@ struct VoiceView: View {
         @Bindable var voice = voice
         NavigationStack {
             List {
-                // A tap that sends, pays, deletes or calls waits here (and in the notification) for the person.
-                if !app.approvals.isEmpty {
-                    Section {
-                        ForEach(app.approvals, id: \.id) { ApprovalCard(approval: $0) }
-                    }
-                    .listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
-                }
+                // A tap that sends, pays, deletes or calls waits for the person in the Dynamic Island and the
+                // Live Activity (or the notification), like every other approval.
                 Section {
                     HStack(spacing: 14) {
                         Image(systemName: symbol).font(.title).foregroundStyle(voice.isOn ? Site.blue : .secondary)

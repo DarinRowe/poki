@@ -12,6 +12,11 @@ packages:
   WebRTC:
     url: https://github.com/stasel/WebRTC.git
     exactVersion: 155.0.0
+  # pi (Mario Zechner's pi-mono agent loop and model providers), ported to Swift by Miguel de Icaza
+  # (MIT). The chat's model loop is PiSwiftAgent; PiSwiftAI brings the providers and the ChatGPT login.
+  PiSwift:
+    url: https://github.com/xibbon/PiSwift.git
+    revision: f8696524cf41ca0a7f42f5b230eafa443daececd
 settings:
   base:
     POKI_BUNDLE_ID: nz.zheha.poki
@@ -80,6 +85,10 @@ targets:
       - target: PokiWidgets
       - package: PokiCore
       - package: WebRTC
+      - package: PiSwift
+        product: PiSwiftAgent
+      - package: PiSwift
+        product: PiSwiftAI
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(POKI_BUNDLE_ID)

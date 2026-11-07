@@ -165,43 +165,6 @@ struct SiteToggleStyle: ToggleStyle {
     }
 }
 
-/// The 36 pt glass circle with the gear in the top right of Home.
-struct GearButton: View {
-    var action: () -> Void
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: "gearshape").font(.system(size: 17, weight: .medium)).foregroundStyle(.white)
-                .frame(width: 36, height: 36)
-                .glassCard(18)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(Text("Settings"))
-    }
-}
-
-private struct OpenVoiceKey: EnvironmentKey { static let defaultValue: () -> Void = {} }
-extension EnvironmentValues {
-    /// Opens the Voice sheet from wherever a screen shows its button.
-    var openVoice: () -> Void {
-        get { self[OpenVoiceKey.self] }
-        set { self[OpenVoiceKey.self] = newValue }
-    }
-}
-
-/// Beside the gear: talk to Poki instead of typing to an agent.
-struct VoiceButton: View {
-    @Environment(\.openVoice) private var open
-    var body: some View {
-        Button(action: open) {
-            Image(systemName: "waveform").font(.system(size: 17, weight: .medium)).foregroundStyle(.white)
-                .frame(width: 36, height: 36)
-                .glassCard(18)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(Text("Voice"))
-    }
-}
-
 /// The bear, round.
 struct BearAvatar: View {
     var size: CGFloat

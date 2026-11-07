@@ -38,6 +38,8 @@ final class LiveCore: CoreSession {
     }
     func accessChanged() { core.accessChanged() }
     func tool(_ name: String, arguments: String) async -> ToolResult { await core.tool(name, arguments: arguments) }
+    /// `look`, `do` or `status` for the chat's model loop inside the app.
+    func callTool(_ name: String, arguments: String) async -> PokiCore.ToolAnswer { await core.callTool(name, arguments: arguments) }
 
     private static func map(_ event: CoreEvent) -> ShellEvent {
         switch event {

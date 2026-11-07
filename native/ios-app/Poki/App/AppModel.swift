@@ -86,6 +86,9 @@ final class AppModel {
         return .proxy
     }
 
+    /// The chat watches the steps and approvals of the task it runs.
+    var onShellEvent: ((ShellEvent) -> Void)?
+
     init(launcher: RunnerLauncher = RustLauncher(), pairer: DevicePairing = RustPairing()) {
         ActivityController.endAll()
         let core = LiveCore(host: host, transport: automationPath == .inProcess ? InProcessWDA(screen: UIScreen.main.bounds.size) : URLSessionTransport())
@@ -257,10 +260,18 @@ final class AppModel {
     private func beginSession() {
         guard !sessionOn else { return }
         problem = nil
+        #if targetEnvironment(simulator)
+        // A simulator has no pairing, disk image or launcher: the runner is WebDriverAgent started on
+        // the Mac (see `launchRunner`).
+        let pairing = pairingPath ?? ""
+        #else
         guard let pairing = pairingPath else { problem = "Pair this iPhone first (Setup)."; return }
-        guard let relay = relayAddress else { problem = Self.noRelay; return }
+        #endif
+        // The chat's own model loop needs no relay; agents on a computer do.
+        let relay = relayAddress
+        guard relay != nil || ModelKeys.hasUsableKey else { problem = Self.noRelay; return }
         if !inFront { loopback.resume(every: 6) }
-        guard diskImage.isReady, diskImage.recheck() else {
+        guard Self.onSimulator || diskImage.isReady && diskImage.recheck() else {
             problem = "The developer disk image is not downloaded yet (Setup > Pair). It is needed once."
             Task { await diskImage.download() }
             return
@@ -277,7 +288,7 @@ final class AppModel {
         lastAgentActivity = Date()
         // The runner (and with it iOS's automation banner) starts only when an agent asks.
         standBy(reason: nil)
-        core.start(relay: relay)
+        if let relay { core.start(relay: relay) }
         idleTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in Task { @MainActor in self?.checkIdle() } }
     }
 
@@ -294,7 +305,7 @@ final class AppModel {
         launcher.stop()
         if setup.loopback == .builtIn { tunnel.disconnect() }
         if automationPath == .runner {
-            Task { await RunnerProbe.shutdown() }
+            if !Self.onSimulator { Task { await RunnerProbe.shutdown() } }
             confirmRunnerEnded()
         }
         idleTimer?.invalidate(); idleTimer = nil
@@ -309,11 +320,28 @@ final class AppModel {
 
     func restartRunner() { launcher.restart() }
 
+    #if targetEnvironment(simulator)
+    static let onSimulator = true
+    #else
+    static let onSimulator = false
+    #endif
+
     private func launchRunner() {
+        #if targetEnvironment(simulator)
+        // On a simulator, WebDriverAgent runs from Xcode on the Mac (`xcodebuild test` of
+        // WebDriverAgentRunner, as in .github/workflows/ios-core.yml) and answers on 127.0.0.1:8100.
+        Task { [weak self] in
+            let up = await RunnerProbe.answers()
+            self?.runnerChanged(up ? RunnerStatus(state: "running") :
+                RunnerStatus(state: "failed", detail: "WebDriverAgent is not answering on 127.0.0.1:8100", fix: "Start WebDriverAgentRunner on this simulator from Xcode"))
+        }
+        return
+        #else
         guard let launcherConfig else { return }
         do {
             try launcher.start(config: launcherConfig) { [weak self] status in Task { @MainActor in self?.runnerChanged(status) } }
         } catch { runnerChanged(RunnerStatus(state: "failed", detail: "\(error)")) }
+        #endif
     }
 
     /// Stops the runner, and with it iOS's automation banner, while the relay stays connected; the
@@ -331,7 +359,7 @@ final class AppModel {
         log.add("runner", "stopping: \(reason)")
         // The runner is asked to shut itself down (it ends its test and exits) and the launcher's
         // session is closed; the launcher also ends the process through the developer services.
-        Task { await RunnerProbe.shutdown() }
+        if !Self.onSimulator { Task { await RunnerProbe.shutdown() } }
         launcher.stop()
         standBy(reason: reason)
         confirmRunnerEnded()
@@ -341,6 +369,8 @@ final class AppModel {
     /// once a second for 30 s. The log says how long it took. If it is still there after 10 s, the
     /// home screen says so, and the notice goes away by itself the moment the runner is gone.
     func confirmRunnerEnded() {
+        // A simulator's runner belongs to Xcode on the Mac and stays up.
+        guard !Self.onSimulator else { return }
         endCheck += 1
         let check = endCheck
         Task { [weak self] in
@@ -493,6 +523,7 @@ final class AppModel {
     private func handle(_ event: ShellEvent) {
         // Events after Turn off (the core's own "stopped") are not for the screen.
         guard sessionOn else { return }
+        onShellEvent?(event)
         switch event {
         case .relay(let status):
             if status != relayStatus { log.add("relay", "\(status)") }
@@ -560,6 +591,20 @@ final class AppModel {
                 }
             }
         }
+    }
+
+    // MARK: The chat's tools
+
+    /// A tool call from the chat's model loop. Poki turns on first when it is off (the runner then starts
+    /// on this call, like for an agent's first request); when it cannot, the answer says why.
+    func runTool(_ name: String, arguments: String) async -> PokiCore.ToolAnswer {
+        if !sessionOn { startSession() }
+        guard sessionOn else {
+            let why = problem ?? "Poki is off."
+            return PokiCore.ToolAnswer(text: "not_sent: Poki could not turn on: \(why) Nothing was sent. Tell the owner what to fix.", jpeg: nil, isError: true)
+        }
+        lastAgentActivity = Date()
+        return await core.callTool(name, arguments: arguments)
     }
 
     // MARK: Approvals
