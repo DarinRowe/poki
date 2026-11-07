@@ -1,15 +1,17 @@
 #!/bin/bash
-# check.sh [--apps] [NATIVE_DIR]
+# check.sh [--apps|--cycle] [NATIVE_DIR]
 # On a new simulator, Poki's in-process code (NATIVE_DIR, default this checkout's Poki/Native) reads the
 # fixture app's element tree, taps its text field, types, and reads the value and keyboard focus back.
 # The tree must hold every labelled element that the simulator's own accessibility reader
 # (native/simulator.m) reports for the same screen. With --apps it instead launches the fixture, launches
 # Settings, activates the fixture (the same process returns), launches it again (a new process) and
-# terminates it. The simulator is deleted afterwards.
+# terminates it. With --cycle the field check runs after the session was closed and opened again, as Poki
+# does when it is idle, and a touch sent while closed has to be refused. The simulator is deleted afterwards.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 MODE=field
 if [ "${1:-}" = "--apps" ]; then MODE=apps; shift; fi
+if [ "${1:-}" = "--cycle" ]; then MODE=cycle; shift; fi
 REPO="$(cd "$HERE/../../../.." && pwd)"
 NATIVE="$(cd "${1:-$REPO/native/ios-app/Poki/Native}" && pwd)"
 X="$(xcode-select -p)/Platforms/iPhoneSimulator.platform/Developer"
@@ -48,6 +50,8 @@ xcrun simctl install "$UDID" "$FIXTURE"
 export SIMCTL_CHILD_POKI_SIMULATOR_DEVELOPER_DIR="$X"
 export SIMCTL_CHILD_DYLD_FRAMEWORK_PATH="$X/Library/Frameworks:$X/Library/PrivateFrameworks"
 export SIMCTL_CHILD_DYLD_LIBRARY_PATH="$X/usr/lib"
+# POKI_INPROCESS_OWNED_SESSION=1 makes Poki open its own daemon session instead of XCTest's shared one.
+[ -n "${POKI_INPROCESS_OWNED_SESSION:-}" ] && export SIMCTL_CHILD_POKI_INPROCESS_OWNED_SESSION=1
 DOCS="$(xcrun simctl get_app_container "$UDID" local.poki.inprocess-check data)/Documents"
 if [ "$MODE" = apps ]; then
   xcrun simctl launch "$UDID" local.poki.inprocess-check -mode apps -tag apps -delay 2 >/dev/null
@@ -71,22 +75,39 @@ PY
   echo "in-process launch, launch, activate, relaunch and terminate passed"
   exit 0
 fi
-xcrun simctl launch "$UDID" local.poki.inprocess-check -mode field -tag field -delay 8 -text "$TEXT" -times "${POKI_CHECK_TIMES:-1}" >/dev/null
+xcrun simctl launch "$UDID" local.poki.inprocess-check -mode "$MODE" -tag field -delay 8 -text "$TEXT" -times "${POKI_CHECK_TIMES:-1}" >/dev/null
 sleep 3
 xcrun simctl launch "$UDID" local.pokimcp.fixture >/dev/null
-for _ in $(seq 60); do [ -s "$DOCS/field.json" ] && break; sleep 1; done
+for _ in $(seq 90); do [ -s "$DOCS/field.json" ] && break; sleep 1; done
+if [ ! -s "$DOCS/field.json" ]; then
+  echo "::error::the check app wrote no result in 90 s"
+  [ -s "$DOCS/field-progress.json" ] && { echo "progress:"; cat "$DOCS/field-progress.json"; }
+  echo "check app running: $(xcrun simctl spawn "$UDID" launchctl list | grep -c 'local.poki.inprocess-check' || true)"
+  for f in $(ls -t ~/Library/Logs/DiagnosticReports/InProcessCheck* 2>/dev/null | head -1); do echo "== crash $f"; head -60 "$f"; done
+  xcrun simctl spawn "$UDID" log show --last 3m --predicate 'process == "InProcessCheck" OR process == "testmanagerd"' --style compact 2>/dev/null | tail -60 || true
+  OUT="${POKI_CHECK_OUT:-}"; if [ -n "$OUT" ]; then mkdir -p "$OUT"; cp "$DOCS"/field* "$OUT/" 2>/dev/null || true; cp ~/Library/Logs/DiagnosticReports/InProcessCheck* "$OUT/" 2>/dev/null || true; fi
+  exit 1
+fi
 echo "{\"id\":\"$UDID\",\"op\":\"ax\"}" | "$WORK/simulator" > "$WORK/reference.json"
 OUT="${POKI_CHECK_OUT:-}"
 if [ -n "$OUT" ]; then mkdir -p "$OUT"; cp "$DOCS"/field* "$WORK/reference.json" "$OUT/"; xcrun simctl io "$UDID" screenshot "$OUT/screen.png" >/dev/null 2>&1 || true; fi
 cat "$DOCS/field.json"
-python3 - "$DOCS/field.json" "$TEXT" <<'PY'
+python3 - "$DOCS/field.json" "$TEXT" "$MODE" <<'PY'
 import json, sys
 r = json.load(open(sys.argv[1]))
 assert r["prepare"].get("ok"), f"no session: {r['prepare']}"
+if sys.argv[3] == "cycle":
+    assert r["close"].get("closed"), f"close found no session: {r['close']}"
+    assert r["closed_touch"]["delivery"] == 0, f"a touch after close was not refused: {r['closed_touch']}"
+    assert r["prepare2"].get("ok"), f"the session did not open again: {r['prepare2']}"
+    assert r["prepare2"]["generation"] > r["prepare"]["generation"], f"the reopened session kept generation {r['prepare2']['generation']}"
+    assert r["prepare2"]["reused"] is False, f"prepare said the closed session was reused: {r['prepare2']}"
+    assert "source_code2" not in r, f"no element tree after reopening: {r['source_code2']}"
+    assert r["front2"].get("bundleId") == "local.pokimcp.fixture", f"front app after reopening: {r['front2']}"
 assert "source_code" not in r, f"no element tree: {r['source_code']}"
 assert r["front"].get("bundleId") == "local.pokimcp.fixture", f"front app: {r['front']}"
 assert r.get("tap") == 1 and r.get("type") == 1, f"tap {r.get('tap')} type {r.get('type')}"
 assert r.get("focus", {}).get("value") == sys.argv[2], f"focused field reads {r.get('focus')}"
 PY
 python3 "$HERE/compare.py" "$DOCS/field-after.xml" "$WORK/reference.json"
-echo "in-process read, tap, type and read-back passed"
+if [ "$MODE" = cycle ]; then echo "in-process close, reopen (generation $(python3 -c "import json;print(json.load(open('$DOCS/field.json'))['prepare2']['generation'])")), read, tap, type and read-back passed"; else echo "in-process read, tap, type and read-back passed"; fi

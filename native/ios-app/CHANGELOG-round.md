@@ -2,6 +2,15 @@
 
 What changed in each round, and what still needs the phone. Newest first.
 
+## Round 10 (2026-11-07, on poki/ios-integration), version 0.2.8
+
+Changed:
+- In-process path: the automation session is closed after the idle time, from Stop and when Poki is turned off, so iOS's "Automation Running" banner shows only while an agent works, as on the runner path. The next agent request opens a new session (new generation; an action meant for the old one is refused). A restart PokiCore asks for closes and reopens the session instead of being ignored. `scripts/inprocess-sim/check.sh --cycle` checks close, refusal while closed, reopen, read, tap and type on a simulator, and CI runs all three check modes.
+- The idle stop applies to the in-process path too (Settings > Stop When Idle For).
+
+Needs the phone:
+- That the banner goes within seconds of the idle stop, and that reopening asks for no passcode within the same boot.
+
 ## Integration (2026-11-08, poki/ios-integration), version 0.2.7
 
 Our branches merged onto Zhehan's dev/ios-standalone (cdebb5d). 0.2.5 and 0.2.6 were our beta builds; this is the first version from the shared branch. By default only Poki is installed: it automates the iPhone in its own process, and Poki Runner is optional.

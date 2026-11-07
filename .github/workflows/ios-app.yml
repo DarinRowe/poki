@@ -16,6 +16,34 @@ permissions:
   contents: read
 
 jobs:
+  # Poki's in-process automation code on a fresh simulator: read, tap, type and read back; open,
+  # switch and end apps; and the idle cycle (close the session, refuse a touch, open a new one).
+  inprocess:
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use the newest Xcode
+        run: |
+          XCODE="$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+          sudo xcode-select -s "$XCODE/Contents/Developer"
+          xcodebuild -version
+      - name: Field check
+        run: POKI_CHECK_OUT=out/field native/ios-app/scripts/inprocess-sim/check.sh
+      - name: Apps check
+        run: POKI_CHECK_OUT=out/apps native/ios-app/scripts/inprocess-sim/check.sh --apps
+      - name: Idle cycle check (close, refuse, reopen)
+        run: POKI_CHECK_OUT=out/cycle native/ios-app/scripts/inprocess-sim/check.sh --cycle
+      - name: Idle cycle check with Poki's own session (not XCTest's shared one)
+        if: always()
+        run: POKI_INPROCESS_OWNED_SESSION=1 POKI_CHECK_OUT=out/cycle-owned native/ios-app/scripts/inprocess-sim/check.sh --cycle
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: inprocess-check
+          path: out/
+          if-no-files-found: ignore
+
   app:
     runs-on: macos-latest
     timeout-minutes: 60

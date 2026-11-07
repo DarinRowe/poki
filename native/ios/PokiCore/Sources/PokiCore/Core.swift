@@ -50,11 +50,14 @@ public struct CoreConfig: Sendable {
         self.taskGap = taskGap
     }
 
-    /// Whether `app` is Poki itself. An app known only by name counts when it is named Poki.
+    /// Whether `app` is Poki itself: one of `ownApps`, or its Live Activity widget or tunnel
+    /// extension. Not every app under Poki's id prefix: the gym (nz.zheha.poki.gym) is an app
+    /// under test, and a prefix rule refused every tap in it. An app known only by name counts
+    /// when it is named Poki.
     func isPoki(_ app: Foreground?) -> Bool {
         guard let app else { return false }
         guard let bundle = app.bundleID, !bundle.isEmpty else { return app.name?.caseInsensitiveCompare("Poki") == .orderedSame }
-        return ownApps.contains { bundle == $0 || bundle.hasPrefix($0 + ".") }
+        return ownApps.contains { bundle == $0 || bundle == $0 + ".widgets" || bundle == $0 + ".tunnel" }
     }
 
     /// What `do` and a voice tap answer when the tap would land in Poki.

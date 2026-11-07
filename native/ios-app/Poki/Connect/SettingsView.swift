@@ -159,7 +159,11 @@ private struct SettingsHome: View {
             }
         }
         .whiteCard()
-        GroupFootnote(text: "iOS shows the automation banner only while the runner is active. Poki starts it when needed and stops it when idle. Don’t close Poki Runner while an agent is working.")
+        if model.automationPath == .inProcess {
+            GroupFootnote(text: "iOS shows the automation banner only while Poki’s automation session is open. Poki opens it when an agent asks and closes it when idle.")
+        } else {
+            GroupFootnote(text: "iOS shows the automation banner only while the runner is active. Poki starts it when needed and stops it when idle. Don’t close Poki Runner while an agent is working.")
+        }
     }
 
     static let idleChoices: [(Int, LocalizedStringKey)] = [

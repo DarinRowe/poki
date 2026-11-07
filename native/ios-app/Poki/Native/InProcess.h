@@ -37,6 +37,10 @@ typedef NS_ENUM(NSInteger, PKDelivery) {
 /// Loads the Developer libraries, opens the daemon session and enables Automation Mode, or reuses an
 /// enable of the same session and generation. Keys: ok, code, detail, generation, reused, seconds.
 - (NSDictionary<NSString *, id> *)prepare;
+/// Ends the session, and with it Automation Mode and iOS's "Automation Running" banner, while Poki
+/// stays up. Keys: closed (whether one was open), generation (the one that ended), seconds. The next
+/// prepare opens a new session; iOS asks for no passcode again within the same boot.
+- (NSDictionary<NSString *, id> *)close;
 /// One or more fingers, each a path pressed at its first point and lifted at its last, sent as one
 /// event. Waits up to `timeout` for the daemon's reply; a dispatched event is never sent again.
 - (PKOutcome *)touch:(NSArray<NSArray<PKTouchPoint *> *> *)fingers timeout:(double)timeout;
