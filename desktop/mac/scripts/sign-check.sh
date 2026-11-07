@@ -28,8 +28,10 @@ for ext in "$APP"/PlugIns/*.appex; do
   echo "$(basename "$ext"): $(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$ext/Info.plist")"
 done
 step "entitlements"
-codesign -d --entitlements - --xml "$APP" 2>/dev/null | plutil -p - || fail=1
-codesign -d --entitlements - --xml "$APP" 2>/dev/null | grep -q "SELFTEST01.nz.zheha.poki.SELFTEST01" || { echo "application-identifier missing"; fail=1; }
+ENTS="$(codesign -d --entitlements :- "$APP" 2>&1 || true)"
+echo "$ENTS" | sed -n '/<plist/,/<\/plist>/p'
+echo "$ENTS" | grep -q "SELFTEST01.nz.zheha.poki.SELFTEST01" || { echo "application-identifier missing"; fail=1; }
+echo "$ENTS" | grep -q "group.nz.zheha.poki.SELFTEST01" || { echo "app group missing"; fail=1; }
 step "no packet tunnel extension"
 if ls "$APP"/PlugIns/ 2>/dev/null | grep -qi tunnel; then echo "tunnel extension still present"; fail=1; else echo "none"; fi
 [ "$fail" = 0 ] && echo "SIGNING CHECK PASSED" || { echo "SIGNING CHECK FAILED"; exit 1; }

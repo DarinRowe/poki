@@ -47,6 +47,9 @@ pub fn self_signed(team: &str) -> Result<Identity> {
     dn.push(rcgen::DnType::CountryName, "US");
     params.distinguished_name = dn;
     params.extended_key_usages = vec![rcgen::ExtendedKeyUsagePurpose::CodeSigning];
+    // As Apple's development certificates: codesign rejects a leaf without digitalSignature.
+    params.key_usages = vec![rcgen::KeyUsagePurpose::DigitalSignature];
+    params.is_ca = rcgen::IsCa::ExplicitNoCa;
     let cert = params.self_signed(&kp).map_err(|e| Error::msg(e.to_string()))?;
     Ok(Identity {
         team_id: team.to_string(),
