@@ -103,6 +103,19 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
             "POST /wda/apps/launch": { [unowned self] body, _ in try self.done(self.native.app(try Self.bundle(body), action: "launch")) },
             "POST /wda/apps/activate": { [unowned self] body, _ in try self.done(self.native.app(try Self.bundle(body), action: "activate")) },
             "POST /wda/apps/terminate": { [unowned self] body, _ in try self.done(self.native.app(try Self.bundle(body), action: "terminate")) },
+            // The clipboard is Poki's own to read and write here; WDA's wire form is base64 text.
+            "POST /wda/getPasteboard": { _, _ in
+                let text = DispatchQueue.main.sync { UIPasteboard.general.string } ?? ""
+                return .string(Data(text.utf8).base64EncodedString())
+            },
+            "POST /wda/setPasteboard": { body, _ in
+                guard let encoded = body?["content"]?.string, let data = Data(base64Encoded: encoded, options: .ignoreUnknownCharacters) else {
+                    throw Refusal("invalid argument", "content must be base64 text")
+                }
+                let text = String(decoding: data, as: UTF8.self)
+                DispatchQueue.main.sync { UIPasteboard.general.string = text }
+                return .null
+            },
         ]
     }
 
