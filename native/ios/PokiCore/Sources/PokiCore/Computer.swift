@@ -487,26 +487,52 @@ final class Computer: @unchecked Sendable {
     /// a half-typed or unreadable field: not sent again. `done` is the step's text when the text is in
     /// the field. `note` goes on the answer to the model and may quote the field; `logNote` goes on the
     /// line the app log keeps and only ever says which case it was, never what the field holds.
+    ///
+    /// The real runner answers an empty field with its placeholder, so a value is read as text first
+    /// (the value is the target text, or holds it) and as a placeholder second. A value equal to the
+    /// placeholder is empty unless the text begins with it: then a first try may have landed that
+    /// much, and the field is left alone rather than risk typing the text twice.
     func recoverType(_ action: JSON, text: String, why: String, until: Double) async -> (done: String?, note: String, logNote: String) {
         guard until - now() > 1.2 else { return (nil, "", "no time left to check the field") }
         let hidden = describe(action).hasSuffix("(hidden)")
         func shown(_ value: String) -> String { hidden ? "\(value.count) characters" : "\"\(value.count > 200 ? String(value.prefix(190)) + "…" : value)\"" }
-        let reading = await readField(timeout: min(3, until - now() - 0.2))
-        let value: String
-        switch reading {
+        func typed(_ held: String) -> (done: String?, note: String, logNote: String) {
+            ("\(describe(action)) (typed); the runner answered late or with an error, and the field now reads \(shown(held))", "", "")
+        }
+        enum Doubt { case none, mayBeThePlaceholder, placeholderUnread }
+        var value = ""
+        var doubt = Doubt.none
+        switch await readField(until: until) {
         case .unreadable:
             return (nil, "the field could not be read afterwards, so the text was not typed again", "field unreadable, not typed again")
         case .empty:
-            value = ""
-        case .text(let held):
-            if held.contains(text) {
-                return ("\(describe(action)) (typed); the runner answered late or with an error, and the field now reads \(shown(held))", "", "field contains target")
+            break
+        case .text(let held, let id):
+            // Exactly the text: typed, or the placeholder is this very text. Either way it is not typed twice.
+            if held == text { return typed(held) }
+            switch await placeholder(ofField: id, until: until) {
+            case .text(let shownPlaceholder) where shownPlaceholder == held:
+                if text.hasPrefix(held) { value = held; doubt = .mayBeThePlaceholder }
+            case let known:
+                if held.contains(text) { return typed(held) }
+                value = held
+                if known == .unreadable { doubt = .placeholderUnread }
             }
-            value = held
         }
-        let state = value.isEmpty ? "field empty" : "field has other text"
+        let state: String
+        switch doubt {
+        case .none: state = value.isEmpty ? "field empty" : "field has other text"
+        case .mayBeThePlaceholder: state = "field reads its placeholder or the start of the text"
+        case .placeholderUnread: state = "field has text, placeholder unreadable"
+        }
         guard action["clear"]?.bool ?? false || value.isEmpty else {
-            return (nil, "the field holds \(shown(value)), which is not all of the text, so it was not typed again (a second try would double it)", "\(state), not typed again")
+            let reason: String
+            switch doubt {
+            case .none: reason = "the field holds \(shown(value)), which is not all of the text"
+            case .mayBeThePlaceholder: reason = "the field reads \(shown(value)), which is either its placeholder or the start of the text"
+            case .placeholderUnread: reason = "the field reads \(shown(value)); its placeholder could not be read, so it is not known whether that is text"
+            }
+            return (nil, "\(reason), so it was not typed again (a second try could double it)", "\(state), not typed again")
         }
         guard until - now() > 1.2 else {
             return (nil, value.isEmpty ? "the field is empty; there was no time left to type again" : "the field holds \(shown(value)); there was no time left to type again", "\(state), no time left to type again")

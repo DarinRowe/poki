@@ -250,6 +250,11 @@ Each answer is facts only: the app in front, numbered elements, what each action
   it, and putting the clipboard back before the owner answers pastes the owner's own text (seen on
   the phone, Nov 7 2026 12:30 am ET: the owner's clipboard went into JD's search box). While the
   field has not shown the text the answer says `iOS may be asking the owner to allow the paste`.
+  A `type` that fails or times out is checked against the focused field before anything else is
+  sent: a field that already holds the text counts as typed, an empty one (the runner answers an
+  empty field with its placeholder or null) gets one more try, and a field holding anything else,
+  half the text or other text, is not typed into again unless `clear` is set. A value equal to the
+  placeholder is empty, except when the text is that value or begins with it.
 - **Locked phone**: `do` checks `/wda/locked` first and sends nothing but buttons while locked
   (`screen: locked`); `look` says so too. Unknown counts as unlocked.
 - **Approvals**: the owner's time on an approval does not count against the actions or the read;

@@ -11,6 +11,7 @@ final class FaultTests: XCTestCase {
         func install(_ wda: FakeWDA, menu: Bool = true) {
             wda.set("GET /element/active") { _ in (200, ["value": ["ELEMENT": "E1"]]) }
             wda.set("GET /element/E1/attribute/value") { [value] _ in (200, ["value": .string(value.value)]) }
+            wda.set("GET /element/E1/attribute/placeholderValue") { _ in (200, ["value": .null]) }
             wda.set("GET /element/E1/rect") { _ in (200, ["value": ["x": 16, "y": 100, "width": 358, "height": 44]]) }
             wda.set("POST /wda/keys") { [value] body in
                 for key in body?["value"]?.array ?? [] {

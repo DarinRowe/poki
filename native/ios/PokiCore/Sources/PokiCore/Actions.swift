@@ -268,25 +268,38 @@ extension Computer {
 
     /// What the focused field holds, as far as a retry decision needs it.
     enum FieldReading: Equatable {
-        /// Nothing typed in it. The real runner answers an empty field with its placeholder (or null),
-        /// never with an empty string, so the placeholder counts as nothing.
+        /// Nothing in it: the runner answered null or an empty string.
         case empty
-        case text(String)
+        /// What the runner read back, raw, and the field's id. The real runner answers an empty field
+        /// with its placeholder, so this may be a placeholder; `placeholder(ofField:until:)` tells.
+        case text(String, id: String)
         case unreadable
     }
 
-    func readField(timeout: Double) async -> FieldReading {
-        guard let active = try? await runner.call("GET", "/element/active", timeout: timeout, countsAsMiss: false),
+    enum Placeholder: Equatable {
+        case text(String)
+        case absent
+        case unreadable
+    }
+
+    /// Each read gets what is left of `until`, up to 3 s, so three reads never run past it.
+    func readField(until: Double) async -> FieldReading {
+        func timeout() -> Double { min(3, until - now() - 0.2) }
+        guard timeout() > 0.2,
+              let active = try? await runner.call("GET", "/element/active", timeout: timeout(), countsAsMiss: false),
               let id = active["ELEMENT"]?.string ?? active["element-6066-11e4-a52e-4f735466cecf"]?.string,
-              let value = try? await runner.call("GET", "/element/\(id)/attribute/value", timeout: timeout, countsAsMiss: false) else { return .unreadable }
+              timeout() > 0.2,
+              let value = try? await runner.call("GET", "/element/\(id)/attribute/value", timeout: timeout(), countsAsMiss: false) else { return .unreadable }
         if case .null = value { return .empty }
         guard let text = value.string else { return .unreadable }
-        if text.isEmpty { return .empty }
-        // Placeholder: asked only when the field shows something, to tell it from the owner's own text.
-        if let placeholder = (try? await runner.call("GET", "/element/\(id)/attribute/placeholderValue", timeout: timeout, countsAsMiss: false))?.string, placeholder == text {
-            return .empty
-        }
-        return .text(text)
+        return text.isEmpty ? .empty : .text(text, id: id)
+    }
+
+    func placeholder(ofField id: String, until: Double) async -> Placeholder {
+        let timeout = min(3, until - now() - 0.2)
+        guard timeout > 0.2, let value = try? await runner.call("GET", "/element/\(id)/attribute/placeholderValue", timeout: timeout, countsAsMiss: false) else { return .unreadable }
+        if case .null = value { return .absent }
+        return value.string.map(Placeholder.text) ?? .unreadable
     }
 
     func fieldValue(timeout: Double) async -> String? {
