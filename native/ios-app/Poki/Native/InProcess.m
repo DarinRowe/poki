@@ -295,6 +295,13 @@ static BOOL PKInstanceSignature(Class cls, SEL selector, const char *result, NSA
     return @{@"ok": @YES, @"generation": @(_sessions.generation), @"reused": @(_sessions.enableWasReused), @"seconds": @(seconds)};
 }
 
+- (NSDictionary<NSString *, id> *)close {
+    NSTimeInterval started = NSProcessInfo.processInfo.systemUptime;
+    uint64_t generation = _sessions.generation;
+    BOOL closed = [_sessions close];
+    return @{@"closed": @(closed), @"generation": @(generation), @"seconds": @(NSProcessInfo.processInfo.systemUptime - started)};
+}
+
 /// The prepared session and its generation, or why there is none.
 - (id)current:(uint64_t *)generation outcome:(PKOutcome **)outcome {
     NSError *error;

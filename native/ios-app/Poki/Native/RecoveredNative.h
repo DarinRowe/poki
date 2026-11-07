@@ -18,6 +18,9 @@ NS_ASSUME_NONNULL_BEGIN
 // Call from a worker queue: the upstream promise wait can take 3 seconds.
 - (nullable id)prepare:(NSError **)error;
 - (BOOL)isCurrent:(id)session generation:(uint64_t)generation;
+// Ends the current session (and Automation Mode with it). YES when one was open. The next prepare
+// opens a new one, with a new generation.
+- (BOOL)close;
 - (uint64_t)generation;
 - (BOOL)enableWasReused;
 @end
