@@ -24,8 +24,11 @@ public struct CoreConfig: Sendable {
     /// Poki's own bundle id: a tap that lands on its Live Activity (the Dynamic Island) brings it to the
     /// front; `do` brings the app it was working in back and says so, rather than act inside Poki.
     public var ownBundleID: String
+    /// How long without a look or do ends a task that was never finished, so the next call starts
+    /// a new one. Well beyond an agent's thinking; the app's idle stop usually ends the task first.
+    public var taskGap: Double
 
-    public init(runnerURL: URL = URL(string: "http://127.0.0.1:8100")!, sensitive: SensitivityRules = SensitivityRules(), approvalWait: Double = 20, toolDeadline: Double = 25, actionCap: Double = 6, readTimeout: Double = 4, busyWait: Double = 2, runnerWait: Double = 15, treeFormat: String = "xml", ownBundleID: String = "nz.zheha.poki") {
+    public init(runnerURL: URL = URL(string: "http://127.0.0.1:8100")!, sensitive: SensitivityRules = SensitivityRules(), approvalWait: Double = 20, toolDeadline: Double = 25, actionCap: Double = 6, readTimeout: Double = 4, busyWait: Double = 2, runnerWait: Double = 15, treeFormat: String = "xml", ownBundleID: String = "nz.zheha.poki", taskGap: Double = 300) {
         self.runnerURL = runnerURL
         self.sensitive = sensitive
         self.approvalWait = approvalWait
@@ -36,6 +39,7 @@ public struct CoreConfig: Sendable {
         self.runnerWait = runnerWait
         self.treeFormat = treeFormat
         self.ownBundleID = ownBundleID
+        self.taskGap = taskGap
     }
 }
 
@@ -193,6 +197,8 @@ public final class PokiCore: @unchecked Sendable {
     public func resolveApproval(id: String, approved: Bool) { approvals.resolve(id: id, approved: approved) }
 
     public var pendingApproval: Approval? { approvals.pending }
+
+    public func finishTask() async -> String? { nil }
 
     // MARK: MCP over HTTP (Streamable HTTP, JSON answers only)
 

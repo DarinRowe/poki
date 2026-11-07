@@ -413,3 +413,83 @@ final class DDITests: XCTestCase {
         try? FileManager.default.removeItem(at: dir)
     }
 }
+
+/// ESP-176: the owner asks in one app (Grok Bot, or Poki's own chat), Poki works in others, and when
+/// the task ends the phone is back where the owner asked, showing the reply.
+final class ReturnToOriginTests: XCTestCase {
+    /// The app in front as WDA reports it, moved by launch, activate and Home like on the phone.
+    func phone(_ wda: FakeWDA, front: String) -> LockedBox<String> {
+        let box = LockedBox(front)
+        wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": .string(box.value), "name": .string(box.value)]]) }
+        for key in ["POST /wda/apps/activate", "POST /wda/apps/launch"] {
+            wda.set(key) { body in box.value = body?["bundleId"]?.string ?? box.value; return (200, ["value": .null]) }
+        }
+        wda.set("POST /wda/homescreen") { _ in box.value = "com.apple.springboard"; return (200, ["value": .null]) }
+        return box
+    }
+
+    func testFinishGoesBackToTheAppTheTaskBeganIn() async {
+        for (origin, startsWithLook) in [("ai.x.grok", true), ("ai.x.grok", false), ("nz.zheha.poki", true), ("com.apple.springboard", true)] {
+            let (core, wda, _) = makeCore()
+            let front = phone(wda, front: origin)
+            if startsWithLook { _ = await core.call("look", [:]) }
+            _ = await core.call("do", ["actions": [["launch": "com.apple.weather"]]])
+            _ = await core.call("look", [:])
+            XCTAssertEqual(front.value, "com.apple.weather", "between calls the phone stays where the work is (\(origin))")
+            let done = await core.call("do", ["actions": [], "finish": true])
+            XCTAssertFalse(done.isError, done.text)
+            XCTAssertTrue(done.text.hasPrefix("app: com.apple.weather"), "the answer still shows the work's last screen: \(done.text)")
+            XCTAssertEqual(front.value, origin, "\(origin), look first: \(startsWithLook): \(done.text)")
+        }
+    }
+
+    func testFinishWhereTheTaskBeganSendsNothing() async {
+        let (core, wda, _) = makeCore()
+        _ = phone(wda, front: "ai.x.grok")
+        _ = await core.call("look", [:])
+        let done = await core.call("do", ["actions": [], "finish": true])
+        XCTAssertFalse(done.isError, done.text)
+        XCTAssertEqual(wda.bodies("POST /wda/apps/activate").count, 0)
+        XCTAssertEqual(wda.sent.filter { $0 == "POST /wda/homescreen" }.count, 0)
+    }
+
+    func testTheClientEndingItsSessionEndsTheTask() async throws {
+        let (core, wda, _) = makeCore()
+        let front = phone(wda, front: "ai.x.grok")
+        func post(_ body: JSON, _ session: String?) async -> RelayResponse {
+            await core.handle(RelayRequest(id: "r", method: "POST", headers: session.map { ["mcp-session-id": $0] } ?? [:], body: body.serialized()))
+        }
+        func delete(_ session: String) async { _ = await core.handle(RelayRequest(id: "d", method: "DELETE", headers: ["mcp-session-id": session], body: "")) }
+        let initialized = await post(["jsonrpc": "2.0", "id": 1, "method": "initialize", "params": ["protocolVersion": "2025-06-18"]], nil)
+        let session = try XCTUnwrap(initialized.headers["mcp-session-id"])
+        _ = await post(["jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": ["name": "look", "arguments": .object([:])]], session)
+        _ = await post(["jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": ["name": "do", "arguments": ["actions": [["launch": "com.apple.weather"]]]]], session)
+        await delete("another-client")
+        XCTAssertEqual(front.value, "com.apple.weather", "another client's session is not this task")
+        await delete(session)
+        XCTAssertEqual(front.value, "ai.x.grok")
+    }
+
+    /// The app calls this before it stops an idle runner.
+    func testFinishingFromTheAppGoesBackOnce() async {
+        let (core, wda, _) = makeCore()
+        let front = phone(wda, front: "ai.x.grok")
+        _ = await core.call("look", [:])
+        _ = await core.call("do", ["actions": [["launch": "com.apple.weather"]]])
+        _ = await core.finishTask()
+        XCTAssertEqual(front.value, "ai.x.grok")
+        front.value = "com.apple.weather"
+        _ = await core.finishTask()
+        XCTAssertEqual(front.value, "com.apple.weather", "the task is over: a second finish moves nothing")
+    }
+
+    /// A task never finished (no finish, idle stop off) does not send a later task's phone back to it.
+    func testACallAfterTheTaskGapStartsANewTask() async {
+        let (core, wda, _) = makeCore { $0.taskGap = 0 }
+        let front = phone(wda, front: "ai.x.grok")
+        _ = await core.call("look", [:])
+        front.value = "com.apple.weather"
+        _ = await core.call("do", ["actions": [], "finish": true])
+        XCTAssertEqual(front.value, "com.apple.weather")
+    }
+}
