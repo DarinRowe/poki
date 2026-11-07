@@ -550,7 +550,7 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
         weakWalk = walk = ^(id node) {
             NSString *type = [@"XCUIElementType" stringByAppendingString:PKTypeName([node elementType])];
             CGRect f = [node frame];
-            NSString *identifier = PKText([node identifier]), *label = PKText([node label]), *value = PKText([node value]);
+            NSString *identifier = PKText([node identifier]), *label = PKText([node label]), *value = PKText([(NSObject *)node value]);
             NSString *name = identifier.length ? identifier : label;
             [xml appendFormat:@"<%@ type=\"%@\"", type, type];
             if (name.length) [xml appendFormat:@" name=\"%@\"", PKEscape(name)];
