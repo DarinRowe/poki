@@ -21,6 +21,9 @@ result and the time next to each line.
 - [ ] Built-in, with Poki on: turn Poki's VPN off in Settings > VPN. The agent's runner status says to
   open Poki and tap Enable local connection, and names no proxy app. Tapping it while Poki is on brings
   the runner back within seconds.
+- [ ] Installed over 0.2.3 with a proxy app that was set up only in the proxy app (no connection
+  chosen in Poki): Turn on says to choose a local connection first, and Setup > External app > Use
+  the current VPN brings it back. Say this in the release notes for 0.2.3 users.
 - [ ] External build: no PokiTunnel is embedded and no built-in enable button is offered. Continue
   with an external option below. Use this build when Network Extension signing is unavailable.
 - [ ] Or LocalDevVPN (App Store) on, for people without a proxy app.
