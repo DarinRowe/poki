@@ -1,6 +1,6 @@
 # Note for Joseph's agent: Poki on the iPhone, standalone (branch `dev/ios-standalone`)
 
-Written Nov 7 2026, 1:30 am ET, updated 5:10 am ET, for Joseph and the agent working for him. Zhehan is away and cannot
+Written Nov 7 2026, 1:30 am ET, updated 6:00 am ET, for Joseph and the agent working for him. Zhehan is away and cannot
 test further builds, so everything from this round is on this branch. It was developed on Zhehan's
 fork (ZhehanZhang/poki-remote) and consolidated here; nothing on `main` was changed and no PR is open.
 The companion branch `dev/mcp-agent-tools` carries the matching work on the Node MCP; its note is
@@ -49,12 +49,12 @@ All of it is new files under these paths, except a WebDriverAgent section in `TH
 
 | Path | What | Fork branch it came from (final commit) |
 |---|---|---|
-| `native/ios-app` | The app (0.2.3 plus the Nov 7 hand-off work), including the Live Activity | `dev/ios-app` c58d278, `dev/live-activity` 8654a1d |
-| `native/ios/PokiCore` | The on-phone MCP (`look`, `do`, `status`); its own note is `native/ios/PokiCore/NOTE-FOR-UPSTREAM.md` | `dev/ios-core` 1424272 |
+| `native/ios-app` | The app (0.2.4, build 57), including the Live Activity | `dev/ios-app` 6c1c32d, `dev/live-activity` 8654a1d |
+| `native/ios/PokiCore` | The on-phone MCP (`look`, `do`, `status`); its own note is `native/ios/PokiCore/NOTE-FOR-UPSTREAM.md` | `dev/ios-core` 1b3505a |
 | `native/launcher` | PokiLauncher (Rust, idevice): pairs, mounts the DDI, starts and supervises the runner | `dev/ios-core` 65f7595 |
 | `native/ios-runner` | WDA 16.15.3 submodule, branding, `PokiRunnerHost` | `dev/ios-runner` a3e80ea |
 | `deploy/cf-relay`, `native/ios/RelayCheck` | Workers relay and a client check | `dev/cf-relay` fb8876c |
-| `native/ios-gym` | Poki Gym: a simulator app with one screen per hard case for UI automation (animation that never idles, alerts, the paste prompt, long lists, sheets, late focus, dense and duplicated trees, a web view, a navigation stack), so look/do scenarios have a fixed target | `dev/ios-gym` 306d74e |
+| `native/ios-gym` | Poki Gym: a simulator app with one screen per hard case for UI automation (animation that never idles, alerts, the paste prompt, long lists, sheets, late focus, dense and duplicated trees, a web view, a navigation stack), so look/do scenarios have a fixed target; `ios-gym.yml` builds it and its scorecard job runs PokiCore from the same branch through ten hard screens and three faults (all pass) | `dev/ios-gym` 5703dfb |
 | `docs/research-ax-tree-reliability.md` | What bounds accessibility tree reads under animation, and the options | `dev/ios-app` |
 | `deploy/proxy-modules` | Loopback modules for Surge, Loon, sing-box, Shadowrocket | `dev/ios-app` |
 | `docs/ios-core.md`, `docs/device-test-checklist.md`, `docs/production-bar.md`, `docs/release-review.md`, `CHANGELOG.md` | Spec, phone checklist, release notes | |
@@ -71,6 +71,7 @@ needs a decision before anything ships from this repo.
 | 5 | 0.2.0 | Live Activity clipped; scrolling stalled; approvals never showed (event stream died after the first Turn off); Stop slow; raw JSON | 0.2.1 |
 | 6 | 0.2.1 | Taps near the top landed on the expanded Dynamic Island and opened Poki; iOS 27 container clipped the Live Activity; "Best Buy" read as a payment | 0.2.2 |
 | 7 | 0.2.2 | Surge's tunnel dropped twice and took the runner with it (recovery 30-90 s); tree reads stalled behind autoplay and a paste alert; one WDA session per read; paste leaked the clipboard; stale element numbers | 0.2.3 (tunnel side) and PokiCore e822e43 (clipboard, banner, sessions, relay drop); the rest is open |
+| 8 (unattended, simulator only) | 0.2.3 | Twelve Poki Gym runs: a wedged app held the runner; busy answers had no picture; a timed-out tree read failed the call; scroll_to answered unknown; container taps said nothing | 0.2.4: watchdog restart, picture from outside the runner, in-call re-read, scroll_to progress, hand-off card. Needs the phone: hand-off card, island taps, JD/WeChat again, passcode card |
 
 Details per round: `native/ios-app/CHANGELOG-round.md`. What only the phone can confirm:
 `native/ios/PokiCore/UNVERIFIED.md`, `docs/device-test-checklist.md`.
@@ -92,7 +93,7 @@ Details per round: `native/ios-app/CHANGELOG-round.md`. What only the phone can 
 6. All of it works both with the Poki agent in this repo and with a raw agent such as Claude
    connected straight to the MCP.
 
-## What landed after 0.2.3 (Nov 7, not yet on a phone)
+## What landed in 0.2.4 (Nov 7, simulator only, not yet on a phone)
 
 - **Never-halt answers** (PokiCore): an answer that carries a read is never `isError` (an `error:`
   line says what went wrong); a busy runner answers `not_sent` with the picture; a starting runner

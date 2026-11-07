@@ -160,7 +160,7 @@ extension Computer {
             if via == "pasted" {
                 note = try await paste(text, clear: clear, until: until, target: target)
             } else {
-                note = try await type(text, clear: clear, hidden: hidden, target: target)
+                note = try await type(text, clear: clear, hidden: hidden, target: target, until: until)
             }
             // What the field holds now, so the model sees at once whether the text arrived whole.
             let reads = await fieldValue(target: target, holding: text, timeout: min(1.5, max(0.3, until - now() - 0.2)))
@@ -295,7 +295,7 @@ extension Computer {
     /// cleared through WDA's element clear once (bounded at 3 s) and the text typed again; the
     /// answer says what happened. Returns a note for the answer.
     @discardableResult
-    func type(_ text: String, clear: Bool, hidden: Bool = false, target: Element? = nil) async throws -> String {
+    func type(_ text: String, clear: Bool, hidden: Bool = false, target: Element? = nil, until: Double = .infinity) async throws -> String {
         var deletes = 0
         var before: String?
         if clear {
@@ -304,6 +304,14 @@ extension Computer {
         }
         let keys = Array(repeating: "\u{8}", count: deletes) + text.map(String.init)
         guard keys.count <= 2000 else { throw ActionFailure(message: "at most 2000 characters at a time", delivery: .notSent) }
+        // The keys queue behind whatever the runner is still serving: the focus reads this side gave
+        // up on while the keyboard came up (the CI simulator's runner stood still for seconds at the
+        // keyboard's first use, and the keys sent behind those reads were "unknown"). A busy runner
+        // is waited for within the action's time; when it is not through, nothing is typed, so the
+        // text can be sent again safely.
+        if runner.busyWith != nil, await !runner.waitUntilFree(timeout: max(0.3, min(3, until - now() - 1))), let busy = runner.busyWith {
+            throw ActionFailure(message: "nothing was typed: the runner is still finishing an earlier \(busy). Send the type again (with ref, so the field is tapped again) once it is through.", delivery: .notSent)
+        }
         _ = try await runner.call("POST", "/wda/keys", ["value": .array(keys.map(JSON.string))], timeout: 3 + 0.06 * Double(keys.count))
         guard clear, before != nil else { return "" }
         guard let after = await fieldValue(target: target, holding: text, timeout: 1), after != text, !after.isEmpty, after != before else { return "" }
@@ -482,11 +490,21 @@ extension Computer {
         // again rather than being told that something unknown may have happened.
         var all = lastAll, swipes = 0, last: String?
         func found(_ e: Element) -> String { "\(swipes) swipes, found at \(e.frame.described)" }
+        func notYet(_ why: String) -> String { "\(swipes) swipes, \(wanted) not seen yet; \(why): call scroll_to again to go on from here" }
         while hit(all) == nil, swipes < max {
-            guard until - now() > 1.6 else {
-                return "\(swipes) swipes, \(wanted) not seen yet; the action's time ran out before the list was through (\(Int(Self.scrollCap)) s): call scroll_to again to go on from here"
+            guard until - now() > 1.6 else { return notYet("the action's time ran out before the list was through (\(Int(Self.scrollCap)) s)") }
+            // A swipe sent while the runner is still serving the read after the last one would only
+            // queue behind it and time out, and the whole scroll would come back unknown (seen in
+            // the gym on 300 rows): the runner is waited for, and a swipe the runner did not confirm
+            // ends the scroll with its progress, never with an unknown.
+            if runner.busyWith != nil, await !runner.waitUntilFree(timeout: Swift.max(0.3, Swift.min(2, until - now() - 1.6))) {
+                return notYet("the runner is still finishing the read after the last swipe")
             }
-            try await gesture(try swipePath(region, fingerGoes), seconds: 0.25, rest: 0.05, until: until - 0.8)
+            do {
+                try await gesture(try swipePath(region, fingerGoes), seconds: 0.25, rest: 0.05, until: until - 0.8)
+            } catch let e as RunnerError where e.delivery == .unknown {
+                return notYet("the runner did not confirm the last swipe in time (\(e.message)), so it may still land")
+            }
             swipes += 1
             await sleep(seconds: 0.1)
             guard let seen = try? await runner.tree(timeout: Swift.max(0.3, Swift.min(1.5, until - now() - 0.2)), format: config.treeFormat) else { continue }
@@ -496,7 +514,7 @@ extension Computer {
             all = seen.elements
         }
         if let e = hit(all) { return found(e) }
-        return "\(swipes) swipes, \(wanted) not seen yet within \(max) swipes: call scroll_to again to go on (max_swipes takes up to 15)"
+        return notYet("that is \(max) swipes (max_swipes takes up to 15)")
     }
 
     /// The time one scroll_to may take: more than an action, since it reports where it got to.
