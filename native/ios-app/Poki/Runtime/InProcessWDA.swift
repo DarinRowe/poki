@@ -86,6 +86,16 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
                 guard id == "focused", let value = self.focused?["value"] as? String else { throw Refusal("no such element", "the element is gone") }
                 return .string(value)
             },
+            // null when the field has no placeholder; refused when the snapshot did not say, which a
+            // failed type reads as "placeholder unreadable" and does not type again (ESP-160).
+            "GET /element/attribute/placeholderValue": { [unowned self] _, id in
+                guard id == "focused", let f = self.focused else { throw Refusal("no such element", "the element is gone") }
+                switch f["placeholderValue"] {
+                case let text as String: return .string(text)
+                case is NSNull: return .null
+                default: throw Refusal("unknown error", "the field's placeholder was not in the snapshot")
+                }
+            },
             "GET /element/rect": { [unowned self] _, id in
                 guard id == "focused", let f = self.focused else { throw Refusal("no such element", "the element is gone") }
                 return ["x": .number(f["x"] as? Double ?? 0), "y": .number(f["y"] as? Double ?? 0), "width": .number(f["width"] as? Double ?? 0), "height": .number(f["height"] as? Double ?? 0)]

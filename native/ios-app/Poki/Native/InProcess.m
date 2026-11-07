@@ -31,6 +31,7 @@
 - (NSString *)identifier;
 - (NSString *)label;
 - (id)value;
+- (id)placeholderValue;
 - (BOOL)hasFocus;
 - (BOOL)hasKeyboardFocus;
 - (BOOL)loadAccessibility:(NSError **)error;
@@ -497,7 +498,11 @@ static BOOL PKInstanceSignature(Class cls, SEL selector, const char *result, NSA
             BOOL keyboard = [node respondsToSelector:@selector(hasKeyboardFocus)] ? [node hasKeyboardFocus]
                 : [node respondsToSelector:@selector(hasFocus)] && [node hasFocus];
             if (!focus && keyboard && ([type hasSuffix:@"Field"] || [type hasSuffix:@"TextView"])) {
-                focus = @{@"value": value ?: @"", @"x": @(f.origin.x), @"y": @(f.origin.y), @"width": @(f.size.width), @"height": @(f.size.height)};
+                NSMutableDictionary *field = [@{@"value": value ?: @"", @"x": @(f.origin.x), @"y": @(f.origin.y), @"width": @(f.size.width), @"height": @(f.size.height)} mutableCopy];
+                // The placeholder, so a failed type can tell an empty field that shows it from typed text
+                // (ESP-160). NSNull: the field has none; no key: the snapshot did not say.
+                if ([node respondsToSelector:@selector(placeholderValue)]) field[@"placeholderValue"] = PKText([node placeholderValue]) ?: (id)NSNull.null;
+                focus = field;
             }
             NSArray *children = [node children];
             if (!children.count) { [xml appendString:@"/>"]; return; }
