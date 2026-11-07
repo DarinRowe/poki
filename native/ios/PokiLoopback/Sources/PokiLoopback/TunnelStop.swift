@@ -9,5 +9,10 @@ public enum TunnelStop {
     public static let notificationSuffix = ".stopped-on-purpose"
 
     /// True when the owner, or another VPN, ended the connection: Poki must not turn it on again.
-    public static func isOnPurpose(_ reason: NEProviderStopReason) -> Bool { false }
+    public static func isOnPurpose(_ reason: NEProviderStopReason) -> Bool {
+        switch reason {
+        case .userInitiated, .superceded, .providerDisabled, .configurationDisabled, .configurationRemoved, .authenticationCanceled, .userLogout, .userSwitch: true
+        default: false
+        }
+    }
 }

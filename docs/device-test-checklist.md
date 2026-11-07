@@ -18,9 +18,15 @@ result and the time next to each line.
 - [ ] Built-in: a normal web page still loads; no DNS or internet default route is installed by Poki.
 - [ ] Built-in: disconnect/reconnect, lock/unlock, and reboot recover after an explicit reconnect.
   Opening Poki alone must not replace another active VPN. Choosing External app stops only Poki's VPN.
-- [ ] Built-in, with Poki on: turn Poki's VPN off in Settings > VPN. The agent's runner status says to
-  open Poki and tap Enable local connection, and names no proxy app. Tapping it while Poki is on brings
-  the runner back within seconds.
+- [ ] Built-in, with Poki on: turn Poki's VPN off in Settings > VPN. It stays off (the log says `ended on
+  purpose`), the agent's runner status says to open Poki and tap Enable local connection, and names no
+  proxy app. Tapping it while Poki is on brings the runner back within seconds. The same when another
+  VPN (LocalDevVPN) takes the packet tunnel, and after Turn off or Disconnect in Poki.
+- [ ] Built-in, with Poki on: the tunnel fails without anyone turning it off (kill the PokiTunnel process:
+  Xcode > Debug > Attach to Process, PokiTunnel, then stop the session). With no hand on the phone, the log
+  shows `local VPN: failed`, `reconnecting in 1 s`, `connected`, `back: 10.7.0.1 answers again; starting
+  the runner now`, and the next agent call works. If it keeps failing, it tries 8 times in about 2 minutes
+  (1, 2, 4, 8, 16, 30, 30, 30 s) and stops; opening Poki starts another round (GitHub issue 44).
 - [ ] Installed over 0.2.3 with a proxy app that was set up only in the proxy app (no connection
   chosen in Poki): Turn on says to choose a local connection first, and Setup > External app > Use
   the current VPN brings it back. Say this in the release notes for 0.2.3 users.

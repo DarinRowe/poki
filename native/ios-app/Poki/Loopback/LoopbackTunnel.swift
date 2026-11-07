@@ -38,6 +38,7 @@ final class LoopbackTunnel {
 
     init() {
         if !available { state = .unavailable }
+        listenForEndedOnPurpose()
         statusObserver = NotificationCenter.default.addObserver(forName: .NEVPNStatusDidChange, object: nil, queue: .main) { [weak self] notification in
             MainActor.assumeIsolated {
                 guard let self, let connection = notification.object as? NEVPNConnection,
@@ -50,6 +51,7 @@ final class LoopbackTunnel {
     isolated deinit {
         connectionDeadline?.cancel()
         reconnectTask?.cancel()
+        CFNotificationCenterRemoveEveryObserver(CFNotificationCenterGetDarwinNotifyCenter(), Unmanaged.passUnretained(self).toOpaque())
         if let statusObserver { NotificationCenter.default.removeObserver(statusObserver) }
     }
 
@@ -169,6 +171,28 @@ final class LoopbackTunnel {
             } else { state = .off }
         @unknown default: state = .off
         }
+    }
+
+    /// The tunnel posts this (a Darwin notification, no payload; `TunnelStop.notificationSuffix` in
+    /// PokiLoopback, which only the tunnel links) when the owner turned it off in Settings or another
+    /// VPN took over. Poki then leaves it down until the owner connects it again.
+    private static let endedOnPurposeSuffix = ".stopped-on-purpose"
+
+    private func listenForEndedOnPurpose() {
+        guard let providerID else { return }
+        CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), Unmanaged.passUnretained(self).toOpaque(), { _, observer, _, _, _ in
+            guard let observer else { return }
+            let tunnel = Unmanaged<LoopbackTunnel>.fromOpaque(observer).takeUnretainedValue()
+            Task { @MainActor in tunnel.endedOnPurpose() }
+        }, (providerID + Self.endedOnPurposeSuffix) as CFString, nil, .deliverImmediately)
+    }
+
+    private func endedOnPurpose() {
+        AppLog.shared.add("loopback", "local VPN: ended on purpose (turned off in Settings, or another VPN took over); not reconnecting")
+        reconnect.ownerStopped()
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        reconnecting = false
     }
 
     /// Why iOS stopped the tunnel, when it says: the log is how an owner (or an issue) tells a system

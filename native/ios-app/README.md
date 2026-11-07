@@ -50,6 +50,10 @@ Poki is in English and Simplified Chinese and follows the iPhone's language. The
   process at once instead of leaving it up for about 30 s.
 - Only Poki starts the runner. Opened by hand, Poki Runner starts no test (PokiRunnerHost,
   `native/ios-runner/host`) and sends the person to Poki.
+- The built-in local connection dials itself again when it fails or drops while Poki is on: 1, 2, 4, 8,
+  16, 30, 30, 30 s, then it stops (opening Poki starts another round). It does not when the owner
+  ended it (Turn off, Disconnect, Settings > VPN) or another VPN took the packet tunnel. The runner
+  then starts again by the loopback's own recovery. An external connection is never touched.
 - Known issue: while the runner runs, it answers on port 8100 to any device on the same network,
   with no credentials and without Poki's approvals (`native/ios-runner/README.md`). Turn Poki on only
   on networks you trust. A pairing code between Poki and the runner is the planned fix.
