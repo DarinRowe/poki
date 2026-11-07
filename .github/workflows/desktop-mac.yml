@@ -1,0 +1,50 @@
+# Builds the native macOS Poki Setup (SwiftUI shell + Rust bridge), checks it end to end as far as
+# a Mac without an iPhone allows, and saves the DMG plus screenshots of every page.
+# Branch pushes build on the fork only. A commit message with [universal] builds for Intel too.
+name: desktop-mac
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['desktop-v*.*.*']
+    branches: ['dev/desktop-*']
+
+jobs:
+  mac:
+    if: github.repository == 'ZhehanZhang/poki-remote' || startsWith(github.ref, 'refs/tags/')
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: dtolnay/rust-toolchain@stable
+        with: { targets: "aarch64-apple-darwin,x86_64-apple-darwin" }
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: desktop }
+      - name: Xcode
+        run: |
+          xcode-select -p
+          swift --version
+      - name: Build the app and DMG
+        env:
+          MODE: ${{ (contains(github.event.head_commit.message, '[universal]') || startsWith(github.ref, 'refs/tags/')) && 'universal' || 'native' }}
+        run: desktop/mac/scripts/bundle.sh "$MODE" "$PWD/dist"
+      - name: Core and bridge check against Apple
+        run: python3 desktop/mac/scripts/e2e.py "$PWD/dist/Poki Setup.app/Contents/MacOS/poki-setup-bridge"
+      - name: Screenshots
+        run: |
+          APP="$PWD/dist/Poki Setup.app/Contents/MacOS/PokiSetup"
+          mkdir -p shots
+          POKI_SETUP_DEMO=1 POKI_SETUP_SNAPSHOT_DIR="$PWD/shots" timeout 180 "$APP" || echo "demo run ended with $?"
+          POKI_SETUP_SNAPSHOT_DIR="$PWD/shots" timeout 180 "$APP" || echo "live run ended with $?"
+          ls -la shots
+      - uses: actions/upload-artifact@v4
+        with:
+          name: poki-setup-macos
+          path: dist/*.dmg
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: poki-setup-macos-screenshots
+          path: shots/

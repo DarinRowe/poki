@@ -1,8 +1,6 @@
-# Builds Poki Setup (desktop/) for macOS (universal DMG) and Windows (MSI + NSIS). Runs on demand
-# or on a desktop-vX.Y.Z tag, never on branch pushes. The macOS build is unsigned until a
-# Developer ID certificate is in the repository's secrets (APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD,
-# APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID); tauri-action signs and notarizes
-# by itself when they are set.
+# Builds Poki Setup (desktop/) for Windows (MSI + NSIS) with the Tauri shell, after the core tests.
+# The macOS app is native SwiftUI and builds in desktop-mac.yml. Runs on demand, on a desktop-vX.Y.Z
+# tag, or on dev/desktop-* branch pushes on the fork only.
 name: desktop
 
 on:
@@ -42,14 +40,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: macOS (universal)
-            os: macos-15
-            args: --target universal-apple-darwin
-            targets: aarch64-apple-darwin,x86_64-apple-darwin
-          - name: macOS (universal, latest runner)
-            os: macos-latest
-            args: --target universal-apple-darwin
-            targets: aarch64-apple-darwin,x86_64-apple-darwin
           - name: Windows (x64)
             os: windows-2022
             args: ""

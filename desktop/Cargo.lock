@@ -4378,7 +4378,7 @@ dependencies = [
 
 [[package]]
 name = "poki-setup-app"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "log",
  "poki-setup-core",
@@ -4398,7 +4398,7 @@ dependencies = [
 
 [[package]]
 name = "poki-setup-bridge"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "poki-setup-core",
  "reqwest 0.12.28",
@@ -4411,7 +4411,7 @@ dependencies = [
 
 [[package]]
 name = "poki-setup-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -4426,7 +4426,7 @@ dependencies = [
 
 [[package]]
 name = "poki-setup-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "aes",
  "aes-gcm",
