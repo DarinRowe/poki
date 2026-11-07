@@ -31,6 +31,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with: { workspaces: desktop }
+      - run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
       - run: cargo test -p poki-setup-core -p poki-setup-cli --manifest-path desktop/Cargo.toml
         env: { POKI_SETUP_FILE_SECRETS: "1" }
 
