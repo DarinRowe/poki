@@ -507,7 +507,7 @@ a = await launchApp("Photos", "com.apple.mobileslideshow")
 // The new Photos app's home shows the grid as one Button "Library" with no cells in the tree; the
 // cells are in the tree once Library is open.
 // The What's New sheet can arrive 5 s after the launch, on top of Library; Continue first then.
-for i in 1...2 where ref(in: a, "Photo,", type: "Image") == nil {
+for i in 1...4 where ref(in: a, "Photo,", type: "Image") == nil {
     a = await dismissSystemAlert(a)
     if let cont = ref(in: a, "Continue", type: "Button") {
         a = await call("tap Continue on What's New (\(i))", "do", ["actions": [["tap": .number(Double(cont))], ["wait_until": ["settled": true, "ms": 2500]]]])
