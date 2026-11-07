@@ -568,6 +568,12 @@ Each answer is facts only: the app in front, numbered elements, what each action
 - **A declined answer carries the picture.** "not_sent from action 1: the owner declined on the
   phone ... Nothing was sent." is followed by a read of the screen it was refused on (the gym: the
   one answer without a picture).
+- **A new in-process session warms its first snapshot and screenshot.** The agent's first look
+  after `prepare` took 8.1 s in the gym and came with no tree and no picture (GET /source and
+  GET /screenshot both past 4.5 s; the next read took 1.6 s): the accessibility client's first
+  snapshot and XCUIScreen's first screenshot cost seconds each. `prepare` now pays them itself
+  when the session is new (a depth-3, 30-children snapshot of the front app and one screenshot),
+  reports `warm_seconds`, and the first agent read is an ordinary one.
 - **The in-process drag holds still before it lifts.** InProcessWDA's pressAndDragWithVelocity
   ends with a move to one point short of the end, then to the end over the hold time, so the
   scroll view sees a finger that stopped before it lifted (a hold given as a move to the same

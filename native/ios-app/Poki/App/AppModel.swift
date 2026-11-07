@@ -215,7 +215,8 @@ final class AppModel {
                 self.inProcessWarming = false
                 let ok = (result["ok"] as? Bool) == true
                 let seconds = String(format: "%.2f", result["seconds"] as? Double ?? 0)
-                self.log.add("runner", ok ? "in-process session ready for \(why) (generation \(result["generation"] ?? 0), \((result["reused"] as? Bool) == true ? "already open" : "opened"), \(seconds) s)"
+                let warm = (result["warm_seconds"] as? Double).map { $0 > 0 ? String(format: ", first snapshot and screenshot %.2f s", $0) : "" } ?? ""
+                self.log.add("runner", ok ? "in-process session ready for \(why) (generation \(result["generation"] ?? 0), \((result["reused"] as? Bool) == true ? "already open" : "opened"), \(seconds) s\(warm))"
                                           : "in-process session not ready for \(why): \(result["code"] ?? "unknown") after \(seconds) s")
                 self.inProcessSession = ok ? .open : .failed(code: "\(result["code"] ?? "unknown")", detail: result["detail"] as? String ?? "")
                 if self.sessionOn { self.host.update(runner: self.coreState(of: self.runner)) }
