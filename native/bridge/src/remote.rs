@@ -506,6 +506,44 @@ mod tests {
         assert!(failures.is_empty(), "{}", failures.join("\n"));
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn a_tunnel_whose_phone_stops_answering_is_rebuilt() {
+        let mut failures = Vec::new();
+        for request in [json!({"op":"ax_tree"}), json!({"op":"tap","x":100,"y":200})] {
+            let (sender, mut phones) = mpsc::unbounded_channel();
+            PHONE.with(|slot| *slot.borrow_mut() = Some(sender));
+            // The adapter task keeps running, but the phone never answers: Wi-Fi dropped without a reset.
+            let (mut silent, _phone) = tunnel();
+            silent.rsd.uuid = "silent tunnel".into();
+            let mut session = Session {
+                transport: Transport::Local("fixture-phone".into()),
+                control: None,
+                connection: Some(silent),
+            };
+            let reply = session.request(request.clone()).await;
+            PHONE.with(|slot| slot.borrow_mut().take());
+            if phones.recv().await.is_none() {
+                failures.push(format!("{request}: a silent tunnel was kept; reply: {reply:?}"));
+            }
+            if session.connection.as_ref().map(|c| c.rsd.uuid.as_str()) == Some("silent tunnel") {
+                failures.push(format!("{request}: the silent tunnel is still in use"));
+            }
+            let reported = match (request["op"].as_str().unwrap(), &reply) {
+                ("ax_tree", Err(error)) => !error.to_string().contains("delivered"),
+                ("tap", Ok(reply)) => {
+                    reply["outcome"] == "not_sent" && reply["stop_reason"] == "error"
+                }
+                _ => false,
+            };
+            if !reported {
+                failures.push(format!(
+                    "{request}: nothing was sent, but the reply is {reply:?}"
+                ));
+            }
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
     #[tokio::test]
     async fn a_service_refused_on_a_live_tunnel_keeps_that_tunnel() {
         let (sender, mut phones) = mpsc::unbounded_channel();
