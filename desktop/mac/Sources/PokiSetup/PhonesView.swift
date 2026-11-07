@@ -1,4 +1,6 @@
+import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct PhonesView: View {
     @EnvironmentObject var model: AppModel
@@ -45,6 +47,12 @@ struct PhonesView: View {
             if let steps = model.steps["renew"], !steps.isEmpty, model.busyJobs.contains("renew") {
                 StepsView(steps: steps)
             }
+            LabeledContent("Agent Memory") {
+                HStack {
+                    Button("Back Up…") { Task { await backup(r) } }
+                    Button("Restore…") { Task { await restore(r) } }
+                }
+            }
             HStack {
                 Button("Forget…", role: .destructive) { forgetting = r }
                 Spacer()
@@ -56,6 +64,37 @@ struct PhonesView: View {
                 .disabled(model.busyJobs.contains("renew"))
             }
         }
+    }
+}
+
+extension PhonesView {
+    struct Saved: Decodable { var path: String; var bytes: Int }
+
+    func backup(_ r: Record) async {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.prompt = "Save Backup Here"
+        panel.message = "Poki Setup copies the agent's routines, notes and settings (no passwords) from \(r.phoneName)."
+        guard panel.runModal() == .OK, let dir = panel.url else { return }
+        do {
+            let saved: Saved = try await model.bridge.call("backup_agent", ["udid": r.udid, "out_dir": dir.path])
+            NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: saved.path)])
+        } catch { model.report(error) }
+    }
+
+    func restore(_ r: Record) async {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = [.json]
+        panel.prompt = "Restore"
+        panel.message = "Choose a Poki agent backup. Poki imports it the next time it opens."
+        guard panel.runModal() == .OK, let file = panel.url else { return }
+        do {
+            try await model.bridge.run("restore_agent", ["udid": r.udid, "file": file.path])
+            model.banner = "The backup is on \(r.phoneName). Open Poki to import it."
+        } catch { model.report(error) }
     }
 }
 

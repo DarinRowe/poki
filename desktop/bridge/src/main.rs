@@ -45,6 +45,14 @@ impl From<serde_json::Error> for Failure {
 
 type R = Result<Value, Failure>;
 
+/// Where Poki keeps its agent backup, inside its container.
+const AGENT_BACKUP: &str = "Documents/AgentBackup/poki-agent-backup.json";
+
+fn time_stamp() -> String {
+    let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    secs.to_string()
+}
+
 #[derive(Default)]
 struct Shared {
     signer: Mutex<Option<setup::Signer>>,
@@ -304,6 +312,31 @@ async fn dispatch(state: &Shared, out: &Out, cmd: &str, a: &Value) -> R {
         "forget_phone" => {
             let udid: String = arg(a, "udid")?;
             keeper::remove(&udid)?;
+            ok(true)
+        }
+        // The agent's memory (routines, notes, non-secret settings) as Poki exports it.
+        "backup_agent" => {
+            let udid: String = arg(a, "udid")?;
+            let out_dir: String = arg(a, "out_dir")?;
+            let rec = keeper::get(&udid)?.ok_or_else(|| Error::msg("Set up Poki on this iPhone with Poki Setup first."))?;
+            let phone = setup::pick_phone(Some(&udid)).await?;
+            let bytes = device::container::read_file(&phone, &rec.bundle_id, AGENT_BACKUP).await.map_err(|e| Error::msg(format!("Poki has not exported a backup yet. Open Poki once, then try again. ({e})")))?;
+            let stamp = time_stamp();
+            let path = std::path::Path::new(&out_dir).join(format!("poki-agent-backup-{}-{stamp}.json", rec.phone_name.replace(['/', ':'], "-")));
+            std::fs::write(&path, &bytes).map_err(Error::from)?;
+            ok(json!({ "path": path.display().to_string(), "bytes": bytes.len() }))
+        }
+        "restore_agent" => {
+            let udid: String = arg(a, "udid")?;
+            let file: String = arg(a, "file")?;
+            let rec = keeper::get(&udid)?.ok_or_else(|| Error::msg("Set up Poki on this iPhone with Poki Setup first."))?;
+            let bytes = std::fs::read(&file).map_err(Error::from)?;
+            let v: Value = serde_json::from_slice(&bytes).map_err(|e| Error::msg(format!("That file is not a Poki agent backup: {e}")))?;
+            if !v.get("schema").and_then(|s| s.as_str()).map(|s| s.starts_with("poki.agent-backup/")).unwrap_or(false) {
+                return Err("That file is not a Poki agent backup (no poki.agent-backup schema).".into());
+            }
+            let phone = setup::pick_phone(Some(&udid)).await?;
+            device::container::write_file(&phone, &rec.bundle_id, AGENT_BACKUP, &bytes).await?;
             ok(true)
         }
         "latest_release" => ok(release::latest().await?),
