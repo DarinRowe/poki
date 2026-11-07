@@ -17,6 +17,7 @@
 - (id)accessibilityInterface;
 - (id)activeApplications;
 - (int)processIdentifier;
+- (id)applicationProcessTracker;
 - (id)monitoredApplicationWithProcessIdentifier:(int)pid;
 - (id)snapshotWithError:(NSError **)error;
 - (NSDictionary *)dictionaryRepresentation;
@@ -237,7 +238,7 @@ static BOOL PKInstanceSignature(Class cls, SEL selector, const char *result, NSA
             }];
             dispatch_semaphore_wait(got, dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC));
             out[@"front_bundle"] = bundle ?: @"?";
-            app = [ax monitoredApplicationWithProcessIdentifier:pid];
+            app = [[ax applicationProcessTracker] monitoredApplicationWithProcessIdentifier:pid];
         }
         out[@"front_ok"] = @(app != nil);
     } @catch (NSException *e) {
