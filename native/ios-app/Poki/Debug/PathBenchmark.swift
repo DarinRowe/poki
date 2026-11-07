@@ -57,7 +57,8 @@ extension InProcessProbe {
     }
 
     /// The front app's tree read once by Poki Runner and once by Poki's own process, a moment apart and
-    /// with the same request, kept as Documents/runner-source.xml and Documents/inprocess-source.xml.
+    /// with the same request, kept as Documents/inprocess-source.xml and Documents/runner-source.xml; a second
+/// in-process read after the runner's shows whether the screen changed in between.
     func sourceBothPaths(model: AppModel) async {
         guard begin("source through both paths") else { return }
         defer { end() }
@@ -80,7 +81,11 @@ extension InProcessProbe {
         try? await Task.sleep(for: .seconds(seconds))
         let url = URL(string: "http://127.0.0.1:8100")!
         let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        for (name, runner) in [("runner", Runner(url: url)), ("inprocess", Runner(url: url, transport: InProcessWDA(screen: UIScreen.main.bounds.size)))] {
+        let own = Runner(url: url, transport: InProcessWDA(screen: UIScreen.main.bounds.size))
+        for (name, runner) in [("inprocess", own), ("runner", Runner(url: url)), ("inprocess-after", own)] {
+            let front = await withCheckedContinuation { (c: CheckedContinuation<[String: Any], Never>) in queue.async { c.resume(returning: PKInProcess.shared().frontApp()) } }
+            note("before \(name): front \(front["bundleId"] as? String ?? "?"), Poki \(UIApplication.shared.applicationState == .active ? "in front" : "in the background")",
+                 ["step": "front", "path": name, "bundle": front["bundleId"] as? String ?? "", "active": UIApplication.shared.applicationState == .active])
             var xml = ""
             let (ms, error) = await timed {
                 xml = try await runner.call("GET", "/source?format=xml&excluded_attributes=visible,accessible,enabled,index", timeout: 30).string ?? ""
