@@ -541,6 +541,43 @@ Each answer is facts only: the app in front, numbered elements, what each action
 - **The host's screenshot beside a busy runner gets 6 s, not 15.** A look under a wedged runner
   waited 18 s before it fell back; an answer at 6 s with the picture and the runner's state keeps
   the model moving. The 15 s stay for the path taken after a runner that was free gave none.
+- **A failed type reads the field through GET /element/active, in-process too.** In the
+  in-process session that request is the same accessibility snapshot as a tree read (InProcessWDA
+  takes the focused field out of `sourceXML`'s focus out-param, and the value and placeholder
+  lookups after it come from that cached dict), not the XCTest query that hung the runner for
+  19 s, so reading the field from the tree instead would save nothing there and would need the
+  in-process XML to carry focused and placeholder attributes it does not have. The focus wait
+  before typing stays on tree reads. Checked Nov 7 2026 against poki/ios-integration ea223c5.
+- **scroll_to says how far the list moved on each swipe.** "(the list moved 540, 530 pt on the
+  swipes)" from the elements the two reads share inside the area (the median shift along the
+  swipe's axis, positive the way the finger went); "a screen or more" when they share none. The
+  in-process gym (run 42411678488) netted 190 pt a swipe on a 72 % drag of 550 pt, with "more
+  than a screen" and a drag back after every forward swipe, where WebDriverAgent moved 72 %: the
+  figure tells which path moves what, without a probe.
+- **The in-process drag holds still before it lifts.** InProcessWDA's pressAndDragWithVelocity
+  ends with a move to one point short of the end, then to the end over the hold time, so the
+  scroll view sees a finger that stopped before it lifted (a hold given as a move to the same
+  point can be no event at all, and the list coasted on as from a flick). Unmeasured in-process
+  until the gym's next run; the figure above shows it.
+- **A read under an alert says the tree lists the alert only.** In-process the snapshot holds the
+  modal alert or sheet alone (its accessibility is modal; a look under the gym's alert listed its
+  three elements and nothing of the app), where WebDriverAgent keeps the screen behind. When
+  nothing named lies outside the alert the note says the screen is still there, under the dimming,
+  and that answering it lists the screen again.
+- **In-process, an empty field shows its placeholder as its value**, as WebDriverAgent's source
+  does (UIKit's accessibilityValue of an empty UITextField is its placeholder). `sourceXML` falls
+  back to `placeholderValue` for *Field and TextView nodes whose value is empty; the focused
+  field's dict keeps value and placeholder apart, so a failed type still tells them apart.
+- **In-process reads honour snapshotMaxDepth and snapshotMaxChildren.** POST /appium/settings was a
+  no-op there, so after a read that timed out PokiCore's smaller next read (fewer children, then
+  half the depth) was as big as the first, and the gym's 1,500-element screen stalled the queue
+  until the wedge watchdog fired (GET /source over 4.5 s; the next look: "still finishing an
+  earlier GET /wda/activeAppInfo from 9 s ago"). InProcessWDA keeps the two settings and
+  `sourceXML:maxDepth:maxChildren:` passes them to the AX snapshot request (maxDepth, maxChildren,
+  maxArrayCount). What the watchdog does in-process: `forgetRunner` drops the session and
+  `onUnhealthy` reaches AppModel's restart hook, which closes the in-process session and opens a
+  new one (`closeInProcess` + `warmInProcess`), so the session comes back on its own; the stalled
+  snapshot itself runs on in the AX server until it answers or the request's deadline passes.
 - **A type waits for a busy runner as long as its action allows.** A type gave up after 3 s with
   "the runner is still finishing an earlier GET /source" while 7 s of its 9 s were left; the
   runner was serving this side's own leftover read from the look before, and the model paid a

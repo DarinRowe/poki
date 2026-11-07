@@ -56,6 +56,9 @@ typedef NS_ENUM(NSInteger, PKDelivery) {
 /// The front app's elements in WebDriverAgent's XML source format, and the element with the
 /// keyboard focus (keys value, x, y, width, height) when there is one.
 - (nullable NSString *)sourceXML:(NSDictionary *_Nullable *_Nullable)focused code:(NSString *_Nullable *_Nullable)code;
+/// The same, bounded as WebDriverAgent's snapshotMaxDepth and snapshotMaxChildren settings bound
+/// it (0 for either: no bound beyond the AX server's own), so a dense screen reads in time.
+- (nullable NSString *)sourceXML:(NSDictionary *_Nullable *_Nullable)focused maxDepth:(NSInteger)maxDepth maxChildren:(NSInteger)maxChildren code:(NSString *_Nullable *_Nullable)code;
 /// home, lock, volumeUp or volumeDown. Nil when pressed, else why not.
 - (nullable NSString *)press:(NSString *)name;
 /// launch, activate or terminate an app by its bundle id. Nil when done, else why not.
