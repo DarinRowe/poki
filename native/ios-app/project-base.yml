@@ -67,7 +67,9 @@ targets:
         # PokiLauncher: the Rust static library from native/launcher, built for aarch64-apple-ios
         # before this project (see .github/workflows/ios-app.yml).
         SWIFT_OBJC_BRIDGING_HEADER: Poki/Runtime/Poki-Bridging-Header.h
-        HEADER_SEARCH_PATHS: $(SRCROOT)/../launcher/include
+        HEADER_SEARCH_PATHS: $(SRCROOT)/../launcher/include $(SRCROOT)/Poki/Native
+        # The XCTest libraries of the mounted developer disk image, loaded at run time (Poki/Native).
+        LD_RUNPATH_SEARCH_PATHS: $(inherited) @executable_path/Frameworks /System/Developer/usr/lib /System/Developer/Library/PrivateFrameworks /System/Developer/Library/Frameworks
         LIBRARY_SEARCH_PATHS: $(SRCROOT)/../launcher/target/aarch64-apple-ios/release
         "LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]": $(SRCROOT)/../launcher/target/aarch64-apple-ios-sim/release
         OTHER_LDFLAGS: [-lpoki_launcher, -lc++, -framework, Security, -framework, SystemConfiguration]

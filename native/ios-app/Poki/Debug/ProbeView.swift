@@ -9,6 +9,7 @@ struct ProbeView: View {
     var body: some View {
         NavigationStack {
             List {
+                InProcessSection()
                 LogSection()
                 Section("Proxy loopback interface") {
                     if let loop = loopbackInterface(addresses) {
