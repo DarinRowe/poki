@@ -59,6 +59,11 @@ pub async fn start_screen_media_stream(
         .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> {
             match e {
                 IdeviceError::ServiceNotFound => Box::new(NoDisplayService),
+                // Keep the io type: remote.rs probes the tunnel after a socket failure.
+                IdeviceError::Socket(e) => Box::new(std::io::Error::new(
+                    e.kind(),
+                    format!("no display service: {e}"),
+                )),
                 e => format!("no display service: {e:?}").into(),
             }
         })?;

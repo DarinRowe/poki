@@ -49,6 +49,12 @@ impl InputMedia {
             .map_err(|e| {
                 if e.is::<NoDisplayService>() {
                     e
+                } else if let Some(io) = e.downcast_ref::<std::io::Error>() {
+                    std::io::Error::new(
+                        io.kind(),
+                        format!("Cannot establish input media session: {e}"),
+                    )
+                    .into()
                 } else {
                     format!("Cannot establish input media session: {e}").into()
                 }
@@ -361,6 +367,7 @@ async fn connect_device(
 ) -> Result<(
     idevice::tcp::handle::AdapterHandle,
     RsdHandshake,
+    u16,
     idevice::provider::UsbmuxdProvider,
 )> {
     let mut mux = UsbmuxdConnection::default().await?;
@@ -370,7 +377,7 @@ async fn connect_device(
     let port = proxy.tunnel_info().server_rsd_port;
     let mut adapter = proxy.create_software_tunnel()?.to_async_handle();
     let rsd = RsdHandshake::new(adapter.connect(port).await?).await?;
-    Ok((adapter, rsd, provider))
+    Ok((adapter, rsd, port, provider))
 }
 
 async fn execute(udid: &str, request: Request) -> Result<Value> {
@@ -408,7 +415,7 @@ async fn execute(udid: &str, request: Request) -> Result<Value> {
         ));
     }
     let connection = connect_device(udid).await;
-    let (mut adapter, mut rsd, provider) = match connection {
+    let (mut adapter, mut rsd, _, provider) = match connection {
         Ok(connection) => connection,
         Err(error) if matches!(request, Request::LaunchApp(_)) => return Ok(apps::not_sent(error)),
         Err(error) => return Err(error),

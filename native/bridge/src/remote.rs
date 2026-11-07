@@ -36,6 +36,7 @@ enum Transport {
 struct Connection {
     adapter: AdapterHandle,
     rsd: RsdHandshake,
+    rsd_port: u16,
     provider: Option<idevice::provider::UsbmuxdProvider>,
     media: Option<InputMedia>,
 }
@@ -55,10 +56,11 @@ impl Session {
                 let connection = tests::connect_local(udid).await?;
                 #[cfg(not(test))]
                 let connection = {
-                    let (adapter, rsd, provider) = connect_device(udid).await?;
+                    let (adapter, rsd, rsd_port, provider) = connect_device(udid).await?;
                     Connection {
                         adapter,
                         rsd,
+                        rsd_port,
                         provider: Some(provider),
                         media: None,
                     }
@@ -110,6 +112,7 @@ impl Session {
         self.connection = Some(Connection {
             adapter,
             rsd,
+            rsd_port: info.server_rsd_port,
             provider: None,
             media: None,
         });
@@ -170,6 +173,7 @@ impl Session {
             let Connection {
                 adapter,
                 rsd,
+                rsd_port,
                 provider,
                 media,
             } = self.connection.as_mut().unwrap();
@@ -194,9 +198,12 @@ impl Session {
             let _ = close_input(media).await;
             // A service or file error does not imply the shared tunnel died.
             // bind_udp checks the adapter task locally without opening a phone service.
-            let closed = adapter.bind_udp(0).await.is_err();
+            // A phone that vanished without a reset leaves the adapter running, so a socket error also
+            // asks the phone for its RSD port.
+            let closed = adapter.bind_udp(0).await.is_err()
+                || (socket_failure(error.as_ref()) && adapter.connect(*rsd_port).await.is_err());
             let not_sent = error.is::<NotSent>();
-            // Only a closed adapter is a dead tunnel. A live one stays, since a cellular replacement may be refused.
+            // Only a dead tunnel is replaced. A live one stays, since a cellular replacement may be refused.
             if closed {
                 self.connection = None;
                 if (not_sent || action.read_only()) && !fresh {
@@ -226,6 +233,19 @@ impl Session {
             self.control = None;
         }
         connected
+    }
+}
+
+fn socket_failure(error: &(dyn std::error::Error + Send + Sync + 'static)) -> bool {
+    match error.downcast_ref::<NotSent>() {
+        Some(NotSent(error)) => socket_failure(error.as_ref()),
+        None => {
+            error.is::<std::io::Error>()
+                || matches!(
+                    error.downcast_ref::<idevice::IdeviceError>(),
+                    Some(idevice::IdeviceError::Socket(_))
+                )
+        }
     }
 }
 
@@ -438,6 +458,7 @@ mod tests {
         let connection = Connection {
             adapter,
             rsd,
+            rsd_port: 58783,
             provider: None,
             media: None,
         };
@@ -523,7 +544,9 @@ mod tests {
             let reply = session.request(request.clone()).await;
             PHONE.with(|slot| slot.borrow_mut().take());
             if phones.recv().await.is_none() {
-                failures.push(format!("{request}: a silent tunnel was kept; reply: {reply:?}"));
+                failures.push(format!(
+                    "{request}: a silent tunnel was kept; reply: {reply:?}"
+                ));
             }
             if session.connection.as_ref().map(|c| c.rsd.uuid.as_str()) == Some("silent tunnel") {
                 failures.push(format!("{request}: the silent tunnel is still in use"));
