@@ -17,8 +17,7 @@ result and the time next to each line.
   prompt. The developer-service check passes; neither a saved profile nor VPN Connected alone counts.
 - [ ] Built-in: a normal web page still loads; no DNS or internet default route is installed by Poki.
 - [ ] Built-in: disconnect/reconnect, lock/unlock, and reboot recover after an explicit reconnect (or,
-  with Poki on, Poki's own retry below). Opening Poki alone must not start the tunnel or replace another
-  active VPN. Choosing External app stops only Poki's VPN.
+  with Poki on, Poki's own retry below). Opening Poki alone must not start the tunnel. Choosing External app stops only Poki's VPN.
 - [ ] Built-in, with Poki on: turn Poki's VPN off in Settings > VPN. It stays off (the log says `ended on
   purpose`), the agent's runner status says to open Poki and tap Enable local connection, and names no
   proxy app. Tapping it while Poki is on brings the runner back within seconds. The same when another
@@ -30,8 +29,8 @@ result and the time next to each line.
   (1, 2, 4, 8, 16, 30, 30, 30 s) and stops; then only Enable Local Connection in Setup starts it again.
   Opening Poki dials nothing (GitHub issue 44).
 - [ ] Built-in, with Poki on, the tunnel fails and a different VPN (WireGuard, a work VPN) is turned on
-  before the retry comes: Poki does not dial. Setup says `Another VPN is on…`, Home shows it under
-  Needs attention, the log says `another VPN is on; not reconnecting`, and the other VPN stays connected.
+  before the retry comes: Poki does not dial if it detects that VPN. Setup says `Another VPN appears to be on…`, Home shows it under
+  Needs attention, the log says `another VPN is on; not reconnecting`, and the other VPN stays connected. Detection is best effort: a VPN that sets no proxy, such as Tailscale, may not be detected, so Poki may still dial over it.
   Turning that VPN off and tapping Enable Local Connection brings the runner back, and the message goes.
   (The check reads the interfaces iOS has network settings for; confirm it sees a real VPN, and sees none
   with only Wi-Fi or cellular.)

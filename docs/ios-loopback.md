@@ -20,7 +20,7 @@ The app calls `LoopbackTunnel.connect()` only after the owner enables the built-
 explicitly starts a session with that method selected. While a session is on, `LoopbackTunnel` also
 dials its own tunnel again after it failed or dropped (`ReconnectPlan`: 1, 2, 4, 8, 16, 30, 30, 30 s,
 then it stops). It never does so after the owner ended it, after another VPN took the packet tunnel,
-or while another VPN is on (`OtherVPN`); it says so in the app instead. `refresh()` only reads Poki's saved profile;
+or while another VPN is detected (`OtherVPN`, best effort: a VPN that sets no proxy, such as Tailscale, may not be detected); it says so in the app instead. `refresh()` only reads Poki's saved profile;
 `disconnect()` only stops that profile. Its provider id is read from the embedded extension, so a
 signing tool's rewritten identifiers are used. Switching methods is disabled during pairing, an
 active session, or a pending configuration change. Errors give the owner an external fallback.

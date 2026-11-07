@@ -19,7 +19,7 @@ final class LoopbackTunnel {
     /// After the tunnel failed or dropped without the owner ending it, dial again with a backoff and a
     /// cap (GitHub issue 44: it stayed down for 101 s and 134 s until someone opened Poki). The
     /// owner's own Disconnect, or Turn off, ends it for good until they connect again; so does another
-    /// VPN being on when a try comes (Poki never displaces the owner's VPN). Opening Poki dials nothing.
+    /// VPN being detected when a try comes (best effort: a VPN that sets no proxy, such as Tailscale, may not be detected). Opening Poki dials nothing.
     private var reconnect = ReconnectPlan()
     private var reconnectTask: Task<Void, Never>?
     private var reconnecting = false
@@ -262,7 +262,7 @@ final class LoopbackTunnel {
     private func yieldToAnotherVPN() {
         reconnect.ownerStopped()
         reconnecting = false
-        let message = "Another VPN is on, so Poki did not turn its local connection back on. Turn that VPN off and tap Enable Local Connection, or choose an external connection in Setup."
+        let message = "Another VPN appears to be on, so Poki did not turn its local connection back on. Turn that VPN off and tap Enable Local Connection, or choose an external connection in Setup."
         AppLog.shared.add("loopback", "local VPN: another VPN is on; not reconnecting")
         state = .failed(message)
         onAttention?(message)

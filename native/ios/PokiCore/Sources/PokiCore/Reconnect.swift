@@ -3,7 +3,7 @@ import Foundation
 /// When Poki's built-in local connection (the packet tunnel) is dialled again after it failed or
 /// dropped. It holds the policy and no timers: the app asks `lost()` for the wait before the next try.
 /// The waits are 1, 2, 4, 8, 16 s, then 30 s, eight tries in all (about two minutes); then the owner
-/// decides, from Poki's Setup. Opening Poki alone never dials: that could displace a VPN they just turned on.
+/// decides, from Poki's Setup. Opening Poki alone never dials, which avoids displacing a VPN they just turned on.
 public struct ReconnectPlan: Sendable {
     public static let waits: [Double] = [1, 2, 4, 8, 16, 30, 30, 30]
     /// A connection that stayed up this long makes its loss a new story: the count starts over. A
@@ -39,8 +39,9 @@ public struct ReconnectPlan: Sendable {
     }
 }
 
-/// Whether the owner has a VPN of their own on. The built-in connection is dialled again only when
-/// there is none: a second packet tunnel would displace theirs.
+/// Whether the owner appears to have a VPN of their own on. Best effort: a VPN that sets no proxy
+/// (Tailscale, for example) may not be detected. The built-in connection is dialled again only when
+/// none is detected, because a second packet tunnel could displace theirs.
 public enum OtherVPN {
     /// `names` are the network interfaces iOS has scoped settings for (the keys of `__SCOPED__` in
     /// `CFNetworkCopySystemProxySettings`). Called while Poki's own tunnel is down, so a tunnel

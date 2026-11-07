@@ -127,7 +127,7 @@ final class AppModel {
         // check that follows lets `loopbackChanged` start the runner, as for any other recovery.
         tunnel.wanted = { [weak self] in self?.sessionOn == true && self?.setup.loopback == .builtIn }
         tunnel.onReconnected = { [weak self] in self?.loopback.check() }
-        // Poki leaves the owner's own VPN alone: the tunnel says so here, and the problem clears when it is back.
+        // When Poki detects the owner's own VPN it stops: the tunnel says so here, and the problem clears when it is back.
         tunnel.onAttention = { [weak self] text in
             guard let self else { return }
             if let text { problem = text; tunnelAttention = text }
