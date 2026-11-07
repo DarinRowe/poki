@@ -162,7 +162,7 @@ func ref(in answer: String, _ text: String, type: String? = nil, last: Bool = fa
 func frame(in answer: String, _ text: String, type: String? = nil) -> [Double]? {
     guard let n = ref(in: answer, text, type: type),
           let line = answer.split(separator: "\n").first(where: { $0.trimmingCharacters(in: CharacterSet(charactersIn: "+~ ")).hasPrefix("\(n) ") }),
-          let r = line.range(of: #"\[(-?[0-9]+), ?(-?[0-9]+), ?([0-9]+), ?([0-9]+)\]$"#, options: .regularExpression) else { return nil }
+          let r = line.range(of: #"\[(-?[0-9]+), ?(-?[0-9]+), ?([0-9]+), ?([0-9]+)\]"#, options: .regularExpression) else { return nil }
     let v = line[r].split(whereSeparator: { !$0.isNumber && $0 != "-" }).compactMap { Double($0) }
     return v.count == 4 ? v : nil
 }
@@ -506,14 +506,13 @@ if let address = ref(in: a, "Address") {
 a = await launchApp("Photos", "com.apple.mobileslideshow")
 // The new Photos app's home shows the grid as one Button "Library" with no cells in the tree; the
 // cells are in the tree once Library is open.
-// The What's New sheet can arrive 5 s after the launch, on top of Library; Continue first then.
+// The What's New sheet and a notification alert come a few seconds after the launch; both answered. (The
+// Library grid is a leaf in WDA's raw tree, so tapping it opens nothing: the picture is the way in.)
 for i in 1...4 where ref(in: a, "Photo,", type: "Image") == nil {
     a = await dismissSystemAlert(a)
     if let cont = ref(in: a, "Continue", type: "Button") {
         a = await call("tap Continue on What's New (\(i))", "do", ["actions": [["tap": .number(Double(cont))], ["wait_until": ["settled": true, "ms": 2500]]]])
-    } else if let library = ref(in: a, "Library", type: "Button") {
-        a = await call("open Library (\(i))", "do", ["actions": [["tap": .number(Double(library))], ["wait_until": ["settled": true, "ms": 2500]]]])
-    }
+    } else if ref(in: a, "Library", type: "Button") != nil { break }
     if ref(in: a, "Photo,", type: "Image") == nil { a = await call("look (full) for a photo (\(i))", "look", ["full": true]) }
 }
 // Diagnostic: does WDA's raw tree hold the grid's cells at all?
