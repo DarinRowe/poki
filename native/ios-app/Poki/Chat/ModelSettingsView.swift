@@ -73,7 +73,7 @@ struct ModelSettingsView: View {
 
     // OllamaModelSelectionView's row: icon, name, the whole row tappable.
     private func providerRow(_ provider: ModelProvider) -> some View {
-        let hasKey = provider == .custom ? !ModelKeys.customURL.isEmpty : ModelKeys.hasKey(provider)
+        let hasKey = provider == .custom ? !ModelKeys.customURL.isEmpty : provider == .chatgpt ? ChatGPTAccount.signedIn : ModelKeys.hasKey(provider)
         return HStack(spacing: 12) {
             ProviderTile(provider: provider)
             VStack(alignment: .leading, spacing: 0) {

@@ -38,7 +38,7 @@ final class PiLoop {
         // agent/pi-session.mjs: low thinking, one tool call at a time.
         agent = Agent(AgentOptions(
             initialState: AgentState(systemPrompt: instructions, model: model, thinkingLevel: .low, tools: agentTools, messages: messages),
-            getApiKey: { piProvider in await ModelCredential.apiKey(forPiProvider: piProvider) },
+            getApiKey: { _ in await ModelCredential.apiKey(for: provider) },
             toolExecution: .sequential
         ))
     }

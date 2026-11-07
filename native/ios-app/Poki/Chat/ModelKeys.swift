@@ -49,7 +49,8 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .anthropic: "anthropic"
         case .openai: "openai"
-        case .chatgpt: "openai-codex"
+        // Sign in with ChatGPT (OpenAI's open-source flow) runs on the OpenAI API with the plan's token.
+        case .chatgpt: "openai"
         case .deepseek: "deepseek"
         case .gemini: "google"
         case .openrouter: "openrouter"
@@ -87,7 +88,7 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
             ChatModelChoice(id: "gpt-6.1-terra", name: "GPT-6.1 Terra"),
             ChatModelChoice(id: "gpt-6.1-sol", name: "GPT-6.1 Sol"),
         ]
-        // The ChatGPT plan's models, as pi's openai-codex provider lists them; gpt-6.1-terra is also Poki
+        // The ChatGPT plan's models on the OpenAI API; gpt-6.1-terra is also Poki
         // Agent's default on the Mac (agent/model-config.mjs).
         case .chatgpt: [
             ChatModelChoice(id: "gpt-6.1-terra", name: "ChatGPT GPT-6.1 Terra"),
@@ -197,6 +198,7 @@ enum ModelKeys {
     /// model; its key is optional).
     static var hasUsableKey: Bool {
         if selectedProvider == .custom { return !customURL.isEmpty && !customModel.isEmpty }
+        if selectedProvider == .chatgpt { return ChatGPTAccount.signedIn }
         return selectedProvider.wired && hasKey(selectedProvider)
     }
 
@@ -229,14 +231,15 @@ enum ModelKeys {
 /// The credential pi sends for a provider: the key, or for ChatGPT the signed-in access token, refreshed
 /// a minute before it runs out (pi's rule; `expires` is in milliseconds).
 enum ModelCredential {
-    static func apiKey(forPiProvider piProvider: String) async -> String? {
-        guard let provider = ModelProvider.allCases.first(where: { $0.piProvider == piProvider }) else { return nil }
+    static func apiKey(for provider: ModelProvider) async -> String? {
         // A custom endpoint may need no key; the request still carries one.
         guard let stored = ModelKeys.key(provider) else { return provider == .custom ? "none" : nil }
         guard provider.signsIn else { return stored }
-        guard var credentials = ChatGPTAccount.decode(stored) else { return nil }
+        // A sign-in from OpenAI's open-source flow carries its issued client id; an older Codex-client
+        // sign-in does not, and has to be done again.
+        guard var credentials = ChatGPTAccount.decode(stored), credentials.clientId?.isEmpty == false else { return nil }
         if credentials.expires < Date().timeIntervalSince1970 * 1000 + 60_000, !credentials.refresh.isEmpty {
-            guard let fresh = try? await refreshOpenAICodexToken(credentials.refresh) else { return nil }
+            guard let fresh = try? await refreshOpenAIChatGPTToken(credentials) else { return nil }
             credentials = fresh
             try? ChatGPTAccount.save(credentials)
         }
