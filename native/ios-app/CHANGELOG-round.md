@@ -2,6 +2,15 @@
 
 What changed in each round, and what still needs the phone. Newest first.
 
+## Round 9 (2026-11-07, unattended gym round continued, 9:00 am-12:00 pm ET), version 0.2.5
+
+Changed:
+- PokiCore (dev/ios-core 1ca12e5) after six more gym runs, now also on Settings, Contacts, Safari and Photos, an alert popping up mid-scroll and an app relaunch under wait_until: scroll_to drags (84 % of the area, no momentum) and reads between drags, so a row can no longer be flicked past unread; a launch re-reads inside the call until the launched app is in front (the tree was the old app's over the new app's picture); wait_until keeps the time it asks for; the keyboard's own Go/Search/Return key is tapped for {key: "return"}; a system alert over a launched app, an alert over a scrolled list, a field the app replaced after typing, and an app that is not installed are all said in one line; when no picture comes at all, the last picture is attached with its age; a long call ends with where its time went ("took: ...").
+- Gym (dev/ios-gym d062708): interrupt scenario (alert mid-scroll), system apps, permission alerts answered, the runner waited for while it restarts.
+
+Needs the phone:
+- JD.com and WeChat feeds with scroll_to across calls; Safari address bar with the Go key; a permission alert over a launched app.
+
 ## Round 8 (2026-11-07, unattended gym round, 1:30-5:00 am ET), version 0.2.4
 
 Changed:
