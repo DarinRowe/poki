@@ -36,7 +36,7 @@ async function phone(directory, stack) {
     shown = pages[top()].map((element, index) => ({ ...element, ref: `e${observations * 10 + index + 1}`, visible: true }));
     observations++;
     const now = new Date().toISOString();
-    return { source: 'accessibility', truncated: false, foreground: app, elements: shown,
+    return { source: 'accessibility', truncated: false, foreground: app, elements: shown, width: 402, height: 874,
       observation: { id: `observation-${observations}`, revision: observations, device: 'synthetic-device', capture_started_at: now, capture_completed_at: now } };
   };
   const dispatch = async (name, args) => {
@@ -72,6 +72,7 @@ async function phone(directory, stack) {
 
 for (const { name, stack } of [
   { name: 'A taught route runs from the poki entry with no model access', stack: ['Home'] },
+  { name: 'A taught route returns to its start page when the phone was left on another page', stack: ['Home', 'Other'] },
 ]) test(name, { timeout: 20000 }, async t => {
   const directory = await mkdtemp(join(tmpdir(), 'poki-taught-route-'));
   const device = await phone(join(directory, 'mcp'), [...stack]);
