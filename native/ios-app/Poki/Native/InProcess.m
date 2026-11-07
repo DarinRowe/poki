@@ -401,6 +401,7 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
 }
 
 - (PKOutcome *)touch:(NSArray<NSArray<PKTouchPoint *> *> *)fingers timeout:(double)timeout {
+    [self forgetFront];
     PKOutcome *refused;
     uint64_t generation = 0;
     id session = [self current:&generation outcome:&refused];
@@ -450,6 +451,7 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
 }
 
 - (PKOutcome *)type:(NSString *)text typingSpeed:(NSUInteger)speed timeout:(double)timeout {
+    [self forgetFront];
     PKOutcome *refused;
     uint64_t generation = 0;
     id session = [self current:&generation outcome:&refused];
@@ -515,13 +517,22 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
     return bundle;
 }
 
-/// The front app the last tree read found, when it is under a second old (nil otherwise).
-- (nullable NSDictionary<NSString *, id> *)recentFront {
+/// The front app the last tree read found, served once and only when under a second old with no
+/// input since (nil otherwise): PokiCore asks /wda/activeAppInfo together with /source, and that one
+/// answer comes from the tree read. A poll (a launch waiting for its app) always looks again.
+- (nullable NSDictionary<NSString *, id> *)takeRecentFront {
     @synchronized (self) {
-        if (!_lastFront || _lastFrontGeneration != _sessions.generation) return nil;
+        NSDictionary *front = _lastFront;
+        _lastFront = nil;
+        if (!front || _lastFrontGeneration != _sessions.generation) return nil;
         if (NSProcessInfo.processInfo.systemUptime - _lastFrontAt > 1.0) return nil;
-        return _lastFront;
+        return front;
     }
+}
+
+/// Any touch, key, button or app change can change the front app: the tree read's no longer stands.
+- (void)forgetFront {
+    @synchronized (self) { _lastFront = nil; }
 }
 
 - (void)rememberFront:(NSDictionary<NSString *, id> *)front {
@@ -594,7 +605,7 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
 }
 
 - (NSDictionary<NSString *, id> *)frontApp {
-    NSDictionary *recent = [self recentFront];
+    NSDictionary *recent = [self takeRecentFront];
     if (recent) return recent;
     @try {
         NSTimeInterval started = NSProcessInfo.processInfo.systemUptime;
@@ -606,7 +617,6 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
         [self noteViewport:[root frame]];
         NSMutableDictionary *out = [info mutableCopy];
         out[@"name"] = PKText([root label]) ?: @"";
-        [self rememberFront:out];
         NSLog(@"PokiInProcess timing: front app %d ms (%@)", (int)lround((NSProcessInfo.processInfo.systemUptime - started) * 1000), out[@"bundleId"]);
         return out;
     } @catch (NSException *e) { return @{}; }
@@ -689,6 +699,7 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
 }
 
 - (nullable NSString *)press:(NSString *)name {
+    [self forgetFront];
     @try {
         PKOutcome *refused;
         uint64_t generation = 0;
@@ -728,6 +739,7 @@ static NSString *PKDaemonReply(NSTimeInterval seconds, void (^send)(void (^)(NSE
 /// (or starts it), terminate ends it. XCUIApplication itself refuses to exist outside a UI test bundle.
 /// Launch and activate return once the app is in front.
 - (nullable NSString *)app:(NSString *)bundle action:(NSString *)action {
+    [self forgetFront];
     @try {
         PKOutcome *refused;
         uint64_t generation = 0;
