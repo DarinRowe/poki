@@ -85,7 +85,9 @@ Installing apps, opening URLs, and reading the clipboard trigger a macOS approva
 
 `batch_commands` also accepts `verify: false`. Supported steps inherit that value, and a step can override it with `arguments.verify: true`. A batch with unverified steps reads the final screen once. That snapshot does not verify each preceding action. An unknown input outcome still stops the batch, including with `stop_on_error: false`.
 
-Accessibility can miss changes that affect only pixels, such as Calculator's display after AC. Default batches can still stop with `no_change` in that case. An unverified tap does not produce `no_change`; inspect the final screenshot before reporting the task result.
+Inside a batch, a touch step (`tap`, `tap_text`, `double_tap`, `long_press`, `go_back` or `handle_alert`) is compared with the screen before it unless the next step is also aimed by coordinates (`tap`, `double_tap`, `long_press`, `swipe`, `drag`, `scroll` or `pinch`) or the batch sets `stop_on_error: false`. A run of coordinate steps is written for one screen, so the batch does not pause inside it, even after a tap that changed nothing. A step with `arguments.verify: true` is always compared. With the default `stop_on_error`, a compared touch with no observed change pauses the batch before the steps after it.
+
+Accessibility can miss changes that affect only pixels, such as Calculator's display after AC. A default batch can still stop with `no_change` in that case. An unverified tap does not produce `no_change`; inspect the final screenshot before reporting the task result.
 
 ## All MCP tools
 
