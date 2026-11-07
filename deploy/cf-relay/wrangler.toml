@@ -32,7 +32,7 @@ CONCURRENT = "4"
 LABEL_DAILY = "5000"
 GLOBAL_DAILY = "8000"
 GLOBAL_DAILY_SECONDS = "80000"
-REDIRECT_HOSTS = "claude.ai,claude.com,chatgpt.com,chat.openai.com,localhost,127.0.0.1"
+REDIRECT_HOSTS = "claude.ai,claude.com,chatgpt.com,chat.openai.com,localhost,127.0.0.1,www.cursor.com,poke.com"
 
 # Secret, not in this file: TOKEN_SECRET (32+ random characters), e.g.
 #   openssl rand -base64 48 | wrangler secret put TOKEN_SECRET

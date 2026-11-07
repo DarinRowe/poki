@@ -29,7 +29,7 @@ var DEFAULTS = {
   // requests a device object takes from the daily budget at a time
   ACCESS_TTL: 3600,
   REFRESH_TTL: 30 * 86400,
-  REDIRECT_HOSTS: "claude.ai,claude.com,chatgpt.com,chat.openai.com,localhost,127.0.0.1"
+  REDIRECT_HOSTS: "claude.ai,claude.com,chatgpt.com,chat.openai.com,localhost,127.0.0.1,www.cursor.com,poke.com"
 };
 var limit = /* @__PURE__ */ __name((env, name) => env[name] !== void 0 && env[name] !== "" ? typeof DEFAULTS[name] === "number" ? Number(env[name]) : env[name] : DEFAULTS[name], "limit");
 var b64 = /* @__PURE__ */ __name((bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes))), "b64");

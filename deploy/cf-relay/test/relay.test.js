@@ -142,6 +142,19 @@ describe('OAuth and MCP', () => {
     expect((await call(elsewhere, c.token)).status).toBe(401);
   });
 
+  it('registers Grok Bot, whose MCP client uses a callback on www.cursor.com', async () => {
+    const c = await connected();
+    const grokBot = await SELF.fetch(c.as.registration_endpoint, { method: 'POST', body: JSON.stringify({ client_name: 'Grok Bot', redirect_uris: ['https://www.cursor.com/bot/mcp/oauth/callback'] }) });
+    expect(grokBot.status).toBe(201);
+  });
+
+  it('registers Poke, whose MCP client uses a callback on poke.com, and still refuses a foreign host', async () => {
+    const c = await connected();
+    const register = (redirect) => SELF.fetch(c.as.registration_endpoint, { method: 'POST', body: JSON.stringify({ client_name: 'Poke', redirect_uris: [redirect] }) });
+    expect((await register('https://poke.com/oauth/callback')).status).toBe(201);
+    expect((await register('https://evil.example.com/cb')).status).toBe(400);
+  });
+
   it('an unknown secret is not found, and its authorization is denied', async () => {
     const c = await connected();
     const stranger = newSecret();
