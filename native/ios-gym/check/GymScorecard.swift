@@ -209,7 +209,9 @@ public final class GymScorecard {
     }
 
     /// Taps the element with `text` and reads; `state` must then be on screen.
-    func tap(_ text: String, in answer: String, type: String? = nil, last: Bool = false, expect state: String, then: [JSON] = []) async -> String {
+    /// `or` names other texts that prove the tap landed (the in-process tree lists only an alert or a
+    /// sheet while one is up, so the state line behind it is not readable then).
+    func tap(_ text: String, in answer: String, type: String? = nil, last: Bool = false, expect state: String, or also: [String] = [], then: [JSON] = []) async -> String {
         var answer = answer
         // A do's answer lists only what changed; an element that stayed keeps its number but is not
         // repeated, so the full list is read when the target is not in the answer (as an agent would).
@@ -220,8 +222,9 @@ public final class GymScorecard {
             check(false, "\"\(text)\" is listed in the tree"); return answer
         }
         answer = await call("tap \(text)", "do", ["actions": .array([["tap": .number(Double(r))]] + then)])
-        if !answer.contains(state) { answer = await call("look after tap \(text)", "look") }
-        check(answer.contains(state), "tapping \"\(text)\" gives state \"\(state)\"")
+        func landed(_ a: String) -> Bool { a.contains(state) || also.contains { a.contains($0) } }
+        if !landed(answer) { answer = await call("look after tap \(text)", "look") }
+        check(landed(answer), "tapping \"\(text)\" gives state \"\(state)\"\(also.isEmpty ? "" : " (or shows \(also.joined(separator: " / ")))")")
         return answer
     }
 
@@ -279,20 +282,22 @@ public final class GymScorecard {
 
         // 2. A system alert on top of the screen.
         a = await open("alert")
-        a = await tap("Show alert", in: a, type: "Button", expect: "alert shown")
+        a = await tap("Show alert", in: a, type: "Button", expect: "alert shown", or: ["Gym alert"])
         a = await call("look at the alert", "look")
         check(a.contains("Gym alert") && ref(in: a, "OK", type: "Button") != nil, "the alert and its OK button are in the tree")
         a = await tap("OK", in: a, type: "Button", expect: "OK tapped")
 
         // 3. Typing into an empty field (direct typing; the paste prompt never comes up).
         a = await open("paste")
-        if let field = ref(in: a, "Paste here") {
+        // The in-process tree carries no placeholder (the field is "field" there, "Paste here" through
+        // the runner): the one text field on the screen is the target either way.
+        if let field = ref(in: a, "Paste here") ?? ref(in: a, "TextField", type: "TextField") {
             var typed = await call("type into the field", "do", ["actions": [["type": "hello gym 123", "ref": .number(Double(field))]]])
             if typed.contains("not_sent") {
                 // The keyboard's first use can stall the CI simulator's runner; PokiCore restarts it and
                 // says to send the type again, which an agent does.
                 typed = await awaitRunner(typed)
-                if let again = ref(in: typed, "Paste here") { typed = await call("type into the field (again)", "do", ["actions": [["type": "hello gym 123", "ref": .number(Double(again))]]]) }
+                if let again = ref(in: typed, "Paste here") ?? ref(in: typed, "TextField", type: "TextField") { typed = await call("type into the field (again)", "do", ["actions": [["type": "hello gym 123", "ref": .number(Double(again))]]]) }
             }
             let shown = typed.contains("hello gym 123") ? typed : await call("look at the field", "look")
             check(shown.contains("hello gym 123"), "typed text is read back from the field")
@@ -318,7 +323,7 @@ public final class GymScorecard {
 
         // 5. A half sheet.
         a = await open("sheet")
-        a = await tap("Open sheet", in: a, type: "Button", expect: "sheet open")
+        a = await tap("Open sheet", in: a, type: "Button", expect: "sheet open", or: ["\"Done\""])
         a = await call("look at the sheet", "look")
         a = await tap("Done", in: a, type: "Button", expect: "Done tapped")
 
