@@ -58,8 +58,11 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
             ChatModelChoice(id: "claude-opus-5-5", name: "Claude Opus 5.5"),
             ChatModelChoice(id: "claude-haiku-5-5", name: "Claude Haiku 5.5"),
         ]
-        // The Mac Poki Agent's pi loop model (ESP-62).
-        case .openai: [ChatModelChoice(id: "gpt-6.1-sol", name: "GPT-6.1 Sol")]
+        // GPT-6.1 Terra first, the owner's choice for the chat (ESP-174); Sol stays selectable.
+        case .openai: [
+            ChatModelChoice(id: "gpt-6.1-terra", name: "GPT-6.1 Terra"),
+            ChatModelChoice(id: "gpt-6.1-sol", name: "GPT-6.1 Sol"),
+        ]
         default: []
         }
     }
@@ -116,7 +119,7 @@ enum ModelKeys {
         set { UserDefaults.standard.set(newValue.rawValue, forKey: "chat.provider") }
     }
 
-    /// Each provider's model: its first (Claude Sonnet 5.5, GPT-6.1 Sol) unless the owner picks another.
+    /// Each provider's model: its first (Claude Sonnet 5.5, GPT-6.1 Terra) unless the owner picks another.
     static func model(for provider: ModelProvider) -> String {
         let saved = UserDefaults.standard.string(forKey: "chat.model.\(provider.rawValue)")
         return saved.flatMap { id in provider.models.contains { $0.id == id } ? id : nil } ?? provider.models.first?.id ?? ""

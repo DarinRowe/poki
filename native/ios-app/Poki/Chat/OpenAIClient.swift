@@ -1,8 +1,8 @@
 import Foundation
 import PokiCore
 
-/// OpenAI's Responses API over plain HTTPS with the owner's key: GPT-6.1 Sol with low reasoning, as the
-/// Mac Poki Agent's pi loop runs it (ESP-62), with no service tier. Nothing is stored at OpenAI
+/// OpenAI's Responses API over plain HTTPS with the owner's key: GPT-6.1 Terra by default, with low
+/// reasoning as the Mac Poki Agent's pi loop runs it (ESP-62), and no service tier. Nothing is stored at OpenAI
 /// (`store: false`); every output item, encrypted reasoning included, goes back in the next request.
 @MainActor
 final class OpenAIClient: ModelClient {
