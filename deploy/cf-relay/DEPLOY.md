@@ -51,13 +51,15 @@ Setting `ALLOW_SECRET_ONLY=1` also accepts MCP requests with no `Authorization` 
 | Durable Object namespace | `BUDGET` | class `Budget`, SQLite-backed, a single object `global` holding today's request counters (the only storage) |
 | Secret | `TOKEN_SECRET` | 32+ random characters, e.g. `openssl rand -base64 48`. Changing it signs every client out. |
 | Plain text | `MAX_BODY` | `4194304` |
-| Plain text | `REQ_TIMEOUT_MS` | `60000` |
+| Plain text | `REQ_TIMEOUT_MS` | `180000` |
 | Plain text | `PER_MINUTE` | `60` (MCP requests per label per minute) |
 | Plain text | `CONCURRENT` | `4` (in flight per label) |
 | Plain text | `LABEL_DAILY` | `5000` (per label per UTC day) |
 | Plain text | `GLOBAL_DAILY` | `8000` (all labels per UTC day) |
 | Plain text | `GLOBAL_DAILY_SECONDS` | `80000` (estimated Durable Object awake seconds per UTC day) |
 | Plain text | `REDIRECT_HOSTS` | `claude.ai,claude.com,chatgpt.com,chat.openai.com,localhost,127.0.0.1` |
+
+`REQ_TIMEOUT_MS` has to cover one `do` that waits for the owner's approval on the phone: up to 115 s for the approval, plus the actions and the read, about 160 s at most. A Worker deployed with `60000` (the earlier value) keeps working, because the phone reads `req_timeout_ms` from the `ready` frame and ends its wait early enough to answer in time, but the owner then has about 50 s to approve in the same call. Set the variable to `180000` and redeploy to give them the whole 115 s.
 
 **Migration:** tag `v1`, `new_sqlite_classes = ["DeviceRelay", "Budget"]`.
 **Compatibility date:** `2025-10-01`.
@@ -74,7 +76,7 @@ Script upload metadata for the API (`PUT /accounts/{account}/workers/scripts/pok
     {"type": "durable_object_namespace", "name": "BUDGET", "class_name": "Budget"},
     {"type": "secret_text", "name": "TOKEN_SECRET", "text": "<32+ random characters>"},
     {"type": "plain_text", "name": "MAX_BODY", "text": "4194304"},
-    {"type": "plain_text", "name": "REQ_TIMEOUT_MS", "text": "60000"},
+    {"type": "plain_text", "name": "REQ_TIMEOUT_MS", "text": "180000"},
     {"type": "plain_text", "name": "PER_MINUTE", "text": "60"},
     {"type": "plain_text", "name": "CONCURRENT", "text": "4"},
     {"type": "plain_text", "name": "LABEL_DAILY", "text": "5000"},
@@ -113,7 +115,7 @@ These are the included amounts per month, from [Durable Objects pricing](https:/
 **The caps hold the whole account inside the included amounts:**
 - `GLOBAL_DAILY = 8000` allows at most 240k calls a month. That is about 262k DO requests plus keepalives, under 1M.
 - `GLOBAL_DAILY_SECONDS = 80000` caps estimated awake time at 10k GB-s a day, which is 300k GB-s a month, under 400k. The estimate is each request's wall time, plus 10 s whenever the object was idle more than 10 s.
-- Device objects report usage when they take a new lease, so at most one lease (25 requests × 60 s) per phone can go unreported.
+- Device objects report usage when they take a new lease, so at most one lease (25 requests × `REQ_TIMEOUT_MS`) per phone can go unreported.
 - Once a cap is hit, MCP requests get 429 (JSON-RPC -32003) until 00:00 UTC.
 - A request never keeps an object awake longer than `REQ_TIMEOUT_MS`. There are no alarms and no polling.
 

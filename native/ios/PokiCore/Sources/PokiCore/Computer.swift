@@ -285,7 +285,16 @@ final class Computer: @unchecked Sendable {
 
     // MARK: do
 
-    func act(actions: [JSON], full: Bool) async -> ToolResult {
+    /// How long to hold for the owner: `approvalWait`, but a relay stops waiting for its caller at
+    /// `answerBy`, so the hold ends early enough for the answer (a read of the screen, and a margin)
+    /// to get there first. The request stays open: the owner approves, and the same `do` sent again runs.
+    func approvalHold(answerBy: Double?) -> Double {
+        guard let answerBy else { return config.approvalWait }
+        return max(0, min(config.approvalWait, answerBy - now() - config.readTimeout - Self.relayMargin))
+    }
+    static let relayMargin = 2.0
+
+    func act(actions: [JSON], full: Bool, answerBy: Double? = nil) async -> ToolResult {
         var started = now()
         var until = started + config.toolDeadline
         if let blocked = await waitForRunner(until: until) { return blocked }
@@ -351,7 +360,7 @@ final class Computer: @unchecked Sendable {
                     ?? approvals.request(app: lastForeground?.describe ?? "unknown", summary: labels(tail), reason: reason, fingerprint: fingerprint)
                 // The time the owner takes is not the actions' time: the clock starts again after it.
                 let asked = now()
-                let outcome = await approvals.wait(id: approval.id, seconds: config.approvalWait)
+                let outcome = await approvals.wait(id: approval.id, seconds: approvalHold(answerBy: answerBy))
                 let waited = now() - asked
                 until += waited
                 started += waited

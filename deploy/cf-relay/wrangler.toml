@@ -26,7 +26,7 @@ new_sqlite_classes = ["DeviceRelay", "Budget"]
 # Hard caps (requests are MCP requests that reach the phone). See DEPLOY.md for the cost model.
 [vars]
 MAX_BODY = "4194304"
-REQ_TIMEOUT_MS = "60000"
+REQ_TIMEOUT_MS = "180000"
 PER_MINUTE = "60"
 CONCURRENT = "4"
 LABEL_DAILY = "5000"

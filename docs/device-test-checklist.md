@@ -64,8 +64,8 @@ result and the time next to each line.
 ## 5. Approvals
 
 - [ ] `do` tapping a Delete button in Photos: nothing happens on screen, the Live Activity asks, the answer says `approval_required`.
-- [ ] Approve in the Live Activity within 20 s: the same call goes on and taps.
-- [ ] Approve after 20 s, then send the same actions: it taps once; a third time asks again.
+- [ ] Approve in the Live Activity after 45 s, without sending anything again: the same call goes on and taps, and the answer says `approved on the phone after 45 s`. Allow does not bring Poki to the front: the phone stays in the app it was in, and the tap lands there.
+- [ ] Do not approve: after about 115 s (about 50 s behind a relay still at `REQ_TIMEOUT_MS` 60000) the answer says `approval_required`. Approve afterwards and send the same actions: it taps once; a third time asks again.
 - [ ] Decline: `not_sent: the owner declined`.
 - [ ] While an approval is pending, have the agent tap the Live Activity's Approve button (`do` with the button's point): the pending request is withdrawn first, so nothing is approved.
 - [ ] Typing into a password field asks first, and the Live Activity hides the text.
