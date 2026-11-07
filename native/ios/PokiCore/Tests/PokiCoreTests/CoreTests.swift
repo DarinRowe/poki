@@ -362,6 +362,22 @@ final class EventTests: XCTestCase {
         XCTAssertEqual(facts.app, "Settings")
         XCTAssertNotNil(facts.thumbnail)
     }
+
+    /// The app logs each call's summary. What was typed stays out of the log, after the first step too.
+    func testTheSummariesTheAppLogsKeepNoTypedText() async {
+        let wda = FakeWDA()
+        wda.source([("SearchField", "Search")])
+        let (core, _, _) = makeCore(wda)
+        let events = LockedBox<[CoreEvent]>([])
+        Task { for await e in core.events { events.update { $0.append(e) } } }
+        _ = await core.call("do", ["actions": [["type": "door code 4412"]]])
+        _ = await core.call("look", [:])
+        _ = await core.call("do", ["actions": [["tap": 1], ["type": "meet at 5, door code 4412"]]])
+        let summaries = { events.value.compactMap { e -> String? in if case .toolStarted(let a) = e, a.name == "do" { return a.summary }; return nil } }
+        let started = await eventually { summaries().count == 2 }
+        XCTAssertTrue(started)
+        XCTAssertEqual(summaries().map(StepLabels.withoutTypedText), ["Type “…”", "Tap “Search”, then type “…”"])
+    }
 }
 
 final class DDITests: XCTestCase {

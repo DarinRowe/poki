@@ -91,3 +91,14 @@ extension Computer {
         return parts.last.map { $0.prefix(1).uppercased() + $0.dropFirst() } ?? bundle
     }
 }
+
+/// The labels keep what was typed, for the person on the Live Activity and the home screen. A log the
+/// person copies out must not hold it.
+public enum StepLabels {
+    /// `line` without typed text: in step labels (`Type “…”`) and in action JSON (`"type":"…"`).
+    public static func withoutTypedText(_ line: String) -> String {
+        line
+            .replacingOccurrences(of: #"Type “[^”]*”"#, with: "Type “…”", options: .regularExpression)
+            .replacingOccurrences(of: #""type"\s*:\s*"(?:[^"\\]|\\.)*""#, with: #""type":"…""#, options: .regularExpression)
+    }
+}
