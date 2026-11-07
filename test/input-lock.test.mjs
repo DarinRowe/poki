@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { Coordination } from '../src/coordination.mjs';
 import { InputLock, inputLockFromEnv, deviceKey } from '../src/input-lock.mjs';
+import { fixture } from './fixture.mjs';
 
 // A session stand-in: dispatch records when each tool starts and ends and takes `ms` to run.
 function session(label, log, ms = 40) {
@@ -126,4 +127,22 @@ test('an aborted wait leaves the queue and does not run', async () => {
   await first;
   assert.ok(!log.includes('b:tap:start'));
   assert.equal(coordinator.inputLock.waiters.size, 0);
+});
+
+test('a phone named by one session and given by its UDID in another takes one input lock', { timeout: 30000 }, async t => {
+  const f = await fixture(t, { extraEnv: () => ({ POKI_INPUT_LOCK: '1', POKI_INPUT_LOCK_WAIT_MS: '500' }) });
+  const b = await f.connect();
+  await f.call('list_devices');
+  await f.set({ block: 'tap' });
+  const taps = log => log.split('\n').filter(line => line.startsWith('{"op":"tap"')).length;
+  const first = f.call('tap', { device: 'Fixture Phone', x: 10, y: 10 });
+  first.catch(() => {});
+  await f.until(log => taps(log) === 1);
+  const second = await Promise.race([
+    b.callTool({ name: 'tap', arguments: { device: 'fixture-phone', x: 10, y: 10 } }),
+    f.until(log => taps(log) === 2).then(() => 'a second tap reached the phone while the first held it'),
+  ]);
+  assert.equal(second.isError, true, String(second));
+  assert.match(second.content[0].text, /busy with input from another session/);
+  assert.equal((await f.events()).filter(event => event.op === 'tap').length, 1);
 });
