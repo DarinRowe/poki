@@ -300,6 +300,44 @@ final class RelayTests: XCTestCase {
         }
     }
 
+    /// A three-action do answered "what was sent is unknown" when the relay reset mid-call: the
+    /// call now runs to its end and its answer comes with the next call.
+    func testAnAnswerReadyAfterTheConnectionDroppedComesWithTheNextCall() async throws {
+        let (core, wda, _) = makeCore()
+        wda.delay("GET /source", 0.7)
+        let sockets = FakeSockets()
+        core.start(relay: testRelay, socketFactory: sockets)
+        core.relay?.maxBackoff = 0.05
+        func ready(_ socket: FakeSocket) async {
+            socket.push((["t": "challenge", "nonce": .string(Data(repeating: 7, count: 32).base64EncodedString())] as JSON).serialized())
+            _ = await eventually { !socket.sent.isEmpty }
+            socket.push((["t": "ready", "max_body": 4_194_304] as JSON).serialized())
+        }
+        func call(_ socket: FakeSocket, _ id: String) {
+            let body = (["jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": ["name": "look", "arguments": [:]]] as JSON).serialized()
+            socket.push((["t": "req", "id": .string(id), "method": "POST", "headers": ["Content-Type": "application/json"], "body": .string(body)] as JSON).serialized())
+        }
+        do { let ok = await eventually { !sockets.sockets.value.isEmpty }; XCTAssertTrue(ok) }
+        let first = sockets.sockets.value[0]
+        await ready(first)
+        call(first, "q1")
+        try await Task.sleep(nanoseconds: 200_000_000)
+        first.close(code: 1006, reason: "reset")
+        do { let ok = await eventually(5) { sockets.sockets.value.count >= 2 }; XCTAssertTrue(ok) }
+        let second = sockets.sockets.value[1]
+        await ready(second)
+        try await Task.sleep(nanoseconds: 800_000_000)
+        XCTAssertFalse(first.sent.contains { $0.contains("\"t\":\"res\"") }, "nothing goes to the dropped connection")
+        call(second, "q2")
+        do { let ok = await eventually(5) { second.sent.contains { $0.contains("\"t\":\"res\"") } }; XCTAssertTrue(ok) }
+        let res = try JSON.parse(second.sent.first { $0.contains("\"t\":\"res\"") }!)
+        XCTAssertEqual(res["id"], "q2")
+        let text = try JSON.parse(res["body"]!.string!)["result"]?["content"]?[0]?["text"]?.string ?? ""
+        XCTAssertTrue(text.hasPrefix("earlier, never delivered to you: the look call whose connection dropped (finished at "), text)
+        XCTAssertTrue(text.contains("\n\nnow:\napp: Settings"), text)
+        core.stop()
+    }
+
     func testTheRelayIsDialedAgainAfterADrop() async {
         let (core, _, _) = makeCore()
         let sockets = FakeSockets()
@@ -323,6 +361,23 @@ final class EventTests: XCTestCase {
         guard case .toolFinished(_, .done, let facts)? = events.value.last else { return XCTFail("\(events.value)") }
         XCTAssertEqual(facts.app, "Settings")
         XCTAssertNotNil(facts.thumbnail)
+    }
+
+    /// The app logs each call's summary. What was typed stays out of the log, after the first step too.
+    func testTheSummariesTheAppLogsKeepNoTypedText() async {
+        let wda = FakeWDA()
+        wda.source([("SearchField", "Search")])
+        let (core, _, _) = makeCore(wda)
+        let events = LockedBox<[CoreEvent]>([])
+        Task { for await e in core.events { events.update { $0.append(e) } } }
+        _ = await core.call("do", ["actions": [["type": "door code 4412"]]])
+        _ = await core.call("look", [:])
+        _ = await core.call("do", ["actions": [["tap": 1], ["type": "meet at 5, door code 4412"]]])
+        _ = await core.call("do", ["actions": [["type": "他说“好的”就在4412"]]])
+        let summaries = { events.value.compactMap { e -> String? in if case .toolStarted(let a) = e, a.name == "do" { return a.summary }; return nil } }
+        let started = await eventually { summaries().count == 3 }
+        XCTAssertTrue(started)
+        XCTAssertEqual(summaries().map(StepLabels.withoutTypedText), ["Type “…”", "Tap “Search”, then type “…”", "Type “…”"])
     }
 }
 
