@@ -20,6 +20,10 @@
 - (void)addPointerEventPath:(id)path;
 - (void)_XCT_synthesizeEvent:(id)event implicitConfirmationInterval:(double)interval
     completion:(void (^)(NSError *))completion;
++ (id)connectionForInitiatingSharedSession;
++ (void)sessionWithConnection:(id)connection completion:(void (^)(id, NSError *))completion;
+- (id)connection;
+- (void)invalidate;
 @end
 
 static BOOL SRFail(NSError **error, NSString *code) {
@@ -117,6 +121,20 @@ static BOOL SRABI(id target, SEL selector, const char *result, NSArray<NSString 
     BOOL value = session == _observed && generation == _generation && !_invalidated && _token != nil;
     [_lifecycleLock unlock]; return value;
 }
+/// Ends the current session: its connection to testmanagerd is invalidated, which ends Automation
+/// Mode (and iOS's banner) for this process. The next prepare opens a new session with a new
+/// generation; an action meant for the old one is refused as native_session_invalidated.
+- (BOOL)close {
+    [_lifecycleLock lock];
+    id session = _observed;
+    BOOL open = session && !_invalidated && _token != nil;
+    _invalidated = YES; _enabled = nil; _enabledGeneration = 0;
+    [_lifecycleLock unlock];
+    if (!open) return NO;
+    id link = [session respondsToSelector:@selector(connection)] ? [session connection] : nil;
+    if ([link respondsToSelector:@selector(invalidate)]) [link invalidate];
+    return YES;
+}
 - (id)prepare:(NSError **)error {
     [_prepareLock lock];
     @try { return [self prepareLocked:error]; }
@@ -159,6 +177,24 @@ static BOOL SRABI(id target, SEL selector, const char *result, NSArray<NSString 
     if (![promise promiseFulfilled]) { SRFail(error, @"session_timeout"); return nil; }
     if ([promise error]) { if (error) *error = [promise error]; return nil; }
     id session = [promise value];
+    [_lifecycleLock lock];
+    BOOL closed = _invalidated && session == _observed;
+    [_lifecycleLock unlock];
+    if (closed) {
+        // The shared promise still holds the session that was closed: open one of this process's
+        // own, on a new connection (XCTest's sessionWithConnection:, as a UI test runner does).
+        if (![cls respondsToSelector:@selector(connectionForInitiatingSharedSession)] ||
+            ![cls respondsToSelector:@selector(sessionWithConnection:completion:)]) {
+            SRFail(error, @"session_reopen_api_unavailable"); return nil;
+        }
+        id connection = [cls connectionForInitiatingSharedSession];
+        __block id opened; __block NSError *failure;
+        dispatch_semaphore_t ready = dispatch_semaphore_create(0);
+        [cls sessionWithConnection:connection completion:^(id s, NSError *e) { opened = s; failure = e; dispatch_semaphore_signal(ready); }];
+        if (dispatch_semaphore_wait(ready, dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC))) { SRFail(error, @"session_timeout"); return nil; }
+        if (!opened) { if (error) *error = failure ?: [NSError errorWithDomain:@"RecoveredNative" code:1 userInfo:@{NSLocalizedDescriptionKey: @"session_reopen_failed"}]; return nil; }
+        session = opened;
+    }
     if (![session respondsToSelector:@selector(supportsAutomationMode)] ||
         ![session supportsAutomationMode] ||
         ![session respondsToSelector:@selector(enableAutomationModeWithError:)] ||

@@ -118,10 +118,15 @@ final class AppModel {
         // PokiCore asks for a restart after two silent requests in a row. A slow gesture can be one of
         // them while the runner is fine, so the runner is asked first; only a runner that does not
         // answer is started again (each restart costs seconds and flashes the automation banner).
-        host.onRestart { [automationPath] in
-            // In-process, XCTest keeps one session per process: there is no runner to ask or restart.
+        host.onRestart { [weak self, automationPath] in
+            // In-process there is no runner to ask: the session is closed and opened again.
             guard automationPath == .runner else {
-                Task { @MainActor in AppLog.shared.add("runner", "PokiCore asked for a restart; the in-process session cannot be reopened, so it was kept") }
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.log.add("runner", "PokiCore asked for a restart: closing the in-process session and opening a new one")
+                    self.closeInProcess("a restart PokiCore asked for")
+                    self.warmInProcess("PokiCore's restart")
+                }
                 return
             }
             Task.detached {
@@ -177,6 +182,20 @@ final class AppModel {
     /// The in-process session as prepare last answered it in this process (ESP-152).
     private var inProcessSession = InProcessSession.opening
     private var inProcessWarming = false
+
+    /// Ends the in-process session (Automation Mode and the banner go with it) off the main thread.
+    /// PokiCore's next request finds its session gone and opens a new one through prepare.
+    func closeInProcess(_ why: String) {
+        guard automationPath == .inProcess else { return }
+        inProcessSession = .opening
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = PKInProcess.shared().close()
+            Task { @MainActor [weak self] in
+                let closed = (result["closed"] as? Bool) == true
+                self?.log.add("runner", closed ? "in-process session closed for \(why) (generation \(result["generation"] ?? 0)); the banner goes with it" : "in-process session was not open (\(why))")
+            }
+        }
+    }
 
     /// Opens (or checks) the in-process session off the main thread before an agent needs it: when
     /// the launcher has mounted the disk image, when Poki comes to the front, when an agent
@@ -236,6 +255,7 @@ final class AppModel {
         ActivityController.endAll()
         guard sessionOn else { Thread.sleep(forTimeInterval: 0.5); return }
         log.add("app", "Poki is closing: ending the runner")
+        if automationPath == .inProcess { _ = PKInProcess.shared().close() }
         launcher.stop()
         Thread.sleep(forTimeInterval: 2.5)
     }
@@ -362,7 +382,8 @@ final class AppModel {
             return
         }
         if !inFront { loopback.pause() }
-        log.add("session", automationPath == .inProcess ? "turned off; the in-process session stays open until Poki exits" : "turned off: ending the runner")
+        log.add("session", automationPath == .inProcess ? "turned off: closing the in-process session" : "turned off: ending the runner")
+        if automationPath == .inProcess { closeInProcess("turned off") }
         core.stop()
         launcher.stop()
         if setup.loopback == .builtIn { tunnel.disconnect() }
@@ -411,11 +432,12 @@ final class AppModel {
     func pauseRunner(reason: String = "Stopped") {
         guard sessionOn, !runnerPaused, approvals.isEmpty else { return }
         if automationPath == .inProcess {
-            // XCTest keeps one shared session per process and cannot open a second one, so the
-            // in-process session stays open (and with it the banner) until Poki exits.
-            log.add("runner", "standing by: \(reason); the in-process session stays open, and the banner with it, until Poki exits")
+            // The in-process session is closed, and with it Automation Mode and iOS's banner; the
+            // next agent request opens a new one (a few seconds, no passcode within the same boot).
+            log.add("runner", "standing by: \(reason); closing the in-process session, and the banner with it")
             // The task ends here too, as with the runner (ESP-176): nothing is switched.
             Task { [core] in _ = await core.finishTask(switching: false) }
+            closeInProcess("standing by")
             launcher.stop()
             standBy(reason: reason)
             return
@@ -474,7 +496,7 @@ final class AppModel {
     private func standBy(reason: String?) {
         runnerPaused = true
         runner = RunnerStatus(state: "standby", detail: reason.map { "\($0). It starts again when an agent asks." } ?? "It starts when an agent asks.")
-        host.update(runner: .starting("starting the runner"))
+        host.update(runner: .starting(automationPath == .inProcess ? "opening the automation session" : "starting the runner"))
         host.setPaused(true)
         activityText = "Idle"
         activity.update { $0.runnerPaused = true; $0.phase = .idle; $0.headline = "Runner asleep"; $0.since = nil }
@@ -486,16 +508,15 @@ final class AppModel {
         runnerPaused = false
         host.setPaused(false)
         lastAgentActivity = Date()
-        log.add("runner", "an agent asked: starting the runner")
+        log.add("runner", automationPath == .inProcess ? "an agent asked: opening the automation session again" : "an agent asked: starting the runner")
         activity.update { $0.runnerPaused = false; $0.phase = .working; $0.headline = "Starting the runner"; $0.since = Date() }
         launchRunner()
     }
 
     private func checkIdle() {
         passcodeHint = runner.state == "launching" && launchingSince.map { Date().timeIntervalSince($0) > 10 } == true
-        // In-process the session (and its banner) stays open until Poki exits; stopping the launcher
-        // for idle saves nothing and costs the next agent a restart (ESP-152).
-        guard automationPath == .runner else { return }
+        // On both paths the automation (the runner, or the in-process session) ends after the idle
+        // time, so iOS's banner shows only while an agent works; the next request starts it again.
         guard sessionOn, !runnerPaused, idleStopSeconds > 0, approvals.isEmpty, activityText == "Idle" else { return }
         if Date().timeIntervalSince(lastAgentActivity) >= Double(idleStopSeconds) {
             let reason = "Stopped after \(idleStopSeconds / 60 > 0 ? "\(idleStopSeconds / 60) min" : "\(idleStopSeconds) s") without agent activity"

@@ -9,7 +9,9 @@ static void Write(NSString *name, id object) {
 }
 
 /// Reads the front app with Poki's in-process code. "read" writes its tree; "field" also finds the first
-/// text field in it, taps it, types, and reads the tree and the keyboard focus again.
+/// text field in it, taps it, types, and reads the tree and the keyboard focus again. "cycle" is "field"
+/// after the session was closed (as Poki does when idle) and opened again: a touch in between must be
+/// refused, and the new session must have a new generation.
 static NSDictionary *Run(NSString *mode, NSString *tag, NSString *text) {
     NSMutableDictionary *out = [NSMutableDictionary dictionary];
     out[@"front"] = [PKInProcess.shared frontApp];
@@ -17,7 +19,18 @@ static NSDictionary *Run(NSString *mode, NSString *tag, NSString *text) {
     NSString *before = [PKInProcess.shared sourceXML:NULL code:&code];
     if (code) out[@"source_code"] = code;
     Write([tag stringByAppendingString:@".xml"], before ?: @"");
-    if (![mode isEqualToString:@"field"] || !before) return out;
+    if ([mode isEqualToString:@"cycle"]) {
+        out[@"close"] = [PKInProcess.shared close];
+        PKOutcome *refused = [PKInProcess.shared touch:@[@[[PKTouchPoint at:CGPointMake(10, 10) offset:0], [PKTouchPoint at:CGPointMake(10, 10) offset:0.05]]] timeout:2];
+        out[@"closed_touch"] = @{@"delivery": @(refused.delivery), @"code": refused.code ?: @""};
+        [NSThread sleepForTimeInterval:2];
+        out[@"prepare2"] = [PKInProcess.shared prepare];
+        out[@"front2"] = [PKInProcess.shared frontApp];
+        before = [PKInProcess.shared sourceXML:NULL code:&code];
+        if (code) out[@"source_code2"] = code;
+        Write([tag stringByAppendingString:@"-reopened.xml"], before ?: @"");
+        if (!before) return out;
+    } else if (![mode isEqualToString:@"field"] || !before) return out;
     NSRegularExpression *re = [NSRegularExpression regularExpressionWithPattern:@"<XCUIElementTypeTextField[^>]*x=\"(\\d+)\" y=\"(\\d+)\" width=\"(\\d+)\" height=\"(\\d+)\"" options:0 error:nil];
     NSTextCheckingResult *m = [re firstMatchInString:before options:0 range:NSMakeRange(0, before.length)];
     if (!m) { out[@"field"] = @"none"; return out; }
