@@ -63,14 +63,12 @@ jobs:
         working-directory: desktop/app
       - name: Build the installers
         uses: tauri-apps/tauri-action@v0
+        # Signing and notarization: add APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD,
+        # APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_PASSWORD and APPLE_TEAM_ID here once the
+        # secrets exist. An empty value makes the bundler try to import nothing and fail, so they
+        # are not listed until then; the unsigned app opens with right-click > Open.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           projectPath: desktop/app
           args: ${{ matrix.args }}

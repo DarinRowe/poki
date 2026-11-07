@@ -240,7 +240,11 @@ pub async fn run(signer: &mut Signer, opts: Options, reporter: &Reporter) -> Res
 
     reporter.step("release", "Getting Poki");
     let (ipa, signing_zip, tag) = match &opts.ipa {
-        Some(p) => (p.clone(), opts.signing_zip.clone(), format!("local:{}", p.file_name().unwrap_or_default().to_string_lossy())),
+        Some(p) => {
+            let beside = p.with_file_name("Poki-signing.zip");
+            let zipp = opts.signing_zip.clone().or_else(|| beside.is_file().then_some(beside));
+            (p.clone(), zipp, format!("local:{}", p.file_name().unwrap_or_default().to_string_lossy()))
+        }
         None => {
             let rel = release::latest().await?;
             let (ipa, zipp) = release::fetch(&rel, reporter).await?;

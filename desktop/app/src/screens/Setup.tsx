@@ -18,6 +18,12 @@ export default function Setup({ goAccount }: { goAccount: () => void }) {
   const [result, setResult] = useState<{ notes: string[]; handoff: Handoff | null; name: string; version: string } | null>(null);
   const { steps, apply, fail, reset } = useSteps(STEPS);
   const [chosen, setChosen] = useState<string | null>(null);
+  const [localIpa, setLocalIpa] = useState<string | null>(null);
+  const pickIpa = async () => {
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const f = await open({ multiple: false, filters: [{ name: "IPA", extensions: ["ipa"] }] });
+    setLocalIpa((f as string | null) ?? null);
+  };
 
   useInterval(() => {
     if (running) return;
@@ -37,7 +43,7 @@ export default function Setup({ goAccount }: { goAccount: () => void }) {
     if (!phone) return;
     setRunning(true); setError(null); setResult(null); reset();
     try {
-      const r = await api.install(phone.phone.udid, false);
+      const r = await api.install(phone.phone.udid, false, localIpa);
       setResult({ notes: r.notes, handoff: r.handoff, name: r.record.phone_name, version: r.record.version });
     } catch (e) {
       const text = failureText(e);
@@ -86,7 +92,9 @@ export default function Setup({ goAccount }: { goAccount: () => void }) {
           </div>
         ) : (
           <div className="row between">
-            <span className="muted small">{account?.name ?? account?.apple_id ?? ""}{account?.team_id ? ` · ${t("Team")} ${account.team_id}` : ""}</span>
+            <span className="muted small grow">{account?.name ?? account?.apple_id ?? ""}{account?.team_id ? ` · ${t("Team")} ${account.team_id}` : ""}</span>
+            <span className="muted small">{localIpa ? localIpa.split(/[\\/]/).pop() : t("Latest release")}</span>
+            <Capsule kind="ghost" sm onClick={localIpa ? () => setLocalIpa(null) : pickIpa} disabled={running}>{localIpa ? t("Use the latest release") : t("Use an IPA file…")}</Capsule>
             <Capsule big={false} onClick={start} disabled={!phone || running || !account?.signed_in}>{running ? t("Setting up…") : t("Set up Poki")}</Capsule>
           </div>
         )}

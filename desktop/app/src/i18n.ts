@@ -84,6 +84,9 @@ const zh: Record<string, string> = {
   "Signing": "签名",
   "Install": "安装",
   "Pairing file": "配对文件",
+  "Latest release": "最新版本",
+  "Use the latest release": "改用最新版本",
+  "Use an IPA file…": "选择 IPA 文件…",
 };
 const listeners = new Set<() => void>();
 let lang: Lang = (localStorage.getItem("lang") as Lang) || (navigator.language.toLowerCase().startsWith("zh") ? "zh-Hans" : "en");

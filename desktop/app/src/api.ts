@@ -41,7 +41,7 @@ export const api = {
   teams: () => invoke<Team[]>("teams"),
   chooseTeam: (teamId: string) => invoke<void>("choose_team", { teamId }),
   setAnisette: (source: Anisette) => invoke<void>("set_anisette", { source }),
-  install: (udid: string | null, handOff: boolean) => invoke<InstallResult>("install", { udid, ipa: null, handOff }),
+  install: (udid: string | null, handOff: boolean, ipa: string | null = null) => invoke<InstallResult>("install", { udid, ipa, handOff }),
   records: () => invoke<Record_[]>("records"),
   renew: (udid: string) => invoke<Record_>("renew", { udid }),
   forgetPhone: (udid: string) => invoke<void>("forget_phone", { udid }),
