@@ -29,6 +29,9 @@ enum ProxyApps {
     }
 
     static let all: [ProxyApp] = [
+        ProxyApp(id: "karing", name: "Karing", scheme: "karing", minimumVersion: "1.2.4.862",
+                 install: .toggle("TUN > Loopback address > 10.7.0.1"),
+                 steps: ["Open Karing's settings, then TUN.", "Set Loopback address (loopback_address) to 10.7.0.1, then reconnect Karing.", "Keep Karing connected. Choose External app in Poki; do not enable Poki's built-in connection."]),
         ProxyApp(id: "surge", name: "Surge", scheme: "surge", minimumVersion: "5.23.0",
                  install: .url(URL(string: "surge:///install-module?url=\(encoded(modulesBase.appendingPathComponent("poki-loopback.sgmodule")))")!),
                  steps: ["Tap Install module, then confirm in Surge.", "Turn the Poki Device Loopback module on.", "Turn on Enhanced Mode: the loopback only works in Enhanced Mode."]),

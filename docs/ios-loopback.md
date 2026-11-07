@@ -11,6 +11,10 @@ Two shapes were considered: require every user to install a helper such as Local
 the connection in Poki. The embedded connection is the default because it keeps setup in one app.
 An external-connection build remains necessary for signing without Network Extensions and users
 who need to keep a compatible existing VPN. No VPN profile is changed automatically on app launch.
+Setup offers the external connection first when a supported VPN app is installed, including Karing.
+The user can explicitly choose the built-in fallback. Karing's own `loopback_address` can supply
+the reflection while continuing to proxy internet traffic; Poki must keep its tunnel off in this mode.
+This shares one VPN rather than trying to run two packet tunnels at once.
 
 The app calls `LoopbackTunnel.connect()` only after the owner enables the built-in connection or
 explicitly starts a session with that method selected. `refresh()` only reads Poki's saved profile;

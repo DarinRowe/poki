@@ -75,6 +75,11 @@ final class AppModel {
         }
     }
 
+    var connectionMethod: SetupState.Loopback {
+        if setup.loopback != .none { return setup.loopback }
+        return ProxyApps.all.contains(where: \.isInstalled) ? .proxy : .builtIn
+    }
+
     init() {
         core = LiveCore(host: host)
         let launcher = RustLauncher()
@@ -561,7 +566,7 @@ final class AppModel {
         switch step {
         case .runner: setup.runnerInstalled
         case .developerMode: setup.developerMode
-        case .loopback: loopback.isWorking
+        case .loopback: setup.loopback != .none && loopback.isWorking
         case .pairing: pairingPath != nil && pairingTrouble == nil && diskImage.isReady
         case .automation: setup.uiAutomation
         case .background: background.allowed && activity.enabled

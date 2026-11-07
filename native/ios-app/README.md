@@ -85,6 +85,13 @@ thumbnails; it does not solve other free-account signing restrictions.
 
 ## Loopback choices
 
+Setup initially offers an installed supported VPN before the built-in option. The user selects the
+connection explicitly; an existing service response alone does not finish the setup step.
+
+- **Karing**: keep its VPN connected, set TUN > Loopback address to `10.7.0.1`, and use **External
+  app** in Poki. Poki's VPN stays off, so Karing continues to own the single packet tunnel. See the
+  [maintainer's iOS support record](https://github.com/KaringX/karing/issues/899); verify the installed
+  version and the developer-service check before continuing.
 - **Built-in (default)**: Setup > Connect to this iPhone > Enable local connection. Approve iOS's
   VPN configuration prompt. Poki reflects only IPv4 TCP to `10.7.0.1/32`; normal internet routes and
   DNS are unchanged. The connection may displace another packet-tunnel VPN. Poki never silently

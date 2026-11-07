@@ -52,7 +52,7 @@ targets:
             CFBundleURLSchemes: [poki]
         NSLocalNetworkUsageDescription: Poki connects to this iPhone's own developer services to pair with it and to run the automation.
         NSBonjourServices: [_remotepairing-pairable-host._tcp, _remotepairing-manual-pairing._tcp]
-        LSApplicationQueriesSchemes: [surge, loon, shadowrocket, sing-box]
+        LSApplicationQueriesSchemes: [karing, surge, loon, shadowrocket, sing-box]
         ITSAppUsesNonExemptEncryption: false
     entitlements:
       path: Poki/Poki.entitlements

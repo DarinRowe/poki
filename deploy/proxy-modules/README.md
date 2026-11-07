@@ -39,3 +39,16 @@ handles TCP only, which is all Poki needs. Reference:
 
 No file is needed: turn on Settings > Other > "Include route 10.7.0.1/32". (Taken from the app's
 settings as reported to us; not checked against Shadowrocket documentation.)
+
+## Karing
+
+Use Karing's existing VPN rather than enabling Poki's built-in local VPN. In Karing's TUN settings,
+set **Loopback address** (`loopback_address`) to `10.7.0.1` and reconnect Karing. In Poki select
+**External app**. This adds no second VPN configuration for Poki. Keep the existing subscription,
+nodes and routing rules; the developer-service check in Poki must pass before continuing.
+
+Karing's maintainer marked iOS loopback support complete in
+[issue 899](https://github.com/KaringX/karing/issues/899), pointing to version `1.2.4.862`.
+Source support does not replace device verification of the installed version, its route exclusions,
+normal proxy access and Poki's launcher. Do not claim all VPN apps are compatible: those without
+local reflection cannot share this path with Poki's packet-tunnel VPN.

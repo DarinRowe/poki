@@ -315,7 +315,11 @@ struct LoopbackContent: View {
         }
         .onAppear { monitor.resume() }
         connectionChoice
-        if model.setup.loopback == .proxy || !model.tunnel.available {
+        if model.connectionMethod == .proxy || !model.tunnel.available {
+            Text("Keep your existing VPN connected. Poki uses its loopback and leaves its own VPN off.")
+                .font(.subheadline)
+            Button("Use the current VPN", systemImage: "network") { model.chooseConnection(.proxy) }
+                .disabled(model.connectionInUse || model.tunnel.busy)
             ForEach(ProxyApps.all) { app in proxyRow(app) }
             localDevVPN
         } else {
@@ -326,7 +330,7 @@ struct LoopbackContent: View {
     @ViewBuilder private var connectionChoice: some View {
         if model.tunnel.available {
             Picker("Local connection", selection: Binding(
-                get: { model.setup.loopback == .proxy ? .proxy : .builtIn },
+                get: { model.connectionMethod },
                 set: { model.chooseConnection($0) }
             )) {
                 Text("Built-in").tag(SetupState.Loopback.builtIn)
