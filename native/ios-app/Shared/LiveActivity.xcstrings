@@ -584,6 +584,17 @@
         }
       }
     },
+    "Passcode for the runner" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "为 Runner 输入密码"
+          }
+        }
+      }
+    },
     "Pay in %@?" : {
       "extractionState" : "manual",
       "localizations" : {

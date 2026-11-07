@@ -184,7 +184,7 @@ extension PokiState {
             let word = String(activity: "Your turn")
             return ActivityFace(
                 status: word, shortStatus: word, tone: .approval, meta: .elapsed(handoff.since),
-                content: ActivityWords.brief(handoff.text.flatMap { $0.isEmpty ? nil : $0 } ?? handoff.title),
+                content: ActivityWords.brief(handoff.line),
                 bottom: .handoff(id: handoff.id),
                 compact: .symbol(handoff.symbol, .approval),
                 minimal: .approval,
@@ -215,6 +215,12 @@ extension PokiActivityAttributes.Handoff {
         case .payment: String(activity: "Finish the payment yourself")
         case .other: String(activity: "Do this step yourself")
         }
+    }
+    /// The content line: a fixed short line per kind, so it fits the Live Activity's four words (eight
+    /// characters in Chinese) whole. The agent's own note is the alert's second line (`detail`) and
+    /// the app's issue row, where it has room.
+    var line: String {
+        kind == .runnerPasscode ? String(activity: "Passcode for the runner") : title
     }
     /// The agent's own note, or what happens next (the alert's second line).
     var detail: String {
