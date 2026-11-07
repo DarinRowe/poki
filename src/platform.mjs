@@ -301,15 +301,18 @@ async function launch(ctx, target, args) {
 
 // simctl returns before the app draws: SpringBoard stays in front, then the app reports no elements
 // for a few seconds. A tap in that gap fails as if its target did not exist.
+// The launched process seen in front confirms the launch as a phone's receipt does, readable or not.
 async function interfaceReady(ctx, pid) {
   const started = performance.now();
+  let inFront = false;
   while (performance.now() - started < launchReadyMs) {
     checkWork();
     const seen = await ctx.structure().catch(error => { if (stopped(error)) throw error; });
-    if (seen?.foreground?.pid === pid && seen.elements.length) return { interface_ready: true, ...ctx.inBatch ? {} : { screen: (await ctx.readback()).screen } };
+    inFront ||= seen?.foreground?.pid === pid;
+    if (seen?.foreground?.pid === pid && seen.elements.length) return { foreground_verified: true, interface_ready: true, ...ctx.inBatch ? {} : { screen: (await ctx.readback()).screen } };
     await pause(100);
   }
-  return { interface_ready: false, ...ctx.inBatch ? {} : { screen: (await ctx.readback()).screen }, instruction: `The app reported no readable elements within ${launchReadyMs / 1000} seconds. Use take_screenshot to look, or wait_for if it is still loading.` };
+  return { foreground_verified: inFront, interface_ready: false, ...ctx.inBatch ? {} : { screen: (await ctx.readback()).screen }, instruction: `The app reported no readable elements within ${launchReadyMs / 1000} seconds. Use take_screenshot to look, or wait_for if it is still loading.` };
 }
 
 async function applicationMutation(target, request, verify) {
