@@ -16,7 +16,9 @@ extension Computer {
         if let text = action["type"]?.text {
             let e = action["ref"].flatMap { refs[$0.int ?? -1] }
             if e?.isSecure == true || lastElements.contains(where: \.isSecure) { return "Type \(text.count) hidden characters" }
-            return "Type “\(Self.short(text, 32))”"
+            // Curly quotes in the text become straight ones, so the label's own ” ends it (withoutTypedText).
+            let shown = Self.short(text, 32).replacingOccurrences(of: "[“”]", with: "\"", options: .regularExpression)
+            return "Type “\(shown)”"
         }
         if let key = action["key"]?.text { return "Press \(key.prefix(1).uppercased() + key.dropFirst())" }
         if let spec = action["swipe"] {
@@ -89,5 +91,17 @@ extension Computer {
         if let known = knownApps[bundle] { return known }
         let parts = bundle.split(separator: ".").map(String.init)
         return parts.last.map { $0.prefix(1).uppercased() + $0.dropFirst() } ?? bundle
+    }
+}
+
+/// The labels keep what was typed, for the person on the Live Activity and the home screen. A log the
+/// person copies out must not hold it.
+public enum StepLabels {
+    /// `line` without typed text: in step labels (`Type “…”`, and `type “…”` after the first step) and
+    /// in action JSON (`"type":"…"`).
+    public static func withoutTypedText(_ line: String) -> String {
+        line
+            .replacingOccurrences(of: #"([Tt]ype) “[^”]*”"#, with: "$1 “…”", options: .regularExpression)
+            .replacingOccurrences(of: #""type"\s*:\s*"(?:[^"\\]|\\.)*""#, with: #""type":"…""#, options: .regularExpression)
     }
 }

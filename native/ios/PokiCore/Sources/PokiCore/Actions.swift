@@ -36,21 +36,41 @@ extension Computer {
         return p
     }
 
+    /// Only an element with no part on the screen is refused. One that looks covered in the tree is
+    /// still touched (at a free point of it when there is one, else at its centre) and the answer
+    /// says what lay over it: the tree's order is not what is drawn on top (a Select button over a
+    /// photo grid came after the photos in the tree), and the model sees from the read whether the
+    /// touch landed.
     func reachable(_ ref: Int) throws -> (x: Double, y: Double) {
         let e = try element(ref)
         if e.fromPicture || size == nil { return e.frame.centre }
         let layout = self.layout
-        guard let p = layout.hitPoint(e) else {
+        guard let hit = layout.touchPoint(e) else {
             throw ActionFailure(message: "not_hittable: element \(ref) \(e.type) \"\(e.text.prefix(40))\": \(layout.unreachable(e)); nothing was sent. Bring it into view first ({scroll_to: {ref: \(ref)}}) or touch a point you can see on the screenshot", delivery: .notSent)
         }
-        return p
+        return hit.point
     }
 
-    /// " at [x, y]" when the point touched is not the element's centre (its centre is off screen or covered).
+    /// " at [x, y] (…)" when the point touched is not the element's centre, or something in the tree
+    /// lies over it.
+    /// A container the size of the screen (a toolbar wrapper, a sheet's full-screen close control)
+    /// has no centre worth tapping; the answer says where the tap went (seen on the phone: taps on a
+    /// 402 by 874 "toolbar" element in a shop app).
+    func fillsScreen(_ spec: JSON?, _ p: (x: Double, y: Double)) -> String {
+        guard let spec, let ref = spec.int ?? spec["ref"]?.int, let e = refs[ref], let size else { return "" }
+        guard e.frame.width * e.frame.height >= 0.8 * size.width * size.height else { return "" }
+        return " (this element fills the screen, so the tap went to its centre at [\(Int(p.x.rounded())), \(Int(p.y.rounded()))], whatever is drawn there; tap a smaller element, or a point on the picture)"
+    }
+
     func offCentre(_ spec: JSON?, _ p: (x: Double, y: Double)) -> String {
-        guard let spec, let ref = spec.int ?? spec["ref"]?.int, let e = refs[ref] else { return "" }
+        guard let spec, let ref = spec.int ?? spec["ref"]?.int, let e = refs[ref], !e.fromPicture, size != nil else { return "" }
+        guard let hit = layout.touchPoint(e) else { return "" }
         let c = e.frame.centre
-        return abs(c.x - p.x) < 0.5 && abs(c.y - p.y) < 0.5 ? "" : " at [\(Int(p.x.rounded())), \(Int(p.y.rounded()))] (its centre is off screen or covered)"
+        let moved = abs(c.x - p.x) >= 0.5 || abs(c.y - p.y) >= 0.5
+        let at = " at [\(Int(p.x.rounded())), \(Int(p.y.rounded()))]"
+        guard hit.free else { return "\(at) (\(hit.over ?? "something") lies over all of its visible part in the tree; touched anyway: see whether it took)" }
+        guard moved else { return "" }
+        return hit.over.map { "\(at) (its centre is under \($0) in the tree)" } ?? "\(at) (its centre is off the screen)"
     }
 
     func element(_ ref: Int) throws -> Element {
@@ -106,7 +126,7 @@ extension Computer {
         if let spec = action["tap"] {
             let p = try point(spec)
             try await tap(p)
-            return ("tap", "tap \(describe(action))\(offCentre(spec, p))")
+            return ("tap", "tap \(describe(action))\(offCentre(spec, p))\(fillsScreen(spec, p))")
         }
         if let text = action["type"]?.text {
             if let ref = action["ref"] {
@@ -115,8 +135,9 @@ extension Computer {
             }
             let hidden = describe(action).hasSuffix("(hidden)")
             let via = action["via"]?.string == "paste" ? "pasted" : "typed"
+            var pasteNote = ""
             if via == "pasted" {
-                try await paste(text, clear: action["clear"]?.bool ?? false, until: until)
+                pasteNote = try await paste(text, clear: action["clear"]?.bool ?? false, until: until)
             } else {
                 try await type(text, clear: action["clear"]?.bool ?? false)
             }
@@ -124,7 +145,7 @@ extension Computer {
             let reads = await fieldValue(timeout: min(1.5, max(0.3, until - now() - 0.2)))
             let readBack = reads.map { hidden ? "; the field now holds \($0.count) characters" : "; the field now reads \"\($0.count > 200 ? String($0.prefix(190)) + "…" : $0)\"" }
                 ?? "; the field could not be read back (no focused field answered in time), so check the elements or the picture"
-            return ("type", "\(describe(action)) (\(via))\(readBack)")
+            return ("type", "\(describe(action)) (\(via))\(readBack)\(pasteNote)")
         }
         if let key = action["key"]?.text {
             let k = key.lowercased()
@@ -196,12 +217,17 @@ extension Computer {
         if let spec = action["launch"] {
             guard let bundle = spec.string ?? spec["bundle"]?.string, !bundle.isEmpty else { throw ActionFailure(message: "launch takes a bundle id", delivery: .notSent) }
             let fresh = spec["fresh"]?.bool ?? false
-            // A fresh launch ends the app first, so a page it was left on cannot answer for it.
+            // A fresh launch ends the app first, so a page it was left on cannot answer for it, and
+            // starts it through XCTest's launch. Otherwise the app is activated: brought to the front
+            // as it is, or started if it is not running. XCTest's launch always ends a running app
+            // and starts it again, with a handshake that takes several seconds on the phone.
             if fresh {
                 do { _ = try await runner.call("POST", "/wda/apps/terminate", ["bundleId": .string(bundle)], timeout: 4) }
                 catch let e as RunnerError where e.delivery == .notSent {}
+                _ = try await runner.call("POST", "/wda/apps/launch", ["bundleId": .string(bundle)], timeout: 8)
+            } else {
+                _ = try await runner.call("POST", "/wda/apps/activate", ["bundleId": .string(bundle)], timeout: 8)
             }
-            _ = try await runner.call("POST", "/wda/apps/launch", ["bundleId": .string(bundle)], timeout: 8)
             return ("launch", "launch \(bundle)\(fresh ? " (fresh)" : "")")
         }
         if let spec = action["wait_until"] {
@@ -249,8 +275,13 @@ extension Computer {
 
     /// The backup to typing (`via: "paste"`): the text goes through the clipboard and the field's edit
     /// menu. The owner's clipboard is read first and put back afterwards, whatever happens; if it
-    /// cannot be read, nothing is pasted (it would be lost).
-    func paste(_ text: String, clear: Bool, until: Double) async throws {
+    /// cannot be read, nothing is pasted (it would be lost). The clipboard is checked to hold the
+    /// text before Paste is tapped, and the owner's is put back only once the field shows the text:
+    /// iOS asks the owner "Allow Paste?" for an app's first paste from the runner, and putting the
+    /// owner's clipboard back before they answer pastes that instead (seen on the phone: the owner's
+    /// own text went into a shop's search box). Returns a note for the answer.
+    @discardableResult
+    func paste(_ text: String, clear: Bool, until: Double) async throws -> String {
         let saved: JSON
         do { saved = try await runner.call("POST", "/wda/getPasteboard", ["contentType": "plaintext"], timeout: 2, countsAsMiss: false) }
         catch { throw ActionFailure(message: "the clipboard could not be read, so it was not used (the owner's clipboard would be lost); type the text instead", delivery: .notSent) }
@@ -272,12 +303,18 @@ extension Computer {
                 _ = try await runner.call("POST", "/wda/keys", ["value": .array(Array(repeating: JSON.string("\u{8}"), count: min(400, value.count)))], timeout: 3 + 0.06 * Double(min(400, value.count)))
             }
             _ = try await runner.call("POST", "/wda/setPasteboard", ["content": .string(Data(text.utf8).base64EncodedString()), "contentType": "plaintext"], timeout: 2, countsAsMiss: false)
+            let holds = (try? await runner.call("POST", "/wda/getPasteboard", ["contentType": "plaintext"], timeout: 2, countsAsMiss: false))?.string
+                .flatMap { Data(base64Encoded: $0, options: .ignoreUnknownCharacters) }.map { String(decoding: $0, as: UTF8.self) }
+            guard holds == text else {
+                await restore()
+                throw ActionFailure(message: "the clipboard could not be set to the text (the runner's write did not take), so nothing was pasted; type the text instead", delivery: .notSent)
+            }
             _ = try await runner.call("POST", "/wda/touchAndHold", ["x": .number(x + w / 2), "y": .number(y + h / 2), "duration": .number(0.7)], timeout: 4)
             var item: Element?
             let menuBy = min(until - 0.3, now() + 2)
             while item == nil, now() < menuBy {
                 await sleep(seconds: 0.2)
-                if let seen = try? await runner.tree(timeout: max(0.3, min(1.2, menuBy - now()))) {
+                if let seen = try? await runner.tree(timeout: max(0.3, min(1.2, menuBy - now())), format: config.treeFormat) {
                     item = seen.elements.first { e in Self.pasteWords.contains { e.text.lowercased() == $0 } }
                 }
             }
@@ -286,8 +323,28 @@ extension Computer {
                 throw ActionFailure(message: "the field's menu showed no Paste item; the text was not pasted (a long press was sent)", delivery: .sent)
             }
             try await tap(item.frame.centre)
-            await sleep(seconds: 0.3)
-            await restore()
+            // The paste has landed when the field shows the text; until then the clipboard stays.
+            let landedBy = min(until - 0.3, now() + 2.5)
+            var landed = false
+            while !landed, now() < landedBy {
+                await sleep(seconds: 0.25)
+                landed = await fieldValue(timeout: 0.8)?.contains(text) == true
+            }
+            if landed {
+                await restore()
+                return ""
+            }
+            // iOS may be asking the owner to allow the paste: the owner's clipboard goes back once
+            // the text is in the field, or after 45 s, from a task of its own.
+            Task { [self] in
+                let giveUp = now() + 45
+                while now() < giveUp {
+                    await sleep(seconds: 1)
+                    if await fieldValue(timeout: 1)?.contains(text) == true { break }
+                }
+                await restore()
+            }
+            return "; the field did not show the text within \(Int(((now() - (landedBy - 2.5)) * 1000).rounded())) ms: iOS may be asking the owner to allow the paste (the owner's clipboard is put back once the text lands, or after 45 s)"
         } catch {
             await restore()
             throw error
@@ -320,7 +377,7 @@ extension Computer {
             try await gesture(try swipePath(region, fingerGoes), seconds: 0.3, rest: 0.1, until: until)
             swipes += 1
             await sleep(seconds: 0.15)
-            guard let seen = try? await runner.tree(timeout: Swift.max(0.3, Swift.min(1.5, until - now() - 0.2))) else { continue }
+            guard let seen = try? await runner.tree(timeout: Swift.max(0.3, Swift.min(1.5, until - now() - 0.2)), format: config.treeFormat) else { continue }
             let signature = seen.elements.map { "\($0.key)@\(Int($0.frame.y))" }.joined(separator: ";")
             if signature == last { return "\(swipes) swipes, not found: the list stopped moving" }
             last = signature
@@ -347,7 +404,7 @@ extension Computer {
         // the window: a phone that reads in 2.5 s still gets its answer. "Settled" compares two reads,
         // so it gets a second one past the window when the deadline leaves room for it.
         while now() < limit || (settled && text == nil && reads == 1 && until - now() > 1) {
-            if let seen = try? await runner.tree(timeout: Swift.max(0.3, Swift.min(config.readTimeout, until - now() - 0.3))) {
+            if let seen = try? await runner.tree(timeout: Swift.max(0.3, Swift.min(config.readTimeout, until - now() - 0.3)), format: config.treeFormat) {
                 reads += 1
                 let elements = listable(seen.elements, screen)
                 let ms = Int(((now() - started) * 1000).rounded())
