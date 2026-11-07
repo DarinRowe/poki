@@ -199,12 +199,26 @@ static id PKRequestSnapshot(id ax, id element, NSInteger maxDepth, NSInteger max
 }
 
 /// The AX server can refuse a deep request; each shallower depth is tried once before giving up.
-static id PKSnapshotTree(id ax, id element, NSString **code) {
+/// `maxDepth` and `maxChildren` bound the request as WebDriverAgent's settings do (0: no bound of
+/// PokiCore's): after a read that took too long PokiCore asks for fewer children, then less depth,
+/// and a dense screen (1,500 elements in the gym) stops stalling the queue.
+static id PKSnapshotTreeBounded(id ax, id element, NSInteger maxDepth, NSInteger maxChildren, NSString **code) {
+    NSInteger nodes = maxChildren > 0 ? MIN(maxChildren, 10000) : 10000;
+    NSMutableArray<NSNumber *> *depths = [NSMutableArray array];
+    if (maxDepth > 0 && maxDepth < 64) [depths addObject:@(maxDepth)];
     for (NSNumber *depth in @[@64, @56, @40, @24, @12]) {
-        id root = PKRequestSnapshot(ax, element, depth.integerValue, 10000, code);
+        if (maxDepth > 0 && depth.integerValue >= maxDepth) continue;
+        [depths addObject:depth];
+    }
+    for (NSNumber *depth in depths) {
+        id root = PKRequestSnapshot(ax, element, depth.integerValue, nodes, code);
         if (root) { if (code) *code = nil; return root; }
     }
     return nil;
+}
+
+static id PKSnapshotTree(id ax, id element, NSString **code) {
+    return PKSnapshotTreeBounded(ax, element, 0, 0, code);
 }
 
 static NSUInteger PKCount(id node) {
@@ -540,6 +554,10 @@ static BOOL PKInstanceSignature(Class cls, SEL selector, const char *result, NSA
 }
 
 - (nullable NSString *)sourceXML:(NSDictionary **)focused code:(NSString **)code {
+    return [self sourceXML:focused maxDepth:0 maxChildren:0 code:code];
+}
+
+- (nullable NSString *)sourceXML:(NSDictionary **)focused maxDepth:(NSInteger)maxDepth maxChildren:(NSInteger)maxChildren code:(NSString **)code {
     @try {
         NSTimeInterval started = NSProcessInfo.processInfo.systemUptime;
         id ax;
@@ -547,7 +565,7 @@ static BOOL PKInstanceSignature(Class cls, SEL selector, const char *result, NSA
         id app = [self front:&info ax:&ax];
         if (!app) { if (code) *code = @"no_front_app"; return nil; }
         NSTimeInterval frontAt = NSProcessInfo.processInfo.systemUptime;
-        id root = PKSnapshotTree(ax, app, code);
+        id root = PKSnapshotTreeBounded(ax, app, maxDepth, maxChildren, code);
         if (!root) { if (code && !*code) *code = @"no_snapshot"; return nil; }
         NSTimeInterval snapshotAt = NSProcessInfo.processInfo.systemUptime;
         {
@@ -565,6 +583,12 @@ static BOOL PKInstanceSignature(Class cls, SEL selector, const char *result, NSA
             count++;
             CGRect f = [node frame];
             NSString *identifier = PKText([node identifier]), *label = PKText([node label]), *value = PKText([node value]);
+            // An empty field shows its placeholder as its value, as WebDriverAgent's source does
+            // (UIKit's accessibilityValue of an empty UITextField is its placeholder; the snapshot
+            // keeps them apart), so a listing names the field by what the person sees in it.
+            if (!value.length && [node respondsToSelector:@selector(placeholderValue)] && ([type hasSuffix:@"Field"] || [type hasSuffix:@"TextView"])) {
+                value = PKText([node placeholderValue]);
+            }
             NSString *name = identifier.length ? identifier : label;
             [xml appendFormat:@"<%@ type=\"%@\"", type, type];
             if (name.length) [xml appendFormat:@" name=\"%@\"", PKEscape(name)];
