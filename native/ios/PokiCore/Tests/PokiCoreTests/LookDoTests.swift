@@ -248,7 +248,7 @@ final class LookDoTests: XCTestCase {
         }
         let result = await core.call("do", ["actions": [["scroll_to": "Quoted"]]])
         XCTAssertTrue(result.text.contains("scroll_to \"Quoted\": 1 swipes, found at [0,300,390,120]"), result.text)
-        XCTAssertEqual(wda.bodies("POST /wda/pressAndDragWithVelocity").first?["holdDuration"]?.double, 0.35, "a resting drag")
+        XCTAssertEqual(wda.bodies("POST /wda/pressAndDragWithVelocity").first?["holdDuration"]?.double, 0.3, "a resting drag")
     }
 
     func testAControlInsideABarOrAnInputBarListedApartFromItIsHittable() async {

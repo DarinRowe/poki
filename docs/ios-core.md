@@ -464,6 +464,20 @@ Each answer is facts only: the app in front, numbered elements, what each action
   action cap). A call that took 8 s or more, or over 2 s more than its parts, ends with "took:
   29.8 s in all: 0.1 s before the actions (runner start, busy wait, lock check), 4.9 s actions,
   0.2 s read, 24.6 s elsewhere".
+- **A drag gets its confirmation time, and an alert over the list is named.** A gesture's answer
+  is waited for its own time plus 1.5 s (a 0.7 s drag given 1 s near the end of a scroll came back
+  "not confirmed"); `scroll_to` starts a drag only with 2.8 s left (drag, confirmation and a read).
+  The drag is 0.4 s with a 0.3 s rest. When an alert is over the list, the scroll's answer ends with
+  "; an alert is over the list ("Just a moment": Not now): answer it first".
+- **No picture at all: the read before's stands in, marked stale.** When neither the runner nor the
+  host gives a picture (a restart under load), the answer carries the picture of the read before
+  with "the screenshot is the one of the read before, 14 s old (no newer one came)". The host's
+  own path gets up to 15 s of the call's remaining time, and starts beside the runner's screenshot
+  when the runner is already busy at the read's start, so the two are not in series.
+- **A launch under a system alert names the alert.** When the read after a launch shows the Home
+  screen with an alert (a permission prompt), the answer ends with "a system alert is in front
+  (""Photos" Would Like to Send You Notifications": Don't Allow, Allow); the launched app is behind
+  it: answer the alert first" instead of reading again for the app.
 - **Typing has 9 s and never leaves the keys in doubt.** A type is a tap, a wait for the focus and
   the keys, plus a wait for a busy runner, so it has 9 s (the action cap otherwise). When under
   1.2 s is left for the keys they are not sent: `nothing was typed … send the type again`.

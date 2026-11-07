@@ -237,6 +237,13 @@ extension Runner {
             defer { pictureAt.value = now() }
             do { return .success(try await self.screenshot(timeout: timeout)) } catch { return .failure(error) }
         }() : nil
+        // A runner already busy when the read starts is likely to give no picture in time: the
+        // host's own path starts now, beside the runner's, so the two are not in series (gym: a
+        // wedged runner's call spent 4 s on the runner's screenshot and then 10 s on simctl).
+        let hostTimeNow = callEnds.map { Swift.max(1.5, Swift.min(15, $0 - now() - 0.5)) } ?? 6
+        let hostEarly: Task<Data?, Never>? = wantPicture && busyWith != nil && screenshotFallback != nil
+            ? Task { [fallback = screenshotFallback!] in (try? await withDeadline(hostTimeNow, "the host's screenshot") { await fallback() }) ?? nil }
+            : nil
         var reading = Reading()
         var treeCame = false
         switch await treePart {
@@ -295,12 +302,15 @@ extension Runner {
             if treeCame, readLeft > 0.4, let again = try? await screenshot(timeout: min(1.5, readLeft)) {
                 reading.png = again
                 reading.notes.append("the screenshot came on the second try (the first: \(e))")
+            } else if let early = hostEarly, let png = await early.value {
+                reading.png = png
+                reading.notes.append("screenshot: taken apart from the runner, started beside its own (the runner gave none: \(e))")
             } else if let fallback = screenshotFallback {
                 // The answer says what became of the host's path, so a missing picture can be traced.
-                // The host's path gets the call's remaining time (up to 10 s; simctl took 6.4 s on a
-                // loaded CI runner), 6 s when the call's end is not known.
+                // The host's path gets the call's remaining time (up to 15 s; simctl took 6.4 s on a
+                // loaded CI runner and 14 s under a restart), 6 s when the call's end is not known.
                 let began = now()
-                let hostTime = callEnds.map { Swift.max(1.5, Swift.min(10, $0 - now() - 0.5)) } ?? 6
+                let hostTime = callEnds.map { Swift.max(1.5, Swift.min(15, $0 - now() - 0.5)) } ?? 6
                 let hostResult: Result<Data?, Error>
                 do { hostResult = .success(try await withDeadline(hostTime, "the host's screenshot") { await fallback() }) } catch { hostResult = .failure(error) }
                 switch hostResult {

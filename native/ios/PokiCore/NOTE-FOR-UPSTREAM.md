@@ -91,6 +91,9 @@ that no answer may halt the agent and from the first Poki Gym runs (`native/ios-
     a refused launch is one plain line.
 17. A launch reads again until the app is in front; `wait_until` gets its own time; long calls
     carry a `took:` line.
+18. Gestures get time to be confirmed; a note when an alert sits over a list; a stale picture is
+    marked as such when no new one comes; the host's screenshot is offered beside the runner's; a
+    launch works under a system alert.
 
 Still not done: a `collect` or `expect` field, a `recover` action, and redaction of sensitive text
 (Zhehan: out of scope for now).

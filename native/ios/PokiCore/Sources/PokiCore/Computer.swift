@@ -42,6 +42,8 @@ final class Computer: @unchecked Sendable {
     var lastForeground: Foreground?
     var size: ScreenSize?
     var lastPNG: Data?
+    /// When `lastPNG` was taken (it stands in, marked stale, when a read gives no picture at all).
+    var lastPNGAt: Double?
     var lastTree: String?
     var lastPicture: PictureSketch?
 
@@ -103,12 +105,23 @@ final class Computer: @unchecked Sendable {
             // them or send the same action again (CI simulator: a type sent again after "nothing was
             // typed" was refused as stale because the refused call's read had failed).
             let kept = refs.isEmpty ? [] : ["the elements of the read before keep their numbers (nothing newer was read)"]
-            let lines = ["read: failed (\(notes.joined(separator: "; ")))", "runner: \(state.describe)"] + did.map { "did: \($0)" } + (error.map { ["error: \($0)"] } ?? []) + extra + kept
-            return ToolResult(text: lines.joined(separator: "\n"), jpeg: nil, isError: true)
+            // The picture of the read before, marked with its age, is better than none (gym: three
+            // calls blind for 32 s while the runner restarted under load).
+            var stale: Data?, staleNote: [String] = []
+            if let old = lastPNG, let at = lastPNGAt, now() - at < 120, let jpeg = try? host.jpeg(fromPNG: old, width: Self.pictureWidth(size), quality: 0.6) {
+                stale = jpeg
+                staleNote = ["the screenshot is the one of the read before, \(Int((now() - at).rounded())) s old (no newer one came)"]
+            }
+            var lines: [String] = ["read: failed (\(notes.joined(separator: "; ")))", "runner: \(state.describe)"]
+            lines += did.map { "did: \($0)" }
+            if let error { lines.append("error: \(error)") }
+            lines += extra + kept + staleNote
+            return ToolResult(text: lines.joined(separator: "\n"), jpeg: stale, isError: true)
         }
         let treeRead = !reading.elements.isEmpty || reading.notes.isEmpty
         let sameApp = reading.foreground?.bundleID == nil || reading.foreground?.bundleID == lastForeground?.bundleID
         lastForeground = reading.foreground ?? lastForeground
+        if reading.png != nil { lastPNGAt = now() }
         lastPNG = reading.png ?? lastPNG
 
         // Whether the screen changed since the read before (the one the model saw last).
@@ -288,6 +301,11 @@ final class Computer: @unchecked Sendable {
         if let png = reading.png {
             do { jpeg = try host.jpeg(fromPNG: png, width: width, quality: 0.6) }
             catch { notes.append("screenshot not encoded: \(error)") }
+        } else if let old = lastPNG, let at = lastPNGAt, now() - at < 120, let stale = try? host.jpeg(fromPNG: old, width: width, quality: 0.6) {
+            // No picture from the runner or the host (a restart under load): the picture of the read
+            // before, marked with its age, is better than none (gym: three calls blind for 32 s).
+            jpeg = stale
+            notes.append("the screenshot is the one of the read before, \(Int((now() - at).rounded())) s old (no newer one came); the elements, when read, are current")
         }
         let app = reading.foreground?.describe ?? "unknown"
         var header = ["app: \(app)   read: \(ISO8601DateFormatter().string(from: Date())) (\(reading.ms) ms)" + (notes.isEmpty ? "" : "   note: \(notes.joined(separator: "; "))")]
@@ -536,6 +554,12 @@ final class Computer: @unchecked Sendable {
             let notYetInFront = launched.map { lastForeground?.bundleID != nil && lastForeground?.bundleID != $0 } ?? false
             let stalePicture = (pictureOnlyShare ?? 0) >= 0.9
             guard notYetInFront || stalePicture else { break }
+            // A system alert over the launched app (a permission prompt): no re-read brings the app
+            // in front; the answer says so, so the model answers the alert first.
+            if notYetInFront, lastForeground?.bundleID == "com.apple.springboard", let alert = alertOnScreen() {
+                result.text += "\na system alert is in front (\(alert)); the launched app is behind it: answer the alert first"
+                break
+            }
             rereads += 1
             await sleep(seconds: 0.4)
             let why = notYetInFront ? "\(launched!) was not in front yet" : "the whole picture had changed while the elements had not (an app's tree can lag its screen)"
@@ -555,6 +579,15 @@ final class Computer: @unchecked Sendable {
     }
 
     static func seconds(_ t: Double) -> String { String(format: "%.1f", max(0, t)) }
+
+    /// An alert in the latest tree, as its text and buttons ("Just a moment: Not now, Allow"), or nil.
+    func alertOnScreen() -> String? {
+        guard let alert = lastAll.first(where: { $0.type == "Alert" && !$0.fromPicture }) else { return nil }
+        let inside = lastAll.filter { alert.contains($0) }
+        let text = inside.first { $0.type == "StaticText" && !$0.text.isEmpty }?.text.prefix(60)
+        let buttons = inside.filter { $0.type == "Button" }.prefix(4).map { "\($0.text.prefix(30))" }.joined(separator: ", ")
+        return "\(text.map { "\"\($0)\"" } ?? "an alert")\(buttons.isEmpty ? "" : ": \(buttons)")"
+    }
 
     /// When Poki itself is in front although the model was working in another app, that app is
     /// activated again, and the line says so. nil when nothing had to be done.

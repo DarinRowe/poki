@@ -983,7 +983,7 @@ final class GymTests: XCTestCase {
         XCTAssertTrue(result.text.contains("scroll_to \"Row 45\": 4 swipes, found at [16,320,358,44]"), result.text)
         XCTAssertTrue(result.text.contains("found by scroll_to:") && result.text.contains("Cell \"Row 45\" [16,320,358,44] (tap "), result.text)
         XCTAssertGreaterThan(Date().timeIntervalSince(started), 3.5, "four 1 s swipes outlast the 3 s action cap: scroll_to has 12 s")
-        XCTAssertTrue(wda.bodies("POST /wda/pressAndDragWithVelocity").allSatisfy { $0["holdDuration"]?.double == 0.35 }, "a resting drag")
+        XCTAssertTrue(wda.bodies("POST /wda/pressAndDragWithVelocity").allSatisfy { $0["holdDuration"]?.double == 0.3 }, "a resting drag")
     }
 
     /// 300 rows in the gym: a swipe sent while the runner was still serving the read after the last
@@ -1085,7 +1085,7 @@ final class GymTests: XCTestCase {
         XCTAssertGreaterThan(sent[1].3, sent[1].1, "the corrective drag goes down")
         XCTAssertLessThan(abs(sent[1].3 - sent[1].1), abs(sent[0].3 - sent[0].1), "the drag back is the shorter")
         let bodies = wda.bodies("POST /wda/pressAndDragWithVelocity")
-        XCTAssertEqual(bodies.first?["holdDuration"]?.double, 0.35, "a resting drag, not a flick")
+        XCTAssertEqual(bodies.first?["holdDuration"]?.double, 0.3, "a resting drag, not a flick")
     }
 
     /// Settings' search field: the keyboard came after the focus wait, and the text had landed, but
@@ -1186,6 +1186,45 @@ final class GymTests: XCTestCase {
         XCTAssertTrue(result.text.contains("not seen within 8000 ms"), result.text)
         XCTAssertGreaterThan(Date().timeIntervalSince(started), 7.5)
         XCTAssertTrue(result.text.contains("took: ") && result.text.contains(" s actions, "), result.text)
+    }
+
+    /// Three calls during a 32 s restart had no picture at all (the runner gone, simctl over 10 s).
+    /// The picture of the read before, marked with its age, stands in.
+    func testThePictureOfTheReadBeforeStandsInWhenNoneComes() async {
+        let (core, wda, _) = makeCore { $0.readTimeout = 0.5; $0.toolDeadline = 6 }
+        let first = await core.call("look", [:])
+        XCTAssertNotNil(first.jpeg)
+        wda.delay("GET /screenshot", 30)
+        wda.delay("GET /source", 30)
+        wda.delay("GET /wda/activeAppInfo", 30)
+        let blind = await core.call("look", [:])
+        XCTAssertNotNil(blind.jpeg, blind.text)
+        XCTAssertTrue(blind.text.contains("the screenshot is the one of the read before, ") && blind.text.contains(" s old (no newer one came)"), blind.text)
+    }
+
+    /// Photos' notification-permission alert sat over the launched app: the read after the launch
+    /// said Home screen and the agent took a wrong turn. The answer now names the alert instead of
+    /// reading again for the app.
+    func testALaunchUnderASystemAlertNamesTheAlert() async {
+        let (core, wda, _) = makeCore()
+        _ = await core.call("look", [:])
+        wda.set("POST /wda/apps/activate") { [wda] _ in
+            wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": "com.apple.springboard", "name": "SpringBoard"]]) }
+            wda.tree([Node("Alert", nil, [20, 300, 350, 200], [Node("StaticText", "\"Photos\" Would Like to Send You Notifications", [40, 320, 310, 40]), Node("Button", "Don't Allow", [40, 440, 150, 44]), Node("Button", "Allow", [200, 440, 150, 44])])], app: "SpringBoard")
+            return (200, ["value": .null])
+        }
+        let result = await core.call("do", ["actions": [["launch": "com.apple.mobileslideshow"]]])
+        XCTAssertTrue(result.text.contains("a system alert is in front (\"\"Photos\" Would Like to Send You Notifications\": Don't Allow, Allow); the launched app is behind it: answer the alert first"), result.text)
+        XCTAssertFalse(result.text.contains("read again (2)"), result.text)
+    }
+
+    /// A scroll under an alert "stopped moving" (true: the alert took the drags); the answer names it.
+    func testAScrollUnderAnAlertNamesIt() async {
+        let (core, wda, _) = makeCore()
+        wda.tree([Node("Table", nil, [0, 100, 390, 700], (0..<10).map { Node("Cell", "Row \($0)", [16, Double(100 + $0 * 44), 358, 44]) }), Node("Alert", nil, [20, 300, 350, 200], [Node("StaticText", "Just a moment", [40, 320, 310, 40]), Node("Button", "Not now", [40, 440, 150, 44])])], app: "Gym")
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["scroll_to": "Row 99"]]])
+        XCTAssertTrue(result.text.contains("not found: the list stopped moving (its end, or the text is not in it); an alert is over the list (\"Just a moment\": Not now): answer it first"), result.text)
     }
 
     /// CI simulator, the keyboard's first use: the runner stood still for seconds, the focus reads

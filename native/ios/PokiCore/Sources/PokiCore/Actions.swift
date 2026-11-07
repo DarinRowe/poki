@@ -122,7 +122,9 @@ extension Computer {
         let distance = max(1, hypot(path.2 - path.0, path.3 - path.1))
         let velocity = distance / max(0.05, seconds)
         let expected = hold + distance / velocity + rest
-        let timeout = max(1, min(expected + 5, until - now() - 0.2))
+        // The runner's answer needs the gesture's own time and a margin for XCTest's own wait after
+        // it (gym: a 0.85 s drag given 1 s near the end of a scroll came back unconfirmed).
+        let timeout = max(expected + 1.5, min(expected + 5, until - now() - 0.2))
         do {
             _ = try await runner.call("POST", "/wda/pressAndDragWithVelocity", ["fromX": .number(path.0), "fromY": .number(path.1), "toX": .number(path.2), "toY": .number(path.3), "pressDuration": .number(hold), "holdDuration": .number(rest), "velocity": .number(velocity.rounded())], timeout: timeout, countsAsMiss: false)
             swipeUnread = true
@@ -534,8 +536,11 @@ extension Computer {
         // screen), the next swipe is a short one back, so nothing is passed unread.
         var corrective = false, corrected = false, overshoots = 0
         func overshot() -> String { overshoots == 0 ? "" : " (the list moved more than a screen after \(overshoots) swipe\(overshoots == 1 ? "" : "s"), so a short drag back followed each)" }
+        // An alert over the list takes the drags (gym: "the list stopped moving" under a permission
+        // prompt): the answer names it.
+        func alertNote() -> String { alertOnScreen().map { "; an alert is over the list (\($0)): answer it first" } ?? "" }
         func found(_ e: Element) -> String { scrollFound = e; return "\(swipes) swipes, found at \(e.frame.described) (its number is in the list below)\(overshot())" }
-        func notYet(_ why: String) -> String { "\(swipes) swipes, \(wanted) not seen yet; \(why): call scroll_to again to go on from here\(overshot())" }
+        func notYet(_ why: String) -> String { "\(swipes) swipes, \(wanted) not seen yet; \(why): call scroll_to again to go on from here\(overshot())\(alertNote())" }
         // A swipe sent while the runner is still serving the read after the last one would only
         // queue behind it and time out, and the whole scroll would come back unknown (seen in
         // the gym on 300 rows): the runner is waited for, and a swipe the runner did not confirm
@@ -565,7 +570,7 @@ extension Computer {
                     // busy runner may not have moved the list (the app's main loop was serving the
                     // snapshot; seen in the gym: a false end at row 180 of 300), so it does not count.
                     still += 1
-                    if still >= 2 { return "\(swipes) swipes, \(wanted) not found: the list stopped moving (its end, or the text is not in it)" }
+                    if still >= 2 { return "\(swipes) swipes, \(wanted) not found: the list stopped moving (its end, or the text is not in it)\(alertNote())" }
                 } else {
                     still = 0
                 }
@@ -576,15 +581,16 @@ extension Computer {
             }
             if let e = hit(all) { return found(e) }
             guard swipes < max else { return notYet("that is \(max) swipes (max_swipes takes up to 15)") }
-            guard until - now() > 1.6 else { return notYet("the action's time ran out before the list was through (\(Int(Self.scrollCap)) s)") }
-            guard await runnerFree(margin: 1.6) else { return notYet("the runner is still finishing the read after the last swipe") }
+            // A drag (0.7 s) needs its confirmation (1.5 s more) and a read after it.
+            guard until - now() > 2.8 else { return notYet("the action's time ran out before the list was through (\(Int(Self.scrollCap)) s)") }
+            guard await runnerFree(margin: 2.8) else { return notYet("the runner is still finishing the read after the last swipe") }
             // A resting drag of 60 % of the area, not a flick: a flick's momentum carried the gym's
             // list 26 rows past a 15-row screen (the 70 % held for the finger, not the list), and
             // the tree read while a list decelerates waits for it to stop. The drag ends with the
             // finger held still, so the list stops where it is.
             let path = corrective ? try swipePath(region, ["up": "down", "down": "up", "left": "right", "right": "left"][fingerGoes] ?? "down", "short") : try swipePath(region, fingerGoes, "scroll")
             do {
-                try await gesture(path, seconds: 0.5, rest: 0.35, until: until - 0.8)
+                try await gesture(path, seconds: 0.4, rest: 0.3, until: until - 0.8)
             } catch let e as RunnerError where e.delivery == .unknown {
                 return notYet("the runner did not confirm the last swipe in time (\(e.message)), so it may still land")
             }
