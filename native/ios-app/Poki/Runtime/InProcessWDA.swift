@@ -9,7 +9,7 @@ enum AutomationPath: String, CaseIterable, Identifiable {
     case inProcess = "in-process"
     var id: String { rawValue }
     static var current: AutomationPath {
-        UserDefaults.standard.string(forKey: "automationPath").flatMap(AutomationPath.init(rawValue:)) ?? .runner
+        UserDefaults.standard.string(forKey: "automationPath").flatMap(AutomationPath.init(rawValue:)) ?? .inProcess
     }
 }
 

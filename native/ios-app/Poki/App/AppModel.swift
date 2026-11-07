@@ -383,6 +383,15 @@ final class AppModel {
         if status != runner { log.add("runner", "\(status.state)\(status.detail.map { ": \($0)" } ?? "")") }
         // Events from a launcher that was stopped for idle are old news.
         guard !runnerPaused else { return }
+        // On the in-process path the session is opened as soon as the launcher is ready, so the
+        // owner's one-time Automation Mode passcode comes when they turn Poki on, not mid-task.
+        if status.state == "running", automationPath == .inProcess {
+            DispatchQueue.global(qos: .userInitiated).async {
+                let result = PKInProcess.shared().prepare()
+                let ok = (result["ok"] as? Bool) == true
+                Task { @MainActor in AppLog.shared.add("runner", ok ? "in-process session ready (generation \(result["generation"] ?? 0), \(String(format: "%.2f", result["seconds"] as? Double ?? 0)) s)" : "in-process session not ready: \(result["code"] ?? "unknown")") }
+            }
+        }
         switch status.state {
         case "launching", "running":
             // The phone accepted the pairing.

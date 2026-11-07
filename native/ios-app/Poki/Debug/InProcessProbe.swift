@@ -232,7 +232,7 @@ final class InProcessProbe: ObservableObject {
 struct InProcessSection: View {
     @ObservedObject var probe = InProcessProbe.shared
     @Environment(AppModel.self) private var model
-    @AppStorage("automationPath") private var path = AutomationPath.runner.rawValue
+    @AppStorage("automationPath") private var path = AutomationPath.inProcess.rawValue
     private let running = AutomationPath.current
 
     var body: some View {
