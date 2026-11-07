@@ -204,6 +204,45 @@ final class ApprovalTests: XCTestCase {
         XCTAssertEqual(wda.bodies("POST /wda/tap").count, 1)
     }
 
+    /// Seen on the phone (GitHub issue 44): owners took 42 to 47 s to approve, `do` gave up after 20 s,
+    /// and every sensitive action failed once before it went through.
+    func testTheDefaultWaitOutlastsAHumanApprovalAndEndsWithTheRequest() {
+        let slowestApprovalSeen = 47.0
+        let wait = CoreConfig().approvalWait
+        XCTAssertGreaterThan(wait, slowestApprovalSeen)
+        XCTAssertLessThanOrEqual(wait, Approvals(emit: { _ in }).lifetime, "a request that has ended cannot be waited for")
+    }
+
+    /// The relay answers the caller with a 504 once `req_timeout_ms` of its ready frame has passed. A
+    /// `do` holding for the owner past that would lose its answer, so it answers `approval_required`
+    /// first, with the request still open for the owner to approve and send again.
+    func testTheApprovalWaitEndsBeforeTheRelayGivesUp() async throws {
+        let (core, wda, _) = makeCore(screenWithDelete()) { $0.approvalWait = 30 }
+        _ = await core.call("look", [:])
+        let sockets = FakeSockets()
+        core.start(relay: testRelay, socketFactory: sockets)
+        let connected = await eventually(3) { !sockets.sockets.value.isEmpty }
+        XCTAssertTrue(connected)
+        let socket = sockets.sockets.value[0]
+        socket.push((["t": "challenge", "nonce": .string(Data(repeating: 1, count: 32).base64EncodedString())] as JSON).serialized())
+        let shook = await eventually(3) { socket.sent.contains { $0.contains("\"t\":\"hello\"") } }
+        XCTAssertTrue(shook)
+        socket.push((["t": "ready", "max_body": 4_194_304, "req_timeout_ms": 8000] as JSON).serialized())
+
+        let body: JSON = ["jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": ["name": "do", "arguments": ["actions": [["tap": 1]]]]]
+        let sent = Date()
+        socket.push((["t": "req", "id": "r1", "method": "POST", "headers": ["content-type": "application/json"], "body": .string(body.serialized())] as JSON).serialized())
+        let answered = await eventually(8) { socket.sent.contains { $0.contains("\"t\":\"res\"") } }
+        let took = Date().timeIntervalSince(sent)
+        core.stop()
+        XCTAssertTrue(answered, "no answer before the relay's 8 s")
+        XCTAssertLessThan(took, 7.5)
+        XCTAssertGreaterThan(took, 1.5, "it held for the owner instead of failing at once")
+        XCTAssertTrue(socket.sent.contains { $0.contains("approval_required") })
+        XCTAssertNotNil(core.pendingApproval, "the request stays open for the owner")
+        XCTAssertTrue(wda.bodies("POST /wda/tap").isEmpty)
+    }
+
     func testDeclinedSendsNothing() async {
         let (core, wda, _) = makeCore(screenWithDelete()) { $0.approvalWait = 2 }
         _ = await core.call("look", [:])
