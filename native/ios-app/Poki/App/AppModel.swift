@@ -108,6 +108,14 @@ final class AppModel {
         NotificationCenter.default.addObserver(forName: UIApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.appWillTerminate() }
         }
+        // Installed over the local-VPN build (both use one bundle ID): this build has only external
+        // connections, so a saved built-in choice becomes the external one. Otherwise Setup showed the
+        // step done while Turn on said this build has no local VPN.
+        if setup.loopback == .builtIn, !tunnel.available {
+            setup.loopback = .proxy
+            setup.save()
+            log.add("loopback", "this build has no built-in connection: the saved choice is now an external one")
+        }
     }
 
     /// Poki came to the front: turn on again if it was on, check the loopback live, and finish a
