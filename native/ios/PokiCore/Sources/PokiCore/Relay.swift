@@ -102,7 +102,7 @@ final class RelayClient: @unchecked Sendable {
     var silentLimit = 60.0
     var maxBackoff = 30.0
 
-    private let state = LockedBox<(running: Bool, socket: WebSocketConnection?, lastHeard: Double, describe: String, maxBody: Int, inflight: [String: Task<Void, Never>])>((false, nil, 0, "not started", 4 << 20, [:]))
+    private let state = LockedBox<(running: Bool, socket: WebSocketConnection?, lastHeard: Double, describe: String, maxBody: Int, requestTimeout: Double?, inflight: [String: Task<Void, Never>])>((false, nil, 0, "not started", 4 << 20, nil, [:]))
     private var loop: Task<Void, Never>?
 
     init(baseURL: URL, host: CoreHost, factory: WebSocketFactory, handler: @escaping @Sendable (RelayRequest) async -> RelayResponse, emit: @escaping @Sendable (RelayState) -> Void) {
@@ -200,7 +200,11 @@ final class RelayClient: @unchecked Sendable {
         try await socket.send(hello.serialized())
         let ready = try JSON.parse(try await withDeadline(15, "the relay's ready") { try await socket.receive() })
         guard ready["t"]?.string == "ready" else { throw RelayFailure("the relay refused the phone: \(ready["reason"]?.string ?? ready.serialized())") }
-        state.update { $0.maxBody = ready["max_body"]?.int ?? (4 << 20); $0.lastHeard = now() }
+        state.update {
+            $0.maxBody = ready["max_body"]?.int ?? (4 << 20)
+            $0.requestTimeout = ready["req_timeout_ms"]?.double.map { $0 / 1000 }
+            $0.lastHeard = now()
+        }
         onReady()
         set("ready as \(label)", .ready(url: "\(baseURL.absoluteString)/\(label)"))
 
@@ -223,7 +227,8 @@ final class RelayClient: @unchecked Sendable {
                 guard let id = frame["id"]?.string else { continue }
                 var headers: [String: String] = [:]
                 for (k, v) in frame["headers"]?.object ?? [:] { if let s = v.string { headers[k.lowercased()] = s } }
-                let request = RelayRequest(id: id, method: frame["method"]?.string ?? "POST", headers: headers, body: frame["body"]?.string ?? "")
+                let answerBy = state.value.requestTimeout.map { now() + $0 }
+                let request = RelayRequest(id: id, method: frame["method"]?.string ?? "POST", headers: headers, body: frame["body"]?.string ?? "", answerBy: answerBy)
                 let task = Task { [weak self] in
                     guard let self else { return }
                     let response = await self.handler(request)
@@ -236,7 +241,10 @@ final class RelayClient: @unchecked Sendable {
             case "cancel":
                 if let id = frame["id"]?.string { state.update { $0.inflight.removeValue(forKey: id) }?.cancel() }
             case "ready":
-                state.update { $0.maxBody = frame["max_body"]?.int ?? $0.maxBody }
+                state.update {
+                    $0.maxBody = frame["max_body"]?.int ?? $0.maxBody
+                    $0.requestTimeout = frame["req_timeout_ms"]?.double.map { $0 / 1000 } ?? $0.requestTimeout
+                }
             case "close":
                 throw RelayFailure("the relay closed the connection: \(frame["reason"]?.string ?? "no reason")")
             default: continue

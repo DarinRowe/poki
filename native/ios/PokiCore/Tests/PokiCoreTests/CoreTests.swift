@@ -215,6 +215,110 @@ final class ApprovalTests: XCTestCase {
         XCTAssertEqual(wda.bodies("POST /wda/tap").count, 1)
     }
 
+    /// Seen on the phone (GitHub issue 44): owners took 42 to 47 s to approve, `do` gave up after 20 s,
+    /// and every sensitive action failed once before it went through.
+    func testTheDefaultWaitOutlastsAHumanApprovalAndEndsWithTheRequest() {
+        let slowestApprovalSeen = 47.0
+        let wait = CoreConfig().approvalWait
+        XCTAssertGreaterThan(wait, slowestApprovalSeen)
+        XCTAssertLessThanOrEqual(wait, Approvals(emit: { _ in }).lifetime, "a request that has ended cannot be waited for")
+    }
+
+    /// A phone connected to a relay that gives up on a request `reqTimeoutMs` after it arrives, with a
+    /// `do` that taps the Delete button sent through it.
+    private func relayedDelete(_ core: PokiCore, reqTimeoutMs: Int) async -> FakeSocket {
+        let sockets = FakeSockets()
+        core.start(relay: testRelay, socketFactory: sockets)
+        let connected = await eventually(3) { !sockets.sockets.value.isEmpty }
+        XCTAssertTrue(connected)
+        let socket = sockets.sockets.value[0]
+        socket.push((["t": "challenge", "nonce": .string(Data(repeating: 1, count: 32).base64EncodedString())] as JSON).serialized())
+        let shook = await eventually(3) { socket.sent.contains { $0.contains("\"t\":\"hello\"") } }
+        XCTAssertTrue(shook)
+        socket.push((["t": "ready", "max_body": 4_194_304, "req_timeout_ms": .number(Double(reqTimeoutMs))] as JSON).serialized())
+        let body: JSON = ["jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": ["name": "do", "arguments": ["actions": [["tap": 1]]]]]
+        socket.push((["t": "req", "id": "r1", "method": "POST", "headers": ["content-type": "application/json"], "body": .string(body.serialized())] as JSON).serialized())
+        return socket
+    }
+
+    private func approveAfter(_ seconds: Double, _ core: PokiCore) {
+        Task {
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1e9))
+            if let p = core.pendingApproval { core.resolveApproval(id: p.id, approved: true) }
+        }
+    }
+
+    /// The relay answers the caller with a 504 once `req_timeout_ms` of its ready frame has passed. A
+    /// `do` holding for the owner past that would lose its answer, so it answers `approval_required`
+    /// first, with the request still open for the owner to approve and send again.
+    func testTheApprovalWaitEndsBeforeTheRelayGivesUp() async throws {
+        let (core, wda, _) = makeCore(screenWithDelete()) { $0.approvalWait = 30 }
+        _ = await core.call("look", [:])
+        let socket = await relayedDelete(core, reqTimeoutMs: 8000)
+        let sent = Date()
+        let answered = await eventually(8) { socket.sent.contains { $0.contains("\"t\":\"res\"") } }
+        let took = Date().timeIntervalSince(sent)
+        core.stop()
+        XCTAssertTrue(answered, "no answer before the relay's 8 s")
+        XCTAssertLessThan(took, 7.5)
+        XCTAssertGreaterThan(took, 1.5, "it held for the owner instead of failing at once")
+        XCTAssertTrue(socket.sent.contains { $0.contains("approval_required") })
+        XCTAssertNotNil(core.pendingApproval, "the request stays open for the owner")
+        XCTAssertTrue(wda.bodies("POST /wda/tap").isEmpty)
+    }
+
+    /// An approval that comes in the last seconds before the relay gives up leaves no time to send the
+    /// actions and read the screen. The actions would run after the relay's 504, so the caller would
+    /// see a failure for something that happened and send it again. Nothing is sent in this call; the
+    /// approval is kept, and the same `do` sent again runs at once. (Real time: about 4 s.)
+    func testAnApprovalTooLateForTheRelayIsKeptForTheNextCallInsteadOfRunning() async throws {
+        let (core, wda, _) = makeCore(screenWithDelete()) { $0.approvalWait = 30 }
+        _ = await core.call("look", [:])
+        approveAfter(3.5, core)
+        let socket = await relayedDelete(core, reqTimeoutMs: 9000)
+        let sent = Date()
+        let answered = await eventually(9) { socket.sent.contains { $0.contains("\"t\":\"res\"") } }
+        let took = Date().timeIntervalSince(sent)
+        core.stop()
+        XCTAssertTrue(answered)
+        XCTAssertLessThan(took, 8)
+        XCTAssertTrue(socket.sent.contains { $0.contains("approval_required") })
+        XCTAssertTrue(wda.bodies("POST /wda/tap").isEmpty, "the actions were sent after the owner approved too late")
+        let again = await core.call("do", ["actions": [["tap": 1]]])
+        XCTAssertFalse(again.isError, again.text)
+        XCTAssertEqual(wda.bodies("POST /wda/tap").count, 1, "the kept approval runs the same actions once")
+    }
+
+    /// The other side of the one above: an approval with time to spare runs in the same call, behind a relay too.
+    func testAnApprovalWithTimeToSpareRunsInTheSameCallBehindARelay() async throws {
+        let (core, wda, _) = makeCore(screenWithDelete()) { $0.approvalWait = 30 }
+        _ = await core.call("look", [:])
+        approveAfter(0.3, core)
+        let socket = await relayedDelete(core, reqTimeoutMs: 9000)
+        let answered = await eventually(9) { socket.sent.contains { $0.contains("\"t\":\"res\"") } }
+        core.stop()
+        XCTAssertTrue(answered)
+        XCTAssertEqual(wda.bodies("POST /wda/tap").count, 1)
+        XCTAssertTrue(socket.sent.contains { $0.contains("approved on the phone") })
+    }
+
+    /// The caller gave up (the relay sent `cancel`: its own time ran out, or the client's did) while
+    /// the owner was still being waited for. An approval that comes later must not run the actions
+    /// for a call nobody is waiting on: the model would send them again and they would go twice.
+    func testACancelledCallDoesNotRunWhenTheOwnerApprovesLater() async throws {
+        let (core, wda, _) = makeCore(screenWithDelete()) { $0.approvalWait = 30 }
+        _ = await core.call("look", [:])
+        let socket = await relayedDelete(core, reqTimeoutMs: 60_000)
+        let asked = await eventually(3) { core.pendingApproval != nil }
+        XCTAssertTrue(asked)
+        socket.push((["t": "cancel", "id": "r1"] as JSON).serialized())
+        try await Task.sleep(nanoseconds: 300_000_000)
+        core.resolveApproval(id: core.pendingApproval!.id, approved: true)
+        try await Task.sleep(nanoseconds: 700_000_000)
+        core.stop()
+        XCTAssertTrue(wda.bodies("POST /wda/tap").isEmpty, "the cancelled call ran its actions")
+    }
+
     func testDeclinedSendsNothing() async {
         let (core, wda, _) = makeCore(screenWithDelete()) { $0.approvalWait = 2 }
         _ = await core.call("look", [:])

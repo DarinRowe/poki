@@ -53,7 +53,7 @@ except the keepalive.
    `sig` signs the bytes of `poki-relay-v1:<label>:` followed by the raw nonce bytes.
    The Worker checks that base32(key) == label and that the signature verifies; otherwise it closes
    with 4401. `access` has at most 8 entries.
-3. Worker → `{"t":"ready","max_body":4194304,"req_timeout_ms":60000}`.
+3. Worker → `{"t":"ready","max_body":4194304,"req_timeout_ms":180000}`.
 4. A newer connection for the same label replaces the older one (close 4000, "replaced").
 5. The phone may send `{"t":"access","access":[...]}` at any time to replace the list (a secret was
    added or revoked); the Worker answers `{"t":"ready",...}` again.
@@ -114,7 +114,7 @@ Linux; iOS-only parts (JPEG encoding, keychain) come from the host protocol.
 public struct CoreConfig: Sendable {
     public var runnerURL: URL                // http://127.0.0.1:8100
     public var sensitive: SensitivityRules   // what needs approval; see below
-    public var approvalWait: Duration        // how long do() holds for an approval before answering (default 20 s)
+    public var approvalWait: Duration        // how long do() holds for an approval before answering (default 115 s, shortened to fit the relay's req_timeout_ms)
     public var toolDeadline: Duration        // hard cap per tool call (default 25 s)
     public var taskGap: Double               // a task never finished ends after this long without a call (default 300 s)
 }
@@ -292,7 +292,7 @@ Each answer is facts only: the app in front, numbered elements, what each action
 - **Locked phone**: `do` checks `/wda/locked` first and sends nothing but buttons while locked
   (`screen: locked`); `look` says so too. Unknown counts as unlocked.
 - **Approvals**: the owner's time on an approval does not count against the actions or the read;
-  a `do` that waited for one may take up to `toolDeadline + approvalWait` (about 46 s), and one
+  a `do` that waited for one may take up to `toolDeadline + approvalWait` (about 140 s), and one
   that had to wait for the runner to start adds that wait too (at most `runnerWait`, 15 s).
 - **Poki's own screen is never worked in by mistake**: a tap near the top of the screen can land on
   Poki's Live Activity in the Dynamic Island, and the owner's answer to an approval can open Poki
@@ -584,8 +584,13 @@ and falls back to the picture.
 When an action matches, the plain actions before it in that `do` are sent first (seen on the phone:
 a last selection tap held back with the Delete after it meant the Delete, once approved, would have
 missed a photo), and from the first matching action on nothing is sent. PokiCore emits
-`approvalRequested` for those and holds up to `approvalWait`. If approved in time, they run and the
-answer says `approved on the phone`. If not, it answers `not_sent from action k: approval_required (id
+`approvalRequested` for those and holds up to `approvalWait` (115 s: owners took 42 to 47 s, and a
+request lives 120 s). A relay answers its caller itself after `req_timeout_ms`, so a call that came
+through one holds only until the relay's time less a read and a 2 s margin. If approved in time, they
+run and the answer says `approved on the phone`. An approval that comes with too little of the relay's
+time left to send the actions and read the screen (each action at its cap) is kept and not run: the
+answer says `approval_required`, and the same actions sent again run at once. A call the caller gave
+up on (the relay's `cancel`) sends nothing, whenever the owner answers. If not, it answers `not_sent from action k: approval_required (id
 …)` after the read, saying which actions were sent, and those from k on, sent again on their own in a
 later `do` within 2 minutes, run once that approval is granted. Denied: `not_sent … the owner
 declined`.

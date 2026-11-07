@@ -30,11 +30,14 @@ enum ApprovalIntentBridge {
 }
 
 /// PokiCore sends no input at all while an approval is pending, so the automation cannot press this
-/// button itself. Allow asks for Face ID or the passcode first.
+/// button itself. Allow asks for Face ID or the passcode first. None of the three intents opens
+/// Poki (`openAppWhenRun` is false): the owner stays in the app the agent is working in, and the
+/// next step lands there.
 struct ApproveActionIntent: LiveActivityIntent {
     static let title: LocalizedStringResource = "Allow action"
     static let description = IntentDescription("Lets the agent do the step that is waiting for you.")
     static let authenticationPolicy: IntentAuthenticationPolicy = .requiresLocalDeviceAuthentication
+    static let openAppWhenRun = false
     static let isDiscoverable = false
 
     @Parameter(title: "Approval") var approvalID: String
@@ -53,6 +56,7 @@ struct ApproveActionIntent: LiveActivityIntent {
 struct DenyActionIntent: LiveActivityIntent {
     static let title: LocalizedStringResource = "Deny action"
     static let description = IntentDescription("Refuses the step that is waiting for you.")
+    static let openAppWhenRun = false
     static let isDiscoverable = false
 
     @Parameter(title: "Approval") var approvalID: String
@@ -71,6 +75,7 @@ struct DenyActionIntent: LiveActivityIntent {
 /// agent's next request. No authentication: stopping is always safe.
 struct StopRunnerIntent: LiveActivityIntent {
     static let title: LocalizedStringResource = "Stop runner"
+    static let openAppWhenRun = false
     static let isDiscoverable = false
     init() {}
     func perform() async throws -> some IntentResult {

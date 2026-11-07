@@ -16,11 +16,24 @@ result and the time next to each line.
   PokiTunnel. In Setup > Connect to this iPhone, tap Enable local connection and approve iOS's VPN
   prompt. The developer-service check passes; neither a saved profile nor VPN Connected alone counts.
 - [ ] Built-in: a normal web page still loads; no DNS or internet default route is installed by Poki.
-- [ ] Built-in: disconnect/reconnect, lock/unlock, and reboot recover after an explicit reconnect.
-  Opening Poki alone must not replace another active VPN. Choosing External app stops only Poki's VPN.
-- [ ] Built-in, with Poki on: turn Poki's VPN off in Settings > VPN. The agent's runner status says to
-  open Poki and tap Enable local connection, and names no proxy app. Tapping it while Poki is on brings
-  the runner back within seconds.
+- [ ] Built-in: disconnect/reconnect, lock/unlock, and reboot recover after an explicit reconnect (or,
+  with Poki on, Poki's own retry below). Opening Poki alone must not start the tunnel. Choosing External app stops only Poki's VPN.
+- [ ] Built-in, with Poki on: turn Poki's VPN off in Settings > VPN. It stays off (the log says `ended on
+  purpose`), the agent's runner status says to open Poki and tap Enable local connection, and names no
+  proxy app. Tapping it while Poki is on brings the runner back within seconds. The same when another
+  VPN (LocalDevVPN) takes the packet tunnel, and after Turn off or Disconnect in Poki.
+- [ ] Built-in, with Poki on: the tunnel fails without anyone turning it off (kill the PokiTunnel process:
+  Xcode > Debug > Attach to Process, PokiTunnel, then stop the session). With no hand on the phone, the log
+  shows `local VPN: failed`, `reconnecting in 1 s`, `connected`, `back: 10.7.0.1 answers again; starting
+  the runner now`, and the next agent call works. If it keeps failing, it tries 8 times in about 2 minutes
+  (1, 2, 4, 8, 16, 30, 30, 30 s) and stops; then only Enable Local Connection in Setup starts it again.
+  Opening Poki dials nothing (GitHub issue 44).
+- [ ] Built-in, with Poki on, the tunnel fails and a different VPN (WireGuard, a work VPN) is turned on
+  before the retry comes: Poki does not dial if it detects that VPN. Setup says `Another VPN appears to be on…`, Home shows it under
+  Needs attention, the log says `another VPN is on; not reconnecting`, and the other VPN stays connected. Detection is best effort: a VPN that sets no proxy, such as Tailscale, may not be detected, so Poki may still dial over it.
+  Turning that VPN off and tapping Enable Local Connection brings the runner back, and the message goes.
+  (The check reads the interfaces iOS has network settings for; confirm it sees a real VPN, and sees none
+  with only Wi-Fi or cellular.)
 - [ ] Installed over 0.2.3 with a proxy app that was set up only in the proxy app (no connection
   chosen in Poki): Turn on says to choose a local connection first, and Setup > External app > Use
   the current VPN brings it back. Say this in the release notes for 0.2.3 users.
@@ -64,8 +77,9 @@ result and the time next to each line.
 ## 5. Approvals
 
 - [ ] `do` tapping a Delete button in Photos: nothing happens on screen, the Live Activity asks, the answer says `approval_required`.
-- [ ] Approve in the Live Activity within 20 s: the same call goes on and taps.
-- [ ] Approve after 20 s, then send the same actions: it taps once; a third time asks again.
+- [ ] Approve in the Live Activity after 45 s, without sending anything again: the same call goes on and taps, and the answer says `approved on the phone after 45 s`. Allow does not bring Poki to the front: the phone stays in the app it was in, and the tap lands there.
+- [ ] Do not approve: after about 115 s (about 50 s behind a relay still at `REQ_TIMEOUT_MS` 60000) the answer says `approval_required`. Approve afterwards and send the same actions: it taps once; a third time asks again.
+- [ ] Behind a relay still at `REQ_TIMEOUT_MS` 60000, approve at about 52 s: the answer says `approval_required` and the owner approved too late; nothing was tapped. Send the same actions again: they run at once.
 - [ ] Decline: `not_sent: the owner declined`.
 - [ ] While an approval is pending, have the agent tap the Live Activity's Approve button (`do` with the button's point): the pending request is withdrawn first, so nothing is approved.
 - [ ] Typing into a password field asks first, and the Live Activity hides the text.

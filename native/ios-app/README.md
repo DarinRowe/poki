@@ -50,6 +50,12 @@ Poki is in English and Simplified Chinese and follows the iPhone's language. The
   process at once instead of leaving it up for about 30 s.
 - Only Poki starts the runner. Opened by hand, Poki Runner starts no test (PokiRunnerHost,
   `native/ios-runner/host`) and sends the person to Poki.
+- The built-in local connection dials itself again when it fails or drops while Poki is on: 1, 2, 4, 8,
+  16, 30, 30, 30 s, then it stops until the owner taps Enable Local Connection in Setup. Opening Poki
+  dials nothing. It does not dial when the owner ended it (Turn off, Disconnect, Settings > VPN), when
+  another VPN took the packet tunnel, or when another VPN is detected at the time of a try: Poki says so and
+  stops. Detection is best effort: a VPN that sets no proxy, such as Tailscale, may not be detected. The runner then starts again by the loopback's own recovery. An external
+  connection is never touched.
 - Known issue: while the runner runs, it answers on port 8100 to any device on the same network,
   with no credentials and without Poki's approvals (`native/ios-runner/README.md`). Turn Poki on only
   on networks you trust. A pairing code between Poki and the runner is the planned fix.
@@ -154,8 +160,9 @@ connection explicitly; an existing service response alone does not finish the se
   version and the developer-service check before continuing.
 - **Built-in (default)**: Setup > Connect to this iPhone > Enable local connection. Approve iOS's
   VPN configuration prompt. Poki reflects only IPv4 TCP to `10.7.0.1/32`; normal internet routes and
-  DNS are unchanged. The connection may displace another packet-tunnel VPN. Poki never silently
-  changes an external VPN configuration or starts its local VPN merely because the app opened.
+  DNS are unchanged. The connection may displace another packet-tunnel VPN. Poki does not silently
+  change an external VPN configuration or start its local VPN merely because the app opened. While
+  Poki is on, its own tunnel is dialled again after a failure (see above), and stops when it detects another VPN (best effort, as above).
 - **Proxy app**: Surge (module, `surge:///install-module?url=`), Loon (plugin,
   `loon://import?plugin=`), Shadowrocket (its "Include route 10.7.0.1/32" toggle) or sing-box (one
   line in the tun inbound). Files in `deploy/proxy-modules/`, served from the fork's raw GitHub URL

@@ -10,14 +10,17 @@ remains the MCP relay; it cannot provide the phone's local developer connection.
 Two shapes were considered: require every user to install a helper such as LocalDevVPN, or embed
 the connection in Poki. The embedded connection is the default because it keeps setup in one app.
 An external-connection build remains necessary for signing without Network Extensions and users
-who need to keep a compatible existing VPN. No VPN profile is changed automatically on app launch.
+who need to keep a compatible existing VPN. No VPN profile is changed, and no tunnel started, automatically on app launch.
 Setup offers the external connection first when a supported VPN app is installed, including Karing.
 The user can explicitly choose the built-in fallback. Karing's own `loopback_address` can supply
 the reflection while continuing to proxy internet traffic; Poki must keep its tunnel off in this mode.
 This shares one VPN rather than trying to run two packet tunnels at once.
 
 The app calls `LoopbackTunnel.connect()` only after the owner enables the built-in connection or
-explicitly starts a session with that method selected. `refresh()` only reads Poki's saved profile;
+explicitly starts a session with that method selected. While a session is on, `LoopbackTunnel` also
+dials its own tunnel again after it failed or dropped (`ReconnectPlan`: 1, 2, 4, 8, 16, 30, 30, 30 s,
+then it stops). It never does so after the owner ended it, after another VPN took the packet tunnel,
+or while another VPN is detected (`OtherVPN`, best effort: a VPN that sets no proxy, such as Tailscale, may not be detected); it says so in the app instead. `refresh()` only reads Poki's saved profile;
 `disconnect()` only stops that profile. Its provider id is read from the embedded extension, so a
 signing tool's rewritten identifiers are used. Switching methods is disabled during pairing, an
 active session, or a pending configuration change. Errors give the owner an external fallback.

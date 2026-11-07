@@ -15,7 +15,9 @@ targets:
   PokiTunnel:
     type: app-extension
     platform: iOS
-    sources: [PokiTunnel]
+    sources:
+      - PokiTunnel
+      - Shared/TunnelStopSignal.swift
     info:
       path: PokiTunnel/Info.plist
       properties:

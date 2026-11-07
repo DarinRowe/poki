@@ -15,7 +15,7 @@ Open `wss://<relay host>/v1/<label>/connect`.
 2. Sign the bytes `poki-relay-v1:<label>:` followed by the decoded nonce, and send:
    `{"t":"hello","v":1,"key":"<base64 raw public key>","sig":"<base64>","access":["<sha256 hex>",...],"app":"<version>"}`
    `access` holds at most 8 hashes, one per secret that is not revoked.
-3. The relay answers `{"t":"ready","max_body":4194304,"req_timeout_ms":60000}`. Use these numbers rather than assuming them.
+3. The relay answers `{"t":"ready","max_body":4194304,"req_timeout_ms":180000}`. Use these numbers rather than assuming them.
 
 If the upgrade itself is refused, nothing reached the phone's relay: a well-formed label that no phone holds gets `404` on the MCP path, and so does a malformed label (not 52 lowercase base32 characters). Treat 403, 404 and 401 as "wrong URL or wrong host" and do not retry quickly.
 

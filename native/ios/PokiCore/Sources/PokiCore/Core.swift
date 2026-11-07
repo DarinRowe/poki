@@ -3,7 +3,9 @@ import Foundation
 public struct CoreConfig: Sendable {
     public var runnerURL: URL
     public var sensitive: SensitivityRules
-    /// How long `do` holds for an approval before answering approval_required.
+    /// How long `do` holds for an approval before answering approval_required. Owners took 42 to 47 s
+    /// to approve on the phone, so this is as long as a request lives (`Approvals.lifetime`, 120 s)
+    /// less a margin; a relay that gives up sooner shortens it for the call (`RelayRequest.answerBy`).
     public var approvalWait: Double
     /// The hard cap for one tool call, everything included.
     public var toolDeadline: Double
@@ -33,7 +35,7 @@ public struct CoreConfig: Sendable {
     /// a new one. Well beyond an agent's thinking; the app's idle stop usually ends the task first.
     public var taskGap: Double
 
-    public init(runnerURL: URL = URL(string: "http://127.0.0.1:8100")!, sensitive: SensitivityRules = SensitivityRules(), approvalWait: Double = 20, toolDeadline: Double = 25, actionCap: Double = 6, readTimeout: Double = 4, busyWait: Double = 2, runnerWait: Double = 15, treeFormat: String = "xml", ownApps: [String] = ["nz.zheha.poki"], accessibilityDeadline: Double = 2, taskGap: Double = 300) {
+    public init(runnerURL: URL = URL(string: "http://127.0.0.1:8100")!, sensitive: SensitivityRules = SensitivityRules(), approvalWait: Double = 115, toolDeadline: Double = 25, actionCap: Double = 6, readTimeout: Double = 4, busyWait: Double = 2, runnerWait: Double = 15, treeFormat: String = "xml", ownApps: [String] = ["nz.zheha.poki"], accessibilityDeadline: Double = 2, taskGap: Double = 300) {
         self.accessibilityDeadline = accessibilityDeadline
         self.runnerURL = runnerURL
         self.sensitive = sensitive
@@ -194,11 +196,16 @@ public struct RelayRequest: Sendable {
     public var method: String
     public var headers: [String: String]
     public var body: String
-    public init(id: String, method: String, headers: [String: String], body: String) {
+    /// When the relay stops waiting for this request and answers the caller itself (`now()`, monotonic
+    /// seconds): its `req_timeout_ms` after the request arrived. nil for a call that does not come
+    /// through a relay, or from a relay that did not say.
+    public var answerBy: Double?
+    public init(id: String, method: String, headers: [String: String], body: String, answerBy: Double? = nil) {
         self.id = id
         self.method = method
         self.headers = headers
         self.body = body
+        self.answerBy = answerBy
     }
 }
 
@@ -360,10 +367,10 @@ public final class PokiCore: @unchecked Sendable {
         let session = request.headers["mcp-session-id"]
         if let batch = message.array {
             var replies: [JSON] = []
-            for item in batch { if let r = await rpc(item, session: session).reply { replies.append(r) } }
+            for item in batch { if let r = await rpc(item, session: session, answerBy: request.answerBy).reply { replies.append(r) } }
             return replies.isEmpty ? RelayResponse(id: request.id, status: 202, headers: [:], body: "") : answer(200, .array(replies), session: session)
         }
-        let (reply, newSession) = await rpc(message, session: session)
+        let (reply, newSession) = await rpc(message, session: session, answerBy: request.answerBy)
         guard let reply else { return RelayResponse(id: request.id, status: 202, headers: [:], body: "") }
         return answer(200, reply, session: newSession ?? session)
     }
@@ -372,7 +379,7 @@ public final class PokiCore: @unchecked Sendable {
         ["jsonrpc": "2.0", "id": id ?? .null, "error": ["code": .number(Double(code)), "message": .string(message)]]
     }
 
-    func rpc(_ message: JSON, session: String?) async -> (reply: JSON?, session: String?) {
+    func rpc(_ message: JSON, session: String?, answerBy: Double? = nil) async -> (reply: JSON?, session: String?) {
         let id = message["id"]
         guard let method = message["method"]?.string else { return (id == nil ? nil : rpcError(id, -32600, "Invalid Request"), nil) }
         let isNotification = id == nil
@@ -395,7 +402,7 @@ public final class PokiCore: @unchecked Sendable {
         case "tools/call":
             let name = message["params"]?["name"]?.string ?? ""
             let args = message["params"]?["arguments"] ?? .object([:])
-            let output = await call(name, args, session: session)
+            let output = await call(name, args, session: session, answerBy: answerBy)
             var content: [JSON] = [["type": "text", "text": .string(output.text)]]
             if let jpeg = output.jpeg { content.append(["type": "image", "data": .string(jpeg.base64EncodedString()), "mimeType": "image/jpeg"]) }
             return (result(["content": .array(content), "isError": .bool(output.isError)]), nil)
@@ -413,7 +420,7 @@ public final class PokiCore: @unchecked Sendable {
         ["name": "look", "description": "Read the screen now: the app in front, the numbered elements (role, \"label = value\", [x,y,w,h] in screen points; + marks elements new since the last read, ~ moved ones) and a screenshot that is one pixel per screen point, so a point on the picture is a point to tap. Repeated text, scroll bars and empty containers are left out and long labels are cut; full=true lists every element as the tree has it and adds the text read from the picture inside [collapsed] elements (an app showed a whole cell, buttons and all, as one element). Numbers stay the same while an element stays on screen.",
          "inputSchema": ["type": "object", "properties": ["full": ["type": "boolean"]], "additionalProperties": false],
          "annotations": ["readOnlyHint": true]],
-        ["name": "do", "description": "Run actions in order, then read the screen once. The answer says what each action did, screen_changed (true or false: whether the elements or the picture differ from the read before), and only the elements that are new (+) or moved (~); the others keep their numbers (full=true lists all). Actions: {tap: n} or {tap: [x, y]} (a numbered element is tapped at its centre, or at the nearest free point when the tree puts something over its centre, and the answer says so; only an element with no part on the screen is refused as not_hittable); {type: \"text\", ref?: n, clear?: true, via?: \"paste\"} (taps n first, then types the text as key presses and says what the field holds afterwards; via paste is the backup when typing comes out wrong: it pastes through the field's menu and puts the owner's clipboard back); {key: \"return\"|\"delete\"|\"tab\"|\"space\"|\"escape\"}; {scroll_to: \"text\"} or {scroll_to: {text or ref, in?: n, direction?: \"down\", max_swipes?: 12}} (the best way to bring something into view: it scrolls until the text is fully on screen and says where, up to 12 s; when it stops short it says so and a second call goes on from there); {swipe: \"up\"|\"down\"|\"left\"|\"right\"} or {swipe: {direction, in?: n, distance?: \"short\"|\"long\"}} (a quick flick inside the biggest list on screen, or inside n, clear of bars; direction is where the finger moves, so up shows what is further down); {drag: {from: n or [x, y], to: n or [x, y], ms?: 400, hold_ms?: 0}} or {drag: [x1, y1, x2, y2]} (the content follows the finger and stops where it stops; hold_ms first to pick something up); {long_press: n or [x, y] or {ref, ms?}}; {pinch: {ref or x, y, scale}}; {button: \"home\"|\"lock\"|\"volume_up\"|\"volume_down\"}; {launch: \"bundle id\"} or {launch: {bundle, fresh: true}}; {wait_until: \"text\"} or {wait_until: {text, gone?: true, ms?: 3000}} or {wait_until: {settled: true, ms?}} (reads the screen until the text appears or goes, or the screen holds still; use it instead of fixed waits); {wait: ms}; {back: true} (the top-left back button if one is listed, else an edge swipe from the left); {handoff: {kind: \"passcode\"|\"password\"|\"verification\"|\"payment\"|\"other\", text: \"what the owner must do\"}} (when a step is the owner's to do, by your own judgement: it is shown on the phone with a Done button, no input is sent until they tap Done or you send {handoff: false}, and you keep polling with look or {wait_until: {handoff_done: true, ms?: 10000}} rather than ending your work). Points are screen points, like the frames and the screenshot's pixels. A locked phone takes nothing but buttons and says screen: locked. Each action is reported as sent, not_sent or unknown; it stops at the first action that fails and never re-sends one that may have been delivered. Payments, deleting, sending messages and passwords need the owner's approval on the phone: the plain actions before the first such action are sent, the rest are not, and the answer says approval_required and which actions to send again, on their own, after they approve. A runner still finishing an earlier request answers not_sent and busy; call look again then. finish: true on the do that completes the owner's task (actions may be empty): after the actions and the read, the phone goes back to the app the task began in, where the owner asked, so they see your reply there; leave it off while more steps follow.",
+        ["name": "do", "description": "Run actions in order, then read the screen once. The answer says what each action did, screen_changed (true or false: whether the elements or the picture differ from the read before), and only the elements that are new (+) or moved (~); the others keep their numbers (full=true lists all). Actions: {tap: n} or {tap: [x, y]} (a numbered element is tapped at its centre, or at the nearest free point when the tree puts something over its centre, and the answer says so; only an element with no part on the screen is refused as not_hittable); {type: \"text\", ref?: n, clear?: true, via?: \"paste\"} (taps n first, then types the text as key presses and says what the field holds afterwards; via paste is the backup when typing comes out wrong: it pastes through the field's menu and puts the owner's clipboard back); {key: \"return\"|\"delete\"|\"tab\"|\"space\"|\"escape\"}; {scroll_to: \"text\"} or {scroll_to: {text or ref, in?: n, direction?: \"down\", max_swipes?: 12}} (the best way to bring something into view: it scrolls until the text is fully on screen and says where, up to 12 s; when it stops short it says so and a second call goes on from there); {swipe: \"up\"|\"down\"|\"left\"|\"right\"} or {swipe: {direction, in?: n, distance?: \"short\"|\"long\"}} (a quick flick inside the biggest list on screen, or inside n, clear of bars; direction is where the finger moves, so up shows what is further down); {drag: {from: n or [x, y], to: n or [x, y], ms?: 400, hold_ms?: 0}} or {drag: [x1, y1, x2, y2]} (the content follows the finger and stops where it stops; hold_ms first to pick something up); {long_press: n or [x, y] or {ref, ms?}}; {pinch: {ref or x, y, scale}}; {button: \"home\"|\"lock\"|\"volume_up\"|\"volume_down\"}; {launch: \"bundle id\"} or {launch: {bundle, fresh: true}}; {wait_until: \"text\"} or {wait_until: {text, gone?: true, ms?: 3000}} or {wait_until: {settled: true, ms?}} (reads the screen until the text appears or goes, or the screen holds still; use it instead of fixed waits); {wait: ms}; {back: true} (the top-left back button if one is listed, else an edge swipe from the left); {handoff: {kind: \"passcode\"|\"password\"|\"verification\"|\"payment\"|\"other\", text: \"what the owner must do\"}} (when a step is the owner's to do, by your own judgement: it is shown on the phone with a Done button, no input is sent until they tap Done or you send {handoff: false}, and you keep polling with look or {wait_until: {handoff_done: true, ms?: 10000}} rather than ending your work). Points are screen points, like the frames and the screenshot's pixels. A locked phone takes nothing but buttons and says screen: locked. Each action is reported as sent, not_sent or unknown; it stops at the first action that fails and never re-sends one that may have been delivered. Payments, deleting, sending messages and passwords need the owner's approval on the phone: the plain actions before the first such action are sent, the rest are not. do holds for the owner's answer (up to about two minutes, less behind a relay that gives up sooner) and goes on in the same call once they approve; when that time runs out the answer says approval_required and which actions to send again, on their own, after they approve. A runner still finishing an earlier request answers not_sent and busy; call look again then. finish: true on the do that completes the owner's task (actions may be empty): after the actions and the read, the phone goes back to the app the task began in, where the owner asked, so they see your reply there; leave it off while more steps follow.",
          "inputSchema": ["type": "object", "properties": ["actions": ["type": "array", "items": ["type": "object"], "minItems": 0, "maxItems": 20], "full": ["type": "boolean"], "finish": ["type": "boolean"]], "required": ["actions"], "additionalProperties": false]],
         ["name": "status", "description": "Poki's state without touching the phone: the runner, the relay, and any approval waiting on the phone.",
          "inputSchema": ["type": "object", "properties": .object([:]), "additionalProperties": false],
@@ -442,7 +449,7 @@ public final class PokiCore: @unchecked Sendable {
     public static var toolCatalogJSON: String { JSON.array(tools).serialized() }
     public static var toolInstructions: String { instructions }
 
-    func call(_ name: String, _ args: JSON, session: String? = nil) async -> ToolResult {
+    func call(_ name: String, _ args: JSON, session: String? = nil, answerBy: Double? = nil) async -> ToolResult {
         if name == "status" { return status() }
         guard name == "look" || name == "do" else { return ToolResult(text: "unknown tool \(name); the tools are look, do and status", jpeg: nil, isError: true) }
         let activity = ToolActivity(id: UUID().uuidString, name: name, summary: name == "do" ? computer.labels(args["actions"]?.array ?? []) : "Look at the screen", started: Date())
@@ -454,13 +461,12 @@ public final class PokiCore: @unchecked Sendable {
         }
         gate.current = "\(name): \(activity.summary)"
         emit(.toolStarted(activity))
-        // The owner's time on an approval comes on top of the tool's own time.
         // The owner's time on an approval, and the runner's start, come on top of the tool's own time.
         let deadline = config.toolDeadline + (name == "do" ? config.approvalWait : 0) + config.runnerWait + 1
         var output: ToolResult
         do {
             output = try await withDeadline(deadline, name) { [computer] in
-                name == "look" ? await computer.look(full: args["full"]?.bool ?? false, session: session) : await computer.act(actions: args["actions"]?.array ?? [], full: args["full"]?.bool ?? false, finish: args["finish"]?.bool ?? false, session: session)
+                name == "look" ? await computer.look(full: args["full"]?.bool ?? false, session: session) : await computer.act(actions: args["actions"]?.array ?? [], full: args["full"]?.bool ?? false, finish: args["finish"]?.bool ?? false, session: session, answerBy: answerBy)
             }
         } catch {
             // Never reached in practice (every step has its own deadline), but a call always answers.

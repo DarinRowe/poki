@@ -14,7 +14,7 @@ var SCOPE = "poki";
 var DEFAULTS = {
   MAX_BODY: 4194304,
   // relay frames v1; a received WebSocket message may be up to 32 MiB on Workers
-  REQ_TIMEOUT_MS: 6e4,
+  REQ_TIMEOUT_MS: 18e4, // a `do` waits for the owner's approval on the phone (up to 115 s) inside one request
   PER_MINUTE: 60,
   // MCP requests per label per minute
   CONCURRENT: 4,
