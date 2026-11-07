@@ -36,6 +36,7 @@ final class InProcessProbe: ObservableObject {
             switch mode {
             case "self": await selfTest()
             case "later": await later()
+            case "read": await readOnly()
             default: await prepareOnly()
             }
         }
@@ -45,6 +46,21 @@ final class InProcessProbe: ObservableObject {
         guard begin("prepare") else { return }
         _ = await prepare()
         end()
+    }
+
+    func readOnly() async {
+        guard begin("read") else { return }
+        defer { end() }
+        guard await prepare() else { return }
+        await read()
+    }
+
+    private func read() async {
+        let result = await withCheckedContinuation { (c: CheckedContinuation<[String: Any], Never>) in
+            queue.async { c.resume(returning: PKInProcess.shared().readProbe()) }
+        }
+        let parts = result.keys.sorted().map { "\($0)=\(result[$0]!)" }.joined(separator: " ")
+        note("read: \(parts)", result.merging(["step": "read"]) { a, _ in a })
     }
 
     /// Taps Poki's own empty field, which focuses it only if the tap arrived, types the sample and
@@ -87,6 +103,8 @@ final class InProcessProbe: ObservableObject {
         guard tap.delivery == .sent else { return }
         try? await Task.sleep(for: .seconds(0.8))
         _ = await type(Self.sample)
+        try? await Task.sleep(for: .seconds(0.8))
+        await read()
     }
 
     // MARK: Steps
@@ -161,6 +179,8 @@ struct InProcessSection: View {
             ProbeField(probe: probe).frame(height: 44)
             HStack {
                 Button("Prepare") { Task { await probe.prepareOnly() } }
+                Spacer()
+                Button("Read") { Task { await probe.readOnly() } }
                 Spacer()
                 Button("Self test") { Task { await probe.selfTest() } }
             }

@@ -12,7 +12,27 @@
 - (id)daemonProxy;
 - (void)_XCT_synthesizeEvent:(id)event implicitConfirmationInterval:(double)interval
     completion:(void (^)(NSError *))completion;
++ (id)sharedDevice;
++ (id)mainScreen;
+- (id)accessibilityInterface;
+- (id)activeApplications;
+- (int)processIdentifier;
+- (id)monitoredApplicationWithProcessIdentifier:(int)pid;
+- (id)snapshotWithError:(NSError **)error;
+- (NSDictionary *)dictionaryRepresentation;
+- (id)screenshot;
+- (NSData *)PNGRepresentation;
+- (void)_XCT_requestBundleIDForPID:(int)pid reply:(void (^)(NSString *, NSError *))reply;
 @end
+
+/// Nodes in a snapshot's dictionary, whatever key holds the children.
+static NSUInteger PKCount(NSDictionary *node) {
+    NSUInteger n = 1;
+    for (id value in node.allValues)
+        if ([value isKindOfClass:NSArray.class])
+            for (id child in value) if ([child isKindOfClass:NSDictionary.class]) n += PKCount(child);
+    return n;
+}
 
 /// Whether `selector` has exactly this return type and these argument types, as encoded at runtime.
 static BOOL PKMatches(NSMethodSignature *signature, const char *result, NSArray<NSString *> *arguments) {
@@ -193,6 +213,59 @@ static BOOL PKInstanceSignature(Class cls, SEL selector, const char *result, NSA
         return [PKOutcome delivery:PKDeliveryNotSent code:error.localizedDescription ?: @"text_not_sent" detail:nil];
     }
     return [self await:context timeout:timeout started:started generation:generation];
+}
+
+- (NSDictionary<NSString *, id> *)readProbe {
+    NSMutableDictionary *out = [NSMutableDictionary new];
+    PKOutcome *refused;
+    uint64_t generation = 0;
+    id session = [self current:&generation outcome:&refused];
+    if (!session) { out[@"error"] = refused.code ?: @"no_session"; return out; }
+    NSTimeInterval t = NSProcessInfo.processInfo.systemUptime;
+    id app = nil;
+    @try {
+        id ax = [[NSClassFromString(@"XCUIDevice") sharedDevice] accessibilityInterface];
+        NSArray *apps = [ax activeApplications];
+        out[@"front_count"] = @(apps.count);
+        int pid = apps.count ? [apps.firstObject processIdentifier] : 0;
+        out[@"front_pid"] = @(pid);
+        if (pid) {
+            dispatch_semaphore_t got = dispatch_semaphore_create(0);
+            __block NSString *bundle;
+            [[session daemonProxy] _XCT_requestBundleIDForPID:pid reply:^(NSString *value, NSError *error) {
+                bundle = value; dispatch_semaphore_signal(got);
+            }];
+            dispatch_semaphore_wait(got, dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC));
+            out[@"front_bundle"] = bundle ?: @"?";
+            app = [ax monitoredApplicationWithProcessIdentifier:pid];
+        }
+        out[@"front_ok"] = @(app != nil);
+    } @catch (NSException *e) {
+        out[@"front_error"] = [NSString stringWithFormat:@"%@: %@", e.name, e.reason];
+    }
+    out[@"front_seconds"] = @(NSProcessInfo.processInfo.systemUptime - t);
+    t = NSProcessInfo.processInfo.systemUptime;
+    @try {
+        NSError *error;
+        id snapshot = app ? [app snapshotWithError:&error] : nil;
+        NSDictionary *tree = [snapshot dictionaryRepresentation];
+        out[@"tree_ok"] = @(tree != nil);
+        out[@"tree_elements"] = @(tree ? PKCount(tree) : 0);
+        if (error) out[@"tree_error"] = error.localizedDescription;
+    } @catch (NSException *e) {
+        out[@"tree_error"] = [NSString stringWithFormat:@"%@: %@", e.name, e.reason];
+    }
+    out[@"tree_seconds"] = @(NSProcessInfo.processInfo.systemUptime - t);
+    t = NSProcessInfo.processInfo.systemUptime;
+    @try {
+        NSData *png = [[[NSClassFromString(@"XCUIScreen") mainScreen] screenshot] PNGRepresentation];
+        out[@"picture_ok"] = @(png.length > 0);
+        out[@"picture_bytes"] = @(png.length);
+    } @catch (NSException *e) {
+        out[@"picture_error"] = [NSString stringWithFormat:@"%@: %@", e.name, e.reason];
+    }
+    out[@"picture_seconds"] = @(NSProcessInfo.processInfo.systemUptime - t);
+    return out;
 }
 
 @end
