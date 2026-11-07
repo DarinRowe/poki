@@ -404,6 +404,10 @@ final class AppModel {
     private func coreState(of status: RunnerStatus) -> RunnerState {
         let preLaunch = ["connecting", "pairing", "tunnel", "waiting_network", "standby", "idle"].contains(status.state)
         if preLaunch, !loopback.isWorking, loopback.state != .checking || status.state == "waiting_network" {
+            if loopback.cellularRefused {
+                let since = loopback.droppedAt.map { " since \(Self.clock.string(from: $0))" } ?? ""
+                return .starting("waiting for Wi-Fi\(since): the phone has only cellular, and iOS refuses the developer services' loopback there. The owner connects Wi-Fi and opens Poki; the runner starts by itself, and once it runs the phone can switch back to cellular. Nothing on the phone changes meanwhile")
+            }
             return .waitingForLoopback(since: loopback.droppedAt.map(Self.clock.string(from:)),
                                        tunnelWithoutAnswer: loopback.state == .noAnswer,
                                        connection: setup.loopback == .builtIn ? .builtIn : .external)

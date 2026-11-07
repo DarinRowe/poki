@@ -10,6 +10,7 @@ struct DiagnosticsView: View {
     @StateObject private var hold = Hold()
     @State private var log = AppLog.shared
     @State private var copied = false
+    @Environment(AppModel.self) private var model
 
     var body: some View {
         SitePage {
@@ -78,6 +79,9 @@ struct DiagnosticsView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 12).padding(.horizontal, 16)
         .whiteCard()
+        Text(verbatim: "Network path: \(model.loopback.pathSummary). Wi-Fi \(model.loopback.wifiUp ? "up" : "down"), cellular \(model.loopback.cellularUp ? "up" : "down")\(model.loopback.cellularOnly ? " (cellular only)" : "")")
+            .mono(12).foregroundStyle(Site.text3).textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16).padding(.top, 8)
     }
 
     @ViewBuilder private var checksGroup: some View {

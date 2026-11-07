@@ -406,7 +406,9 @@ private struct StandingBy: View {
     }
 
     private func subtitle(_ issues: [Issue]) -> LocalizedStringKey {
-        if !model.sessionOn { return "Turn on so your agents can use this iPhone." }
+        if !model.sessionOn {
+            return model.loopback.cellularRefused && !model.runner.isRunning ? LocalizedStringKey(LoopbackMonitor.cellularHint) : "Turn on so your agents can use this iPhone."
+        }
         if issues.contains(where: { $0.id == "loopback" }), case .ready = model.relayStatus {
             return "Agents can reach this iPhone, but Poki can’t tap until Loopback is on."
         }
@@ -490,7 +492,7 @@ struct Health {
         switch monitor.state {
         case .working: return Health(word: String(localized: "On"), color: Site.ok)
         case .checking: return Health(word: String(localized: "Checking…"), color: .white)
-        case .noAnswer: return Health(word: String(localized: "No Answer"), color: Site.bad)
+        case .noAnswer: return Health(word: monitor.cellularRefused ? String(localized: "Needs Wi-Fi") : String(localized: "No Answer"), color: Site.bad)
         case .off: return Health(word: String(localized: "Off"), color: Site.bad)
         }
     }
@@ -572,6 +574,11 @@ struct Issue: Identifiable {
                                  text: fix.isEmpty ? (runner.detail.map { "\($0.prefix(1).uppercased())\($0.dropFirst())." } ?? String(localized: "Poki starts it again on the next agent request.")) : local(fix), fix: kind))
             } else if runner.state == "waiting_network", let fix = runner.fix, fix.contains("internet") {
                 out.append(Issue(id: "network", title: String(localized: "Waiting for the internet"), text: local(fix), fix: .none))
+            } else if model.loopback.cellularRefused {
+                // A session already running keeps going on cellular; only a start from cellular is refused.
+                if !runner.isRunning {
+                    out.append(Issue(id: "cellular", title: String(localized: "Connect to Wi-Fi first"), text: LoopbackMonitor.cellularHint, fix: .none))
+                }
             } else if runner.state == "waiting_network" || !model.loopback.isWorking && model.loopback.state != .checking {
                 out.append(Issue(id: "loopback", title: String(localized: "Loopback is off"),
                                  text: String(localized: "Turn on your proxy app with the Poki module, or connect LocalDevVPN."), fix: .setup))
