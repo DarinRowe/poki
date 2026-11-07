@@ -139,7 +139,7 @@ export class Devices {
         this.physicalNames.set(device.id,values[0]);
         return { ...device,name:values[0],model:values[1],osVersion:values[2],selected:device.id===this.selected,...occupancy,readiness:'paired device discovered; developer-service availability is checked when used' };
       } catch(error) {
-        return { ...device,remote:undefined,selected:device.id===this.selected,blocked:error.message,action:device.remote ? 'Keep Tailscale connected and the iPhone unlocked; return it to Wi-Fi to establish a new session.' : 'Keep the device connected and unlocked, trust this Mac, and enable Developer Mode / UI Automation.' };
+        return { ...device,remote:undefined,selected:device.id===this.selected,blocked:error.message,action:device.remote ? 'Keep the iPhone unlocked and check its configured address. For Bonjour, keep both devices on the same LAN; for Tailscale, keep both connected and return the iPhone to Wi-Fi to establish a new session.' : 'Keep the device connected and unlocked, trust this Mac, and enable Developer Mode / UI Automation.' };
       }
     }));
   }
