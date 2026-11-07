@@ -46,6 +46,10 @@ jobs:
             os: macos-15
             args: --target universal-apple-darwin
             targets: aarch64-apple-darwin,x86_64-apple-darwin
+          - name: macOS (universal, latest runner)
+            os: macos-latest
+            args: --target universal-apple-darwin
+            targets: aarch64-apple-darwin,x86_64-apple-darwin
           - name: Windows (x64)
             os: windows-2022
             args: ""
@@ -84,6 +88,6 @@ jobs:
           ls -la out
       - uses: actions/upload-artifact@v4
         with:
-          name: poki-setup-${{ runner.os }}
+          name: poki-setup-${{ runner.os }}-${{ matrix.os }}
           path: out/*
           if-no-files-found: error
