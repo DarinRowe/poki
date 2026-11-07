@@ -25,6 +25,9 @@ final class VoiceLink: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelega
     private let onClosed: @MainActor (String) -> Void
     private var peer: RTCPeerConnection?
     private var channel: RTCDataChannel?
+    /// WebRTC calls the delegate methods on its own threads and the app calls in from the main actor,
+    /// so these three are only touched under `lock`.
+    private let lock = NSLock()
     private var remoteAudio: RTCAudioTrack?
     private var volume = 1.0
     private var closing = false
@@ -95,13 +98,15 @@ final class VoiceLink: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelega
 
     /// 0 mutes Poki's voice (silent test runs); 1 is normal.
     func setRemoteVolume(_ value: Double) {
-        volume = value
-        remoteAudio?.source.volume = value
-        remoteAudio?.isEnabled = value > 0
+        lock.withLock {
+            volume = value
+            remoteAudio?.source.volume = value
+            remoteAudio?.isEnabled = value > 0
+        }
     }
 
     func close() {
-        closing = true
+        lock.withLock { closing = true }
         channel?.close()
         peer?.close()
         channel = nil
@@ -109,8 +114,12 @@ final class VoiceLink: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelega
     }
 
     private func lost(_ reason: String) {
-        guard !closing else { return }
-        closing = true
+        let first = lock.withLock { () -> Bool in
+            guard !closing else { return false }
+            closing = true
+            return true
+        }
+        guard first else { return }
         let onClosed = onClosed
         Task { @MainActor in onClosed(reason) }
     }
@@ -143,9 +152,11 @@ final class VoiceLink: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelega
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didAdd rtpReceiver: RTCRtpReceiver, streams mediaStreams: [RTCMediaStream]) {
         guard let track = rtpReceiver.track as? RTCAudioTrack else { return }
-        remoteAudio = track
-        track.source.volume = volume
-        track.isEnabled = volume > 0
+        lock.withLock {
+            remoteAudio = track
+            track.source.volume = volume
+            track.isEnabled = volume > 0
+        }
     }
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCSignalingState) {}
