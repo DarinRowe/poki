@@ -166,8 +166,8 @@ private struct SettingsHome: View {
     ]
 
     @ViewBuilder private var phone: some View {
-        let done = SetupStep.allCases.filter(model.isDone).count
-        let total = SetupStep.allCases.count
+        let done = SetupStep.shown.filter(model.isDone).count
+        let total = SetupStep.shown.count
         GroupLabel(text: "THIS IPHONE")
         VStack(spacing: 0) {
             Button { path.append(.relay) } label: {

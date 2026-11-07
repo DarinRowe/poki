@@ -32,6 +32,10 @@ pub struct Config {
     pub wda_host: IpAddr,
     #[serde(default = "default_wda_port")]
     pub wda_port: u16,
+    /// The app automates the phone from its own process: the launcher only mounts the developer disk
+    /// image (the XCTest libraries the app loads) and starts no runner.
+    #[serde(default)]
+    pub in_process: bool,
 }
 
 /// The longest a disk image mount may take (Apple's signing server plus the upload).
@@ -155,6 +159,10 @@ impl Launcher {
             match outcome {
                 Some(Ok(())) => attempt = 0,
                 Some(Err(failure)) => self.fail(attempt, &failure),
+                None if self.config.in_process => {
+                    self.set("idle", 0, json!({}));
+                    return;
+                }
                 None => {
                     // Stopped: end the runner now. Left alone it lives on for about 30 s after the
                     // developer connection closes, with iOS's automation banner on screen.
@@ -220,6 +228,18 @@ impl Launcher {
             }
         }
         let ios = device.ios_version().await.unwrap_or_default();
+        if config.in_process {
+            drop(device);
+            me.set("running", attempt, json!({"pairing": kind, "ios": ios, "runner": "in-process"}));
+            loop {
+                if commands.changed().await.is_err() {
+                    return Ok(());
+                }
+                if *commands.borrow_and_update() != Command::Run {
+                    return Ok(());
+                }
+            }
+        }
         me.set("launching", attempt, json!({"pairing": kind, "ios": ios}));
         let bundle = launch::find_runner(&mut device, config.runner_bundle.as_deref()).await?;
         let mut session = launch::start(&mut device, &bundle, &ios).await?;

@@ -97,8 +97,8 @@ private struct FirstRun: View {
     }
 
     private var setupValue: Text {
-        let done = SetupStep.allCases.filter(model.isDone).count
-        let total = SetupStep.allCases.count
+        let done = SetupStep.shown.filter(model.isDone).count
+        let total = SetupStep.shown.count
         return done == 0 ? Text(String(localized: "setup-steps", defaultValue: "\(total) steps")) : Text("\(done) of \(total)")
     }
 }
@@ -367,8 +367,8 @@ private struct StandingBy: View {
             // Setup is always one tap away, on or off (ESP-168: with Poki off there was no way back
             // into it from Home; the board does not draw this row).
             Button(action: openSetup) {
-                let done = SetupStep.allCases.filter(model.isDone).count
-                let total = SetupStep.allCases.count
+                let done = SetupStep.shown.filter(model.isDone).count
+                let total = SetupStep.shown.count
                 HStack {
                     Text("Setup").site(15, line: 18)
                     Spacer(minLength: 8)

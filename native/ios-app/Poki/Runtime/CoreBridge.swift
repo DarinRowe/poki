@@ -79,6 +79,8 @@ struct LauncherConfig: Encodable {
     var ddi_dir: String
     var runner_bundle: String? = nil
     var wda_port = 8100
+    /// Mount the disk image only: Poki automates the phone itself (AutomationPath.inProcess).
+    var in_process = false
 }
 
 /// On-device wireless pairing (iOS 27, Settings > Privacy & Security > Developer Mode > Pair).

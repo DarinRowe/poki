@@ -41,6 +41,7 @@ struct RootView: View {
         }
         .fullScreenCover(item: $setupStart) { start in SetupView(start: start.index) }
         .sheet(isPresented: $voiceOpen) { VoiceView(close: { voiceOpen = false }).tint(Site.blue) }
+        .task { InProcessProbe.shared.startFromLaunchArguments(model: model) }
         .onChange(of: scenePhase, initial: true) { _, phase in
             if phase == .active { model.becameActive() } else if phase == .background { model.wentToBackground() }
         }
@@ -88,7 +89,7 @@ struct RootView: View {
         switch defaults.string(forKey: "pokiScreen") {
         case "setup":
             let step = defaults.integer(forKey: "pokiSetupStep")
-            setupStart = SetupStart(index: step > 0 ? min(step, SetupStep.allCases.count) - 1 : SetupView.firstOpen(model))
+            setupStart = SetupStart(index: step > 0 ? min(step, SetupStep.shown.count) - 1 : SetupView.firstOpen(model))
         case "connect", "settings": settings = SettingsStart(path: [])
         case "debug": settings = SettingsStart(path: [.diagnostics])
         case "activity": settings = SettingsStart(path: [.diagnostics, .activityPreview])

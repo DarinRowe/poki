@@ -63,6 +63,8 @@ final class AppModel {
     private var launcherConfig: LauncherConfig?
 
     let host = AppCoreHost()
+    /// Poki Runner or Poki's own process, fixed for this launch (Debug tab).
+    let automationPath = AutomationPath.current
     private let core: LiveCore
     private let launcher: RunnerLauncher
     private let pairer: DevicePairing
@@ -86,7 +88,7 @@ final class AppModel {
 
     init(launcher: RunnerLauncher = RustLauncher(), pairer: DevicePairing = RustPairing()) {
         ActivityController.endAll()
-        let core = LiveCore(host: host)
+        let core = LiveCore(host: host, transport: automationPath == .inProcess ? InProcessWDA(screen: UIScreen.main.bounds.size) : URLSessionTransport())
         self.core = core
         // Voice taps get the same rules and approval card as an agent's `do`.
         voice = VoiceModel(clearTap: { text, bundle, name in await core.clearTap(on: text, inApp: bundle, named: name, waiting: VoiceModel.approvalWait) },
@@ -271,7 +273,7 @@ final class AppModel {
         log.add("activity", activity.isRunning ? "Live Activity started" : "Live Activity not running: \(activity.lastError ?? "unknown reason")")
         sessionOn = true
         wantsOn = true
-        launcherConfig = LauncherConfig(pairing_file: pairing, ddi_dir: AppFiles.ddiDirectory.path)
+        launcherConfig = LauncherConfig(pairing_file: pairing, ddi_dir: AppFiles.ddiDirectory.path, in_process: automationPath == .inProcess)
         lastAgentActivity = Date()
         // The runner (and with it iOS's automation banner) starts only when an agent asks.
         standBy(reason: nil)
@@ -287,12 +289,14 @@ final class AppModel {
             return
         }
         if !inFront { loopback.pause() }
-        log.add("session", "turned off: ending the runner")
+        log.add("session", automationPath == .inProcess ? "turned off; the in-process session stays open until Poki exits" : "turned off: ending the runner")
         core.stop()
-        Task { await RunnerProbe.shutdown() }
         launcher.stop()
         if setup.loopback == .builtIn { tunnel.disconnect() }
-        confirmRunnerEnded()
+        if automationPath == .runner {
+            Task { await RunnerProbe.shutdown() }
+            confirmRunnerEnded()
+        }
         idleTimer?.invalidate(); idleTimer = nil
         runnerPaused = false; host.setPaused(false)
         background.stop()
@@ -316,6 +320,14 @@ final class AppModel {
     /// next agent request starts it again. From the Stop runner button, the Live Activity, or idle.
     func pauseRunner(reason: String = "Stopped") {
         guard sessionOn, !runnerPaused, approvals.isEmpty else { return }
+        if automationPath == .inProcess {
+            // XCTest keeps one shared session per process and cannot open a second one, so the
+            // in-process session stays open (and with it the banner) until Poki exits.
+            log.add("runner", "standing by: \(reason); the in-process session stays open, and the banner with it, until Poki exits")
+            launcher.stop()
+            standBy(reason: reason)
+            return
+        }
         log.add("runner", "stopping: \(reason)")
         // The runner is asked to shut itself down (it ends its test and exits) and the launcher's
         // session is closed; the launcher also ends the process through the developer services.
@@ -429,6 +441,15 @@ final class AppModel {
         if status != runner { log.add("runner", "\(status.state)\(status.detail.map { ": \($0)" } ?? "")") }
         // Events from a launcher that was stopped for idle are old news.
         guard !runnerPaused else { return }
+        // On the in-process path the session is opened as soon as the launcher is ready, so the
+        // owner's one-time Automation Mode passcode comes when they turn Poki on, not mid-task.
+        if status.state == "running", automationPath == .inProcess {
+            DispatchQueue.global(qos: .userInitiated).async {
+                let result = PKInProcess.shared().prepare()
+                let ok = (result["ok"] as? Bool) == true
+                Task { @MainActor in AppLog.shared.add("runner", ok ? "in-process session ready (generation \(result["generation"] ?? 0), \(String(format: "%.2f", result["seconds"] as? Double ?? 0)) s)" : "in-process session not ready: \(result["code"] ?? "unknown")") }
+            }
+        }
         switch status.state {
         case "launching", "running":
             // The phone accepted the pairing.
@@ -737,7 +758,7 @@ final class AppModel {
         guiding = step
         guard !sessionOn else { return }
         activity.start(deviceName: deviceName)
-        let steps = SetupStep.allCases
+        let steps = SetupStep.shown
         activity.update {
             $0.phase = .setup
             $0.headline = "Setting up Poki"
@@ -763,7 +784,7 @@ final class AppModel {
         }
     }
 
-    var setupComplete: Bool { SetupStep.allCases.allSatisfy(isDone) }
+    var setupComplete: Bool { SetupStep.shown.allSatisfy(isDone) }
 
     var activityProblem: String? { activity.lastError }
     var activitiesEnabled: Bool { activity.enabled }

@@ -10,13 +10,13 @@ struct SetupView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var scheme
     @State private var index: Int
-    private let steps = SetupStep.allCases
+    private let steps = SetupStep.shown
 
     init(start: Int) { _index = State(initialValue: start) }
 
     /// The first step not done, where setup opens.
     @MainActor static func firstOpen(_ model: AppModel) -> Int {
-        SetupStep.allCases.firstIndex { !model.isDone($0) } ?? 0
+        SetupStep.shown.firstIndex { !model.isDone($0) } ?? 0
     }
 
     private var step: SetupStep { steps[index] }

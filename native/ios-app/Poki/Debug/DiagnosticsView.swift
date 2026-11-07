@@ -20,6 +20,9 @@ struct DiagnosticsView: View {
                 ScrollView {
                     VStack(spacing: 0) {
                         logGroup
+                        // The in-process path's switch and probes (ESP-173, ESP-175), as they were in the
+                        // old Debug tab; a Section outside a List lays out as a plain stack.
+                        InProcessSection().padding(.top, 16)
                         loopbackGroup
                         checksGroup
                         holdGroup
