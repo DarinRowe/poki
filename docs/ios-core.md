@@ -12,6 +12,12 @@ MCP client ──HTTPS──▶ Cloudflare Worker (relay) ──WebSocket (phone
 Poki app ──TCP 10.7.0.1:* (loopback tunnel)──▶ the phone's own developer services ──▶ WebDriverAgent runner (127.0.0.1:8100)
 ```
 
+Known issue: PokiCore reaches the runner at 127.0.0.1:8100, but the runner listens on port 8100 on
+every network interface of the phone and asks for no credentials. While it runs, any device on the
+same network can take screenshots and tap, and PokiCore's approvals do not apply to those requests.
+Turn Poki on only on networks you trust. The planned fix is a pairing code between Poki and the
+runner (`native/ios-runner/README.md`).
+
 Three interfaces, each owned by one side:
 
 | Interface | Defined here, implemented by |
