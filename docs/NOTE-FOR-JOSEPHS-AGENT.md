@@ -54,7 +54,7 @@ All of it is new files under these paths, except a WebDriverAgent section in `TH
 | `native/launcher` | PokiLauncher (Rust, idevice): pairs, mounts the DDI, starts and supervises the runner | `dev/ios-core` 65f7595 |
 | `native/ios-runner` | WDA 16.15.3 submodule, branding, `PokiRunnerHost` | `dev/ios-runner` a3e80ea |
 | `deploy/cf-relay`, `native/ios/RelayCheck` | Workers relay and a client check | `dev/cf-relay` fb8876c |
-| `native/ios-gym` | Poki Gym: a simulator app with one screen per hard case for UI automation (animation that never idles, alerts, the paste prompt, long lists, sheets, late focus, dense and duplicated trees, a web view, a navigation stack), so look/do scenarios have a fixed target; `ios-gym.yml` builds it and its scorecard job runs PokiCore from the same branch through ten hard screens and three faults (all pass) | `dev/ios-gym` 943c4ab |
+| `native/ios-gym` | Poki Gym: a simulator app with one screen per hard case for UI automation (animation that never idles, alerts, the paste prompt, long lists, sheets, late focus, dense and duplicated trees, a web view, a navigation stack), so look/do scenarios have a fixed target; `ios-gym.yml` builds it and its scorecard job runs PokiCore from the same branch through ten hard screens and three faults (all pass) | `dev/ios-gym` 9cc5ff0 |
 | `docs/research-ax-tree-reliability.md` | What bounds accessibility tree reads under animation, and the options | `dev/ios-app` |
 | `deploy/proxy-modules` | Loopback modules for Surge, Loon, sing-box, Shadowrocket | `dev/ios-app` |
 | `docs/ios-core.md`, `docs/device-test-checklist.md`, `docs/production-bar.md`, `docs/release-review.md`, `CHANGELOG.md` | Spec, phone checklist, release notes | |

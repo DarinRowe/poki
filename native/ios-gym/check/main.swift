@@ -164,7 +164,7 @@ func ref(in answer: String, _ text: String, type: String? = nil, last: Bool = fa
 
 /// scroll_to as an agent uses it: PokiCore stops when an action's time runs out and says to call
 /// again to go on; the agent calls again until the text is found or the list is through.
-@MainActor func scrollTo(_ text: String, step: String, budget: Double = 30, max: Int = 8) async -> String {
+@MainActor func scrollTo(_ text: String, step: String, budget: Double = 30, max: Int = 20) async -> String {
     var answer = ""
     for i in 1...max {
         answer = await call(i == 1 ? step : "\(step) (again, \(i))", "do", ["actions": [["scroll_to": .string(text)]]], budget: budget)
@@ -238,7 +238,7 @@ if let cont = ref(in: intro, "Continue", type: "Button") {
 // 4. A long list: scroll_to by text, then tap.
 a = await open("list")
 let found = await scrollTo("Row 250", step: "scroll_to Row 250")
-check(found.contains("found at") || found.contains("Row 250"), "scroll_to finds Row 250")
+check(found.contains("found at") || found.contains("found by scroll_to"), "scroll_to finds Row 250")
 a = found.contains("Row 250") ? found : await call("look for Row 250", "look")
 a = await tap("Row 250", in: a, expect: "Row 250 tapped")
 let missing = await call("scroll_to a row that does not exist", "do", ["actions": [["scroll_to": ["text": "Row 9999", "max_swipes": 2]]]], budget: 30)
@@ -262,8 +262,18 @@ a = await open("dense")
 let dense = await call("look at 1,500 elements", "look", budget: 15)
 check(!dense.contains("HUNG"), "a dense tree is read")
 let foundButton = await scrollTo("Found", step: "scroll_to Found", budget: 40)
-a = foundButton.contains("Found") ? foundButton : await call("look for Found", "look", budget: 15)
-a = await tap("Found", in: a, type: "Button", expect: "Found tapped")
+// 1,500 cells come before the button, past what a listing shows; scroll_to's "found at [x, y, w, h]"
+// gives its frame, and an agent taps that point.
+if let r = foundButton.range(of: #"found at \[([0-9]+), ?([0-9]+), ?([0-9]+), ?([0-9]+)\]"#, options: .regularExpression) {
+    let n = foundButton[r].split(whereSeparator: { !$0.isNumber }).compactMap { Double($0) }
+    let point: JSON = [.number(n[0] + n[2] / 2), .number(n[1] + n[3] / 2)]
+    var after = await call("tap Found at its frame", "do", ["actions": [["tap": point]]])
+    if !after.contains("Found tapped") { after = await call("look after tapping Found", "look", budget: 15) }
+    check(after.contains("Found tapped"), "tapping \"Found\" at the frame scroll_to gave shows state \"Found tapped\"")
+} else {
+    a = foundButton.contains("Found") ? foundButton : await call("look for Found", "look", budget: 15)
+    a = await tap("Found", in: a, type: "Button", expect: "Found tapped")
+}
 
 // 8. Two decoys with the button's label and frame: the real button must still be tapped.
 a = await open("dup")
