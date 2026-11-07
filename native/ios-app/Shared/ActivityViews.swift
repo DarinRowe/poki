@@ -26,6 +26,8 @@ enum Brand {
     static let approval = Color(red: 1.0, green: 0.62, blue: 0.04)
     static let done = Color(red: 0.19, green: 0.82, blue: 0.35)
     static let problem = Color(red: 1.0, green: 0.80, blue: 0.0)
+    /// "Your turn": the person has to act. Purple, so it is neither the agent's blue nor approval orange.
+    static let you = Color(red: 0.75, green: 0.55, blue: 1.0)
 }
 
 /// Lock Screen padding (see the comment at the top).
@@ -42,6 +44,7 @@ extension PokiState {
         case .approval: Brand.approval
         case .problem: Brand.problem
         case .done: Brand.done
+        case .handoff: Brand.you
         case .idle: runnerPaused ? Color(white: 0.62) : Brand.done
         }
     }
@@ -54,6 +57,7 @@ extension PokiState {
         case .setup: String(localized: "Setup")
         case .problem: String(localized: "Problem")
         case .done: String(localized: "Done")
+        case .handoff: String(localized: "Your turn")
         case .idle: runnerPaused ? String(localized: "Idle") : String(localized: "Ready")
         }
     }
@@ -65,6 +69,7 @@ extension PokiState {
         case .setup: "checklist"
         case .problem: "exclamationmark.triangle.fill"
         case .done: "checkmark.circle.fill"
+        case .handoff: "person.fill"
         case .idle: runnerPaused ? "moon.zzz.fill" : "checkmark.circle.fill"
         }
     }
@@ -73,6 +78,7 @@ extension PokiState {
     var appLine: String? {
         switch phase {
         case .working, .approval, .done: app
+        case .handoff: handoff?.app ?? app
         default: nil
         }
     }
@@ -92,6 +98,38 @@ extension PokiState {
     }
 }
 
+extension PokiActivityAttributes.Handoff {
+    /// The headline: what the person has to do, in the agent's place.
+    var title: String {
+        switch kind {
+        case .runnerPasscode: String(localized: "Enter your passcode to start the runner")
+        case .passcode: String(localized: "Enter your passcode")
+        case .password: String(localized: "Fill in your password")
+        case .verification: String(localized: "Pass the verification yourself")
+        case .payment: String(localized: "Finish the payment yourself")
+        case .other: String(localized: "Do this step yourself")
+        }
+    }
+    /// The line under it: the agent's own note, or what happens next.
+    var detail: String {
+        if let text, !text.isEmpty { return text }
+        switch kind {
+        case .runnerPasscode: return String(localized: "iOS asks for it once after a restart. The agent waits.")
+        case .payment: return String(localized: "The agent does not pay for you. It waits, then carries on.")
+        default: return String(localized: "The agent can't act on this screen. It waits for you.")
+        }
+    }
+    var symbol: String {
+        switch kind {
+        case .runnerPasscode, .passcode: "lock.fill"
+        case .password: "key.fill"
+        case .verification: "checkmark.shield.fill"
+        case .payment: "creditcard.fill"
+        case .other: "person.fill"
+        }
+    }
+}
+
 extension PokiActivityAttributes.Event {
     var symbol: String {
         switch kind {
@@ -105,11 +143,14 @@ extension PokiActivityAttributes.Event {
         case .problem: "exclamationmark.triangle.fill"
         case .paired: "link"
         case .code: "number"
+        case .handoff: "person.fill"
+        case .resumed: "play.fill"
         }
     }
     var color: Color {
         switch kind {
-        case .started, .app, .code, .step: Brand.blue
+        case .started, .app, .code, .step, .resumed: Brand.blue
+        case .handoff: Brand.you
         case .finished, .approved, .paired: Brand.done
         case .denied, .expired: Color(white: 0.75)
         case .problem: Brand.problem
@@ -127,6 +168,7 @@ struct LockScreenView: View {
         Group {
             switch state.phase {
             case .approval: ActivityApprovalCard(state: state, island: false)
+            case .handoff: ActivityHandoffCard(state: state, island: false)
             case .pairing: ActivityPairingCard(state: state, island: false)
             case .setup: ActivitySetupCard(state: state, island: false)
             default: ActivityRunCard(state: state)
@@ -134,6 +176,7 @@ struct LockScreenView: View {
         }
         .foregroundStyle(.white)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .tapShield()
     }
 }
 
@@ -201,7 +244,7 @@ struct ActivityRunCard: View {
                 if let detail = state.detailLine {
                     DetailLine(state: state, text: detail).padding(.top, 3)
                 }
-                if tall || state.phase == .problem {
+                if tall {
                     Spacer(minLength: 8)
                     Footer(state: state)
                 }
@@ -256,9 +299,6 @@ struct Footer: View {
                     Meta(symbol: "clock", text: end.formatted(date: .omitted, time: .shortened))
                 }
                 Spacer(minLength: 4)
-            case .problem:
-                Spacer(minLength: 0)
-                OpenPokiButton()
             default:
                 Spacer(minLength: 0)
             }
@@ -308,18 +348,6 @@ struct StopButton: View {
             .background(.white.opacity(0.16), in: .capsule)
         }
         .buttonStyle(.plain)
-        .foregroundStyle(.white)
-        .fixedSize()
-    }
-}
-
-struct OpenPokiButton: View {
-    var body: some View {
-        Link(destination: URL(string: "poki://home")!) {
-            Text("Open Poki").font(.system(size: 13, weight: .semibold))
-                .padding(.horizontal, 12).frame(height: 28)
-                .background(.white.opacity(0.16), in: .capsule)
-        }
         .foregroundStyle(.white)
         .fixedSize()
     }
@@ -434,6 +462,68 @@ struct ApprovalButtons: View {
     }
 }
 
+// MARK: Your turn
+
+/// The agent handed this screen to the person: what to do, why, and Done to let the agent carry on.
+/// The island's large pop-up is the same card without the header.
+struct ActivityHandoffCard: View {
+    var state: PokiState
+    var island: Bool
+
+    var body: some View {
+        if let handoff = state.handoff {
+            VStack(alignment: .leading, spacing: 0) {
+                if !island { Header(state: state) { WaitingPill(since: handoff.since) }.padding(.bottom, 8) }
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: handoff.symbol)
+                        .font(.system(size: 15, weight: .semibold)).foregroundStyle(Brand.you)
+                        .frame(width: 22, height: 22)
+                        .background(Brand.you.opacity(0.16), in: .circle)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(handoff.title)
+                            .font(.system(size: 16, weight: .semibold))
+                            .lineLimit(2).minimumScaleFactor(0.85)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(handoff.detail)
+                            .font(.system(size: 13)).foregroundStyle(.white.opacity(0.7))
+                            .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                Button(intent: HandoffDoneIntent(handoffID: handoff.id)) {
+                    HStack(spacing: 5) {
+                        Image(systemName: "checkmark").font(.system(size: 12, weight: .bold))
+                        Text("Done, carry on").font(.system(size: 15, weight: .semibold))
+                    }
+                    .frame(maxWidth: .infinity).frame(height: island ? 32 : 36)
+                    .background(Brand.you, in: .capsule)
+                    .foregroundStyle(.black)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, island ? 8 : 10)
+            }
+        } else {
+            ActivityRunCard(state: state)
+        }
+    }
+}
+
+/// How long the agent has been waiting for the person.
+struct WaitingPill: View {
+    var since: Date
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "person.fill").font(.system(size: 10, weight: .bold))
+            Text(timerInterval: since...since.addingTimeInterval(12 * 3600), countsDown: false)
+                .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                .frame(width: 40, alignment: .leading)
+        }
+        .foregroundStyle(Brand.you)
+        .padding(.horizontal, 9).frame(height: 22)
+        .background(Brand.you.opacity(0.18), in: .capsule)
+        .lineLimit(1).fixedSize()
+    }
+}
+
 // MARK: Pairing
 
 struct ActivityPairingCard: View {
@@ -524,6 +614,7 @@ struct IslandLeading: View {
             .lineLimit(1)
         }
         .frame(maxHeight: .infinity, alignment: .center)
+        .tapShield()
     }
 }
 
@@ -535,6 +626,8 @@ struct IslandTrailing: View {
             switch state.phase {
             case .approval:
                 if let approval = state.approval { Countdown(until: approval.expires) } else { StatusPill(state: state) }
+            case .handoff:
+                if let handoff = state.handoff { WaitingPill(since: handoff.since) } else { StatusPill(state: state) }
             case .working where state.event == nil:
                 if let since = state.since {
                     Text(timerInterval: since...since.addingTimeInterval(12 * 3600), countsDown: false)
@@ -548,6 +641,7 @@ struct IslandTrailing: View {
             }
         }
         .frame(maxHeight: .infinity, alignment: .center)
+        .tapShield()
     }
 }
 
@@ -559,6 +653,7 @@ struct IslandBottom: View {
         Group {
             switch state.phase {
             case .approval: ActivityApprovalCard(state: state, island: true)
+            case .handoff: ActivityHandoffCard(state: state, island: true)
             case .pairing: ActivityPairingCard(state: state, island: true)
             case .setup: ActivitySetupCard(state: state, island: true)
             default: IslandSmall(state: state)
@@ -566,6 +661,7 @@ struct IslandBottom: View {
         }
         .foregroundStyle(.white)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .tapShield()
     }
 }
 
@@ -583,11 +679,7 @@ struct IslandSmall: View {
                 if let detail = state.detailLine { DetailLine(state: state, text: detail) }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            switch state.phase {
-            case .working: StopButton()
-            case .problem: OpenPokiButton()
-            default: EmptyView()
-            }
+            if state.phase == .working { StopButton() }
         }
     }
 }
@@ -606,6 +698,8 @@ struct CompactTrailing: View {
                         .multilineTextAlignment(.trailing)
                         .frame(width: 40, alignment: .trailing)
                 } else { glyph }
+            case .handoff:
+                Image(systemName: "person.fill").font(.system(size: 15, weight: .semibold)).foregroundStyle(Brand.you)
             case .pairing where state.pin != nil:
                 Text(state.pin ?? "").font(.system(size: 13, weight: .bold).monospacedDigit()).foregroundStyle(Brand.blue)
                     .fixedSize()
@@ -637,6 +731,9 @@ struct CompactLeading: View {
         if state.phase == .approval {
             Image(systemName: "hand.raised.fill").font(.system(size: 15, weight: .semibold)).foregroundStyle(Brand.approval)
                 .frame(width: 22, height: 22)
+        } else if state.phase == .handoff {
+            Image(systemName: state.handoff?.symbol ?? "person.fill").font(.system(size: 15, weight: .semibold)).foregroundStyle(Brand.you)
+                .frame(width: 22, height: 22)
         } else {
             BearMark(size: 22)
         }
@@ -650,6 +747,8 @@ struct MinimalView: View {
         switch state.phase {
         case .approval:
             Image(systemName: "hand.raised.fill").foregroundStyle(Brand.approval)
+        case .handoff:
+            Image(systemName: "person.fill").foregroundStyle(Brand.you)
         case .problem:
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Brand.problem)
         default:
@@ -659,6 +758,23 @@ struct MinimalView: View {
 }
 
 // MARK: Pieces
+
+/// Lays NoTapIntent under a view, so a tap on it is swallowed instead of opening Poki (the owner's
+/// rule: the Live Activity never pulls the person into the app). Controls on top keep their taps.
+/// There is no Link and no widgetURL anywhere in the activity.
+struct TapShield: ViewModifier {
+    func body(content: Content) -> some View {
+        content.background {
+            Button(intent: NoTapIntent()) { Color.black.opacity(0.001) }
+                .buttonStyle(.plain)
+                .accessibilityHidden(true)
+        }
+    }
+}
+
+extension View {
+    func tapShield() -> some View { modifier(TapShield()) }
+}
 
 /// The bear on its blue tile, like the app icon, inset so no part of it is clipped.
 struct BearMark: View {

@@ -28,6 +28,8 @@ final class LiveCore: CoreSession {
     func start() { core.start() }
     func stop() { core.stop(); continuation.yield(.relay(.off)) }
     func resolveApproval(id: String, approved: Bool) { core.resolveApproval(id: id, approved: approved) }
+    /// The person finished a handed-off screen (Done on the Live Activity): PokiCore lets inputs through again.
+    func handoffDone(id: String) { core.handoffDone(id: id) }
     func accessChanged() { core.accessChanged() }
 
     private static func map(_ event: CoreEvent) -> ShellEvent {
@@ -43,6 +45,8 @@ final class LiveCore: CoreSession {
         case .approvalRequested(let approval):
             return .approvalRequested(PendingApproval(id: approval.id, app: approval.app, summary: approval.summary, expires: approval.expires))
         case .approvalEnded(let id, let approved): return .approvalEnded(id: id, approved: approved)
+        case .handoffRequested(let id, let kind, let text, let app): return .handoffRequested(id: id, kind: kind, text: text, app: app)
+        case .handoffEnded(let id, let how): return .handoffEnded(id: id, how: how)
         }
     }
 }
@@ -67,6 +71,8 @@ final class AppCoreHost: CoreHost, @unchecked Sendable {
 
     func update(key: Curve25519.Signing.PrivateKey?, hashes: [String]) { lock.withLock { self.key = key; self.hashes = hashes } }
     func update(runner: RunnerState) { lock.withLock { self.runner = runner } }
+    /// The state as last given, without the wake side effect of `runnerState()` (tests).
+    var currentRunner: RunnerState { lock.withLock { runner } }
     func onRestart(_ action: @escaping @Sendable () -> Void) { lock.withLock { restart = action } }
     func onWake(_ action: @escaping @Sendable () -> Void) { lock.withLock { wake = action } }
     /// The runner was stopped while idle (or by the owner): the next tool call starts it again.
