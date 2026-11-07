@@ -8,6 +8,8 @@ Poki MCP uses [jkcoxson/idevice](https://github.com/jkcoxson/idevice) at commit 
 
 [native/bridge/src/stream.rs](native/bridge/src/stream.rs) adapts code from the pinned upstream [tools/src/coredevice_stream.rs](https://github.com/jkcoxson/idevice/blob/89702099f4d7552f704f93b4526756abda319ceb/tools/src/coredevice_stream.rs). The rest of the bridge calls upstream protocol APIs. The pinned [upstream license](https://github.com/jkcoxson/idevice/blob/89702099f4d7552f704f93b4526756abda319ceb/LICENSE.txt) remains applicable to that code.
 
+PokiLauncher ([native/launcher](native/launcher)), which the iPhone app links, builds against the same idevice revision with [native/patches/idevice-xctest-run-over-rsd.patch](native/patches/idevice-xctest-run-over-rsd.patch) applied. The patch adds `run_over_rsd` to `idevice/src/services/dvt/xctest/mod.rs`; it adapts the steps of upstream `XCUITestService::run` in the same file to an RSD tunnel the caller already holds. The pinned upstream MIT license applies to that code. [native/launcher/fetch-idevice.sh](native/launcher/fetch-idevice.sh) applies the patch to a separate copy in `.deps/idevice-launcher`, so setup's `.deps/idevice` stays unmodified.
+
 [native/bridge/src/pasteboard.rs](native/bridge/src/pasteboard.rs) also references the pinned upstream [pasteboard service protocol](https://github.com/jkcoxson/idevice/blob/89702099f4d7552f704f93b4526756abda319ceb/idevice/src/services/core_device/pasteboard_service.rs). Poki builds the upstream `idevice-tools` and `idevice_id` executables during setup; their dependencies are listed separately from those of Poki's native bridge in the [dependency inventory](docs/third-party-dependencies.md).
 
 ## Meta idb
@@ -28,7 +30,11 @@ The optional `bin/setup-channels` command downloads the unmodified [BlueBubbles 
 
 ## Appium WebDriverAgent
 
-The on-phone runner is built from [appium/WebDriverAgent](https://github.com/appium/WebDriverAgent) v16.15.3 (commit `02cb92f0e93c8b021443bcbb8eeb80932c113220`), vendored as a git submodule at [native/ios-runner/WebDriverAgent](native/ios-runner/WebDriverAgent). WebDriverAgent is BSD-3-Clause licensed (Copyright (c) 2015-present, Facebook, Inc.); its complete license is in the submodule's [LICENSE](https://github.com/appium/WebDriverAgent/blob/02cb92f0e93c8b021443bcbb8eeb80932c113220/LICENSE) and is shipped unchanged with the source. Poki's build only adds branding (icon, display name, launch screen) to the built app; WebDriverAgent's code is not modified.
+The on-phone runner is built from [appium/WebDriverAgent](https://github.com/appium/WebDriverAgent) v16.15.3 (commit `02cb92f0e93c8b021443bcbb8eeb80932c113220`), vendored as a git submodule at [native/ios-runner/WebDriverAgent](native/ios-runner/WebDriverAgent). WebDriverAgent is BSD-3-Clause licensed (Copyright (c) 2015-present, Facebook, Inc.); its complete license is in the submodule's [LICENSE](https://github.com/appium/WebDriverAgent/blob/02cb92f0e93c8b021443bcbb8eeb80932c113220/LICENSE) and is shipped unchanged with the source. The submodule itself is not edited. Poki changes WebDriverAgent's code and the built runner app at build time, in three places:
+
+- [native/ios-runner/patches/wda-poki-runner.patch](native/ios-runner/patches/wda-poki-runner.patch) modifies `WebDriverAgentRunner/UITestingUITests.m`. The runner's test starts WebDriverAgent's server only when the Poki launcher sets `POKI_LAUNCHER`, and while it runs it shows a "Poki is using this iPhone" screen. The build applies the patch before `xcodebuild` (`.github/workflows/ios-runner.yml`). The file keeps its original copyright header.
+- [native/ios-runner/host](native/ios-runner/host) builds PokiRunnerHost, a library that `install.sh` adds to the built runner app and loads before XCTRunner's own code. Opened by hand, the runner then starts no test and sends people to Poki.
+- [native/ios-runner/branding](native/ios-runner/branding) replaces the built app's icon, display name and launch screen.
 
 ## JavaScript packages
 
@@ -50,7 +56,7 @@ The upstream component notices are retained in [third_party/NOTICE.sharp-libvips
 
 ## Rust packages
 
-The native bridge directly depends on [Tokio](https://github.com/tokio-rs/tokio), [Serde](https://github.com/serde-rs/serde), [serde_json](https://github.com/serde-rs/json), [rust-plist](https://github.com/ebarnard/rust-plist), [futures-util](https://github.com/rust-lang/futures-rs), [uuid](https://github.com/uuid-rs/uuid) and idevice. Their licenses and those of every resolved normal/build dependency in the macOS arm64 graphs are listed in the [Rust inventory](docs/third-party-dependencies.md#rust-packages). It identifies packages used by the bridge, the upstream tools, or both. Cryptographic and other bundled code retains the notices supplied by its owning crate; the combined AWS-LC, BoringSSL and OpenSSL terms from the checked `aws-lc-sys` packages are also retained in [third_party/LICENSE.aws-lc](third_party/LICENSE.aws-lc).
+The native bridge directly depends on [Tokio](https://github.com/tokio-rs/tokio), [Serde](https://github.com/serde-rs/serde), [serde_json](https://github.com/serde-rs/json), [rust-plist](https://github.com/ebarnard/rust-plist), [futures-util](https://github.com/rust-lang/futures-rs), [uuid](https://github.com/uuid-rs/uuid) and idevice. PokiLauncher directly depends on idevice (with the patch above), Tokio, Serde, serde_json and rust-plist, and the iPhone app ships it with its whole `aarch64-apple-ios` graph. Their licenses and those of every resolved normal/build dependency in the macOS arm64 graphs and the launcher's iOS graph are listed in the [Rust inventory](docs/third-party-dependencies.md#rust-packages). It identifies packages used by the bridge, the upstream tools, or both. Cryptographic and other bundled code retains the notices supplied by its owning crate; the combined AWS-LC, BoringSSL and OpenSSL terms from the checked `aws-lc-sys` packages are also retained in [third_party/LICENSE.aws-lc](third_party/LICENSE.aws-lc).
 
 ## External open-source tools
 

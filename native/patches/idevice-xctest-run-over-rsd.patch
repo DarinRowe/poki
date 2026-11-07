@@ -1,3 +1,9 @@
+Poki's patch to jkcoxson/idevice at commit 89702099f4d7552f704f93b4526756abda319ceb,
+https://github.com/jkcoxson/idevice, MIT license (LICENSE.txt in that repository).
+It adds run_over_rsd to idevice/src/services/dvt/xctest/mod.rs, adapted from XCUITestService::run in
+the same file, so PokiLauncher can run the runner's test over an RSD tunnel it already holds.
+native/launcher/fetch-idevice.sh applies it to .deps/idevice-launcher.
+
 --- a/idevice/src/services/dvt/xctest/mod.rs
 +++ b/idevice/src/services/dvt/xctest/mod.rs
 @@ -2150,6 +2150,89 @@

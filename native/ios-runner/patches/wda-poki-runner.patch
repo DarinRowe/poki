@@ -1,3 +1,9 @@
+Poki's patch to appium/WebDriverAgent v16.15.3 (commit 02cb92f0e93c8b021443bcbb8eeb80932c113220),
+https://github.com/appium/WebDriverAgent, BSD-3-Clause, Copyright (c) 2015-present, Facebook, Inc.
+It changes WebDriverAgentRunner/UITestingUITests.m: the runner's test serves only when the Poki
+launcher sets POKI_LAUNCHER, and shows Poki's in-use screen while it runs. The file keeps its
+original copyright header. .github/workflows/ios-runner.yml applies it before the build.
+
 diff --git a/WebDriverAgentRunner/UITestingUITests.m b/WebDriverAgentRunner/UITestingUITests.m
 index 5ffafa86..770ade81 100644
 --- a/WebDriverAgentRunner/UITestingUITests.m
