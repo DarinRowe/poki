@@ -115,3 +115,16 @@ The prebuilt macOS package includes the native bridge, OCR and simulator helpers
 ## all-contributors thanks wall
 
 [bin/thanks-wall.mjs](bin/thanks-wall.mjs) adapts the list layout and marker injection (`chunk`, `formatLine`, `generateContributorsList`, `injectListBetweenTags`, the avatar block template, and `formatAvatarUrl`) from [all-contributors/cli](https://github.com/all-contributors/cli/tree/ea23f04fd76498dd7c21717d715119d337e54012/src/generate), copyright 2016 Kent C. Dodds, 2019 Jake Bolam, 2020 Maximilian Berkmann, under the [MIT license](third_party/LICENSE.all-contributors-cli). Poki reads issue and pull request authors through the GitHub CLI instead of a `.all-contributorsrc` file, drops contribution badges and the table footer, and fails when a README is missing its markers.
+
+## Poki Setup (desktop/)
+
+The desktop app and its core crate ([desktop/](desktop/), AGPL-3.0-only) are written in Rust and TypeScript against these works:
+
+- **GSA sign-in and anisette protocol.** [desktop/core/src/apple/gsa.rs](desktop/core/src/apple/gsa.rs), [srp.rs](desktop/core/src/apple/srp.rs) and [anisette.rs](desktop/core/src/apple/anisette.rs) follow Apple's GrandSlam flow (SRP-6a with Apple's `noUsernameInX` variant, the `spd` and `et` decryption, 2FA, the anisette v3 provisioning session) as implemented in [SideStore/apple-private-apis](https://github.com/SideStore/apple-private-apis) (icloud-auth, omnisette; MPL-2.0) and [Dadoum/Sideloader](https://github.com/Dadoum/Sideloader) (GPL-3.0-only). No source is copied; the request and response shapes are the same because Apple's servers define them.
+- **Developer portal.** [desktop/core/src/apple/portal.rs](desktop/core/src/apple/portal.rs) uses the `developerservices2` QH65B2 actions and parameters as documented by Sideloader's `developersession.d` (GPL-3.0-only) and [SideStore/AltSign](https://github.com/SideStore/AltSign) (AGPL-3.0).
+- **Entitlement rule.** [desktop/core/src/sign/entitlements.rs](desktop/core/src/sign/entitlements.rs) applies AltSign's rule for merging a profile's entitlements with the app's (AGPL-3.0).
+- **Signing.** [apple-codesign](https://github.com/indygreg/apple-platform-rs) 0.29 (MPL-2.0) signs bundles; Apple's corecrypto and ldid are not used or shipped.
+- **Device.** [jkcoxson/idevice](https://github.com/jkcoxson/idevice) 0.1.68 (MIT) for usbmuxd, lockdown, AMFI, misagent, installation_proxy, house_arrest, the image mounter, syslog and crash reports.
+- **Apple root certificate.** `desktop/core/certs/AppleRootCA.der` is Apple Inc.'s public root certificate, used only to pin TLS to Apple's hosts.
+- **Type.** Geist by Vercel, SIL Open Font License 1.1 ([desktop/app/public/fonts/LICENSE-Geist.txt](desktop/app/public/fonts/LICENSE-Geist.txt)).
+- **Shell.** [Tauri 2](https://tauri.app) (MIT/Apache-2.0) with its opener, dialog, clipboard-manager and log plugins; window-vibrancy (MIT); React (MIT); Vite (MIT). Rust crate licences are listed by `cargo license` in `desktop/`.

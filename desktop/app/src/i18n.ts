@@ -1,0 +1,102 @@
+// Two languages, the same two as the iPhone app. Keys are English; zh-Hans overrides.
+import { useSyncExternalStore } from "react";
+
+export type Lang = "en" | "zh-Hans";
+const zh: Record<string, string> = {
+  "Set up": "安装",
+  "Phones": "手机",
+  "Apple ID": "Apple ID",
+  "Relay": "中继",
+  "Connectors": "连接器",
+  "Debug": "调试",
+  "Settings": "设置",
+  "Set up Poki on this iPhone": "在这台 iPhone 上安装 Poki",
+  "Plug the iPhone in with a cable and unlock it.": "用数据线连接 iPhone 并解锁。",
+  "Looking for an iPhone…": "正在查找 iPhone…",
+  "Set up Poki": "安装 Poki",
+  "Setting up…": "正在安装…",
+  "Sign in with your Apple ID first.": "请先登录 Apple ID。",
+  "Sign in": "登录",
+  "Sign out": "退出登录",
+  "Password": "密码",
+  "Keep me signed in for weekly renewal": "保持登录以便每周自动续签",
+  "Verification code": "验证码",
+  "Apple sent a code to your devices.": "Apple 已向你的设备发送验证码。",
+  "Apple sent a code by text message.": "Apple 已通过短信发送验证码。",
+  "Continue": "继续",
+  "Team": "团队",
+  "free, Poki is signed 7 days at a time": "免费账号，Poki 每 7 天续签一次",
+  "paid": "付费账号",
+  "Done": "完成",
+  "Renew": "续签",
+  "Renewing…": "正在续签…",
+  "Forget": "移除",
+  "days left": "天后到期",
+  "expired": "已过期",
+  "Show pairing QR": "显示配对二维码",
+  "Scan this in Poki on the iPhone (same Wi-Fi).": "在 iPhone 上用 Poki 扫描（同一 Wi-Fi）。",
+  "Stop": "停止",
+  "No iPhone set up from this computer yet.": "这台电脑还没有安装过任何 iPhone。",
+  "Your relay": "你的中继",
+  "Deploy to my Cloudflare account": "部署到我的 Cloudflare 账号",
+  "Cloudflare API token": "Cloudflare API 令牌",
+  "Deploy": "部署",
+  "Deploying…": "正在部署…",
+  "Check": "检查",
+  "Answering": "正常",
+  "Not answering": "无响应",
+  "Show QR for the phone": "显示给手机扫的二维码",
+  "Add": "添加",
+  "Name": "名称",
+  "Connector link": "连接器链接",
+  "Snippets": "配置片段",
+  "Copy": "复制",
+  "Copied": "已复制",
+  "System log": "系统日志",
+  "Start": "开始",
+  "Filter": "过滤",
+  "Support bundle": "支持包",
+  "Save support bundle…": "保存支持包…",
+  "Mount developer disk image": "挂载开发者磁盘映像",
+  "Language": "语言",
+  "Anisette": "Anisette",
+  "This Mac": "这台 Mac",
+  "Server": "服务器",
+  "Check for updates": "检查更新",
+  "Up to date": "已是最新",
+  "Update available": "有可用更新",
+  "About": "关于",
+  "Not signed in": "未登录",
+  "Developer Mode": "开发者模式",
+  "on": "已开启",
+  "off": "未开启",
+  "paired": "已配对",
+  "not paired": "未配对",
+  "Pair": "配对",
+  "Turn on": "开启",
+  "Connect the iPhone with a cable to set it up; this works on every iOS version.": "用数据线连接 iPhone 即可安装；支持所有 iOS 版本。",
+  "Poki is installed.": "Poki 已安装。",
+  "Enter the code": "输入验证码",
+  "Phone": "手机",
+  "Pairing": "配对",
+  "Account": "账号",
+  "Release": "版本",
+  "Signing": "签名",
+  "Install": "安装",
+  "Pairing file": "配对文件",
+};
+const listeners = new Set<() => void>();
+let lang: Lang = (localStorage.getItem("lang") as Lang) || (navigator.language.toLowerCase().startsWith("zh") ? "zh-Hans" : "en");
+document.documentElement.dataset.lang = lang;
+export function setLang(l: Lang) {
+  lang = l;
+  localStorage.setItem("lang", l);
+  document.documentElement.dataset.lang = l;
+  listeners.forEach((f) => f());
+}
+export function useLang(): Lang {
+  return useSyncExternalStore((f) => { listeners.add(f); return () => listeners.delete(f); }, () => lang);
+}
+export function t(key: string): string {
+  return lang === "zh-Hans" ? zh[key] ?? key : key;
+}

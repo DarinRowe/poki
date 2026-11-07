@@ -19,3 +19,5 @@ anyhow.workspace = true
 clap = { version = "4", features = ["derive"] }
 tracing-subscriber.workspace = true
 rpassword = "7"
+qrcode.workspace = true
+serde.workspace = true
