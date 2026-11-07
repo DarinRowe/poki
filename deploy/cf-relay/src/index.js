@@ -36,7 +36,7 @@ const DEFAULTS = {
   LEASE: 25, // requests a device object takes from the daily budget at a time
   ACCESS_TTL: 3_600,
   REFRESH_TTL: 30 * 86_400,
-  REDIRECT_HOSTS: 'claude.ai,claude.com,chatgpt.com,chat.openai.com,localhost,127.0.0.1,www.cursor.com',
+  REDIRECT_HOSTS: 'claude.ai,claude.com,chatgpt.com,chat.openai.com,localhost,127.0.0.1,www.cursor.com,poke.com',
 };
 const limit = (env, name) => (env[name] !== undefined && env[name] !== '' ? (typeof DEFAULTS[name] === 'number' ? Number(env[name]) : env[name]) : DEFAULTS[name]);
 

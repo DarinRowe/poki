@@ -33,7 +33,7 @@ Routing is by path on one hostname, so the relay works on a `workers.dev` addres
 
 The connector URL, meaning label plus secret, is the credential. The phone makes that secret, and the Worker never stores it. claude.ai requires OAuth before it will add a remote MCP, so the Worker runs the smallest compliant authorization server for each connector URL:
 
-- **Metadata and registration.** Both are stateless. The `client_id` is an HMAC-signed blob holding the label, `sha256(secret)`, the redirect URIs and the client name. Redirect URIs must be https on `REDIRECT_HOSTS`, or http on loopback. `www.cursor.com` is there for Grok Bot, whose MCP client registers a callback on it.
+- **Metadata and registration.** Both are stateless. The `client_id` is an HMAC-signed blob holding the label, `sha256(secret)`, the redirect URIs and the client name. Redirect URIs must be https on `REDIRECT_HOSTS`, or http on loopback. `www.cursor.com` is there for Grok Bot, whose MCP client registers a callback on it. `poke.com` is there for Poke, which does the same. The relay speaks Streamable HTTP only (`POST /mcp`) and does not support SSE.
 - **`/authorize`.** It asks the connected phone whether `sha256(secret)` is in its `access` list. If yes, it grants at once with a 302 carrying the code. If no, it returns `access_denied`; if the phone is offline, it returns 503. Codes are signed, bound to the client, the redirect and the PKCE challenge, and expire in 60 s.
 - **`/token`.** It checks PKCE and issues signed tokens bound to the label and `sha256(secret)`: access tokens last 1 h and refresh tokens 30 d. Nothing is stored.
 - **Revocation.** Every MCP request also checks the token's secret hash against the phone's live `access` list. Revoking a secret on the phone therefore ends every token issued for it at once.
@@ -57,7 +57,7 @@ Setting `ALLOW_SECRET_ONLY=1` also accepts MCP requests with no `Authorization` 
 | Plain text | `LABEL_DAILY` | `5000` (per label per UTC day) |
 | Plain text | `GLOBAL_DAILY` | `8000` (all labels per UTC day) |
 | Plain text | `GLOBAL_DAILY_SECONDS` | `80000` (estimated Durable Object awake seconds per UTC day) |
-| Plain text | `REDIRECT_HOSTS` | `claude.ai,claude.com,chatgpt.com,chat.openai.com,localhost,127.0.0.1,www.cursor.com` |
+| Plain text | `REDIRECT_HOSTS` | `claude.ai,claude.com,chatgpt.com,chat.openai.com,localhost,127.0.0.1,www.cursor.com,poke.com` |
 
 **Migration:** tag `v1`, `new_sqlite_classes = ["DeviceRelay", "Budget"]`.
 **Compatibility date:** `2025-10-01`.
@@ -80,7 +80,7 @@ Script upload metadata for the API (`PUT /accounts/{account}/workers/scripts/pok
     {"type": "plain_text", "name": "LABEL_DAILY", "text": "5000"},
     {"type": "plain_text", "name": "GLOBAL_DAILY", "text": "8000"},
     {"type": "plain_text", "name": "GLOBAL_DAILY_SECONDS", "text": "80000"},
-    {"type": "plain_text", "name": "REDIRECT_HOSTS", "text": "claude.ai,claude.com,chatgpt.com,chat.openai.com,localhost,127.0.0.1,www.cursor.com"}
+    {"type": "plain_text", "name": "REDIRECT_HOSTS", "text": "claude.ai,claude.com,chatgpt.com,chat.openai.com,localhost,127.0.0.1,www.cursor.com,poke.com"}
   ],
   "migrations": {"new_tag": "v1", "new_sqlite_classes": ["DeviceRelay", "Budget"]},
   "observability": {"enabled": false}
