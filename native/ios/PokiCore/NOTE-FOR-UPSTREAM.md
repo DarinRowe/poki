@@ -53,9 +53,24 @@ this round, each with a unit test:
 6. A tap on a full-screen container went to its centre silently; the answer now says so. A new
    screen says its numbers start from 1 again.
 
-Not done (out of scope or not yet): a `back` action, a `collect` or `expect` field, a health line
-in every answer, a `recover` action, de-duplicating repeated elements, `clear: true` verification,
-waiting for focus before typing, and redaction of sensitive text (Zhehan: out of scope for now).
+Added after that (Nov 7, 1:50 to 2:30 am ET, CI green, not yet on a phone), from the owner's rule
+that no answer may halt the agent and from the first Poki Gym runs (`native/ios-gym`):
+
+7. An answer that carries a read is never `isError`; the `error:` line says what went wrong. A busy
+   runner answers `not_sent` with the picture (the screenshot is served apart from the queue); a
+   starting runner says to call again; a refused runner says to call again in 10 s.
+8. A hand-off channel to the owner for steps the model will not do itself: `{handoff: {kind, text}}`
+   raises `CoreEvent.handoffRequested`, input is held until `PokiCore.handoffDone(id:)` (the app's
+   "Your turn" Done) or `{handoff: false}`, every answer carries a `handoff:` line, and
+   `{wait_until: {handoff_done: true}}` waits for it.
+9. Tree reads need no WDA session; after a timed-out read the next asks for half the snapshot depth
+   (min 12) and says so; `screen: moving` when the picture changed around a late tree.
+10. `clear: true` is checked, typing waits up to 2 s for focus, `{back: true}`, an element listed
+    twice is listed once, a tap on a container names its buttons, and a fresh launch survives an app
+    that takes over 4 s to end.
+
+Still not done: a `collect` or `expect` field, a `recover` action, and redaction of sensitive text
+(Zhehan: out of scope for now).
 
 ## How the two MCPs could unify
 

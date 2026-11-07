@@ -1,6 +1,6 @@
 # Note for Joseph's agent: Poki on the iPhone, standalone (branch `dev/ios-standalone`)
 
-Written Nov 7 2026, 1:30 am ET, for Joseph and the agent working for him. Zhehan is away and cannot
+Written Nov 7 2026, 1:30 am ET, updated 3:05 am ET, for Joseph and the agent working for him. Zhehan is away and cannot
 test further builds, so everything from this round is on this branch. It was developed on Zhehan's
 fork (ZhehanZhang/poki-remote) and consolidated here; nothing on `main` was changed and no PR is open.
 The companion branch `dev/mcp-agent-tools` carries the matching work on the Node MCP; its note is
@@ -13,14 +13,16 @@ The companion branch `dev/mcp-agent-tools` carries the matching work on the Node
   (GitHub shows "Run workflow" only once a workflow file is on the default branch), and `release.yml`
   runs on an `ios-vX.Y.Z` tag, so it never collides with Poki's own `vX.Y.Z` releases.
 - Checks you can run without a phone:
-  - PokiCore: `cd native/ios/PokiCore && swift test` (Linux or macOS; about 80 tests plus a soak).
+  - PokiCore: `cd native/ios/PokiCore && swift test` (Linux or macOS; 93 tests plus a soak).
   - PokiLauncher: clone `jkcoxson/idevice` at `89702099f4d7552f704f93b4526756abda319ceb` into
     `.deps/idevice`, apply `native/patches/idevice-xctest-run-over-rsd.patch`, then
     `cd native/launcher && cargo test`.
   - Relay: `cd deploy/cf-relay && npm ci && npx vitest run`.
   - App: `native/ios-app/scripts/make-assets.sh && xcodegen generate --spec native/ios-app/project.yml`,
     then build the `Poki` scheme (see `.github/workflows/ios-app.yml` for the exact unsigned build and
-    the simulator screenshots).
+    the simulator screenshots, plus the app's unit tests against a fake launcher).
+  - Poki Gym: `xcodegen generate --spec native/ios-gym/project.yml`, build `PokiGym` for the
+    simulator (`.github/workflows/ios-gym.yml`).
 - Evidence rule used so far: a claim about the phone counts only when it was seen on a real device;
   simulator-only facts are listed in `native/ios/PokiCore/UNVERIFIED.md`.
 
@@ -47,11 +49,13 @@ All of it is new files under these paths, except a WebDriverAgent section in `TH
 
 | Path | What | Fork branch it came from (final commit) |
 |---|---|---|
-| `native/ios-app` | The app (0.2.3), including the Live Activity | `dev/ios-app` 485f1fc, `dev/live-activity` 421c214 |
-| `native/ios/PokiCore` | The on-phone MCP (`look`, `do`, `status`); its own note is `native/ios/PokiCore/NOTE-FOR-UPSTREAM.md` | `dev/ios-core` e822e43 |
-| `native/launcher` | PokiLauncher (Rust, idevice): pairs, mounts the DDI, starts and supervises the runner | `dev/ios-core` |
+| `native/ios-app` | The app (0.2.3 plus the Nov 7 hand-off work), including the Live Activity | `dev/ios-app` c58d278, `dev/live-activity` 8654a1d |
+| `native/ios/PokiCore` | The on-phone MCP (`look`, `do`, `status`); its own note is `native/ios/PokiCore/NOTE-FOR-UPSTREAM.md` | `dev/ios-core` 0d1be4b |
+| `native/launcher` | PokiLauncher (Rust, idevice): pairs, mounts the DDI, starts and supervises the runner | `dev/ios-core` 65f7595 |
 | `native/ios-runner` | WDA 16.15.3 submodule, branding, `PokiRunnerHost` | `dev/ios-runner` a3e80ea |
 | `deploy/cf-relay`, `native/ios/RelayCheck` | Workers relay and a client check | `dev/cf-relay` fb8876c |
+| `native/ios-gym` | Poki Gym: a simulator app with one screen per hard case for UI automation (animation that never idles, alerts, the paste prompt, long lists, sheets, late focus, dense and duplicated trees, a web view, a navigation stack), so look/do scenarios have a fixed target | `dev/ios-gym` 306d74e |
+| `docs/research-ax-tree-reliability.md` | What bounds accessibility tree reads under animation, and the options | `dev/ios-app` |
 | `deploy/proxy-modules` | Loopback modules for Surge, Loon, sing-box, Shadowrocket | `dev/ios-app` |
 | `docs/ios-core.md`, `docs/device-test-checklist.md`, `docs/production-bar.md`, `docs/release-review.md`, `CHANGELOG.md` | Spec, phone checklist, release notes | |
 
@@ -71,6 +75,41 @@ needs a decision before anything ships from this repo.
 Details per round: `native/ios-app/CHANGELOG-round.md`. What only the phone can confirm:
 `native/ios/PokiCore/UNVERIFIED.md`, `docs/device-test-checklist.md`.
 
+## The owner's rules for this layer (Nov 7 2026)
+
+1. The runner never crashes or wedges by itself, whatever the task or its length; only the owner's
+   Stop or the agent withdrawing ends it, and it can always return up-to-date information.
+2. The tree is readable at any moment, even under animation that never finishes, cheap on the
+   device, and it matches the screenshot. The tree stays the primary source.
+3. The MCP never stalls the agent. "The animation is not over, you cannot read the tree" is a
+   forbidden answer: while the runner is up and a screenshot is possible, every call answers with the
+   picture and something to act on. Success rate under hard conditions is the metric.
+4. The first runner start after a restart may need the owner's passcode. It is detected and shown on
+   the Live Activity, the agent reads a plain "starting" meanwhile, and the launcher waits up to 5 min.
+5. Handing a step to the owner (a verification, a password, a payment) is the agent's call: it
+   hands the screen over through the Live Activity ("Your turn" with a Done button), input pauses,
+   reads keep working, and the agent keeps polling. The sensitive-action approvals stay as built.
+6. All of it works both with the Poki agent in this repo and with a raw agent such as Claude
+   connected straight to the MCP.
+
+## What landed after 0.2.3 (Nov 7, not yet on a phone)
+
+- **Never-halt answers** (PokiCore): an answer that carries a read is never `isError` (an `error:`
+  line says what went wrong); a busy runner answers `not_sent` with the picture; a starting runner
+  says to call again; a refused runner says to call again in 10 s.
+- **Hand-off channel**: `do` with `{handoff: {kind, text}}` raises `CoreEvent.handoffRequested`, the
+  app shows "Your turn", input is held until `PokiCore.handoffDone(id:)` or `{handoff: false}`;
+  every answer and `status` carry a `handoff:` line; `{wait_until: {handoff_done: true}}`.
+- **Tree reads**: no WDA session needed (`/source` and `/wda/activeAppInfo` are sessionless); after a
+  timed-out read the next asks for half the snapshot depth (min 12) and says so; `screen: moving`
+  when the picture changed around a late tree. `POKI_AX_DEADLINE` sets the read deadline.
+- **Fixes**: `clear: true` is checked; typing waits up to 2 s for focus; `{back: true}`; duplicates
+  listed once; a tap on a container names the elements inside it; a fresh launch survives an app
+  that takes over 4 s to end.
+- **Launcher and app**: the passcode wait (`code passcode` after 12 s) becomes a "Your turn" card;
+  tapping the Live Activity never opens Poki; iOS 27 corner margins; loopback watched in the
+  background; app unit tests.
+
 ## Open problems, in order of pain
 
 1. **Tunnel drops.** The XCTest runner dies when the developer connection does, and that connection
@@ -79,8 +118,9 @@ Details per round: `native/ios-app/CHANGELOG-round.md`. What only the phone can 
    through the tunnel, Surge on-demand rules, checking whether Focus/Bedtime suspends the proxy.
 2. **Tree reads under animation.** WDA's snapshot waits for the app to idle; JD's homepage and a
    system paste alert never idle. PokiCore e822e43 keeps the session when a read times out and moves
-   WDA's active-app detection point to mid-screen; idle timeouts near zero and alert detection before
-   slow calls are still to do.
+   WDA's active-app detection point to mid-screen; the Nov 7 work reads without a session, backs off
+   the snapshot depth and marks a moving screen. Alert detection before slow calls is still to do;
+   `docs/research-ax-tree-reliability.md` lists the options.
 3. **`via: "paste"`** inserted the owner's clipboard instead of the text once. Fixed in PokiCore
    e822e43 (write verified, clipboard restored only once the field shows the text), not yet seen on
    the phone.
