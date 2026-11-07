@@ -141,6 +141,18 @@ public final class GymScorecard {
 
     /// A system permission alert ("X Would Like to Send You Notifications") sits over every app until
     /// it is answered; an agent taps Don't Allow. Returns the read after it, or the answer as it was.
+    /// A first-run tip (Safari's TipView with Close) or a What's New sheet (Continue) over an app's
+    /// screen: an agent dismisses it and reads again. Returns the read after it, or the answer as it was.
+    func dismissTip(_ answer: String) async -> String {
+        if answer.contains("TipView"), let close = ref(in: answer, "Close", type: "Button") {
+            return await call("tap Close on the tip", "do", ["actions": [["tap": .number(Double(close))], ["wait_until": ["settled": true, "ms": 1500]]]])
+        }
+        if answer.contains("What’s New") || answer.contains("What's New"), let cont = ref(in: answer, "Continue", type: "Button") {
+            return await call("tap Continue on the What's New sheet", "do", ["actions": [["tap": .number(Double(cont))], ["wait_until": ["settled": true, "ms": 2000]]]])
+        }
+        return answer
+    }
+
     func dismissSystemAlert(_ answer: String) async -> String {
         guard answer.contains("Would Like") || answer.contains("Don’t Allow") || answer.contains("Don't Allow") else { return answer }
         guard let no = ref(in: answer, "Don’t Allow", type: "Button") ?? ref(in: answer, "Don't Allow", type: "Button") else { return answer }
@@ -528,7 +540,12 @@ public final class GymScorecard {
             }
             if ref(in: loaded, "Example Domain") != nil {
                 check(true, "the page loads and its text is in the tree")
-                let link = await scrollTo("Learn more", step: "scroll_to the link's text", budget: 30, max: 3)
+                var link = await scrollTo("Learn more", step: "scroll_to the link's text", budget: 30, max: 3)
+                // Safari's first-run tip (View Bookmarks, Share Menu...) can come up over the page.
+                if link.contains("TipView") {
+                    _ = await dismissTip(link)
+                    link = await scrollTo("Learn more", step: "scroll_to the link's text (after the tip)", budget: 30, max: 3)
+                }
                 check(link.contains("found at") || link.contains("found by scroll_to") || ref(in: link, "Learn more") != nil, "scroll_to finds page text in Safari")
                 var page = link
                 if ref(in: page, "Learn more") == nil { page = await call("look (full) for the link", "look", ["full": true]) }
@@ -575,7 +592,12 @@ public final class GymScorecard {
         if cellRef != nil {
             check(openedPhoto.contains("screen_changed: true"), "tapping a grid cell opens the photo (screen changed)")
             let backToGrid = await call("back to the grid", "do", ["actions": [["back": true], ["wait_until": ["settled": true, "ms": 2500]]]])
-            let grid = (ref(in: backToGrid, "Photo,", type: "Image") ?? ref(in: backToGrid, "Library", type: "Button")) != nil ? backToGrid : await call("look (full) at the grid", "look", ["full": true])
+            var grid = (ref(in: backToGrid, "Photo,", type: "Image") ?? ref(in: backToGrid, "Library", type: "Button")) != nil ? backToGrid : await call("look (full) at the grid", "look", ["full": true])
+            // The What's New sheet can slide up late, over the grid.
+            for _ in 1...2 where (ref(in: grid, "Photo,", type: "Image") ?? ref(in: grid, "Library", type: "Button")) == nil && ref(in: grid, "Continue", type: "Button") != nil {
+                _ = await dismissTip(grid)
+                grid = await call("look (full) at the grid (after the sheet)", "look", ["full": true])
+            }
             check((ref(in: grid, "Photo,", type: "Image") ?? ref(in: grid, "Library", type: "Button")) != nil, "back returns to the photo grid")
         } else { check(false, "a photo cell or the Library grid is listed") }
 

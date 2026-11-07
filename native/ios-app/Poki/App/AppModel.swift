@@ -103,6 +103,9 @@ final class AppModel {
         await core.callTool(name, arguments: arguments)
     }
 
+    /// The gym probe answers approvals itself: with no session on, `handle` keeps them off the screen.
+    var onProbeApproval: ((PendingApproval) -> Void)?
+
     /// The chat watches the steps and approvals of the task it runs.
     var onShellEvent: ((ShellEvent) -> Void)?
 
@@ -626,6 +629,7 @@ final class AppModel {
     }
 
     private func handle(_ event: ShellEvent) {
+        if case .approvalRequested(let approval) = event, let probe = onProbeApproval { probe(approval) }
         // Events after Turn off (the core's own "stopped") are not for the screen.
         guard sessionOn else { return }
         onShellEvent?(event)
