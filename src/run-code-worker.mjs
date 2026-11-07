@@ -62,7 +62,10 @@ async function run() {
   const fn = new vm.Script(`(${code})`).runInContext(context);
   const result = await fn();
   // The return value re-enters the daemon as a string, so a context-realm object never crosses back.
-  return JSON.stringify(result ?? null);
+  const resultJson = JSON.stringify(result ?? null);
+  // A function or symbol has no JSON form; say so instead of sending the daemon nothing to parse.
+  if (resultJson === undefined) throw new TypeError(`The script returned a ${typeof result}, which is not JSON. Return plain data.`);
+  return resultJson;
 }
 
 run().then(

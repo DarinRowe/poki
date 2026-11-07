@@ -56,6 +56,16 @@ test('run_code denies require, fetch, process and dynamic import, and the daemon
   assert.equal(value(await f.call('wait', { seconds: 0 })).waited, 0);
 });
 
+// A return value JSON cannot carry ends as a script error that keeps the call list, not a parse failure.
+test('run_code reports a return value that is not JSON as a script error and keeps its calls', async t => {
+  const f = await fixture(t);
+  const result = await runCode(f, `await tools.wait({ seconds: 0 }); return () => 1;`);
+  assert.equal(result.isError, true);
+  const summary = summaryOf(result);
+  assert.match(summary.script_error, /not JSON/);
+  assert.deepEqual(summary.calls.map(call => call.tool), ['wait']);
+});
+
 // ESP-151 acceptance 3: an action receipt with sent=false stops the script even inside try/catch, and
 // the steps after it never run. The report carries the stopped step and the steps already executed.
 test('run_code stops when an action reports sent=false, and no later step runs even under try/catch', async t => {
