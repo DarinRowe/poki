@@ -637,342 +637,6 @@
      "args": {},
      "result": {
       "implementation": "Poki MCP 0.1.1",
-      "commit": "361d570",
-      "native_build": "2026-11-07T05:02:57.917Z",
-      "registered_device_tools": 50,
-      "observation_tools": 1,
-      "management_tools": 4,
-      "transport_tools": 2,
-      "total_tools": 58,
-      "devices": 1,
-      "selected": null,
-      "approval_mode": "ask-human"
-     },
-     "error": false,
-     "elapsedMilliseconds": 161.849666,
-     "at": "2026-11-07T06:13:58.573Z"
-    },
-    {
-     "tool": "launch_app",
-     "args": {
-      "bundle_id": "com.apple.Preferences",
-      "device": "fixture-device"
-     },
-     "result": {
-      "bundle_id": "com.apple.Preferences",
-      "launched": true,
-      "name": "com.apple.Preferences",
-      "pid": 11695,
-      "transport": "paired-device-app-service",
-      "foreground_verified": true
-     },
-     "error": false,
-     "elapsedMilliseconds": 1332,
-     "at": "2026-11-07T06:14:14.977Z"
-    },
-    {
-     "tool": "tap_text",
-     "args": {
-      "text": "通用",
-      "device": "fixture-device"
-     },
-     "result": "No visible element matches \"通用\" after 5 seconds. Nothing was tapped. Closest on screen: \"通田\". On screen: \"14:14 M\", \"设置\", \"测试用户\", \"ApplelkP. iCloud+ 75\", \"電0\", \"家人共享\", \"Apple账户建议\", \"(сpD)\", \"飞行模式\", \"Wi-Fi\", \"蓝牙\", \"蜂窝网络\", \"个人热点\", \"电池\", \"VPN\", \"Q 搜索\", \"通田\", \"WLAN-5G >\", \"打开＞\", \"关闭＞\", \"已连接＞\". If it is further along the page, use scroll_to first.",
-     "error": true,
-     "elapsedMilliseconds": 7132,
-     "at": "2026-11-07T06:14:14.977Z"
-    },
-    {
-     "tool": "batch_commands",
-     "args": {
-      "commands": [
-       {
-        "tool": "launch_app",
-        "arguments": {
-         "bundle_id": "com.apple.Preferences",
-         "device": "fixture-device"
-        }
-       },
-       {
-        "tool": "tap_text",
-        "arguments": {
-         "text": "通用",
-         "device": "fixture-device"
-        }
-       },
-       {
-        "tool": "tap_text",
-        "arguments": {
-         "text": "关于本机",
-         "device": "fixture-device"
-        }
-       }
-      ],
-      "stop_on_error": true
-     },
-     "result": {
-      "completed_steps": 2,
-      "stop_reason": "error",
-      "screen": {
-       "foreground": "设置",
-       "source": "accessibility",
-       "page_identity": {
-        "id": "f6ebbe50d1c1f7d7",
-        "title": "设置 [f6ebbe50d1c1f7d7]"
-       },
-       "text": [
-        "Application: 设置",
-        "StaticText: 设置",
-        "Button: 测试用户、Apple账户、iCloud+等",
-        "Button: 家人共享",
-        "Button: Apple账户建议 = 2",
-        "Switch: 飞行模式 = 0",
-        "Button: Wi-Fi、WLAN-5G",
-        "Button: 蓝牙、打开",
-        "Button: 蜂窝网络",
-        "Button: 个人热点、关闭",
-        "Button: 电池",
-        "Button: VPN、已连接",
-        "SearchField: (empty, placeholder \"搜索\")",
-        "Button: 听写"
-       ]
-      },
-      "failed_step": {
-       "step": 2,
-       "tool": "tap_text",
-       "arguments": {
-        "text": "通用",
-        "device": "fixture-device"
-       },
-       "error": "No visible element matches \"通用\" after 5 seconds. Nothing was tapped. Closest on screen: \"通田\". On screen: \"14:14 M\", \"设置\", \"测试用户\", \"ApplelkP. iCloud+ 75\", \"電0\", \"家人共享\", \"Apple账户建议\", \"(сpD)\", \"飞行模式\", \"Wi-Fi\", \"蓝牙\", \"蜂窝网络\", \"个人热点\", \"电池\", \"VPN\", \"Q 搜索\", \"通田\", \"WLAN-5G >\", \"打开＞\", \"关闭＞\", \"已连接＞\". If it is further along the page, use scroll_to first."
-      },
-      "remaining_steps": [
-       {
-        "tool": "tap_text",
-        "arguments": {
-         "text": "通用",
-         "device": "fixture-device"
-        }
-       },
-       {
-        "tool": "tap_text",
-        "arguments": {
-         "text": "关于本机",
-         "device": "fixture-device"
-        }
-       }
-      ],
-      "next": "Steps 1-1 already ran; do not repeat them. Fix the failed step, then send only remaining_steps."
-     },
-     "error": true,
-     "elapsedMilliseconds": 11447.408792000002,
-     "at": "2026-11-07T06:14:14.977Z"
-    },
-    {
-     "tool": "scroll",
-     "args": {
-      "direction": "down",
-      "device": "fixture-device"
-     },
-     "result": {
-      "screen_change_verified": true,
-      "sent": true,
-      "screen": {
-       "foreground": "设置",
-       "source": "accessibility",
-       "page_identity": {
-        "id": "f00c04d0d8d0eae1",
-        "title": "设置 [f00c04d0d8d0eae1]"
-       },
-       "text": [
-        "Application: 设置",
-        "StaticText: 设置",
-        "Button: 电池",
-        "Button: VPN、已连接",
-        "Button: 通用",
-        "Button: 无障碍",
-        "Button: 操作按钮",
-        "Button: 待机显示",
-        "Button: 控制中心",
-        "Button: 墙纸",
-        "Button: 搜索",
-        "Button: 外观",
-        "Button: 显示与亮度",
-        "Button: 相机",
-        "Button: 主屏幕与App资源库",
-        "SearchField: (empty, placeholder \"搜索\")",
-        "Button: 听写"
-       ]
-      },
-      "screen_changed": true
-     },
-     "error": false,
-     "elapsedMilliseconds": 7882.249,
-     "at": "2026-11-07T06:14:23.872Z"
-    },
-    {
-     "tool": "list_elements",
-     "args": {
-      "device": "fixture-device"
-     },
-     "result": {
-      "observation": {
-       "id": "2fcf504e-2433-40cf-8422-41aa4b3f8a26",
-       "device": "fixture-device",
-       "width": 402,
-       "height": 874,
-       "units": "points",
-       "capture_started_at": "2026-11-07T06:14:23.874Z",
-       "capture_completed_at": "2026-11-07T06:14:24.913Z",
-       "structure_completed_at": "2026-11-07T06:14:26.015Z",
-       "structure_source": "accessibility",
-       "atomic": false,
-       "revision": 480
-      },
-      "source": "accessibility",
-      "width": 402,
-      "height": 874,
-      "units": "points",
-      "foreground": {
-       "bundle_id": null,
-       "name": "设置",
-       "pid": 11695
-      },
-      "elements": [
-       {"ref":"e43","role":"Application","label":"设置","frame":{"height":874,"width":402,"x":0,"y":0},"trait_names":[]},
-       {"ref":"e44","role":"StaticText","label":"设置","frame":{"height":20.67,"width":34,"x":184,"y":73.67},"trait_names":["Header"]},
-       {"ref":"e45","role":"Button","label":"电池","frame":{"height":52.33,"width":370,"x":16,"y":78.67},"trait_names":["Button","Static Text"]},
-       {"ref":"e46","role":"Button","label":"VPN、已连接","frame":{"height":52.33,"width":370,"x":16,"y":131},"trait_names":["Button","Static Text"]},
-       {"ref":"e47","role":"Button","label":"通用","frame":{"height":52.33,"width":370,"x":16,"y":218.33},"trait_names":["Button","Static Text"]},
-       {"ref":"e48","role":"Button","label":"无障碍","frame":{"height":52.33,"width":370,"x":16,"y":270.67},"trait_names":["Button","Static Text"]},
-       {"ref":"e49","role":"Button","label":"操作按钮","frame":{"height":52.33,"width":370,"x":16,"y":323},"trait_names":["Button","Static Text"]},
-       {"ref":"e50","role":"Button","label":"待机显示","frame":{"height":52.33,"width":370,"x":16,"y":375.33},"trait_names":["Button","Static Text"]},
-       {"ref":"e51","role":"Button","label":"控制中心","frame":{"height":52.33,"width":370,"x":16,"y":427.67},"trait_names":["Button","Static Text"]},
-       {"ref":"e52","role":"Button","label":"墙纸","frame":{"height":52.33,"width":370,"x":16,"y":480},"trait_names":["Button","Static Text"]},
-       {"ref":"e53","role":"Button","label":"搜索","frame":{"height":52.33,"width":370,"x":16,"y":532.33},"trait_names":["Button","Static Text"]},
-       {"ref":"e54","role":"Button","label":"外观","frame":{"height":52.33,"width":370,"x":16,"y":584.67},"trait_names":["Button","Static Text"]},
-       {"ref":"e55","role":"Button","label":"显示与亮度","frame":{"height":52.33,"width":370,"x":16,"y":637},"trait_names":["Button","Static Text"]},
-       {"ref":"e56","role":"Button","label":"相机","frame":{"height":52.33,"width":370,"x":16,"y":689.33},"trait_names":["Button","Static Text"]},
-       {"ref":"e57","role":"Button","label":"主屏幕与App资源库","frame":{"height":52.33,"width":370,"x":16,"y":741.67},"trait_names":["Button","Static Text"]},
-       {"ref":"e58","role":"SearchField","value":"搜索","placeholder":"搜索","frame":{"height":28,"width":346,"x":28,"y":808},"trait_names":["Search Field"]},
-       {"ref":"e59","role":"Button","label":"听写","frame":{"height":22,"width":17.33,"x":341.67,"y":811},"trait_names":["Button"]}
-      ],
-      "total": 17,
-      "truncated": false
-     },
-     "error": false,
-     "elapsedMilliseconds": 2143.89675,
-     "at": "2026-11-07T06:14:26.016Z"
-    },
-    {
-     "tool": "tap_text",
-     "args": {
-      "text": "通用",
-      "device": "fixture-device"
-     },
-     "error": false,
-     "elapsedMilliseconds": 3164,
-     "result": {
-      "screen_change_verified": true,
-      "sent": true,
-      "screen_changed": true
-     },
-     "at": "2026-11-07T06:14:35.523Z"
-    },
-    {
-     "tool": "tap_text",
-     "args": {
-      "text": "关于本机",
-      "device": "fixture-device"
-     },
-     "error": false,
-     "elapsedMilliseconds": 3874,
-     "result": {
-      "screen_change_verified": true,
-      "sent": true,
-      "screen_changed": true
-     },
-     "at": "2026-11-07T06:14:35.523Z"
-    },
-    {
-     "tool": "list_elements",
-     "args": {
-      "device": "fixture-device"
-     },
-     "result": {
-      "observation": {
-       "id": "b7e16451-45fe-49ae-9025-b84b37f7d4c3",
-       "device": "fixture-device",
-       "width": 402,
-       "height": 874,
-       "units": "points",
-       "capture_started_at": "2026-11-07T06:14:35.527Z",
-       "capture_completed_at": "2026-11-07T06:14:36.343Z",
-       "structure_completed_at": "2026-11-07T06:14:37.347Z",
-       "structure_source": "accessibility",
-       "atomic": false,
-       "revision": 484
-      },
-      "source": "accessibility",
-      "width": 402,
-      "height": 874,
-      "units": "points",
-      "foreground": {
-       "bundle_id": null,
-       "name": "设置",
-       "pid": 11695
-      },
-      "elements": [
-       {"ref":"e60","role":"Application","label":"设置","frame":{"height":874,"width":402,"x":0,"y":0},"trait_names":[]},
-       {"ref":"e61","role":"Button","label":"通用","frame":{"height":44,"width":44,"x":16,"y":62},"trait_names":["Button"]},
-       {"ref":"e62","role":"StaticText","label":"关于本机","frame":{"height":20.67,"width":67.67,"x":167,"y":73.67},"trait_names":["Header"]},
-       {"ref":"e63","role":"Button","label":"名称、测试手机","frame":{"height":53.33,"width":370,"x":16,"y":133.67},"trait_names":["Button"]},
-       {"ref":"e64","role":"Button","label":"iOS版本、27.3","frame":{"height":53.33,"width":370,"x":16,"y":187},"trait_names":["Button"]},
-       {"ref":"e65","role":"StaticText","label":"型号名称、iPhone 16 Pro","frame":{"height":53.33,"width":370,"x":16,"y":240.33},"trait_names":[]},
-       {"ref":"e66","role":"StaticText","label":"型号、MYNQ3ZP/A","frame":{"height":53.33,"width":370,"x":16,"y":293.67},"trait_names":[]},
-       {"ref":"e67","role":"Button","label":"序列号、SERIAL0000","frame":{"height":53.33,"width":370,"x":16,"y":347},"trait_names":["Button"]},
-       {"ref":"e68","role":"Button","label":"保障已过期","frame":{"height":53.33,"width":370,"x":16,"y":435.33},"trait_names":["Button"]},
-       {"ref":"e69","role":"StaticText","label":"歌曲、1","frame":{"height":53.33,"width":370,"x":16,"y":523.67},"trait_names":[]},
-       {"ref":"e70","role":"StaticText","label":"视频、3, 956","frame":{"height":53.33,"width":370,"x":16,"y":577},"trait_names":[]},
-       {"ref":"e71","role":"StaticText","label":"照片、28, 937","frame":{"height":53.33,"width":370,"x":16,"y":630.33},"trait_names":[]},
-       {"ref":"e72","role":"StaticText","label":"应用程序、201","frame":{"height":53.33,"width":370,"x":16,"y":683.67},"trait_names":[]},
-       {"ref":"e73","role":"StaticText","label":"总容量、512 GB","frame":{"height":53.33,"width":370,"x":16,"y":737},"trait_names":[]},
-       {"ref":"e74","role":"StaticText","label":"可用容量、89.75 GB","frame":{"height":53.33,"width":370,"x":16,"y":790.33},"trait_names":[]}
-      ],
-      "total": 15,
-      "truncated": false
-     },
-     "error": false,
-     "elapsedMilliseconds": 1825.3063330000004,
-     "at": "2026-11-07T06:14:37.349Z"
-    }
-   ],
-   "details": [
-    {
-     "label": "iOS版本",
-     "value": "27.3"
-    }
-   ],
-   "answer": {
-    "kind": "field",
-    "items": [
-     {
-      "ref": "e64",
-      "field": "label",
-      "prefix": "iOS版本、"
-     }
-    ]
-   }
-  },
-  {
-   "name": "iOS version, second run",
-   "prompt": "打开设置，读出这台手机的 iOS 版本",
-   "bundleId": "com.apple.Preferences",
-   "trace": [
-    {
-     "tool": "poki_mcp_status",
-     "args": {},
-     "result": {
-      "implementation": "Poki MCP 0.1.1",
       "commit": "45ad796",
       "native_build": "2026-11-07T05:02:57.917Z",
       "registered_device_tools": 50,
@@ -1389,6 +1053,342 @@
     "items": [
      {
       "ref": "e74",
+      "field": "label",
+      "prefix": "iOS版本、"
+     }
+    ]
+   }
+  },
+  {
+   "name": "iOS version, second run",
+   "prompt": "打开设置，读出这台手机的 iOS 版本",
+   "bundleId": "com.apple.Preferences",
+   "trace": [
+    {
+     "tool": "poki_mcp_status",
+     "args": {},
+     "result": {
+      "implementation": "Poki MCP 0.1.1",
+      "commit": "361d570",
+      "native_build": "2026-11-07T05:02:57.917Z",
+      "registered_device_tools": 50,
+      "observation_tools": 1,
+      "management_tools": 4,
+      "transport_tools": 2,
+      "total_tools": 58,
+      "devices": 1,
+      "selected": null,
+      "approval_mode": "ask-human"
+     },
+     "error": false,
+     "elapsedMilliseconds": 161.849666,
+     "at": "2026-11-07T06:13:58.573Z"
+    },
+    {
+     "tool": "launch_app",
+     "args": {
+      "bundle_id": "com.apple.Preferences",
+      "device": "fixture-device"
+     },
+     "result": {
+      "bundle_id": "com.apple.Preferences",
+      "launched": true,
+      "name": "com.apple.Preferences",
+      "pid": 11695,
+      "transport": "paired-device-app-service",
+      "foreground_verified": true
+     },
+     "error": false,
+     "elapsedMilliseconds": 1332,
+     "at": "2026-11-07T06:14:14.977Z"
+    },
+    {
+     "tool": "tap_text",
+     "args": {
+      "text": "通用",
+      "device": "fixture-device"
+     },
+     "result": "No visible element matches \"通用\" after 5 seconds. Nothing was tapped. Closest on screen: \"通田\". On screen: \"14:14 M\", \"设置\", \"测试用户\", \"ApplelkP. iCloud+ 75\", \"電0\", \"家人共享\", \"Apple账户建议\", \"(сpD)\", \"飞行模式\", \"Wi-Fi\", \"蓝牙\", \"蜂窝网络\", \"个人热点\", \"电池\", \"VPN\", \"Q 搜索\", \"通田\", \"WLAN-5G >\", \"打开＞\", \"关闭＞\", \"已连接＞\". If it is further along the page, use scroll_to first.",
+     "error": true,
+     "elapsedMilliseconds": 7132,
+     "at": "2026-11-07T06:14:14.977Z"
+    },
+    {
+     "tool": "batch_commands",
+     "args": {
+      "commands": [
+       {
+        "tool": "launch_app",
+        "arguments": {
+         "bundle_id": "com.apple.Preferences",
+         "device": "fixture-device"
+        }
+       },
+       {
+        "tool": "tap_text",
+        "arguments": {
+         "text": "通用",
+         "device": "fixture-device"
+        }
+       },
+       {
+        "tool": "tap_text",
+        "arguments": {
+         "text": "关于本机",
+         "device": "fixture-device"
+        }
+       }
+      ],
+      "stop_on_error": true
+     },
+     "result": {
+      "completed_steps": 2,
+      "stop_reason": "error",
+      "screen": {
+       "foreground": "设置",
+       "source": "accessibility",
+       "page_identity": {
+        "id": "f6ebbe50d1c1f7d7",
+        "title": "设置 [f6ebbe50d1c1f7d7]"
+       },
+       "text": [
+        "Application: 设置",
+        "StaticText: 设置",
+        "Button: 测试用户、Apple账户、iCloud+等",
+        "Button: 家人共享",
+        "Button: Apple账户建议 = 2",
+        "Switch: 飞行模式 = 0",
+        "Button: Wi-Fi、WLAN-5G",
+        "Button: 蓝牙、打开",
+        "Button: 蜂窝网络",
+        "Button: 个人热点、关闭",
+        "Button: 电池",
+        "Button: VPN、已连接",
+        "SearchField: (empty, placeholder \"搜索\")",
+        "Button: 听写"
+       ]
+      },
+      "failed_step": {
+       "step": 2,
+       "tool": "tap_text",
+       "arguments": {
+        "text": "通用",
+        "device": "fixture-device"
+       },
+       "error": "No visible element matches \"通用\" after 5 seconds. Nothing was tapped. Closest on screen: \"通田\". On screen: \"14:14 M\", \"设置\", \"测试用户\", \"ApplelkP. iCloud+ 75\", \"電0\", \"家人共享\", \"Apple账户建议\", \"(сpD)\", \"飞行模式\", \"Wi-Fi\", \"蓝牙\", \"蜂窝网络\", \"个人热点\", \"电池\", \"VPN\", \"Q 搜索\", \"通田\", \"WLAN-5G >\", \"打开＞\", \"关闭＞\", \"已连接＞\". If it is further along the page, use scroll_to first."
+      },
+      "remaining_steps": [
+       {
+        "tool": "tap_text",
+        "arguments": {
+         "text": "通用",
+         "device": "fixture-device"
+        }
+       },
+       {
+        "tool": "tap_text",
+        "arguments": {
+         "text": "关于本机",
+         "device": "fixture-device"
+        }
+       }
+      ],
+      "next": "Steps 1-1 already ran; do not repeat them. Fix the failed step, then send only remaining_steps."
+     },
+     "error": true,
+     "elapsedMilliseconds": 11447.408792000002,
+     "at": "2026-11-07T06:14:14.977Z"
+    },
+    {
+     "tool": "scroll",
+     "args": {
+      "direction": "down",
+      "device": "fixture-device"
+     },
+     "result": {
+      "screen_change_verified": true,
+      "sent": true,
+      "screen": {
+       "foreground": "设置",
+       "source": "accessibility",
+       "page_identity": {
+        "id": "f00c04d0d8d0eae1",
+        "title": "设置 [f00c04d0d8d0eae1]"
+       },
+       "text": [
+        "Application: 设置",
+        "StaticText: 设置",
+        "Button: 电池",
+        "Button: VPN、已连接",
+        "Button: 通用",
+        "Button: 无障碍",
+        "Button: 操作按钮",
+        "Button: 待机显示",
+        "Button: 控制中心",
+        "Button: 墙纸",
+        "Button: 搜索",
+        "Button: 外观",
+        "Button: 显示与亮度",
+        "Button: 相机",
+        "Button: 主屏幕与App资源库",
+        "SearchField: (empty, placeholder \"搜索\")",
+        "Button: 听写"
+       ]
+      },
+      "screen_changed": true
+     },
+     "error": false,
+     "elapsedMilliseconds": 7882.249,
+     "at": "2026-11-07T06:14:23.872Z"
+    },
+    {
+     "tool": "list_elements",
+     "args": {
+      "device": "fixture-device"
+     },
+     "result": {
+      "observation": {
+       "id": "2fcf504e-2433-40cf-8422-41aa4b3f8a26",
+       "device": "fixture-device",
+       "width": 402,
+       "height": 874,
+       "units": "points",
+       "capture_started_at": "2026-11-07T06:14:23.874Z",
+       "capture_completed_at": "2026-11-07T06:14:24.913Z",
+       "structure_completed_at": "2026-11-07T06:14:26.015Z",
+       "structure_source": "accessibility",
+       "atomic": false,
+       "revision": 480
+      },
+      "source": "accessibility",
+      "width": 402,
+      "height": 874,
+      "units": "points",
+      "foreground": {
+       "bundle_id": null,
+       "name": "设置",
+       "pid": 11695
+      },
+      "elements": [
+       {"ref":"e43","role":"Application","label":"设置","frame":{"height":874,"width":402,"x":0,"y":0},"trait_names":[]},
+       {"ref":"e44","role":"StaticText","label":"设置","frame":{"height":20.67,"width":34,"x":184,"y":73.67},"trait_names":["Header"]},
+       {"ref":"e45","role":"Button","label":"电池","frame":{"height":52.33,"width":370,"x":16,"y":78.67},"trait_names":["Button","Static Text"]},
+       {"ref":"e46","role":"Button","label":"VPN、已连接","frame":{"height":52.33,"width":370,"x":16,"y":131},"trait_names":["Button","Static Text"]},
+       {"ref":"e47","role":"Button","label":"通用","frame":{"height":52.33,"width":370,"x":16,"y":218.33},"trait_names":["Button","Static Text"]},
+       {"ref":"e48","role":"Button","label":"无障碍","frame":{"height":52.33,"width":370,"x":16,"y":270.67},"trait_names":["Button","Static Text"]},
+       {"ref":"e49","role":"Button","label":"操作按钮","frame":{"height":52.33,"width":370,"x":16,"y":323},"trait_names":["Button","Static Text"]},
+       {"ref":"e50","role":"Button","label":"待机显示","frame":{"height":52.33,"width":370,"x":16,"y":375.33},"trait_names":["Button","Static Text"]},
+       {"ref":"e51","role":"Button","label":"控制中心","frame":{"height":52.33,"width":370,"x":16,"y":427.67},"trait_names":["Button","Static Text"]},
+       {"ref":"e52","role":"Button","label":"墙纸","frame":{"height":52.33,"width":370,"x":16,"y":480},"trait_names":["Button","Static Text"]},
+       {"ref":"e53","role":"Button","label":"搜索","frame":{"height":52.33,"width":370,"x":16,"y":532.33},"trait_names":["Button","Static Text"]},
+       {"ref":"e54","role":"Button","label":"外观","frame":{"height":52.33,"width":370,"x":16,"y":584.67},"trait_names":["Button","Static Text"]},
+       {"ref":"e55","role":"Button","label":"显示与亮度","frame":{"height":52.33,"width":370,"x":16,"y":637},"trait_names":["Button","Static Text"]},
+       {"ref":"e56","role":"Button","label":"相机","frame":{"height":52.33,"width":370,"x":16,"y":689.33},"trait_names":["Button","Static Text"]},
+       {"ref":"e57","role":"Button","label":"主屏幕与App资源库","frame":{"height":52.33,"width":370,"x":16,"y":741.67},"trait_names":["Button","Static Text"]},
+       {"ref":"e58","role":"SearchField","value":"搜索","placeholder":"搜索","frame":{"height":28,"width":346,"x":28,"y":808},"trait_names":["Search Field"]},
+       {"ref":"e59","role":"Button","label":"听写","frame":{"height":22,"width":17.33,"x":341.67,"y":811},"trait_names":["Button"]}
+      ],
+      "total": 17,
+      "truncated": false
+     },
+     "error": false,
+     "elapsedMilliseconds": 2143.89675,
+     "at": "2026-11-07T06:14:26.016Z"
+    },
+    {
+     "tool": "tap_text",
+     "args": {
+      "text": "通用",
+      "device": "fixture-device"
+     },
+     "error": false,
+     "elapsedMilliseconds": 3164,
+     "result": {
+      "screen_change_verified": true,
+      "sent": true,
+      "screen_changed": true
+     },
+     "at": "2026-11-07T06:14:35.523Z"
+    },
+    {
+     "tool": "tap_text",
+     "args": {
+      "text": "关于本机",
+      "device": "fixture-device"
+     },
+     "error": false,
+     "elapsedMilliseconds": 3874,
+     "result": {
+      "screen_change_verified": true,
+      "sent": true,
+      "screen_changed": true
+     },
+     "at": "2026-11-07T06:14:35.523Z"
+    },
+    {
+     "tool": "list_elements",
+     "args": {
+      "device": "fixture-device"
+     },
+     "result": {
+      "observation": {
+       "id": "b7e16451-45fe-49ae-9025-b84b37f7d4c3",
+       "device": "fixture-device",
+       "width": 402,
+       "height": 874,
+       "units": "points",
+       "capture_started_at": "2026-11-07T06:14:35.527Z",
+       "capture_completed_at": "2026-11-07T06:14:36.343Z",
+       "structure_completed_at": "2026-11-07T06:14:37.347Z",
+       "structure_source": "accessibility",
+       "atomic": false,
+       "revision": 484
+      },
+      "source": "accessibility",
+      "width": 402,
+      "height": 874,
+      "units": "points",
+      "foreground": {
+       "bundle_id": null,
+       "name": "设置",
+       "pid": 11695
+      },
+      "elements": [
+       {"ref":"e60","role":"Application","label":"设置","frame":{"height":874,"width":402,"x":0,"y":0},"trait_names":[]},
+       {"ref":"e61","role":"Button","label":"通用","frame":{"height":44,"width":44,"x":16,"y":62},"trait_names":["Button"]},
+       {"ref":"e62","role":"StaticText","label":"关于本机","frame":{"height":20.67,"width":67.67,"x":167,"y":73.67},"trait_names":["Header"]},
+       {"ref":"e63","role":"Button","label":"名称、测试手机","frame":{"height":53.33,"width":370,"x":16,"y":133.67},"trait_names":["Button"]},
+       {"ref":"e64","role":"Button","label":"iOS版本、27.3","frame":{"height":53.33,"width":370,"x":16,"y":187},"trait_names":["Button"]},
+       {"ref":"e65","role":"StaticText","label":"型号名称、iPhone 16 Pro","frame":{"height":53.33,"width":370,"x":16,"y":240.33},"trait_names":[]},
+       {"ref":"e66","role":"StaticText","label":"型号、MYNQ3ZP/A","frame":{"height":53.33,"width":370,"x":16,"y":293.67},"trait_names":[]},
+       {"ref":"e67","role":"Button","label":"序列号、SERIAL0000","frame":{"height":53.33,"width":370,"x":16,"y":347},"trait_names":["Button"]},
+       {"ref":"e68","role":"Button","label":"保障已过期","frame":{"height":53.33,"width":370,"x":16,"y":435.33},"trait_names":["Button"]},
+       {"ref":"e69","role":"StaticText","label":"歌曲、1","frame":{"height":53.33,"width":370,"x":16,"y":523.67},"trait_names":[]},
+       {"ref":"e70","role":"StaticText","label":"视频、3, 956","frame":{"height":53.33,"width":370,"x":16,"y":577},"trait_names":[]},
+       {"ref":"e71","role":"StaticText","label":"照片、28, 937","frame":{"height":53.33,"width":370,"x":16,"y":630.33},"trait_names":[]},
+       {"ref":"e72","role":"StaticText","label":"应用程序、201","frame":{"height":53.33,"width":370,"x":16,"y":683.67},"trait_names":[]},
+       {"ref":"e73","role":"StaticText","label":"总容量、512 GB","frame":{"height":53.33,"width":370,"x":16,"y":737},"trait_names":[]},
+       {"ref":"e74","role":"StaticText","label":"可用容量、89.75 GB","frame":{"height":53.33,"width":370,"x":16,"y":790.33},"trait_names":[]}
+      ],
+      "total": 15,
+      "truncated": false
+     },
+     "error": false,
+     "elapsedMilliseconds": 1825.3063330000004,
+     "at": "2026-11-07T06:14:37.349Z"
+    }
+   ],
+   "details": [
+    {
+     "label": "iOS版本",
+     "value": "27.3"
+    }
+   ],
+   "answer": {
+    "kind": "field",
+    "items": [
+     {
+      "ref": "e64",
       "field": "label",
       "prefix": "iOS版本、"
      }

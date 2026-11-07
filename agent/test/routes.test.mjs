@@ -127,7 +127,7 @@ test('A model run whose first batch missed a tap still teaches a route that repl
 });
 
 test('A failed step is dropped only when the screen after it is the screen it failed on', async t => {
-  const run = recorded.explorations.find(run => run.name === 'iOS version, second run');
+  const run = recorded.explorations.find(run => run.name === 'iOS version, first run');
   const scrolled = run.trace.findIndex(entry => entry.tool === 'scroll') + 1;
   const stale = { tool: 'tap', args: { ref: 'e1', device: 'fixture-device' }, error: true,
     result: 'Element ref is stale. Use tap_text with its label, or call list_elements again.' };
