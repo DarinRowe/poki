@@ -84,7 +84,8 @@ that no answer may halt the agent and from the first Poki Gym runs (`native/ios-
     session open; an explicit note when neither the runner nor the host gives a picture.
 15. `scroll_to` declares the end only after two unmoved swipes to a free runner (a 300-row gym list
     gave a false end at row 180), uses its remaining time for the read after each swipe, and the
-    read after it lists the found element; a cut listing counts what it left out by type.
+    read after it lists the found element, and it reads a swipe's result before swiping again (a
+    250th-row miss); a cut listing counts what it left out by type.
 
 Still not done: a `collect` or `expect` field, a `recover` action, and redaction of sensitive text
 (Zhehan: out of scope for now).
