@@ -46,6 +46,7 @@ jobs:
           gh run download "$RUN" -R ${{ github.repository }} -n Poki-unsigned -D ipa
           desktop/mac/scripts/sign-check.sh desktop/target/release/poki-setup ipa/Poki-external-unsigned.ipa ipa/Poki-signing.zip
       - name: Screenshots
+        if: always()
         run: |
           APP="$PWD/dist/Poki Setup.app/Contents/MacOS/PokiSetup"
           mkdir -p shots
@@ -53,6 +54,7 @@ jobs:
           POKI_SETUP_SNAPSHOT_DIR="$PWD/shots" timeout 180 "$APP" || echo "live run ended with $?"
           ls -la shots
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: poki-setup-macos
           path: dist/*.dmg
