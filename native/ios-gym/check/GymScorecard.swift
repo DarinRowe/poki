@@ -320,6 +320,14 @@ public final class GymScorecard {
         a = await tap("Row 250", in: a, expect: "Row 250 tapped")
         let missing = await call("scroll_to a row that does not exist", "do", ["actions": [["scroll_to": ["text": "Row 9999", "max_swipes": 2]]]], budget: 30)
         check(!missing.contains("HUNG"), "scroll_to for a missing text answers")
+        // A drag by points (the content follows the finger: WDA's /actions, in-process the touch path).
+        let before = await call("look before the drag", "look", ["full": true])
+        let dragged = await call("drag the list up by 400 pt", "do", ["actions": [["drag": ["from": [200, 700], "to": [200, 300], "ms": 500]]]], budget: 12)
+        check(dragged.contains("did: drag"), "a drag by points is sent")
+        let topBefore = before.range(of: #"Button "Row [0-9]+""#, options: .regularExpression).map { String(before[$0]) } ?? "?"
+        let after = dragged.contains("screen_changed: false") ? dragged : await call("look after the drag", "look", ["full": true])
+        let topAfter = after.range(of: #"Button "Row [0-9]+""#, options: .regularExpression).map { String(after[$0]) } ?? "?"
+        check(topAfter != topBefore, "the list moved under the drag (top row \(topBefore) -> \(topAfter))")
 
         // 5. A half sheet.
         a = await open("sheet")
