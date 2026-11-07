@@ -182,14 +182,14 @@ async function restoreClipboard(ctx, saved) {
 async function typeText(ctx, text, clear = false) {
   const typed = await ctx.input({ op: 'type_keys', text, clear });
   if (!typed?.isError && typed?.sent !== false) return 'keys';
-  // Only a request the bridge refused before sending (a character with no key, an older bridge) may
-  // be pasted instead: after a failure part way, a paste would enter the text twice.
-  const refused = /cannot type|unknown variant|at most 2000/i.test(String(typed?.error ?? ''));
   // A backend that types every character (WebDriverAgent) has no paste to fall back on.
   if (ctx.typesEverything) { const e = new Error(`typing failed: ${typed?.error ?? 'no answer'}`); e.delivery = typed?.outcome === 'not_sent' ? 'not_sent' : 'unknown'; throw e; }
-  if (!refused && !clear) { const e = new Error(`typing failed part way (${typed?.error ?? 'no answer'}); not pasted, so the text is not entered twice`); e.delivery = 'unknown'; throw e; }
+  // Only a request the bridge refused before sending (a character with no key, an older bridge) may
+  // be pasted instead: after a failure part way, some keys may have reached the field, and what
+  // they did (a return that submitted, a field that moved on) a paste cannot undo, clear or not.
+  if (!/cannot type|unknown variant|at most 2000/i.test(String(typed?.error ?? ''))) { const e = new Error(`typing failed part way (${typed?.error ?? 'no answer'}); not pasted, so the text is not entered twice`); e.delivery = 'unknown'; throw e; }
   const saved = await savedClipboard(ctx);
-  if (!saved) { const e = new Error('the keyboard cannot type this text, and the clipboard cannot be saved and put back, so it was not pasted over'); e.delivery = refused ? 'not_sent' : 'unknown'; throw e; }
+  if (!saved) { const e = new Error('the keyboard cannot type this text, and the clipboard cannot be saved and put back, so it was not pasted over'); e.delivery = 'not_sent'; throw e; }
   let restored;
   try { await send(ctx, { op: 'type_text', text, clear, submit: false }); }
   finally { restored = await restoreClipboard(ctx, saved); }
