@@ -4,6 +4,7 @@
 #import <notify.h>
 #import <objc/message.h>
 #import <objc/runtime.h>
+#import <unistd.h>
 
 @interface NSObject (PKObservedPrivateAPI)
 - (id)initForTouchAtPoint:(CGPoint)point offset:(double)offset;
