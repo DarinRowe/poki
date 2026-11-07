@@ -8,7 +8,9 @@ import UIKit
 /// Launch arguments run it without touching the phone, for a device check from the Mac:
 /// `-pokiInProcess self` taps the field below and types into it, then reads it back;
 /// `-pokiInProcess later -pokiProbeX 200 -pokiProbeY 300 -pokiProbeDelay 8` waits, then taps that
-/// point and types, whatever app is in front by then.
+/// point and types, whatever app is in front by then;
+/// `-automationPath runner -pokiInProcess source -pokiProbeDelay 10` waits, then keeps the front app's
+/// tree as read by Poki Runner and by Poki's own process.
 @MainActor
 final class InProcessProbe: ObservableObject {
     static let shared = InProcessProbe()
@@ -39,6 +41,7 @@ final class InProcessProbe: ObservableObject {
             case "read": await readOnly()
             case "separate": await separateTrial()
             case "port": await portCheck()
+            case "source": await sourceBothPaths(model: model)
             case "bench": await benchmark(model: model, rounds: defaults.integer(forKey: "pokiBenchRounds") > 0 ? defaults.integer(forKey: "pokiBenchRounds") : 5)
             default: await prepareOnly()
             }

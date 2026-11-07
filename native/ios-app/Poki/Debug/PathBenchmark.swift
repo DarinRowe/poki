@@ -56,6 +56,41 @@ extension InProcessProbe {
         }
     }
 
+    /// The front app's tree read once by Poki Runner and once by Poki's own process, a moment apart and
+    /// with the same request, kept as Documents/runner-source.xml and Documents/inprocess-source.xml.
+    func sourceBothPaths(model: AppModel) async {
+        guard begin("source through both paths") else { return }
+        defer { end() }
+        guard await prepare() else { return }
+        guard model.automationPath == .runner else {
+            note("Poki started with the in-process path; start it with -automationPath runner to read through the runner too", ["step": "runner_skipped"])
+            return
+        }
+        if !model.runner.isRunning { model.wakeRunner() }
+        let by = Date().addingTimeInterval(60)
+        while !model.runner.isRunning, Date() < by { try? await Task.sleep(for: .seconds(0.5)) }
+        guard model.runner.isRunning else {
+            note("runner: not running after 60 s (\(model.runner.title))", ["step": "runner_missing"])
+            return
+        }
+        let background = UIApplication.shared.beginBackgroundTask(withName: "In-process probe")
+        defer { UIApplication.shared.endBackgroundTask(background) }
+        let seconds = Double(delay) ?? 8
+        note("runner up; waiting \(Int(seconds)) s; bring the app to read to the front", ["step": "wait", "seconds": seconds])
+        try? await Task.sleep(for: .seconds(seconds))
+        let url = URL(string: "http://127.0.0.1:8100")!
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        for (name, runner) in [("runner", Runner(url: url)), ("inprocess", Runner(url: url, transport: InProcessWDA(screen: UIScreen.main.bounds.size)))] {
+            var xml = ""
+            let (ms, error) = await timed {
+                xml = try await runner.call("GET", "/source?format=xml&excluded_attributes=visible,accessible,enabled,index", timeout: 30).string ?? ""
+            }
+            try? xml.write(to: documents.appendingPathComponent("\(name)-source.xml"), atomically: true, encoding: .utf8)
+            note("\(name) source: \(xml.count) characters in \(Int(ms.rounded())) ms\(error.map { " (\($0))" } ?? "")",
+                 ["step": "source", "path": name, "characters": xml.count, "ms": ms, "error": error ?? ""])
+        }
+    }
+
     private func timed(_ work: () async throws -> Void) async -> (Double, String?) {
         let start = ProcessInfo.processInfo.systemUptime
         do { try await work(); return ((ProcessInfo.processInfo.systemUptime - start) * 1000, nil) }
