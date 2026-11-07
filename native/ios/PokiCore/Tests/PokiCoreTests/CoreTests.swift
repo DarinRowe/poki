@@ -253,12 +253,12 @@ final class RelayTests: XCTestCase {
         let sockets = FakeSockets()
         let events = LockedBox<[CoreEvent]>([])
         Task { for await e in core.events { events.update { $0.append(e) } } }
-        core.start(socketFactory: sockets)
+        core.start(relay: testRelay, socketFactory: sockets)
         core.relay?.pingEvery = 0.1
         do { let ok = await eventually { !sockets.sockets.value.isEmpty }; XCTAssertTrue(ok) }
         let socket = sockets.sockets.value[0]
         let label = base32(FakeKey().publicKey)
-        XCTAssertEqual(sockets.urls.value[0].absoluteString, "wss://pokimcp.zheha.nz/v1/\(label)/connect")
+        XCTAssertEqual(sockets.urls.value[0].absoluteString, "wss://relay.example.com/v1/\(label)/connect")
 
         let nonce = Data(repeating: 7, count: 32)
         socket.push((["t": "challenge", "nonce": .string(nonce.base64EncodedString())] as JSON).serialized())
@@ -271,7 +271,7 @@ final class RelayTests: XCTestCase {
         XCTAssertEqual(hello["sig"]?.string, try FakeKey().sign(signed).base64EncodedString())
 
         socket.push((["t": "ready", "max_body": 4_194_304] as JSON).serialized())
-        do { let ok = await eventually { events.value.contains(.relay(.ready(url: "wss://pokimcp.zheha.nz/v1/\(label)"))) }; XCTAssertTrue(ok) }
+        do { let ok = await eventually { events.value.contains(.relay(.ready(url: "wss://relay.example.com/v1/\(label)"))) }; XCTAssertTrue(ok) }
         do { let ok = await eventually { socket.sent.contains("ping") }; XCTAssertTrue(ok) }
 
         let body = (["jsonrpc": "2.0", "id": 1, "method": "tools/list"] as JSON).serialized()
@@ -284,10 +284,26 @@ final class RelayTests: XCTestCase {
         core.stop()
     }
 
+    func testTheRelayAddressThePersonEntersDecidesWhereThePhoneDials() {
+        let entered: [(String, String?, String?)] = [
+            ("poki-relay.you.workers.dev", "wss://poki-relay.you.workers.dev/v1", "https://poki-relay.you.workers.dev/v1"),
+            (" https://Relay.Example.com/v1/ ", "wss://relay.example.com/v1", "https://relay.example.com/v1"),
+            ("http://127.0.0.1:8787", "ws://127.0.0.1:8787/v1", "http://127.0.0.1:8787/v1"),
+            ("https://relay.example.com/other", nil, nil),
+            ("ftp://relay.example.com", nil, nil),
+            ("", nil, nil),
+        ]
+        for (text, phone, connector) in entered {
+            let address = RelayAddress(text)
+            XCTAssertEqual(address?.phoneURL.absoluteString, phone, text)
+            XCTAssertEqual(address?.connectorBase.absoluteString, connector, text)
+        }
+    }
+
     func testTheRelayIsDialedAgainAfterADrop() async {
         let (core, _, _) = makeCore()
         let sockets = FakeSockets()
-        core.start(socketFactory: sockets)
+        core.start(relay: testRelay, socketFactory: sockets)
         core.relay?.maxBackoff = 0.05
         do { let ok = await eventually { !sockets.sockets.value.isEmpty }; XCTAssertTrue(ok) }
         sockets.sockets.value[0].close(code: 1006, reason: "gone")

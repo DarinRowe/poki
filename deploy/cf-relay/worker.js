@@ -235,9 +235,7 @@ var index_default = {
       path = prefix[2];
     }
     const parts = path.split("/").filter(Boolean);
-    if (parts[0] !== "v1" || !LABEL.test(parts[1] ?? "")) {
-      return env.ORIGIN_FALLBACK === "1" ? fetch(request) : notFound();
-    }
+    if (parts[0] !== "v1" || !LABEL.test(parts[1] ?? "")) return notFound();
     const label = parts[1];
     const device = env.DEVICE.get(env.DEVICE.idFromName(label));
     if (parts.length === 3 && parts[2] === "connect" && !wellKnown) {

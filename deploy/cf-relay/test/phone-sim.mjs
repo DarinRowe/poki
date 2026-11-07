@@ -3,9 +3,9 @@
 // Stands in for the Poki app on the relay (relay frames v1): keeps the WebSocket, answers MCP
 // with a tiny server (initialize, tools/list, tools/call "echo"), and prints the connector URL.
 //
-//   node test/phone-sim.mjs https://pokimcp.zheha.nz            # run as a phone until Ctrl-C
-//   node test/phone-sim.mjs https://pokimcp.zheha.nz --check    # also act as the MCP client:
-//                                                               # OAuth + initialize + tools/call; exit 0 or 1
+//   node test/phone-sim.mjs https://poki-relay.you.workers.dev   # run as a phone until Ctrl-C
+//   node test/phone-sim.mjs https://poki-relay.you.workers.dev --check  # also act as the MCP client:
+//                                                                     # OAuth + initialize + tools/call; exit 0 or 1
 // The identity key and secret are kept in ./phone-sim.json (created on first run), so the
 // connector URL stays the same between runs. Node 22+ (global WebSocket).
 import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, sign } from 'node:crypto';
@@ -17,7 +17,7 @@ const origin = (process.argv[2] ?? '').replace(/\/$/, '');
 const check = process.argv.includes('--check');
 const stateFile = process.env.PHONE_SIM_STATE ?? 'phone-sim.json';
 if (!/^https?:\/\//.test(origin)) {
-  console.error('usage: node test/phone-sim.mjs <relay origin, e.g. https://pokimcp.zheha.nz> [--check]');
+  console.error('usage: node test/phone-sim.mjs <relay origin, e.g. https://poki-relay.you.workers.dev> [--check]');
   process.exit(2);
 }
 

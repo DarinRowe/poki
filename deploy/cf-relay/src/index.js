@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Poki relay on Cloudflare Workers (relay frames v1, docs/ios-core.md on dev/ios-core).
+// Poki relay on Cloudflare Workers (relay frames v1, docs/ios-core.md).
 //
 // MCP clients POST to https://<host>/v1/<label>/<secret>/mcp. The phone keeps an outbound
 // WebSocket to /v1/<label>/connect, held by one Durable Object per label with the Hibernation
@@ -227,11 +227,7 @@ export default {
     const prefix = path.match(/^\/\.well-known\/(oauth-protected-resource|oauth-authorization-server|openid-configuration)(\/.*)$/);
     if (prefix) { wellKnown = prefix[1]; path = prefix[2]; }
     const parts = path.split('/').filter(Boolean);
-    if (parts[0] !== 'v1' || !LABEL.test(parts[1] ?? '')) {
-      // On a zone route during a migration (ORIGIN_FALLBACK=1), what is not ours goes to the
-      // origin behind the route (e.g. the old tunnel's own /.well-known/ documents).
-      return env.ORIGIN_FALLBACK === '1' ? fetch(request) : notFound();
-    }
+    if (parts[0] !== 'v1' || !LABEL.test(parts[1] ?? '')) return notFound();
     const label = parts[1];
     const device = env.DEVICE.get(env.DEVICE.idFromName(label));
 

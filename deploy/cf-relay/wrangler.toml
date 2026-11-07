@@ -1,12 +1,11 @@
-# Poki relay on Cloudflare Workers. Deploy with the bundled worker.js (see DEPLOY.md).
+# Poki relay on Cloudflare Workers. Each user deploys their own with ./deploy.sh (see DEPLOY.md).
 name = "poki-relay"
 main = "src/index.js"
 compatibility_date = "2025-10-01"
-workers_dev = false
 
-# Path routing on one hostname (a free zone's Universal SSL covers one level of subdomain only,
-# so <label>.pokimcp.zheha.nz would need Advanced Certificate Manager).
-routes = [{ pattern = "pokimcp.zheha.nz", custom_domain = true }]
+# The relay answers on <name>.<your subdomain>.workers.dev. For your own hostname, run
+# ./deploy.sh --domain relay.example.com; there is no hostname in this file.
+workers_dev = true
 
 # No logs, traces or analytics of requests.
 [observability]

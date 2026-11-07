@@ -3,7 +3,7 @@ import { SELF, env } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import { base32 } from '../src/index.js';
 
-const HOST = 'https://pokimcp.zheha.nz';
+const HOST = 'https://relay.example.com';
 const enc = new TextEncoder();
 const b64 = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes)));
 const b64u = bytes => b64(bytes).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');

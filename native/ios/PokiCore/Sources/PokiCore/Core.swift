@@ -1,7 +1,6 @@
 import Foundation
 
 public struct CoreConfig: Sendable {
-    public var relayURL: URL
     public var runnerURL: URL
     public var sensitive: SensitivityRules
     /// How long `do` holds for an approval before answering approval_required.
@@ -17,8 +16,7 @@ public struct CoreConfig: Sendable {
     /// How long a call waits for a runner that is starting (the app wakes it when a call comes in).
     public var runnerWait: Double
 
-    public init(relayURL: URL = URL(string: "wss://pokimcp.zheha.nz/v1")!, runnerURL: URL = URL(string: "http://127.0.0.1:8100")!, sensitive: SensitivityRules = SensitivityRules(), approvalWait: Double = 20, toolDeadline: Double = 25, actionCap: Double = 6, readTimeout: Double = 4, busyWait: Double = 2, runnerWait: Double = 15) {
-        self.relayURL = relayURL
+    public init(runnerURL: URL = URL(string: "http://127.0.0.1:8100")!, sensitive: SensitivityRules = SensitivityRules(), approvalWait: Double = 20, toolDeadline: Double = 25, actionCap: Double = 6, readTimeout: Double = 4, busyWait: Double = 2, runnerWait: Double = 15) {
         self.runnerURL = runnerURL
         self.sensitive = sensitive
         self.approvalWait = approvalWait
@@ -151,9 +149,11 @@ public final class PokiCore: @unchecked Sendable {
 
     func emit(_ event: CoreEvent) { continuation.yield(event) }
 
-    public func start(socketFactory: WebSocketFactory = URLSessionWebSocketFactory()) {
+    /// Connects to the person's own relay and keeps it connected. There is no default relay: the app
+    /// passes the address the person entered.
+    public func start(relay address: RelayAddress, socketFactory: WebSocketFactory = URLSessionWebSocketFactory()) {
         guard relay == nil, let host else { return }
-        let client = RelayClient(baseURL: config.relayURL, host: host, factory: socketFactory, handler: { [weak self] request in
+        let client = RelayClient(baseURL: address.phoneURL, host: host, factory: socketFactory, handler: { [weak self] request in
             await self?.handle(request) ?? RelayResponse(id: request.id, status: 503, headers: [:], body: "")
         }, emit: { [weak self] in self?.emit(.relay($0)) })
         relay = client
