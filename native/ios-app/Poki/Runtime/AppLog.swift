@@ -5,7 +5,7 @@ import UIKit
 /// What Poki did and why, for the Debug tab's Copy log: runner starts, stops and restarts (with the
 /// reason), agent steps, approvals, relay and Live Activity changes. Kept in memory (the last 600
 /// lines) and in a file in Caches so a log survives Poki being closed. Never holds typed text or
-/// keys: each line passes through `redacted` before it is kept, which drops what the agent typed.
+/// keys: each line passes through PokiCore's `StepLabels.withoutTypedText` before it is kept.
 @MainActor
 @Observable
 final class AppLog {
@@ -29,17 +29,10 @@ final class AppLog {
     }
 
     func add(_ area: String, _ message: String) {
-        let line = "\(stamp.string(from: Date())) [\(area)] \(Self.redacted(message))"
+        let line = "\(stamp.string(from: Date())) [\(area)] \(StepLabels.withoutTypedText(message))"
         lines.append(line)
         if lines.count > limit { lines.removeFirst(lines.count - limit) }
         save()
-    }
-
-    /// Typed text out of a log line: the step label `Type “…”` and the action JSON `"type":"…"`.
-    static func redacted(_ message: String) -> String {
-        message
-            .replacingOccurrences(of: #"Type “[^”]*”"#, with: "Type “…”", options: .regularExpression)
-            .replacingOccurrences(of: #""type"\s*:\s*"(?:[^"\\]|\\.)*""#, with: #""type":"…""#, options: .regularExpression)
     }
 
     func clear() {
