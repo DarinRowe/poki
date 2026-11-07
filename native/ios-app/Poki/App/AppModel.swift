@@ -14,6 +14,7 @@ final class AppModel {
     let loopback = LoopbackMonitor()
     let background = BackgroundKeeper()
     let diskImage = DiskImageStore()
+    let voice: VoiceModel
     private(set) var runner = RunnerStatus.idle
     private(set) var relayStatus = RelayStatus.off
     private(set) var sessionOn = false
@@ -68,7 +69,10 @@ final class AppModel {
 
     init() {
         ActivityController.endAll()
-        core = LiveCore(host: host)
+        let core = LiveCore(host: host)
+        self.core = core
+        // Voice taps get the same rules and approval card as an agent's `do`.
+        voice = VoiceModel { text, bundle, name in await core.clearTap(on: text, inApp: bundle, named: name, waiting: VoiceModel.approvalWait) }
         let launcher = RustLauncher()
         self.launcher = launcher
         pairer = RustPairing()

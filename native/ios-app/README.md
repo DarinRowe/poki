@@ -18,6 +18,7 @@ The runner (WebDriverAgent, built by `.github/workflows/ios-runner.yml`) is a se
 | `Poki/Activity` | Live Activity controller (state, steps, thumbnail in the App Group) |
 | `Poki/Connect` | Relay identity (Ed25519 key, label, connector secrets in the keychain), MCP address with QR |
 | `Poki/Runtime` | PokiCore and PokiLauncher glue, background keep-alive (location, then silent audio) |
+| `Poki/Voice` | Talk to Poki: an OpenAI Realtime session over WebRTC, the calls it asks for, test runs |
 | `Poki/Debug` | 10.7.0.1 checks, the background hold test, the Live Activity preview |
 | `Shared` | Live Activity attributes and views, the Approve/Deny/Stop App Intents (app and widget) |
 | `PokiWidgets` | The Live Activity widget |
@@ -53,6 +54,55 @@ Poki is in English and Simplified Chinese and follows the iPhone's language. The
   on networks you trust. A pairing code between Poki and the runner is the planned fix.
 - The Live Activity starts from the foreground, because iOS does not allow it from the background:
   when Poki turns on, when pairing starts, and when a setup step opens Settings.
+
+## Voice
+
+The Voice tab talks to OpenAI's Realtime API (`gpt-realtime-2.1`) over WebRTC: the microphone is the
+audio track, Poki's voice plays on the speaker, and events travel on the `oai-events` data channel.
+The phone never holds an OpenAI key. The voice bridge on the person's Mac (`bin/voice-bridge.mjs`)
+keeps the key and gives the phone a client secret that expires after 60 seconds:
+
+1. Create an API key at platform.openai.com (API keys). Realtime audio is billed to that account per
+   token; each test turn reports the tokens it used.
+2. Keep it in the keychain, and read it from there, so it never lands in your shell history:
+
+   ```sh
+   security add-generic-password -a "$USER" -s openai-api-key -w    # asks for the key
+   export OPENAI_API_KEY="$(security find-generic-password -s openai-api-key -w)"
+   ```
+
+3. Start Poki MCP first (`npm start`, see [docs/install.md](../../docs/install.md)); the bridge stops at
+   once with "Local Poki MCP is not running" without it. Then, with the same state directory:
+
+   ```sh
+   POKI_MCP_STATE_DIR=... node bin/voice-bridge.mjs --device <iPhone id>
+   ```
+
+The bridge listens on every network interface (`--host 0.0.0.0`), because the phone reaches it over
+the local network, in plain HTTP. Anyone who learns its address, which carries the secret, can open
+sessions on your OpenAI key and move the phone through your Mac. Run it only on a network you trust,
+and pass `--host <this Mac's LAN address>` to keep it off other interfaces (for example a VPN).
+
+Enter `http://<Mac>:47830/voice/<secret>` in the Voice tab (the secret is in `voice-bridge.json` in the
+state directory). `get_ios_version` is answered on the phone;
+the bridge runs the tools that move the phone (`open_settings`, `read_screen`, `open_app`, `tap_text`,
+`go_home`) through the Mac's Poki MCP.
+
+- Each function call runs once, keyed by its `call_id`, in the app and again in the bridge.
+- `tap_text` is held by Poki's approvals, like an agent's `do`: the bridge first says what it would tap
+  and in which app, without tapping; the phone checks that with PokiCore's rules (payments, deleting,
+  sending messages, calls) and, when they ask for it, waits up to two minutes for Allow (in Voice, on Home
+  or from the notification). Only then does the bridge tap that element, matched exactly, in that app.
+- A dropped connection sends nothing again. A call outlives the session that asked for it; the next
+  session is told how it ended instead of asking for it again.
+- Stop talking (or speaking over Poki) cancels the reply, never the step running on the phone.
+- A `poki://voice` link, from a web page or another app, only opens the Voice tab: a link never
+  changes the bridge and never turns on the microphone. The person enters the address and taps Talk
+  to Poki.
+- Development builds only: the launch argument `-pokiVoiceLink "poki://voice?bridge=<address>&test=1-20"`
+  runs recorded utterances from a bridge started with `--test-dir`, silently: the speech goes over
+  the data channel instead of the microphone, and Poki's voice is muted. Release builds have no test
+  runs.
 
 ## Signing and entitlements
 

@@ -11,6 +11,10 @@ options:
 packages:
   PokiCore:
     path: ../ios/PokiCore
+  # Google's WebRTC, prebuilt (BSD-3-Clause), for the voice conversation with the Realtime API.
+  WebRTC:
+    url: https://github.com/stasel/WebRTC.git
+    exactVersion: 155.0.0
 settings:
   base:
     MARKETING_VERSION: "0.1.0"
@@ -59,7 +63,11 @@ targets:
         CFBundleURLTypes:
           - CFBundleURLName: nz.zheha.poki
             CFBundleURLSchemes: [poki]
-        NSLocalNetworkUsageDescription: Poki connects to this iPhone's own developer services to pair with it and to run the automation.
+        NSLocalNetworkUsageDescription: Poki connects to this iPhone's own developer services to pair with it and to run the automation, and to the voice bridge on your Mac.
+        NSMicrophoneUsageDescription: Poki listens while you talk to it in Voice, and sends that audio to OpenAI to understand what you ask.
+        # The voice bridge runs on the person's Mac on the local network, over plain HTTP.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
         NSBonjourServices: [_remotepairing-pairable-host._tcp, _remotepairing-manual-pairing._tcp]
         LSApplicationQueriesSchemes: [surge, loon, shadowrocket, sing-box]
         ITSAppUsesNonExemptEncryption: false
@@ -70,6 +78,7 @@ targets:
     dependencies:
       - target: PokiWidgets
       - package: PokiCore
+      - package: WebRTC
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: nz.zheha.poki

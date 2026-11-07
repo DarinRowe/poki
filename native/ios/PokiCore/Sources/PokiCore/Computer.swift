@@ -308,6 +308,11 @@ final class Computer: @unchecked Sendable {
             return await readAndReply(until: until, full: true, error: "element \(stale.map(String.init).joined(separator: ", ")) is not in the latest read; nothing was sent. The current elements are below.")
         }
 
+        // The approval card is in Poki: no input lands there, and the request waiting stays for the owner.
+        if landsInPoki(actions) {
+            return ToolResult(text: "not_sent: \(CoreConfig.ownAppRefusal). Nothing was sent. Leave Poki first ({button: \"home\"} or {launch: \"bundle id\"}).", jpeg: nil, isError: true)
+        }
+
         // The runner's start and the checks above are not the actions' time (seen on the phone: a
         // launch sent while the runner was starting had its 9 s used up before it went).
         let prepared = now()
@@ -461,6 +466,24 @@ final class Computer: @unchecked Sendable {
     }
 
     // MARK: Sensitivity
+
+    /// Whether an input action would run with Poki in front: the app of the latest read, followed through
+    /// the launches and Home presses before it.
+    func landsInPoki(_ actions: [JSON]) -> Bool {
+        var front = lastForeground
+        for action in actions {
+            if let spec = action["launch"] {
+                front = Foreground(bundleID: spec.string ?? spec["bundle"]?.string, name: nil)
+            } else if let button = action["button"]?.text {
+                if button.lowercased() == "home" { front = nil }
+            } else if action["wait"] != nil || action["wait_until"] != nil {
+                continue
+            } else if config.isPoki(front) {
+                return true
+            }
+        }
+        return false
+    }
 
     func element(at point: (x: Double, y: Double)) -> Element? {
         lastElements.filter { f in f.frame.x <= point.x && point.x <= f.frame.x + f.frame.width && f.frame.y <= point.y && point.y <= f.frame.y + f.frame.height }

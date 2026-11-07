@@ -11,6 +11,11 @@ public struct SensitivityRules: Sendable, Equatable {
     public var sending: [String] = ["send", "post", "reply", "发送", "回复", "发布"]
     /// Apps where every input needs approval (banking, wallets).
     public var guardedApps: [String] = ["com.apple.Passbook"]
+    /// Words that place a call wherever they are tapped.
+    public var calling: [String] = ["call", "拨打", "呼叫"]
+    /// Apps where tapping anything can place a call (a contact in Favorites or Recents rings it). FaceTime is
+    /// here rather than a word: Settings lists a "FaceTime" row that places no call.
+    public var callingApps: [String] = ["com.apple.mobilephone", "com.apple.facetime"]
     /// Apps where tapping a sending word needs approval.
     public var messagingApps: [String] = ["com.apple.MobileSMS", "com.apple.mobilemail", "com.tencent.xin", "net.whatsapp.WhatsApp", "ph.telegra.Telegraph", "com.burbn.instagram", "com.atebits.Tweetie2", "com.facebook.Messenger", "com.hammerandchisel.discord", "com.tinyspeck.chatlyio"]
     public var enabled = true
@@ -42,10 +47,28 @@ public struct SensitivityRules: Sendable, Equatable {
         let text = element.text
         if let word = Self.matches(text, payments) { return "a payment (\"\(word)\")" }
         if let word = Self.matches(text, deletions) { return "deleting (\"\(word)\")" }
+        if let bundle = app?.bundleID, callingApps.contains(bundle) { return "a call (in \(app?.describe ?? bundle))" }
+        if let word = Self.matches(text, calling) { return "a call (\"\(word)\")" }
         if let bundle = app?.bundleID, messagingApps.contains(bundle), let word = Self.matches(text, sending) {
             return "sending a message (\"\(word)\")"
         }
         return nil
+    }
+}
+
+/// How a tap sent outside `do` (`PokiCore.clearTap`) may go ahead. The associated text is the rule's reason.
+public enum TapClearance: Sendable, Equatable {
+    /// No rule asks for approval.
+    case clear
+    case approved(String)
+    case declined(String)
+    /// Nobody answered in time, or another request replaced it.
+    case unanswered(String)
+    /// The tap would land in Poki, where the approval card is; the text says so for the model.
+    case refused(String)
+
+    public var mayTap: Bool {
+        switch self { case .clear, .approved: true; case .declined, .unanswered, .refused: false }
     }
 }
 
@@ -61,8 +84,8 @@ public struct Approval: Sendable, Equatable {
 }
 
 /// Pending and granted approvals. At most one is pending; it is granted or declined only from the app
-/// (the Live Activity), and nothing the automation does can grant it, because every input is refused
-/// while it is pending.
+/// (the Live Activity), and nothing the automation does can grant it: every `do` and every voice tap
+/// (`PokiCore.clearTap`) withdraws it first, and neither taps inside Poki, where the card is.
 final class Approvals: @unchecked Sendable {
     enum Decision: Sendable { case approved, declined, expired }
     private struct Entry {

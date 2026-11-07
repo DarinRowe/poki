@@ -15,7 +15,10 @@ final class LiveCore: CoreSession {
 
     init(host: AppCoreHost) {
         self.host = host
-        core = PokiCore(config: CoreConfig(), host: host)
+        var config = CoreConfig()
+        // Signing tools may rename the app; its own id is Poki too.
+        if let own = Bundle.main.bundleIdentifier { config.ownApps.append(own) }
+        core = PokiCore(config: config, host: host)
         (events, continuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(64))
         let continuation = self.continuation
         pump = Task { [core] in
@@ -28,6 +31,9 @@ final class LiveCore: CoreSession {
     func start(relay: RelayAddress) { core.start(relay: relay) }
     func stop() { core.stop(); continuation.yield(.relay(.off)) }
     func resolveApproval(id: String, approved: Bool) { core.resolveApproval(id: id, approved: approved) }
+    func clearTap(on text: String, inApp bundleID: String?, named name: String?, waiting seconds: Double) async -> TapClearance {
+        await core.clearTap(on: text, inApp: bundleID, named: name, waiting: seconds)
+    }
     func accessChanged() { core.accessChanged() }
 
     private static func map(_ event: CoreEvent) -> ShellEvent {

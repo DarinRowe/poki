@@ -186,7 +186,7 @@ private struct AtWork: View {
 }
 
 /// The approval, on a white card that floats above the blue.
-private struct ApprovalCard: View {
+struct ApprovalCard: View {
     @Environment(AppModel.self) private var model
     var approval: PendingApproval
     /// PokiCore's approvals last 30 s.
