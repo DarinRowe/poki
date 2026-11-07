@@ -57,10 +57,26 @@ audio track, Poki's voice plays on the speaker, and events travel on the `oai-ev
 The phone never holds an OpenAI key. The voice bridge on the person's Mac (`bin/voice-bridge.mjs`)
 keeps the key and gives the phone a client secret that expires after 60 seconds:
 
-```sh
-export OPENAI_API_KEY=...            # for example: security find-generic-password -s openai-api-key -w
-POKI_MCP_STATE_DIR=... node bin/voice-bridge.mjs --device <iPhone id>
-```
+1. Create an API key at platform.openai.com (API keys). Realtime audio is billed to that account per
+   token; each test turn reports the tokens it used.
+2. Keep it in the keychain, and read it from there, so it never lands in your shell history:
+
+   ```sh
+   security add-generic-password -a "$USER" -s openai-api-key -w    # asks for the key
+   export OPENAI_API_KEY="$(security find-generic-password -s openai-api-key -w)"
+   ```
+
+3. Start Poki MCP first (`npm start`, see [docs/install.md](../../docs/install.md)); the bridge stops at
+   once with "Local Poki MCP is not running" without it. Then, with the same state directory:
+
+   ```sh
+   POKI_MCP_STATE_DIR=... node bin/voice-bridge.mjs --device <iPhone id>
+   ```
+
+The bridge listens on every network interface (`--host 0.0.0.0`), because the phone reaches it over
+the local network, in plain HTTP. Anyone who learns its address, which carries the secret, can open
+sessions on your OpenAI key and move the phone through your Mac. Run it only on a network you trust,
+and pass `--host <this Mac's LAN address>` to keep it off other interfaces (for example a VPN).
 
 Enter `http://<Mac>:47830/voice/<secret>` in the Voice tab (the secret is in `voice-bridge.json` in the
 state directory). `get_ios_version` is answered on the phone;
