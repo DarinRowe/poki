@@ -34,6 +34,9 @@ final class Computer: @unchecked Sendable {
     var lastForeground: Foreground?
     var size: ScreenSize?
     var lastPNG: Data?
+    /// The latest failed step's error, worded for the app log: what the field held is named by case
+    /// only (see recoverType). Core takes it after each call.
+    let failureLog = LockedBox<String?>(nil)
     var lastTree: String?
     var lastPicture: PictureSketch?
 
@@ -417,7 +420,9 @@ final class Computer: @unchecked Sendable {
     func run(_ actions: [JSON], started: Double, until: Double, numberedFrom offset: Int = 0) async -> (did: [String], error: String?, lastKind: String?) {
         var did: [String] = []
         var error: String?
+        var logError: String?
         var lastKind: String?
+        defer { if let line = logError ?? error { failureLog.value = line } }
         for (i, action) in actions.enumerated() {
             let index = offset + i
             let cap = action["launch"] != nil ? max(config.actionCap, 9) : config.actionCap
@@ -452,7 +457,7 @@ final class Computer: @unchecked Sendable {
                 // A type that failed or timed out may still have landed, or can be sent once more: what
                 // the field holds decides (see recoverType). Every other action that may have been
                 // delivered is never sent again by us.
-                var recoveryNote = ""
+                var recoveryNote = "", recoveryLog = ""
                 if let text = action["type"]?.text, action["via"]?.string != "paste", !(failure is ActionFailure), failure is RunnerError || failure is DeadlineExceeded {
                     let recovered = await recoverType(action, text: text, why: why, until: until - config.readTimeout - 0.5)
                     if let done = recovered.done {
@@ -461,10 +466,14 @@ final class Computer: @unchecked Sendable {
                         continue
                     }
                     recoveryNote = recovered.note.isEmpty ? "" : "; \(recovered.note)"
+                    recoveryLog = recovered.logNote.isEmpty ? "" : "; \(recovered.logNote)"
                 }
                 did.append("\(action.serialized()) (\(delivery.rawValue), \(Int(((now() - began) * 1000).rounded())) ms)")
                 // Nothing after a failed action is sent.
-                error = "action \(index + 1) \(delivery == .unknown ? "may have been delivered" : "was not sent"): \(why)\(recoveryNote)\(i + 1 < actions.count ? "; the actions after it were not sent" : "")"
+                let head = "action \(index + 1) \(delivery == .unknown ? "may have been delivered" : "was not sent"): \(why)"
+                let tail = i + 1 < actions.count ? "; the actions after it were not sent" : ""
+                error = head + recoveryNote + tail
+                logError = head + recoveryLog + tail
                 break
             }
         }
@@ -473,29 +482,40 @@ final class Computer: @unchecked Sendable {
 
     /// After a type that failed or timed out: what the focused field holds says what happened, so the
     /// text is neither lost nor typed twice. The text is all there (the runner answered late or with an
-    /// error after typing): it counts as typed. Not there, and the field is empty or being cleared (so
-    /// a second try cannot double it): sent once more. Anything else, a half-typed or unreadable
-    /// field: not sent again, and the note says what the field holds. `done` is the step's text when
-    /// the text is in the field; `note` goes on the error otherwise.
-    func recoverType(_ action: JSON, text: String, why: String, until: Double) async -> (done: String?, note: String) {
-        guard until - now() > 1.2 else { return (nil, "") }
+    /// error after typing): it counts as typed. The field is empty (a placeholder is nothing) or being
+    /// cleared, so a second try cannot double it: sent once more. Anything else, another person's text,
+    /// a half-typed or unreadable field: not sent again. `done` is the step's text when the text is in
+    /// the field. `note` goes on the answer to the model and may quote the field; `logNote` goes on the
+    /// line the app log keeps and only ever says which case it was, never what the field holds.
+    func recoverType(_ action: JSON, text: String, why: String, until: Double) async -> (done: String?, note: String, logNote: String) {
+        guard until - now() > 1.2 else { return (nil, "", "no time left to check the field") }
         let hidden = describe(action).hasSuffix("(hidden)")
         func shown(_ value: String) -> String { hidden ? "\(value.count) characters" : "\"\(value.count > 200 ? String(value.prefix(190)) + "…" : value)\"" }
-        guard let value = await focusedField(timeout: min(3, until - now() - 0.2))?.value else {
-            return (nil, "the field could not be read afterwards, so the text was not typed again")
+        let reading = await readField(timeout: min(3, until - now() - 0.2))
+        let value: String
+        switch reading {
+        case .unreadable:
+            return (nil, "the field could not be read afterwards, so the text was not typed again", "field unreadable, not typed again")
+        case .empty:
+            value = ""
+        case .text(let held):
+            if held.contains(text) {
+                return ("\(describe(action)) (typed); the runner answered late or with an error, and the field now reads \(shown(held))", "", "field contains target")
+            }
+            value = held
         }
-        if value.contains(text) {
-            return ("\(describe(action)) (typed); the runner answered late or with an error, and the field now reads \(shown(value))", "")
-        }
+        let state = value.isEmpty ? "field empty" : "field has other text"
         guard action["clear"]?.bool ?? false || value.isEmpty else {
-            return (nil, "the field holds \(shown(value)), which is not all of the text, so it was not typed again (a second try would double it)")
+            return (nil, "the field holds \(shown(value)), which is not all of the text, so it was not typed again (a second try would double it)", "\(state), not typed again")
         }
-        guard until - now() > 1.2 else { return (nil, "the field holds \(shown(value)); there was no time left to type again") }
+        guard until - now() > 1.2 else {
+            return (nil, value.isEmpty ? "the field is empty; there was no time left to type again" : "the field holds \(shown(value)); there was no time left to type again", "\(state), no time left to type again")
+        }
         do {
             let (_, text) = try await withDeadline(until - now(), "the second try of the action") { [self] in try await perform(action, until: until) }
-            return ("\(text) (sent again after the first try failed: \(why))", "")
+            return ("\(text) (sent again after the first try failed: \(why))", "", "")
         } catch {
-            return (nil, "the text was typed again once and that failed too: \(error)")
+            return (nil, "the text was typed again once and that failed too: \(error)", "\(state), typed again once and that failed too")
         }
     }
 

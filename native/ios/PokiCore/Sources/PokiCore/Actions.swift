@@ -266,6 +266,29 @@ extension Computer {
         return (id, value?.string)
     }
 
+    /// What the focused field holds, as far as a retry decision needs it.
+    enum FieldReading: Equatable {
+        /// Nothing typed in it. The real runner answers an empty field with its placeholder (or null),
+        /// never with an empty string, so the placeholder counts as nothing.
+        case empty
+        case text(String)
+        case unreadable
+    }
+
+    func readField(timeout: Double) async -> FieldReading {
+        guard let active = try? await runner.call("GET", "/element/active", timeout: timeout, countsAsMiss: false),
+              let id = active["ELEMENT"]?.string ?? active["element-6066-11e4-a52e-4f735466cecf"]?.string,
+              let value = try? await runner.call("GET", "/element/\(id)/attribute/value", timeout: timeout, countsAsMiss: false) else { return .unreadable }
+        if case .null = value { return .empty }
+        guard let text = value.string else { return .unreadable }
+        if text.isEmpty { return .empty }
+        // Placeholder: asked only when the field shows something, to tell it from the owner's own text.
+        if let placeholder = (try? await runner.call("GET", "/element/\(id)/attribute/placeholderValue", timeout: timeout, countsAsMiss: false))?.string, placeholder == text {
+            return .empty
+        }
+        return .text(text)
+    }
+
     func fieldValue(timeout: Double) async -> String? {
         await focusedField(timeout: timeout / 2)?.value
     }

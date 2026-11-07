@@ -129,6 +129,94 @@ final class FaultTests: XCTestCase {
         XCTAssertTrue(result.text.contains("the field holds \"hel\""), result.text)
     }
 
+    /// What the real runner answers (WDA's wdValue, with an empty string turned into nil): an empty field
+    /// reads as its placeholder, or null when it has none; the placeholder is also its own attribute.
+    private func realRunnerValue(_ wda: FakeWDA, _ field: Field, placeholder: String?) {
+        wda.set("GET /element/E1/attribute/value") { _ in
+            let held = field.value.value
+            if !held.isEmpty { return (200, ["value": .string(held)]) }
+            return (200, ["value": placeholder.map(JSON.string) ?? .null])
+        }
+        wda.set("GET /element/E1/attribute/placeholderValue") { _ in (200, ["value": placeholder.map(JSON.string) ?? .null]) }
+    }
+
+    /// Types `text` into the field and returns the answer and the error line the app log gets.
+    private func typeAndLog(_ core: PokiCore, _ text: String) async -> (answer: ToolResult, logged: String?) {
+        let events = LockedBox<[CoreEvent]>([])
+        Task { for await e in core.events { events.update { $0.append(e) } } }
+        _ = await core.call("look", [:])
+        let answer = await core.call("do", ["actions": [["type": .string(text)]]])
+        _ = await eventually { events.value.contains { if case .toolFinished(let a, _, _) = $0 { return a.name == "do" }; return false } }
+        guard case .toolFinished(_, _, let facts)? = events.value.last else { return (answer, nil) }
+        return (answer, facts.error)
+    }
+
+    func testAnEmptySearchFieldShowingItsPlaceholderIsTypedIntoAgain() async {
+        let (core, wda, _) = makeCore()
+        let field = Field()
+        field.install(wda)
+        realRunnerValue(wda, field, placeholder: "Search destinations")
+        keys(wda, field, [("", false), ("hello", true)])
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["type": "hello"]]])
+        XCTAssertFalse(result.isError, result.text)
+        XCTAssertEqual(field.value.value, "hello")
+        XCTAssertEqual(wda.bodies("POST /wda/keys").count, 2, "the placeholder is not text: one more try")
+    }
+
+    func testAnEmptyFieldThatReadsNullIsTypedIntoAgain() async {
+        let (core, wda, _) = makeCore()
+        let field = Field()
+        field.install(wda)
+        realRunnerValue(wda, field, placeholder: nil)
+        keys(wda, field, [("", false), ("hello", true)])
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["type": "hello"]]])
+        XCTAssertFalse(result.isError, result.text)
+        XCTAssertEqual(field.value.value, "hello")
+        XCTAssertEqual(wda.bodies("POST /wda/keys").count, 2)
+    }
+
+    func testAFailingTypeInAPlaceholderFieldIsNeverCalledHalfTyped() async {
+        let (core, wda, _) = makeCore()
+        let field = Field()
+        field.install(wda)
+        realRunnerValue(wda, field, placeholder: "Search destinations")
+        keys(wda, field, [("", false)])
+        let (answer, logged) = await typeAndLog(core, "hello")
+        XCTAssertTrue(answer.isError, answer.text)
+        XCTAssertEqual(wda.bodies("POST /wda/keys").count, 2)
+        XCTAssertFalse(answer.text.contains("Search destinations"), "the placeholder is not what the field holds: \(answer.text)")
+        XCTAssertTrue(logged?.contains("field empty") == true, logged ?? "no error line")
+    }
+
+    func testTheLogNamesAHalfTypedFieldButNeverItsContent() async {
+        let (core, wda, _) = makeCore()
+        let field = Field()
+        field.install(wda)
+        keys(wda, field, [("door code 44", false), ("door code 4412", true)])
+        let (answer, logged) = await typeAndLog(core, "door code 4412")
+        XCTAssertEqual(wda.bodies("POST /wda/keys").count, 1, "half typed: not typed again")
+        XCTAssertTrue(answer.text.contains("door code 44"), "the model is told what the field holds: \(answer.text)")
+        XCTAssertTrue(logged?.contains("field has other text") == true, logged ?? "no error line")
+        XCTAssertFalse(logged?.contains("door") ?? true, logged ?? "")
+        XCTAssertFalse(logged?.contains("44") ?? true, logged ?? "")
+    }
+
+    func testTheLogNeverHoldsTheOwnersOwnTextFromTheField() async {
+        let (core, wda, _) = makeCore()
+        let field = Field()
+        field.install(wda)
+        field.value.value = "Dear Sam, my bank PIN is 9931"
+        keys(wda, field, [("", false)])
+        let (answer, logged) = await typeAndLog(core, " see you")
+        XCTAssertEqual(wda.bodies("POST /wda/keys").count, 1)
+        XCTAssertTrue(answer.text.contains("bank PIN is 9931"), "the model is told what the field holds: \(answer.text)")
+        XCTAssertTrue(logged?.contains("field has other text") == true, logged ?? "no error line")
+        XCTAssertFalse(logged?.contains("Sam") ?? true, logged ?? "")
+        XCTAssertFalse(logged?.contains("9931") ?? true, logged ?? "")
+    }
+
     func testPasteIsTheBackupAndPutsTheOwnersClipboardBack() async {
         let (core, wda, _) = makeCore()
         let field = Field()
