@@ -41,6 +41,7 @@ Includes every entry in `package-lock.json`. Optional and platform-specific entr
 | `@modelcontextprotocol/core` | 2.4.0 | Apache-2.0 | [github.com/modelcontextprotocol/typescript-sdk](https://github.com/modelcontextprotocol/typescript-sdk) | regular dependency |
 | `@modelcontextprotocol/node` | 2.1.2 | Apache-2.0 | [github.com/modelcontextprotocol/typescript-sdk](https://github.com/modelcontextprotocol/typescript-sdk) | regular dependency |
 | `@modelcontextprotocol/server` | 2.4.0 | Apache-2.0 | [github.com/modelcontextprotocol/typescript-sdk](https://github.com/modelcontextprotocol/typescript-sdk) | regular dependency |
+| `acorn` | 8.19.0 | MIT | [github.com/acornjs/acorn](https://github.com/acornjs/acorn) | regular dependency |
 | `cross-spawn` | 7.0.6 | MIT | [github.com/moxystudio/node-cross-spawn](https://github.com/moxystudio/node-cross-spawn) | regular dependency |
 | `detect-libc` | 2.1.2 | Apache-2.0 | [github.com/lovell/detect-libc](https://github.com/lovell/detect-libc) | regular dependency |
 | `eventsource` | 3.0.7 | MIT | [github.com/EventSource/eventsource](https://github.com/EventSource/eventsource) | regular dependency |
