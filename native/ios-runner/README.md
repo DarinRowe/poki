@@ -23,30 +23,28 @@ now AltStore with the user's Apple ID).
 The probe (10.7.0.1 reachability and the background hold test) is now the Debug tab of the Poki app,
 `native/ios-app/Poki/Debug/`.
 
-## Design note: the runner dials out (not built yet)
+## How Poki reaches the runner
 
-Today the runner is reached at its WebDriver port over the tailnet. The end state is different, and
-two rules from the user bound it.
+The runner does not connect to the relay. PokiCore, inside the Poki app, dials the person's relay and
+sends WebDriver requests to the runner at `127.0.0.1:8100` on the same phone. PokiLauncher starts the
+runner through the phone's own developer services (`docs/ios-core.md`).
 
-**No listening socket, no unauthenticated control.** Poki's runner build must not listen on any
-network interface. WebDriverAgent's HTTP server is bound to 127.0.0.1 (or replaced by an in-process
-dispatcher), and all control arrives over the runner's own outbound connection:
+## Known issue: port 8100 is open to the local network
 
-1. On first launch the runner creates a device key (a keypair in the keychain, private key never
-   leaving the phone) and shows a pairing code. The user pairs it with their Poki account once; the
-   relay stores the public key, and the user can revoke it there at any time.
-2. The runner opens one outbound WebSocket (TLS) to the relay and authenticates with a signature over
-   a relay challenge. It keeps the connection up with pings and reconnects with backoff on network
-   changes, so Wi-Fi to cellular needs nothing from the user.
-3. The relay forwards WebDriver requests (method, path, body, request id) for that device over the
-   socket; the runner hands each to its local WebDriver dispatcher on 127.0.0.1 and sends back the
-   status and body. Only the WebDriver routes Poki uses are forwarded.
-4. MCP clients reach the relay through OAuth per user, and a user's tokens reach only that user's
-   paired devices.
+The launcher does not set WebDriverAgent's `USE_IP` (`native/launcher/src/launch.rs`), so WebDriverAgent
+listens on port 8100 on every network interface of the phone, not only on 127.0.0.1. It asks for no
+credentials. While the runner runs, any device on the same network can open `http://<phone IP>:8100`,
+take screenshots and tap, and PokiCore's approvals do not apply to those requests. Turn Poki on only on
+networks you trust.
+
+The planned fix pairs the runner with Poki through a pairing code, so that only Poki can control it.
+
+## Goals
+
+**No unauthenticated control.** Only Poki may control the runner. The known issue above breaks this
+rule today.
 
 **Minimal third-party tools.** The end state is a store-distributable Poki companion app that installs
-and refreshes the runner itself with the user's Apple ID (the SideStore / StikDebug approach), connects
-to the relay without Tailscale, and relaunches the runner after a reboot. A user needs only an Apple ID
-and Developer Mode. AltStore and Tailscale are stand-ins until then.
-
-The outbound client is the next step after the first green build.
+and refreshes the runner itself with the user's Apple ID (the SideStore / StikDebug approach) and
+relaunches the runner after a reboot. A user needs only an Apple ID and Developer Mode. AltStore is a
+stand-in until then.
