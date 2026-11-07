@@ -373,10 +373,11 @@ final class EventTests: XCTestCase {
         _ = await core.call("do", ["actions": [["type": "door code 4412"]]])
         _ = await core.call("look", [:])
         _ = await core.call("do", ["actions": [["tap": 1], ["type": "meet at 5, door code 4412"]]])
+        _ = await core.call("do", ["actions": [["type": "他说“好的”就在4412"]]])
         let summaries = { events.value.compactMap { e -> String? in if case .toolStarted(let a) = e, a.name == "do" { return a.summary }; return nil } }
-        let started = await eventually { summaries().count == 2 }
+        let started = await eventually { summaries().count == 3 }
         XCTAssertTrue(started)
-        XCTAssertEqual(summaries().map(StepLabels.withoutTypedText), ["Type “…”", "Tap “Search”, then type “…”"])
+        XCTAssertEqual(summaries().map(StepLabels.withoutTypedText), ["Type “…”", "Tap “Search”, then type “…”", "Type “…”"])
     }
 }
 
