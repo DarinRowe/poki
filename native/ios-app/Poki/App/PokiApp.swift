@@ -22,7 +22,7 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var tab = RootView.launchTab
 
-    enum Tabs: String, Hashable { case home, setup, connect, debug, activity }
+    enum Tabs: String, Hashable { case home, voice, setup, connect, debug, activity }
 
     /// `-pokiScreen setup` (and so on) opens that screen at launch, for the build's screenshots.
     static var launchTab: Tabs {
@@ -32,6 +32,7 @@ struct RootView: View {
     var body: some View {
         TabView(selection: $tab) {
             Tab("Poki", systemImage: "pawprint.fill", value: Tabs.home) { HomeView(openSetup: { tab = .setup }) }
+            Tab("Voice", systemImage: "waveform", value: Tabs.voice) { VoiceView() }
             Tab("Setup", systemImage: "checklist", value: Tabs.setup) { SetupView() }
                 .badge(model.setupComplete ? 0 : SetupStep.allCases.filter { !model.isDone($0) }.count)
             Tab("Connect", systemImage: "qrcode", value: Tabs.connect) { ConnectView() }
@@ -45,6 +46,9 @@ struct RootView: View {
         .onChange(of: scenePhase, initial: true) { _, phase in
             if phase == .active { model.becameActive() } else if phase == .background { model.wentToBackground() }
         }
-        .onOpenURL { _ in tab = .home }
+        .onOpenURL { url in
+            AppLog.shared.add("app", "opened by link poki://\(url.host() ?? "")")
+            if url.host() == "voice" { tab = .voice; model.voice.open(url) } else { tab = .home }
+        }
     }
 }

@@ -36,6 +36,10 @@ The on-phone runner is built from [appium/WebDriverAgent](https://github.com/app
 - [native/ios-runner/host](native/ios-runner/host) builds PokiRunnerHost, a library that `install.sh` adds to the built runner app and loads before XCTRunner's own code. Opened by hand, the runner then starts no test and sends people to Poki.
 - [native/ios-runner/branding](native/ios-runner/branding) replaces the built app's icon, display name and launch screen.
 
+## WebRTC
+
+The Poki app's Voice tab links Google's [WebRTC](https://webrtc.googlesource.com/src) through the unmodified prebuilt framework from [stasel/WebRTC](https://github.com/stasel/WebRTC) 155.0.0 (Swift Package Manager, `native/ios-app/project.yml`). WebRTC is BSD-3-Clause licensed (Copyright (c) 2011, The WebRTC project authors); its license and patent grant ship inside the framework (`WebRTC.xcframework/LICENSE`). The framework is downloaded at build time and not stored in this repository.
+
 ## JavaScript packages
 
 The exact installed versions come from `package-lock.json`. These packages provide the MCP server/client transports, image processing and input validation:

@@ -14,6 +14,7 @@ final class AppModel {
     let loopback = LoopbackMonitor()
     let background = BackgroundKeeper()
     let diskImage = DiskImageStore()
+    let voice = VoiceModel()
     private(set) var runner = RunnerStatus.idle
     private(set) var relayStatus = RelayStatus.off
     private(set) var sessionOn = false
