@@ -108,7 +108,7 @@ extension Computer {
         case "right": d = (1, 0)
         default: throw ActionFailure(message: "swipe must be up, down, left or right", delivery: .notSent)
         }
-        let half = (d.0 != 0 ? area.width : area.height) * (distance == "short" ? 0.2 : distance == "scroll" ? 0.42 : 0.35)
+        let half = (d.0 != 0 ? area.width : area.height) * (distance == "short" ? 0.2 : distance == "scroll" ? 0.36 : 0.35)
         let (cx, cy) = area.centre
         return (cx - d.0 * half, cy - d.1 * half, cx + d.0 * half, cy + d.1 * half)
     }
@@ -602,11 +602,12 @@ extension Computer {
             // A drag (0.7 s) needs its confirmation (1.5 s more) and a read after it.
             guard until - now() > 2.8 else { return notYet("the action's time ran out before the list was through (\(Int(Self.scrollCap)) s)") }
             guard await runnerFree(margin: 2.8) else { return notYet("the runner is still finishing the read after the last swipe") }
-            // A resting drag of 84 % of the area, not a flick: a flick's momentum carried the gym's
+            // A resting drag of 72 % of the area, not a flick: a flick's momentum carried the gym's
             // list 26 rows past a 15-row screen (the 70 % held for the finger, not the list), and
             // the tree read while a list decelerates waits for it to stop. The drag ends with the
-            // finger held still, so the list stops where it is, and two reads overlap by a row or
-            // two (60 % took 6 calls and 64 s for 250 rows in the gym).
+            // finger held still, so the list stops where it is, and two reads overlap by two rows
+            // or more (60 % took 6 calls and 64 s for 250 rows in the gym; 84 % left one row of
+            // overlap, under the navigation bar, and the drag back fired on every call: 8 calls).
             let path = corrective ? try swipePath(region, ["up": "down", "down": "up", "left": "right", "right": "left"][fingerGoes] ?? "down", "short") : try swipePath(region, fingerGoes, "scroll")
             do {
                 try await gesture(path, seconds: 0.4, rest: 0.2, until: until - 0.8)
@@ -622,9 +623,16 @@ extension Computer {
     /// Whether a read after a swipe shares nothing with the read before within the scroll area: the
     /// list moved more than a screen, and what was between may have been passed.
     func scrolledPastAScreen(from before: [Element], to after: [Element], in region: Rect) -> Bool {
-        func inside(_ es: [Element]) -> Set<String> { Set(es.filter { region.contains($0.frame.centre) && !$0.text.isEmpty && !Self.containers.contains($0.type) }.map(\.key)) }
+        // Every element whose frame meets the region counts, a row half under the navigation bar
+        // too (the gym's 84 % drag left only that row shared, and a check on centres missed it).
+        func inside(_ es: [Element]) -> Set<String> {
+            Set(es.filter { e in
+                let f = e.frame
+                return f.x < region.maxX && f.maxX > region.x && f.y < region.maxY && f.maxY > region.y && !e.text.isEmpty && !Self.containers.contains(e.type)
+            }.map(\.key))
+        }
         let a = inside(before), b = inside(after)
-        return a.count >= 3 && b.count >= 3 && a.isDisjoint(with: b)
+        return a.count >= 4 && b.count >= 4 && a.isDisjoint(with: b)
     }
 
     /// The time one scroll_to may take: more than an action, since it reports where it got to.

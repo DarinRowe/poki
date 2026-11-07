@@ -98,6 +98,8 @@ that no answer may halt the agent and from the first Poki Gym runs (`native/ios-
     the region with a 0.2 s rest.
 20. A large element (a third of the screen or more) with no parts in the tree, such as Photos'
     Library grid, is listed with a note to tap a point on the picture.
+21. `scroll_to` drags 72 % of the region and checks overlap by element frames before any drag back;
+    a call whose time at the MCP exceeds the tool's own by over 2 s ends with an `at the MCP:` line.
 
 Still not done: a `collect` or `expect` field, a `recover` action, and redaction of sensitive text
 (Zhehan: out of scope for now).

@@ -44,6 +44,8 @@ final class Computer: @unchecked Sendable {
     var lastPNG: Data?
     /// When `lastPNG` was taken (it stands in, marked stale, when a read gives no picture at all).
     var lastPNGAt: Double?
+    /// How long the last look or do took inside the computer, for the MCP's own accounting.
+    var lastCallTook: Double?
     var lastTree: String?
     var lastPicture: PictureSketch?
 
@@ -370,6 +372,12 @@ final class Computer: @unchecked Sendable {
     }
 
     func look(full: Bool) async -> ToolResult {
+        let started = now()
+        defer { lastCallTook = now() - started }
+        return await lookNow(full: full)
+    }
+
+    func lookNow(full: Bool) async -> ToolResult {
         let until = now() + config.toolDeadline
         if let blocked = await waitForRunner(until: until) { return blocked }
         async let locked = isLocked()
@@ -575,6 +583,7 @@ final class Computer: @unchecked Sendable {
         let total = now() - callStarted
         let readTook = now() - readStarted
         let parts = (prepared - callStarted) + actionsTook + readTook + approvalWaited
+        lastCallTook = total
         if total >= 8 || total - parts > 2 {
             result.text += "\ntook: \(Self.seconds(total)) s in all: \(Self.seconds(prepared - callStarted)) s before the actions (runner start, busy wait, lock check), \(Self.seconds(actionsTook)) s actions, \(Self.seconds(readTook)) s read\(approvalWaited > 0 ? ", \(Self.seconds(approvalWaited)) s the owner's approval" : "")\(total - parts > 2 ? ", \(Self.seconds(total - parts)) s elsewhere" : "")"
         }

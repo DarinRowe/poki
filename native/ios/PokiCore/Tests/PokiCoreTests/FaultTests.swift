@@ -1086,7 +1086,7 @@ final class GymTests: XCTestCase {
         XCTAssertLessThan(abs(sent[1].3 - sent[1].1), abs(sent[0].3 - sent[0].1), "the drag back is the shorter")
         let bodies = wda.bodies("POST /wda/pressAndDragWithVelocity")
         XCTAssertEqual(bodies.first?["holdDuration"]?.double, 0.2, "a resting drag, not a flick")
-        XCTAssertGreaterThan(abs((bodies.first?["toY"]?.double ?? 0) - (bodies.first?["fromY"]?.double ?? 0)), 600, "a long drag (84 % of the list's area), not 60 %")
+        XCTAssertGreaterThan(abs((bodies.first?["toY"]?.double ?? 0) - (bodies.first?["fromY"]?.double ?? 0)), 500, "a long drag (72 % of the list's area), not 60 %")
     }
 
     /// Settings' search field: the keyboard came after the focus wait, and the text had landed, but
@@ -1130,6 +1130,21 @@ final class GymTests: XCTestCase {
         XCTAssertEqual(body?["x"]?.double, 195, result.text)
         XCTAssertEqual(body?["y"]?.double, 772, result.text)
         XCTAssertTrue(result.text.contains("its centre is off the screen, so the centre of its visible part was tapped"), result.text)
+    }
+
+    /// Gym: a call measured 25.5 s at the driver against a took: line of 9.2 s. The MCP now
+    /// accounts for its own time around the tool: here a look that waited for a do to finish.
+    func testTheMCPAccountsForTheTimeAroundTheTool() async {
+        let (core, wda, _) = makeCore { $0.busyWait = 6 }
+        wda.tree([Node("StaticText", "Hello", [20, 100, 200, 40])], app: "Notes")
+        _ = await core.call("look", [:])
+        async let first = core.call("do", ["actions": [["wait_until": ["text": "Never", "ms": 3000]]]])
+        await sleep(seconds: 0.3)
+        let second = await core.call("look", [:])
+        _ = await first
+        XCTAssertTrue(second.text.contains("at the MCP: "), second.text)
+        XCTAssertTrue(second.text.contains("s waiting for the call before to finish"), second.text)
+        XCTAssertFalse(second.text.contains("busy: another call"), second.text)
     }
 
     /// Photos' home: the Library grid is one Button of 402x586 with the photos nowhere in the tree

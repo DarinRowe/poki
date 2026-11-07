@@ -482,8 +482,16 @@ Each answer is facts only: the app in front, numbered elements, what each action
   Go/Return/Search/Done/Send/Next key when the tree lists one ("key return: tapped the keyboard's
   "Go" key at [340, 820]"); without a keyboard it is sent as a key event and the answer says so
   (Safari's address bar kept its suggestions after the key event on one gym run). The scroll drag
-  is 84 % of the area with a 0.2 s rest: with no momentum, a row or two of overlap is enough (60 %
-  took 6 calls and 64 s for 250 rows).
+  is 72 % of the area with a 0.2 s rest: with no momentum, two rows of overlap are enough (60 %
+  took 6 calls and 64 s for 250 rows; 84 % left one row, under the navigation bar, and the
+  drag-back check fired on every call: 8 calls and 83 s). The check now counts every element
+  whose frame meets the list's area, not only those whose centre does, and needs four on each
+  side with nothing shared before it drags back.
+- **The MCP accounts for its own time around the tool.** A call measured 25.5 s at the driver
+  against a "took:" line of 9.2 s. When the time from the request to the answer is over 2 s more
+  than the tool's own, the answer ends with "at the MCP: 12.1 s from the request to this answer,
+  9.2 s of it the tool's own, 2.5 s waiting for the call before to finish, 0.4 s making the
+  answer". What is left is the relay and the network, outside PokiCore.
 - **One element covering the screen with no parts in the tree says so.** Photos' home has its
   Library grid as one Button of 402x586 with the photos nowhere in WDA's XML (the SwiftUI grid is
   one accessibility element), so its centre is one photo among many. A Button, Cell, Image, Link
