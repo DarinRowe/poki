@@ -3,14 +3,13 @@ import PokiCore
 import UIKit
 
 /// Which side carries out PokiCore's actions: Poki Runner (WebDriverAgent on port 8100) or Poki's own
-/// process (`InProcessWDA`). Read at launch; a change takes effect when Poki starts again.
+/// process (`InProcessWDA`). Read once per launch (`-automationPath runner` chooses Poki Runner), so
+/// setup, Home and the transport always agree.
 enum AutomationPath: String, CaseIterable, Identifiable {
     case runner
     case inProcess = "in-process"
     var id: String { rawValue }
-    static var current: AutomationPath {
-        UserDefaults.standard.string(forKey: "automationPath").flatMap(AutomationPath.init(rawValue:)) ?? .inProcess
-    }
+    static let current: AutomationPath = UserDefaults.standard.string(forKey: "automationPath").flatMap(AutomationPath.init(rawValue:)) ?? .inProcess
 }
 
 /// Poki's own automation session, once the launcher has mounted the disk image (ESP-152).
