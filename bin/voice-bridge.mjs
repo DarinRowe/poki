@@ -181,6 +181,12 @@ async function mintToken(options) {
   return { value: body.value, expires_at: body.expires_at, model, local_tools: voiceTools.filter(t => t.local).map(t => t.name) };
 }
 
+// A body that is not JSON is the caller's mistake: 400, not 500.
+const readJSON = async req => {
+  const body = await readBody(req);
+  try { return JSON.parse(body); } catch { throw Object.assign(new Error('the body is not JSON'), { status: 400 }); }
+};
+
 const readBody = req => new Promise((resolve, reject) => {
   let data = '';
   req.setEncoding('utf8');
@@ -208,7 +214,7 @@ const server = http.createServer(async (req, res) => {
       return reply(200, token);
     }
     if (req.method === 'POST' && action === 'tool') {
-      const call = JSON.parse(await readBody(req));
+      const call = await readJSON(req);
       if (typeof call.call_id !== 'string' || typeof call.name !== 'string') return reply(400, { error: 'call_id and name are required' });
       const entry = await runTool(mcp, call);
       console.log(JSON.stringify({ event: 'tool', call_id: call.call_id, name: call.name, state: entry.state, ms: entry.finished - entry.started, replayed: !!entry.replayed }));
@@ -222,7 +228,7 @@ const server = http.createServer(async (req, res) => {
       return res.end(audio);
     }
     if (testDir && req.method === 'POST' && action === 'report') {
-      const turn = JSON.parse(await readBody(req));
+      const turn = await readJSON(req);
       await appendFile(join(stateDir, 'voice-test-report.jsonl'), JSON.stringify({ at: new Date().toISOString(), ...turn }) + '\n', { mode: 0o600 });
       console.log(JSON.stringify({ event: 'test-turn', n: turn.n, ok: turn.ok, calls: turn.calls, ms: turn.ms }));
       return reply(200, {});
