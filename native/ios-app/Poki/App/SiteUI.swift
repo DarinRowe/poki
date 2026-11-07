@@ -70,7 +70,7 @@ extension Site {
 struct GroupLabel: View {
     var text: LocalizedStringKey
     var body: some View {
-        Text(text).site(13, line: 16).textCase(.uppercase).foregroundStyle(Site.c4)
+        Text(text).site(13, line: 16).foregroundStyle(Site.c4)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 16).padding(.top, 22).padding(.bottom, 7)
     }

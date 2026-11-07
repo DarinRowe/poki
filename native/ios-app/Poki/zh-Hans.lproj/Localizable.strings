@@ -98,6 +98,8 @@
 
 /* Loopback details */
 "Looking for this iPhone at 10.7.0.1." = "正在 10.7.0.1 查找此 iPhone。";
+"This iPhone answers at 10.7.0.1 (%lld ms)." = "此 iPhone 在 10.7.0.1 应答（%lld 毫秒）。";
+"Connect to Wi-Fi: the developer services need it." = "请连接无线局域网，开发者服务需要它。";
 "Your proxy app's tunnel is on, but 10.7.0.1 is not reflected. Turn on the Poki module or route, then reconnect the proxy." = "代理 App 的隧道已开启，但 10.7.0.1 没有被反射。请开启 Poki 模块或路由，然后重新连接代理。";
 "Nothing answers at 10.7.0.1. Turn on your proxy app (with the Poki module) or LocalDevVPN." = "10.7.0.1 没有应答。请开启代理 App（含 Poki 模块）或 LocalDevVPN。";
 
@@ -140,7 +142,6 @@
 "Tunnel on, no answer" = "隧道已开，无应答";
 "Not on yet" = "尚未开启";
 "Checking 10.7.0.1 every few seconds…" = "每隔几秒检查一次 10.7.0.1…";
-"Use Your Proxy App" = "使用你的代理 App";
 "In Use" = "使用中";
 "Installed" = "已安装";
 "%@ or later" = "%@ 或更高版本";
@@ -178,7 +179,6 @@
 "This happens after a restore, a reset of Location & Privacy, or when the phone forgot Poki. Pair again; the old key is replaced." = "恢复 iPhone、还原“位置与隐私”或 iPhone 忘记 Poki 后会出现这种情况。重新配对即可，旧密钥会被替换。";
 "Paired. The phone accepted it at %@." = "已配对。iPhone 于 %@ 接受了配对。";
 "Paired. Checked the next time the runner starts." = "已配对。Runner 下次启动时会再次检查。";
-"Other Ways" = "其他方式";
 "Import Pairing File" = "导入配对文件";
 "Invalid Pairing File: %@" = "配对文件无效：%@";
 "Enter this code in Settings. It also appears on the Lock Screen." = "在“设置”中输入此配对码。配对码也会显示在锁定屏幕上。";
@@ -209,7 +209,6 @@
 /* Settings */
 "This iPhone" = "此 iPhone";
 "The relay forwards requests to this iPhone while Poki is open or in the background. It stores nothing; when offline, clients receive an error." = "当 Poki 打开或在后台运行时，中转服务器会将请求转发至此 iPhone。服务器不存储任何数据；设备离线时，客户端会收到明确的错误提示。";
-"Agents" = "智能体";
 "Name, e.g., Claude" = "名称，例如 Claude";
 "Add" = "添加";
 "Revoke Access" = "撤销访问权限";
@@ -251,11 +250,9 @@
 "%lld lines" = "%lld 行";
 "Live Activity Preview" = "实时活动预览";
 "Runner starts and stops, agent steps, approvals, and connection changes. Password field entries are never logged." = "记录 Runner 启停、智能体步骤、批准状态及连接变化。密码栏中输入的内容绝不会记入日志。";
-"Proxy Loopback Interface" = "代理回环接口";
 "No IPv6 on this interface" = "此接口无 IPv6";
 "IPv6 present: %@" = "有 IPv6：%@";
 "No interface has a 10.7.0.x address. Check that your proxy app is on and its loopback module is enabled." = "没有接口拥有 10.7.0.x 地址。请检查代理 App 是否开启，以及回环模块是否启用。";
-"Checks" = "检查";
 "%@: %@" = "%1$@：%2$@";
 "Reflected lockdown" = "反射 lockdown";
 "Reflected RemotePairing" = "反射 RemotePairing";
@@ -268,12 +265,24 @@
 "No address" = "无地址";
 "Running…" = "正在运行…";
 "Run Checks" = "运行检查";
-"Background Hold" = "后台保活";
 "Port on 10.7.0.1" = "10.7.0.1 端口";
 "Experiment" = "实验模式";
 "None" = "无";
 "Silent audio" = "静音音频";
 "Start Hold" = "开始保活测试";
 "Tap Start, leave the app for a while, then return. The log records suspension gaps and connection closures." = "轻点“开始”，离开 App 一段时间后再返回。日志会记录挂起时段及连接断开的时间。";
-"Addresses" = "网络地址";
 "Clear" = "清除";
+
+/* Group captions, in capitals in English */
+"AGENTS" = "智能体";
+"RUNNER" = "Runner";
+"THIS IPHONE" = "此 iPhone";
+"RELAY ADDRESS" = "中转地址";
+"STATUS" = "状态";
+"LOG" = "日志";
+"PROXY LOOPBACK INTERFACE" = "代理回环接口";
+"CHECKS" = "检查";
+"BACKGROUND HOLD" = "后台保活";
+"ADDRESSES" = "网络地址";
+"USE YOUR PROXY APP" = "使用你的代理 App";
+"OTHER WAYS" = "其他方式";

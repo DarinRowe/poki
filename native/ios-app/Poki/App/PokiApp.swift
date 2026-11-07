@@ -42,7 +42,7 @@ struct RootView: View {
             if phase == .active { model.becameActive() } else if phase == .background { model.wentToBackground() }
         }
         // A tap on the Live Activity brings Home to the front.
-        .onOpenURL { _ in settings = nil; setupStart = nil }
+        .onOpenURL { _ in settings = nil; setupStart = nil; homePath = [] }
         .onAppear(perform: openLaunchScreen)
     }
 

@@ -77,19 +77,19 @@ final class LoopbackMonitor {
 
     var text: String {
         switch state {
-        case .checking: "Checking…"
-        case .working: "Working"
-        case .noAnswer: "Tunnel on, no answer"
-        case .off: "Off"
+        case .checking: String(localized: "Checking…")
+        case .working: String(localized: "Working")
+        case .noAnswer: String(localized: "Tunnel on, no answer")
+        case .off: String(localized: "Off")
         }
     }
 
     var detail: String {
         switch state {
-        case .checking: "Looking for this iPhone at 10.7.0.1."
-        case .working(let ms): "This iPhone answers at 10.7.0.1 (\(ms) ms)." + (onWiFi ? "" : " Connect to Wi-Fi: the developer services need it.")
-        case .noAnswer: "Your proxy app's tunnel is on, but 10.7.0.1 is not reflected. Turn on the Poki module or route, then reconnect the proxy."
-        case .off: "Nothing answers at 10.7.0.1. Turn on your proxy app (with the Poki module) or LocalDevVPN."
+        case .checking: String(localized: "Looking for this iPhone at 10.7.0.1.")
+        case .working(let ms): String(localized: "This iPhone answers at 10.7.0.1 (\(ms) ms).") + (onWiFi ? "" : " " + String(localized: "Connect to Wi-Fi: the developer services need it."))
+        case .noAnswer: String(localized: "Your proxy app's tunnel is on, but 10.7.0.1 is not reflected. Turn on the Poki module or route, then reconnect the proxy.")
+        case .off: String(localized: "Nothing answers at 10.7.0.1. Turn on your proxy app (with the Poki module) or LocalDevVPN.")
         }
     }
 }

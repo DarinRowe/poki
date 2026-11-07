@@ -162,7 +162,7 @@ private struct AtWork: View {
                     HStack {
                         Text("All Steps").site(15, line: 18)
                         Spacer()
-                        Text(Self.stepCount(model.recentSteps)).site(15, line: 18).foregroundStyle(Site.c4)
+                        Text(Self.stepCount(model)).site(15, line: 18).foregroundStyle(Site.c4)
                         Text(verbatim: "›").site(15, line: 18).foregroundStyle(Site.c4)
                     }
                     .padding(.horizontal, 16).frame(height: 44).glassCard(14).contentShape(.rect)
@@ -176,10 +176,11 @@ private struct AtWork: View {
         }
     }
 
-    /// "5 steps, 1 missed".
-    static func stepCount(_ steps: [RecentStep]) -> String {
+    /// "5 steps, 1 missed", counting the step under way.
+    @MainActor static func stepCount(_ model: AppModel) -> String {
+        let steps = model.recentSteps
         let missed = steps.filter { !$0.ok }.count
-        let count = String(localized: "\(steps.count) steps")
+        let count = String(localized: "\(steps.count + (model.activityText != "Idle" ? 1 : 0)) steps")
         return missed == 0 ? count : String(localized: "\(count), \(missed) missed")
     }
 }
@@ -628,7 +629,7 @@ struct AllStepsView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(model.currentApp ?? String(localized: "All Steps")).site(28, .heavy, line: 34, tracking: -0.02)
                         if let first = model.recentSteps.first {
-                            Text("\(AtWork.stepCount(model.recentSteps)). Started at \(first.at.formatted(date: .omitted, time: .shortened)).")
+                            Text("\(AtWork.stepCount(model)). Started at \(first.at.formatted(date: .omitted, time: .shortened)).")
                                 .site(15, line: 20).foregroundStyle(Site.c3)
                         }
                     }

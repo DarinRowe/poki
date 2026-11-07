@@ -33,7 +33,7 @@ struct DiagnosticsView: View {
     }
 
     @ViewBuilder private var logGroup: some View {
-        GroupLabel(text: "Log")
+        GroupLabel(text: "LOG")
         VStack(spacing: 0) {
             HStack(spacing: 10) {
                 Button {
@@ -63,7 +63,7 @@ struct DiagnosticsView: View {
     }
 
     @ViewBuilder private var loopbackGroup: some View {
-        GroupLabel(text: "Proxy Loopback Interface")
+        GroupLabel(text: "PROXY LOOPBACK INTERFACE")
         VStack(alignment: .leading, spacing: 4) {
             if let loop = loopbackInterface(addresses) {
                 Text(verbatim: "\(loop.interface)  \(loop.address)").mono(16, .semibold).foregroundStyle(Site.text)
@@ -81,7 +81,7 @@ struct DiagnosticsView: View {
     }
 
     @ViewBuilder private var checksGroup: some View {
-        GroupLabel(text: "Checks")
+        GroupLabel(text: "CHECKS")
         VStack(spacing: 0) {
             ForEach(results) { r in
                 VStack(alignment: .leading, spacing: 4) {
@@ -105,7 +105,7 @@ struct DiagnosticsView: View {
     }
 
     @ViewBuilder private var holdGroup: some View {
-        GroupLabel(text: "Background Hold")
+        GroupLabel(text: "BACKGROUND HOLD")
         VStack(spacing: 0) {
             WhiteRow(title: "Port on 10.7.0.1") {
                 TextField(text: $hold.port, prompt: Text(verbatim: "49152").foregroundStyle(Site.text3)) { Text("Port on 10.7.0.1") }
@@ -150,7 +150,7 @@ struct DiagnosticsView: View {
     }
 
     @ViewBuilder private var addressesGroup: some View {
-        GroupLabel(text: "Addresses")
+        GroupLabel(text: "ADDRESSES")
         VStack(alignment: .leading, spacing: 6) {
             ForEach(addresses.indices, id: \.self) { i in
                 Text(verbatim: "\(addresses[i].interface)  \(addresses[i].address)").mono(12).foregroundStyle(Site.text2)

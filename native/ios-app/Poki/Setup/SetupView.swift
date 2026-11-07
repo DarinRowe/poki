@@ -233,7 +233,7 @@ private struct GlassActionRow: View {
 private struct SectionCaption: View {
     var text: LocalizedStringKey
     var body: some View {
-        Text(text).site(13, line: 16).textCase(.uppercase).foregroundStyle(Site.c4)
+        Text(text).site(13, line: 16).foregroundStyle(Site.c4)
             .padding(.leading, 36).padding(.trailing, 20).padding(.top, 24).padding(.bottom, 8)
     }
 }
@@ -278,7 +278,7 @@ private struct LoopbackPage: View {
         .padding(.horizontal, 20).padding(.top, 20)
         .accessibilityElement(children: .combine)
 
-        SectionCaption(text: "Use Your Proxy App")
+        SectionCaption(text: "USE YOUR PROXY APP")
         VStack(spacing: 0) {
             ForEach(ProxyApps.all) { app in proxyRow(app) }
             localDevVPN
@@ -455,7 +455,7 @@ private struct PairingPage: View {
             }
         }
         diskImage.padding(.horizontal, 20).padding(.top, 14)
-        SectionCaption(text: "Other Ways")
+        SectionCaption(text: "OTHER WAYS")
         VStack(spacing: 0) {
             GlassActionRow(title: "Import Pairing File", chevron: true, divider: cancelShown || pairAgainShown) { importing = true }
             if pairAgainShown {

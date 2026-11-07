@@ -6,6 +6,7 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var scheme
     @State private var path: [SettingsRoute]
     var openSetup: () -> Void
 
@@ -28,7 +29,7 @@ struct SettingsView: View {
                 }
         }
         .presentationDragIndicator(.hidden)
-        .presentationBackground(Site.blue)
+        .presentationBackground(Site.page(scheme))
     }
 }
 
@@ -84,7 +85,7 @@ private struct SettingsHome: View {
     }
 
     @ViewBuilder private var agents: some View {
-        GroupLabel(text: "Agents")
+        GroupLabel(text: "AGENTS")
         VStack(spacing: 0) {
             ForEach(model.identity.secrets) { secret in
                 Button { path.append(.connector(secret)) } label: {
@@ -131,7 +132,7 @@ private struct SettingsHome: View {
 
     @ViewBuilder private var runner: some View {
         @Bindable var model = model
-        GroupLabel(text: "Runner")
+        GroupLabel(text: "RUNNER")
         VStack(spacing: 0) {
             WhiteRow(title: "Runner") { RowValue(text: Text(Health.runner(model).word), chevron: false) }
             WhiteRow(title: "Stop When Idle For") {
@@ -167,7 +168,7 @@ private struct SettingsHome: View {
     @ViewBuilder private var phone: some View {
         let done = SetupStep.allCases.filter(model.isDone).count
         let total = SetupStep.allCases.count
-        GroupLabel(text: "This iPhone")
+        GroupLabel(text: "THIS IPHONE")
         VStack(spacing: 0) {
             Button { path.append(.relay) } label: {
                 WhiteRow(title: "Relay") {
@@ -213,7 +214,7 @@ private struct RelayView: View {
                 SheetHeader(title: Text("Relay"), back: "Settings", onBack: back)
                 ScrollView {
                     VStack(spacing: 0) {
-                        GroupLabel(text: "Relay Address")
+                        GroupLabel(text: "RELAY ADDRESS")
                         HStack {
                             TextField(text: $text, prompt: Text(verbatim: "https://poki-relay.you.workers.dev").foregroundStyle(Site.text3)) { Text("Relay Address") }
                                 .mono(15).foregroundStyle(Site.text)
@@ -230,7 +231,7 @@ private struct RelayView: View {
                                 .foregroundStyle(Color(hex: 0xFFC9C5))
                         }
                         GroupFootnote(text: "Poki has no default relay. Deploy your own to your Cloudflare account with deploy/cf-relay/deploy.sh from the Poki repository, then enter the address it prints. Screenshots and taps pass only through that relay.")
-                        GroupLabel(text: "Status")
+                        GroupLabel(text: "STATUS")
                         WhiteRow(title: "Relay", divider: false) { RowValue(text: Text(statusText), chevron: false) }.whiteCard()
                     }
                     .padding(.horizontal, 16).padding(.bottom, 40)

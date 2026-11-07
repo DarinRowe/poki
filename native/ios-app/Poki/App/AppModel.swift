@@ -142,18 +142,21 @@ final class AppModel {
     /// `-pokiSample B` (YES is B), `C` or `PIN`: the home screen states of ESP-139 board 01 with sample
     /// steps and an approval, only for the build's screenshots. Nothing is started: B and D look like a
     /// session at work, C like one standing by (the loopback check stays live, so a simulator shows it
-    /// off). A relay address and two connectors are added the normal way when there are none.
+    /// off). A sample relay address (not saved) and, on a simulator, two agents are added when there are none.
     private func loadSample() {
         let scene = UserDefaults.standard.string(forKey: "pokiSample")?.uppercased() ?? "B"
         // PIN: setup's pairing page with a sample code, as if Settings had asked for one.
         if scene == "PIN" { pairing = .pin("482913"); return }
         let now = Date()
         let messages = String(localized: "Messages")
-        if relayAddress == nil { _ = setRelay("https://your-relay.example") }
-        if identity.secrets.isEmpty, relayAddress != nil {
+        // The sample relay is not saved. Sample agents go into the keychain, so only a simulator gets them.
+        if relayAddress == nil { relayAddress = RelayAddress("https://your-relay.example") }
+        #if targetEnvironment(simulator)
+        if identity.secrets.isEmpty {
             _ = addConnector(name: "Claude")
             _ = addConnector(name: "Codex")
         }
+        #endif
         Thumbnail.previewImage = ActivityPreview.sampleScreen()
         sessionOn = true
         relayStatus = .ready
@@ -320,7 +323,7 @@ final class AppModel {
     private func loopbackChanged(from old: LoopbackMonitor.State, to new: LoopbackMonitor.State) {
         let wasWorking = { if case .working = old { true } else { false } }()
         if wasWorking, !loopback.isWorking {
-            log.add("loopback", "dropped: 10.7.0.1 stopped answering (\(loopback.text)); the runner cannot survive this")
+            log.add("loopback", "dropped: 10.7.0.1 stopped answering (\(loopback.state)); the runner cannot survive this")
         } else if !wasWorking, loopback.isWorking, old != .checking {
             log.add("loopback", "back: 10.7.0.1 answers again" + (sessionOn && !runner.isRunning && !runnerPaused ? "; starting the runner now" : ""))
             if sessionOn, !runner.isRunning, !runnerPaused { launcher.restart() }
