@@ -39,6 +39,7 @@ Speak briefly: one short sentence per reply, in the user's language.
 When a tool can answer or do what the user asks, call it at once, without speaking first. Never guess facts about the phone; use a tool.
 Call a tool once per request. Never repeat an action that already ran, including actions from before a reconnect that the conversation says have finished.
 Tapping something that sends, pays, deletes or calls waits until the user allows it on the phone; if the result says they did not, tell them in one sentence and do not try another way.
+Only the user approves, with their own finger: never open Poki to tap Allow, Deny or anything else in it.
 If the user tells you to stop or be quiet, stop talking, but anything already running keeps running; when its result arrives, report it in one sentence.
 To read a page, open it first, then read the screen.`;
 
@@ -86,11 +87,12 @@ const runners = {
   open_app: async (mcp, a) => clip(text(await mcp.call('launch_app', { name: a.name }))),
   // Only with `checked`, the app and element text the phone cleared (see runTool).
   async tap_text(mcp, a, checked) {
-    if (checked.app) {
-      // The owner may have opened Poki to allow it; the tap belongs to the app that was checked.
-      const front = JSON.parse(text(await mcp.call('get_foreground_app', {})));
-      if (front.bundle_id !== checked.app) await mcp.call('launch_app', { bundle_id: checked.app });
-    }
+    if (isPoki(checked.app)) throw new Error(ownAppRefusal);
+    // Unknown when the screen names no app; then the checked app is opened again.
+    const front = await mcp.call('get_foreground_app', {}).then(result => JSON.parse(text(result)), () => null);
+    // The owner may have opened Poki to allow it; the tap belongs to the app that was checked.
+    if (checked.app && front?.bundle_id !== checked.app) await mcp.call('launch_app', { bundle_id: checked.app });
+    else if (!checked.app && isPoki(front?.bundle_id)) throw new Error(ownAppRefusal);
     return clip(text(await mcp.call('tap_text', { text: checked.text, exact: true })));
   },
   go_home: async mcp => clip(text(await mcp.call('press_button', { button: 'home' }))),
@@ -108,12 +110,17 @@ class Mcp {
   }
 }
 
+// The approval card is in Poki: a voice tap never lands there (the phone refuses it too).
+const isPoki = id => typeof id === 'string' && (id === 'nz.zheha.poki' || id.startsWith('nz.zheha.poki.'));
+const ownAppRefusal = "only the phone's owner can approve, by tapping it on the phone themselves; Poki takes no taps inside the Poki app. Nothing was tapped.";
+
 const names = e => [e.label, e.text, e.value].filter(s => typeof s === 'string' && s.trim());
 
 // What tap_text would tap, read without touching the phone: Poki MCP's own matching on the screen.
 async function tapTarget(mcp, wanted) {
   if (typeof wanted !== 'string' || !wanted.trim()) throw new Error('tap_text needs text');
   let screen = JSON.parse(text(await mcp.call('list_elements', { max_elements: 400 })));
+  if (isPoki(screen.foreground?.bundle_id)) throw new Error(ownAppRefusal);
   let found = matching(screen.elements, wanted);
   if (!found.length && screen.source !== 'ocr') {
     screen = JSON.parse(text(await mcp.call('list_elements', { source: 'ocr', max_elements: 400 })));

@@ -15,7 +15,10 @@ final class LiveCore: CoreSession {
 
     init(host: AppCoreHost) {
         self.host = host
-        core = PokiCore(config: CoreConfig(), host: host)
+        var config = CoreConfig()
+        // Signing tools may rename the app; its own id is Poki too.
+        if let own = Bundle.main.bundleIdentifier { config.ownApps.append(own) }
+        core = PokiCore(config: config, host: host)
         (events, continuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(64))
         let continuation = self.continuation
         pump = Task { [core] in

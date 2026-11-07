@@ -15,8 +15,11 @@ public struct CoreConfig: Sendable {
     public var busyWait: Double
     /// How long a call waits for a runner that is starting (the app wakes it when a call comes in).
     public var runnerWait: Double
+    /// Poki's own bundle ids (and the ids under them, like a development build's). The approval card is
+    /// in Poki, so neither `do` nor a voice tap ever taps there: only the owner's finger does.
+    public var ownApps: [String]
 
-    public init(runnerURL: URL = URL(string: "http://127.0.0.1:8100")!, sensitive: SensitivityRules = SensitivityRules(), approvalWait: Double = 20, toolDeadline: Double = 25, actionCap: Double = 6, readTimeout: Double = 4, busyWait: Double = 2, runnerWait: Double = 15) {
+    public init(runnerURL: URL = URL(string: "http://127.0.0.1:8100")!, sensitive: SensitivityRules = SensitivityRules(), approvalWait: Double = 20, toolDeadline: Double = 25, actionCap: Double = 6, readTimeout: Double = 4, busyWait: Double = 2, runnerWait: Double = 15, ownApps: [String] = ["nz.zheha.poki"]) {
         self.runnerURL = runnerURL
         self.sensitive = sensitive
         self.approvalWait = approvalWait
@@ -25,7 +28,18 @@ public struct CoreConfig: Sendable {
         self.readTimeout = readTimeout
         self.busyWait = busyWait
         self.runnerWait = runnerWait
+        self.ownApps = ownApps
     }
+
+    /// Whether `app` is Poki itself. An app known only by name counts when it is named Poki.
+    func isPoki(_ app: Foreground?) -> Bool {
+        guard let app else { return false }
+        guard let bundle = app.bundleID, !bundle.isEmpty else { return app.name?.caseInsensitiveCompare("Poki") == .orderedSame }
+        return ownApps.contains { bundle == $0 || bundle.hasPrefix($0 + ".") }
+    }
+
+    /// What `do` and a voice tap answer when the tap would land in Poki.
+    static let ownAppRefusal = "only the phone's owner can approve, by tapping it on the phone themselves; Poki takes no taps or typing inside the Poki app"
 }
 
 /// The launcher's view of the runner, as the app shell reports it (from PokiLauncher's events).
@@ -175,9 +189,14 @@ public final class PokiCore: @unchecked Sendable {
     /// A tap another part of the app sends without `do` (the Voice tab taps through the Mac's Poki MCP),
     /// on the element that reads `text` in the app in front. It is checked with the rules `do` uses and,
     /// when they say so, waits for the owner's OK on the phone, with the same approval (card, Live
-    /// Activity, notification). A request still open after `seconds` is withdrawn.
+    /// Activity, notification). A request still open after `seconds` is withdrawn. A tap in Poki itself
+    /// is refused.
     public func clearTap(on text: String, inApp bundleID: String?, named name: String?, waiting seconds: Double) async -> TapClearance {
         let app = Foreground(bundleID: bundleID, name: name)
+        // The approval card is in Poki: a tap there is refused, and the request waiting stays for the owner.
+        if config.isPoki(app) { return .refused(CoreConfig.ownAppRefusal) }
+        // Like `do`: a tap withdraws the request still waiting, so two taps never wait side by side.
+        if let pending = approvals.pending { approvals.withdraw(id: pending.id) }
         let element = Element(type: "Other", label: text, value: nil, identifier: nil, frame: Rect(x: 0, y: 0, width: 0, height: 0), depth: 0)
         guard let reason = config.sensitive.reason(touching: element, typing: false, app: app, secureOnScreen: false) else { return .clear }
         let approval = approvals.request(app: app.describe, summary: "Tap “\(text)”", reason: reason, fingerprint: "tap:\(UUID().uuidString)")
@@ -266,7 +285,7 @@ public final class PokiCore: @unchecked Sendable {
 
     // MARK: Tools
 
-    static let instructions = "look reads the iPhone's screen; do runs actions and then reads it. Both return the app in front, numbered elements and a screenshot whose pixels are screen points. Use the numbers from the latest answer; an element that stays on screen keeps its number, and do lists only what changed. Decide what happened from the elements, the screen_changed line and the picture. To reach something further down a list, use scroll_to with its text before trying swipes. Some actions (payments, deleting, sending messages, passwords) need the owner's approval on the phone; do says so instead of sending them."
+    static let instructions = "look reads the iPhone's screen; do runs actions and then reads it. Both return the app in front, numbered elements and a screenshot whose pixels are screen points. Use the numbers from the latest answer; an element that stays on screen keeps its number, and do lists only what changed. Decide what happened from the elements, the screen_changed line and the picture. To reach something further down a list, use scroll_to with its text before trying swipes. Some actions (payments, deleting, sending messages, calls, passwords) need the owner's approval on the phone; do says so instead of sending them. Only the owner approves, by hand: do takes no input inside the Poki app."
 
     static let tools: [JSON] = [
         ["name": "look", "description": "Read the screen now: the app in front, the numbered elements (role, \"label = value\", [x,y,w,h] in screen points; + marks elements new since the last read, ~ moved ones) and a screenshot that is one pixel per screen point, so a point on the picture is a point to tap. Repeated text, scroll bars and empty containers are left out and long labels are cut; full=true lists every element as the tree has it and adds the text read from the picture inside [collapsed] elements (an app showed a whole cell, buttons and all, as one element). Numbers stay the same while an element stays on screen.",

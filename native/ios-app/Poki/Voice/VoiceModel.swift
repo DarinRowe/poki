@@ -523,6 +523,7 @@ final class VoiceModel {
         switch clearance {
         case .declined(let why): output = "not_sent: the user declined on the phone (\(why)). Nothing was tapped."
         case .unanswered(let why): output = "not_sent: the user did not allow it on the phone in time (\(why)). Nothing was tapped."
+        case .refused(let why): output = "not_sent: \(why). Nothing was tapped."
         case .clear, .approved: output = ""
         }
         return VoiceBridge.ToolResult(state: "failed", output: output)

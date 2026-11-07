@@ -60,9 +60,11 @@ public enum TapClearance: Sendable, Equatable {
     case declined(String)
     /// Nobody answered in time, or another request replaced it.
     case unanswered(String)
+    /// The tap would land in Poki, where the approval card is; the text says so for the model.
+    case refused(String)
 
     public var mayTap: Bool {
-        switch self { case .clear, .approved: true; case .declined, .unanswered: false }
+        switch self { case .clear, .approved: true; case .declined, .unanswered, .refused: false }
     }
 }
 
@@ -78,8 +80,8 @@ public struct Approval: Sendable, Equatable {
 }
 
 /// Pending and granted approvals. At most one is pending; it is granted or declined only from the app
-/// (the Live Activity), and nothing the automation does can grant it, because every input is refused
-/// while it is pending.
+/// (the Live Activity), and nothing the automation does can grant it: every `do` and every voice tap
+/// (`PokiCore.clearTap`) withdraws it first, and neither taps inside Poki, where the card is.
 final class Approvals: @unchecked Sendable {
     enum Decision: Sendable { case approved, declined, expired }
     private struct Entry {
