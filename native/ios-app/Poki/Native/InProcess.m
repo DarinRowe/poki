@@ -2,6 +2,7 @@
 #import "RecoveredNative.h"
 #import <dlfcn.h>
 #import <notify.h>
+#import <objc/message.h>
 
 @interface NSObject (PKObservedPrivateAPI)
 - (id)initForTouchAtPoint:(CGPoint)point offset:(double)offset;
@@ -18,10 +19,8 @@
 - (id)accessibilityInterface;
 - (id)activeApplications;
 - (int)processIdentifier;
-- (id)applicationProcessTracker;
-- (id)monitoredApplicationWithProcessIdentifier:(int)pid;
-- (id)snapshotWithError:(NSError **)error;
-- (NSDictionary *)dictionaryRepresentation;
+- (id)systemApplication;
+- (NSDictionary *)defaultParameters;
 - (id)screenshot;
 - (NSData *)PNGRepresentation;
 - (void)_XCT_requestBundleIDForPID:(int)pid reply:(void (^)(NSString *, NSError *))reply;
@@ -32,6 +31,8 @@
 - (NSString *)label;
 - (id)value;
 - (BOOL)hasFocus;
+- (BOOL)hasKeyboardFocus;
+- (BOOL)loadAccessibility:(NSError **)error;
 - (id)initWithBundleIdentifier:(NSString *)bundle;
 - (void)launch;
 - (void)activate;
@@ -76,12 +77,137 @@ static NSString *PKText(id value) {
     return nil;
 }
 
-/// Nodes in a snapshot's dictionary, whatever key holds the children.
-static NSUInteger PKCount(NSDictionary *node) {
+static BOOL PKMatches(NSMethodSignature *signature, const char *result, NSArray<NSString *> *arguments);
+
+typedef id (*PKSnapshotRequest)(id, SEL, id, id, id, NSError **);
+typedef id (*PKElementAtPoint)(id, SEL, CGPoint, NSError **);
+typedef id (*PKMapAttributes)(id, SEL, id, BOOL);
+
+/// XCUIApplication refuses to exist outside a UI test bundle ("Device is not configured for UI
+/// testing"), so the screen is read the way WebDriverAgent's FBXCAXClientProxy does: the AX client's
+/// own elements and snapshot request, which testmanagerd answers for any process with a session.
+static id PKAXClient(void) {
+    id device = [NSClassFromString(@"XCUIDevice") sharedDevice];
+    return [device respondsToSelector:@selector(accessibilityInterface)] ? [device accessibilityInterface] : nil;
+}
+
+static int PKAXPid(id element) {
+    SEL selector = @selector(processIdentifier);
+    if (!element || ![element respondsToSelector:selector]) return 0;
+    const char *type = [element methodSignatureForSelector:selector].methodReturnType;
+    if (type && !strcmp(type, @encode(int))) return ((int (*)(id, SEL))objc_msgSend)(element, selector);
+    return (int)((long long (*)(id, SEL))objc_msgSend)(element, selector);
+}
+
+static NSArray *PKActiveApplications(id ax) {
+    id active = [ax respondsToSelector:@selector(activeApplications)] ? [ax activeApplications] : nil;
+    return [active isKindOfClass:NSArray.class] ? active : @[];
+}
+
+static id PKRequestSnapshot(id ax, id element, NSInteger maxDepth, NSInteger maxNodes, NSString **code);
+
+/// The front app's AX element. One active app is the front one. Several (an alert over an app, split
+/// screen, picture in picture): SpringBoard set aside, the one owning the screen's centre.
+static id PKForegroundElement(id ax, NSString *(^bundleForPID)(int)) {
+    NSArray *active = PKActiveApplications(ax);
+    if (active.count == 1 && PKAXPid(active.firstObject) > 0) return active.firstObject;
+    id system = [ax respondsToSelector:@selector(systemApplication)] ? [ax systemApplication] : nil;
+    int springBoardPID = PKAXPid(system);
+    NSMutableArray *candidates = [NSMutableArray array];
+    id springBoard = nil;
+    for (id element in active) {
+        int pid = PKAXPid(element);
+        if (pid <= 0) continue;
+        BOOL isSpringBoard = springBoardPID > 0 ? pid == springBoardPID : [bundleForPID(pid) isEqualToString:@"com.apple.springboard"];
+        if (isSpringBoard) springBoard = element; else [candidates addObject:element];
+    }
+    if (candidates.count == 1) return candidates.firstObject;
+    if (!candidates.count) return springBoard ?: system;
+    SEL hitTest = NSSelectorFromString(@"accessibilityElementForElementAtPoint:error:");
+    CGRect screen = system ? [PKRequestSnapshot(ax, system, 1, 1, NULL) frame] : CGRectNull;
+    if (!CGRectIsEmpty(screen) && [ax respondsToSelector:hitTest]) {
+        NSError *error;
+        id hit = nil;
+        @try { hit = ((PKElementAtPoint)objc_msgSend)(ax, hitTest, CGPointMake(CGRectGetMidX(screen), CGRectGetMidY(screen)), &error); }
+        @catch (__unused NSException *e) {}
+        int hitPID = PKAXPid(hit);
+        for (id element in candidates) if (hitPID > 0 && PKAXPid(element) == hitPID) return element;
+    }
+    return candidates.firstObject;
+}
+
+/// The attributes the XML needs and no more: each extra one (visibility, hittability) costs the AX
+/// server more round trips per element.
+static NSArray *PKSnapshotAttributes(void) {
+    static NSArray *attributes;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSArray<NSString *> *keyPaths = @[@"elementType", @"identifier", @"label", @"value", @"placeholderValue", @"frame",
+                                          @"enabled", @"selected", @"hasFocus", @"hasKeyboardFocus", @"children"];
+        NSArray *mappedAttributes = keyPaths;
+        Class snapshotClass = NSClassFromString(@"XCElementSnapshot");
+        SEL mapSelector = NSSelectorFromString(@"axAttributesForElementSnapshotKeyPaths:isMacOS:");
+        if ([snapshotClass respondsToSelector:mapSelector]) {
+            id mapped = ((PKMapAttributes)objc_msgSend)(snapshotClass, mapSelector, keyPaths, NO);
+            if ([mapped isKindOfClass:NSSet.class]) mapped = [(NSSet *)mapped allObjects];
+            if ([mapped isKindOfClass:NSArray.class] && [(NSArray *)mapped count] > 0) {
+                NSArray<NSString *> *needed = @[@"ElementType", @"Identifier", @"Label", @"Value", @"PlaceholderValue", @"Frame",
+                                                @"Enabled", @"Selected", @"Focus"];
+                NSMutableArray *filtered = [NSMutableArray array];
+                for (id attribute in (NSArray *)mapped) {
+                    NSString *name = [attribute description];
+                    for (NSString *suffix in needed) if ([name hasSuffix:suffix]) { [filtered addObject:attribute]; break; }
+                }
+                mappedAttributes = filtered.count > 0 ? filtered.copy : mapped;
+            }
+        }
+        attributes = mappedAttributes;
+    });
+    return attributes;
+}
+
+static id PKRequestSnapshot(id ax, id element, NSInteger maxDepth, NSInteger maxNodes, NSString **code) {
+    SEL selector = @selector(requestSnapshotForElement:attributes:parameters:error:);
+    if (![ax respondsToSelector:selector] || !PKMatches([ax methodSignatureForSelector:selector], "@", @[@"@", @"@", @"@", @"^@"])) {
+        if (code) *code = @"snapshot_api_unavailable";
+        return nil;
+    }
+    NSMutableDictionary *parameters = [NSMutableDictionary dictionary];
+    id defaults = [ax respondsToSelector:@selector(defaultParameters)] ? [ax defaultParameters] : nil;
+    if ([defaults isKindOfClass:NSDictionary.class]) [parameters addEntriesFromDictionary:defaults];
+    parameters[@"maxDepth"] = @(MAX(1, maxDepth));
+    parameters[@"maxChildren"] = @(MAX(1, maxNodes));
+    parameters[@"maxArrayCount"] = @(MAX(1, maxNodes));
+    parameters[@"traverseFromParentsToChildren"] = @YES;
+    NSError *error;
+    id result = nil;
+    @try {
+        result = ((PKSnapshotRequest)objc_msgSend)(ax, selector, element, PKSnapshotAttributes(), parameters.copy, &error);
+    } @catch (NSException *e) {
+        if (code) *code = [NSString stringWithFormat:@"%@: %@", e.name, e.reason];
+        return nil;
+    }
+    if (!result) {
+        if (code) *code = error.localizedDescription ?: @"no_snapshot";
+        return nil;
+    }
+    id root = nil;
+    @try { root = [result valueForKey:@"_rootElementSnapshot"]; } @catch (__unused NSException *e) {}
+    return root ?: result;
+}
+
+/// The AX server can refuse a deep request; each shallower depth is tried once before giving up.
+static id PKSnapshotTree(id ax, id element, NSString **code) {
+    for (NSNumber *depth in @[@64, @56, @40, @24, @12]) {
+        id root = PKRequestSnapshot(ax, element, depth.integerValue, 10000, code);
+        if (root) { if (code) *code = nil; return root; }
+    }
+    return nil;
+}
+
+static NSUInteger PKCount(id node) {
     NSUInteger n = 1;
-    for (id value in node.allValues)
-        if ([value isKindOfClass:NSArray.class])
-            for (id child in value) if ([child isKindOfClass:NSDictionary.class]) n += PKCount(child);
+    for (id child in [node children]) n += PKCount(child);
     return n;
 }
 
@@ -130,6 +256,7 @@ static BOOL PKInstanceSignature(Class cls, SEL selector, const char *result, NSA
 
 @implementation PKInProcess {
     SRNativeSession *_sessions;
+    uint64_t _accessibilityGeneration;
 }
 
 + (instancetype)shared {
@@ -277,48 +404,67 @@ static BOOL PKInstanceSignature(Class cls, SEL selector, const char *result, NSA
     return nil;
 }
 
-/// The front app's accessibility element and what it is. With a banner or an alert up, accessibility
-/// lists SpringBoard too; the app under it is the one read, as WebDriverAgent does by default.
-- (id)front:(NSDictionary **)info {
+/// The bundle id testmanagerd gives for a pid, or nil within a second.
+- (nullable NSString *)bundleForPID:(int)pid session:(id)session {
+    dispatch_semaphore_t got = dispatch_semaphore_create(0);
+    __block NSString *bundle;
+    [[session daemonProxy] _XCT_requestBundleIDForPID:pid reply:^(NSString *value, NSError *error) {
+        bundle = value; dispatch_semaphore_signal(got);
+    }];
+    dispatch_semaphore_wait(got, dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC));
+    return bundle;
+}
+
+/// The AX client, after asking testmanagerd once per session to turn accessibility on in every app, as
+/// XCUIApplication does when a UI test launches one. Without it a third-party app's tree is
+/// kAXErrorServerNotFound; system apps such as Settings answer either way.
+- (id)accessibilityFor:(uint64_t)generation {
+    id ax = PKAXClient();
+    @synchronized (self) {
+        if (_accessibilityGeneration != generation && [ax respondsToSelector:@selector(loadAccessibility:)]) {
+            NSError *error;
+            if ([ax loadAccessibility:&error]) _accessibilityGeneration = generation;
+        }
+    }
+    return ax;
+}
+
+/// The front app's AX element, with its bundle id and pid in `info`.
+- (id)front:(NSDictionary **)info ax:(id *)client {
     PKOutcome *refused;
     uint64_t generation = 0;
     id session = [self current:&generation outcome:&refused];
     if (!session) return nil;
-    id ax = [[NSClassFromString(@"XCUIDevice") sharedDevice] accessibilityInterface];
-    NSArray *apps = [ax activeApplications];
-    id chosen = nil;
-    NSString *chosenBundle = nil;
-    for (id element in apps) {
-        int pid = [element processIdentifier];
-        dispatch_semaphore_t got = dispatch_semaphore_create(0);
-        __block NSString *bundle;
-        [[session daemonProxy] _XCT_requestBundleIDForPID:pid reply:^(NSString *value, NSError *error) {
-            bundle = value; dispatch_semaphore_signal(got);
-        }];
-        dispatch_semaphore_wait(got, dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC));
-        if (!chosen || [chosenBundle isEqualToString:@"com.apple.springboard"]) { chosen = element; chosenBundle = bundle; }
-    }
-    if (!chosen) return nil;
-    int pid = [chosen processIdentifier];
-    id app = [[ax applicationProcessTracker] monitoredApplicationWithProcessIdentifier:pid];
-    if (info) *info = @{@"bundleId": chosenBundle ?: @"", @"pid": @(pid), @"name": PKText([app label]) ?: @""};
-    return app;
+    id ax = [self accessibilityFor:generation];
+    if (client) *client = ax;
+    __weak PKInProcess *weakSelf = self;
+    id chosen = PKForegroundElement(ax, ^NSString *(int pid) { return [weakSelf bundleForPID:pid session:session]; });
+    int pid = PKAXPid(chosen);
+    if (!chosen || pid <= 0) return nil;
+    if (info) *info = @{@"bundleId": [self bundleForPID:pid session:session] ?: @"", @"pid": @(pid)};
+    return chosen;
 }
 
 - (NSDictionary<NSString *, id> *)frontApp {
-    NSDictionary *info;
-    @try { [self front:&info]; } @catch (NSException *e) { return @{}; }
-    return info ?: @{};
+    @try {
+        NSDictionary *info;
+        id ax;
+        id element = [self front:&info ax:&ax];
+        if (!element) return @{};
+        id root = PKRequestSnapshot(ax, element, 1, 1, NULL);
+        NSMutableDictionary *out = [info mutableCopy];
+        out[@"name"] = PKText([root label]) ?: @"";
+        return out;
+    } @catch (NSException *e) { return @{}; }
 }
 
 - (nullable NSString *)sourceXML:(NSDictionary **)focused code:(NSString **)code {
     @try {
-        NSDictionary *info;
-        id app = [self front:&info];
+        id ax;
+        id app = [self front:NULL ax:&ax];
         if (!app) { if (code) *code = @"no_front_app"; return nil; }
-        NSError *error;
-        id root = [app snapshotWithError:&error];
-        if (!root) { if (code) *code = error.localizedDescription ?: @"no_snapshot"; return nil; }
+        id root = PKSnapshotTree(ax, app, code);
+        if (!root) { if (code && !*code) *code = @"no_snapshot"; return nil; }
         NSMutableString *xml = [NSMutableString stringWithString:@"<?xml version=\"1.0\" encoding=\"UTF-8\"?><AppiumAUT>"];
         __block NSDictionary *focus = nil;
         __block void (^walk)(id);
@@ -334,7 +480,9 @@ static BOOL PKInstanceSignature(Class cls, SEL selector, const char *result, NSA
             if (value.length) [xml appendFormat:@" value=\"%@\"", PKEscape(value)];
             if (CGRectIsNull(f) || CGRectIsInfinite(f)) f = CGRectZero;
             [xml appendFormat:@" x=\"%d\" y=\"%d\" width=\"%d\" height=\"%d\"", (int)lround(f.origin.x), (int)lround(f.origin.y), (int)lround(f.size.width), (int)lround(f.size.height)];
-            if (!focus && [node respondsToSelector:@selector(hasFocus)] && [node hasFocus] && ([type hasSuffix:@"Field"] || [type hasSuffix:@"TextView"])) {
+            BOOL keyboard = [node respondsToSelector:@selector(hasKeyboardFocus)] ? [node hasKeyboardFocus]
+                : [node respondsToSelector:@selector(hasFocus)] && [node hasFocus];
+            if (!focus && keyboard && ([type hasSuffix:@"Field"] || [type hasSuffix:@"TextView"])) {
                 focus = @{@"value": value ?: @"", @"x": @(f.origin.x), @"y": @(f.origin.y), @"width": @(f.size.width), @"height": @(f.size.height)};
             }
             NSArray *children = [node children];
@@ -405,23 +553,16 @@ static BOOL PKInstanceSignature(Class cls, SEL selector, const char *result, NSA
     id session = [self current:&generation outcome:&refused];
     if (!session) { out[@"error"] = refused.code ?: @"no_session"; return out; }
     NSTimeInterval t = NSProcessInfo.processInfo.systemUptime;
-    id app = nil;
+    id app = nil, ax = nil;
     @try {
-        id ax = [[NSClassFromString(@"XCUIDevice") sharedDevice] accessibilityInterface];
-        NSArray *apps = [ax activeApplications];
+        ax = [self accessibilityFor:generation];
+        NSArray *apps = PKActiveApplications(ax);
         out[@"front_count"] = @(apps.count);
-        int pid = apps.count ? [apps.firstObject processIdentifier] : 0;
+        __weak PKInProcess *weakSelf = self;
+        app = PKForegroundElement(ax, ^NSString *(int pid) { return [weakSelf bundleForPID:pid session:session]; });
+        int pid = PKAXPid(app);
         out[@"front_pid"] = @(pid);
-        if (pid) {
-            dispatch_semaphore_t got = dispatch_semaphore_create(0);
-            __block NSString *bundle;
-            [[session daemonProxy] _XCT_requestBundleIDForPID:pid reply:^(NSString *value, NSError *error) {
-                bundle = value; dispatch_semaphore_signal(got);
-            }];
-            dispatch_semaphore_wait(got, dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC));
-            out[@"front_bundle"] = bundle ?: @"?";
-            app = [[ax applicationProcessTracker] monitoredApplicationWithProcessIdentifier:pid];
-        }
+        if (pid) out[@"front_bundle"] = [self bundleForPID:pid session:session] ?: @"?";
         out[@"front_ok"] = @(app != nil);
     } @catch (NSException *e) {
         out[@"front_error"] = [NSString stringWithFormat:@"%@: %@", e.name, e.reason];
@@ -429,12 +570,12 @@ static BOOL PKInstanceSignature(Class cls, SEL selector, const char *result, NSA
     out[@"front_seconds"] = @(NSProcessInfo.processInfo.systemUptime - t);
     t = NSProcessInfo.processInfo.systemUptime;
     @try {
-        NSError *error;
-        id snapshot = app ? [app snapshotWithError:&error] : nil;
-        NSDictionary *tree = [snapshot dictionaryRepresentation];
-        out[@"tree_ok"] = @(tree != nil);
-        out[@"tree_elements"] = @(tree ? PKCount(tree) : 0);
-        if (error) out[@"tree_error"] = error.localizedDescription;
+        NSString *code;
+        id root = app ? PKSnapshotTree(ax, app, &code) : nil;
+        out[@"tree_ok"] = @(root != nil);
+        out[@"tree_elements"] = @(root ? PKCount(root) : 0);
+        if (root) out[@"tree_root_label"] = PKText([root label]) ?: @"";
+        if (code && !root) out[@"tree_error"] = code;
     } @catch (NSException *e) {
         out[@"tree_error"] = [NSString stringWithFormat:@"%@: %@", e.name, e.reason];
     }

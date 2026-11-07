@@ -129,6 +129,16 @@ static BOOL SRABI(id target, SEL selector, const char *result, NSArray<NSString 
         @"/System/Developer/usr/lib/lib_TestingInterop.dylib",
         @"/System/Developer/Library/PrivateFrameworks/XCTestCore.framework/XCTestCore",
         @"/System/Developer/Library/Frameworks/XCUIAutomation.framework/XCUIAutomation"];
+#if TARGET_OS_SIMULATOR
+    // A simulator has no Developer disk image: the same files are in Xcode's simulator platform.
+    NSString *root = NSProcessInfo.processInfo.environment[@"POKI_SIMULATOR_DEVELOPER_DIR"];
+    if (root.length) {
+        NSMutableArray *moved = [NSMutableArray array];
+        for (NSString *path in paths)
+            [moved addObject:[root stringByAppendingString:[path substringFromIndex:@"/System/Developer".length]]];
+        paths = moved;
+    }
+#endif
     for (NSString *path in paths) {
         if ([_loaded containsObject:path]) continue;
         if (!dlopen(path.UTF8String, RTLD_NOW | RTLD_GLOBAL)) {
