@@ -32,6 +32,13 @@ targets:
         CFBundleDisplayName: Poki
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        # English and Simplified Chinese (Shared/Localizable.xcstrings, Poki/InfoPlist.xcstrings); Poki
+        # follows the iPhone's language.
+        CFBundleDevelopmentRegion: en
+        CFBundleLocalizations: [en, zh-Hans]
+        # Every page is the website's blue (or the night blue): white status bar text throughout.
+        UIStatusBarStyle: UIStatusBarStyleLightContent
+        UIViewControllerBasedStatusBarAppearance: false
         UILaunchScreen:
           UIColorName: AccentColor
           UIImageName: Bear
@@ -87,6 +94,8 @@ targets:
         CFBundleDisplayName: Poki
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleDevelopmentRegion: en
+        CFBundleLocalizations: [en, zh-Hans]
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
         UIAppFonts: [Geist-Regular.ttf, Geist-Medium.ttf, Geist-SemiBold.ttf, Geist-Bold.ttf, Geist-Black.ttf]
