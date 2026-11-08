@@ -103,6 +103,11 @@ static BOOL SRABI(id target, SEL selector, const char *result, NSArray<NSString 
     BOOL _invalidated, _reused, _handlerFired;
     NSString *_closeDetail;
     NSMutableSet<NSString *> *_loaded;
+    /// An open of this process's own session still under way: a prepare that gave up waiting for
+    /// it leaves it running, and the next prepare waits for the same one instead of starting another.
+    dispatch_semaphore_t _opening;
+    id _openedSession;
+    NSError *_openFailure;
 }
 - (instancetype)init {
     if ((self = [super init])) {
@@ -189,24 +194,36 @@ static BOOL SRABI(id target, SEL selector, const char *result, NSArray<NSString 
     if (![cls respondsToSelector:@selector(sharedSessionPromiseAndImplicitlyInitiateSession:)]) {
         SRFail(error, @"session_api_unavailable"); return nil;
     }
-    id promise = [cls sharedSessionPromiseAndImplicitlyInitiateSession:YES];
-    for (NSString *selector in @[@"promiseFulfilled", @"value", @"error"])
-        if (![promise respondsToSelector:NSSelectorFromString(selector)]) {
-            SRFail(error, @"promise_api_unavailable"); return nil;
-        }
-    for (NSUInteger i = 0; i < 300 && ![promise promiseFulfilled]; i++) usleep(10000);
-    // A shared session that is not there after 3 s (a busy testmanagerd) is not waited for further:
-    // a session of this process's own is opened instead, as after a close.
-    BOOL late = ![promise promiseFulfilled];
-    if (!late && [promise error]) { if (error) *error = [promise error]; return nil; }
-    id session = late ? nil : [promise value];
+    // The shared promise is read only while this process has had no session yet: a session in use
+    // is reused as it is, and after a close a session of this process's own is opened (the promise
+    // keeps holding the closed one). Waiting on the promise on every call cost 3 s per prepare once
+    // it stopped fulfilling (the app check on CI: "prepare reused at 3.0 s"), and that wait plus the
+    // owned open's wait ran past PokiCore's 8 s for opening a session.
+    BOOL owned = getenv("POKI_INPROCESS_OWNED_SESSION") != NULL;
+    [_lifecycleLock lock];
+    BOOL hadSession = _observed != nil;
+    [_lifecycleLock unlock];
+    id session = nil;
+    BOOL late = NO;
+    if (!hadSession && !owned) {
+        id promise = [cls sharedSessionPromiseAndImplicitlyInitiateSession:YES];
+        for (NSString *selector in @[@"promiseFulfilled", @"value", @"error"])
+            if (![promise respondsToSelector:NSSelectorFromString(selector)]) {
+                SRFail(error, @"promise_api_unavailable"); return nil;
+            }
+        for (NSUInteger i = 0; i < 300 && ![promise promiseFulfilled]; i++) usleep(10000);
+        // A shared session that is not there after 3 s (a busy testmanagerd) is not waited for further:
+        // a session of this process's own is opened instead, as after a close.
+        late = ![promise promiseFulfilled];
+        if (!late && [promise error]) { if (error) *error = [promise error]; return nil; }
+        session = late ? nil : [promise value];
+    }
     [_lifecycleLock lock];
     // The session in use stays in use while it is current, whether it is XCTest's shared one or one
     // of this process's own; the shared promise is read only for the first session. After a close
     // (ours, or testmanagerd's) a session of this process's own is opened: the shared promise keeps
     // holding the closed one, and enabling automation on it again hangs for a minute. With
     // POKI_INPROCESS_OWNED_SESSION set, the shared session is never used at all.
-    BOOL owned = getenv("POKI_INPROCESS_OWNED_SESSION") != NULL;
     BOOL closed;
     if (_observed && !_invalidated && _token) { session = _observed; closed = NO; }
     else closed = (_observed != nil && _invalidated) || owned || late || !session;
@@ -218,11 +235,25 @@ static BOOL SRABI(id target, SEL selector, const char *result, NSArray<NSString 
             ![cls respondsToSelector:@selector(sessionWithConnection:completion:)]) {
             SRFail(error, @"session_reopen_api_unavailable"); return nil;
         }
-        id connection = [cls connectionForInitiatingSharedSession];
-        __block id opened; __block NSError *failure;
-        dispatch_semaphore_t ready = dispatch_semaphore_create(0);
-        [cls sessionWithConnection:connection completion:^(id s, NSError *e) { opened = s; failure = e; dispatch_semaphore_signal(ready); }];
-        if (dispatch_semaphore_wait(ready, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC))) { SRFail(error, @"session_timeout"); return nil; }
+        // One open at a time: a prepare that gives up waiting (session_timeout) leaves the open
+        // running, and the next prepare waits for that same open rather than starting a second
+        // one beside it (the app check on CI: the open answered after the 5 s wait, and the prepare
+        // after it would have started over).
+        if (!_opening) {
+            _opening = dispatch_semaphore_create(0);
+            _openedSession = nil; _openFailure = nil;
+            dispatch_semaphore_t ready = _opening;
+            id connection = [cls connectionForInitiatingSharedSession];
+            __weak SRNativeSession *weakSelf = self;
+            [cls sessionWithConnection:connection completion:^(id s, NSError *e) {
+                SRNativeSession *owner = weakSelf;
+                if (owner) { owner->_openedSession = s; owner->_openFailure = e; }
+                dispatch_semaphore_signal(ready);
+            }];
+        }
+        if (dispatch_semaphore_wait(_opening, dispatch_time(DISPATCH_TIME_NOW, 6 * NSEC_PER_SEC))) { SRFail(error, @"session_timeout"); return nil; }
+        id opened = _openedSession; NSError *failure = _openFailure;
+        _opening = nil; _openedSession = nil; _openFailure = nil;
         if (!opened) { if (error) *error = failure ?: [NSError errorWithDomain:@"RecoveredNative" code:1 userInfo:@{NSLocalizedDescriptionKey: @"session_reopen_failed"}]; return nil; }
         session = opened;
     }

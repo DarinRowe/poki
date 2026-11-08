@@ -639,7 +639,9 @@ final class Computer: @unchecked Sendable {
         // when the whole picture changed over an unchanged tree.
         let launched = toRun.compactMap { $0["launch"].flatMap { $0.string ?? $0["bundle"]?.string } }.last
         var rereads = 0
-        while rereads < 3, until - now() > config.readTimeout + 1 {
+        // Up to six re-reads: a cold launch on the simulator (Photos from Safari) had the old app in
+        // front past the third re-read at 5.8 s (gym finding 39); the action's time bounds them.
+        while rereads < 6, until - now() > config.readTimeout + 1 {
             let notYetInFront = launched.map { lastForeground?.bundleID != nil && lastForeground?.bundleID != $0 } ?? false
             let stalePicture = (pictureOnlyShare ?? 0) >= 0.9
             guard notYetInFront || stalePicture else { break }
@@ -910,6 +912,12 @@ final class Computer: @unchecked Sendable {
                 if button.lowercased() == "home" { front = nil }
             } else if action["wait"] != nil || action["wait_until"] != nil {
                 continue
+            } else if let spec = action["run"], let routine = memory?.routine(named: spec.string ?? spec["name"]?.string ?? ""),
+                      let bundle = routine.steps.first?.action["launch"].flatMap({ $0.string ?? $0["bundle"]?.string }) ?? routine.app,
+                      !config.isPoki(Foreground(bundleID: bundle, name: nil)) {
+                // A run that begins with a launch (or whose app is launched first) leaves Poki on its
+                // own: on the phone a task usually starts in Poki's own chat (gym finding 37).
+                front = Foreground(bundleID: bundle, name: nil)
             } else if config.isPoki(front) {
                 return true
             }
