@@ -68,4 +68,5 @@ jobs:
           cp deploy/cf-relay/worker.js release/poki-relay-worker.js
           (cd release && sha256sum *.ipa poki-relay-worker.js > SHA256SUMS && cat SHA256SUMS)
           notes="Poki $VERSION ($BUILD). Choose Poki for the built-in local VPN (Network Extensions signing required), or Poki-external for an external VPN such as LocalDevVPN. Install your chosen app; Poki automates the iPhone itself. PokiRunner is only for the older Runner path (launch Poki with -automationPath runner); install it with the same signing tool and Apple ID as Poki. Entitlements are in Poki-signing.zip. See native/ios-app/README.md."
+          notes="$notes Relay: Poki Setup's Update Relay deploys this release's relay Worker; to update it yourself, replace your poki-relay Worker's code in the Cloudflare dashboard with https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/poki-relay-worker.js (SHA-256 in SHA256SUMS)."
           gh release create "$GITHUB_REF_NAME" release/* --title "Poki $VERSION" --notes "$notes" --prerelease
