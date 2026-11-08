@@ -25,14 +25,37 @@ struct SessionsView: View {
         List {
             // What matters before any conversation: whether Poki is on, whether agents can reach it,
             // and what setup still needs.
-            Section {
-                // Every setup item still open, each straight to its fix.
-                ForEach(SetupStep.shown.filter { !model.isDone($0) }) { step in
-                    NavigationLink(value: step) { SetupStepRow(step: step) }
-                }
-                if !ModelKeys.hasUsableKey {
-                    Button(action: openModel) {
-                        Label("Add a Model Key to Chat", systemImage: "key.fill")
+            // One warning while Poki can't work fully, naming where to fix it (the tab bar dots match).
+            if setupLeft > 0 || agentsIssue != nil {
+                Section {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Poki can’t work fully yet").font(.headline)
+                            Text("Fix the items below. Each one has a dot on its tab.")
+                                .font(.subheadline).foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                    }
+                    if setupLeft > 0 {
+                        Button(action: openSetup) {
+                            LabeledContent {
+                                Text(setupLeft == 1 ? String(localized: "1 item") : String(localized: "\(setupLeft) items"))
+                            } label: {
+                                Label("Setup", systemImage: "checklist")
+                            }
+                        }
+                        .foregroundStyle(Color(.label))
+                    }
+                    if let issue = agentsIssue {
+                        Button(action: ModelKeys.hasUsableKey ? openConnectors : openModel) {
+                            LabeledContent {
+                                Text(issue)
+                            } label: {
+                                Label("Agents", systemImage: "point.3.connected.trianglepath.dotted")
+                            }
+                        }
+                        .foregroundStyle(Color(.label))
                     }
                 }
             }
@@ -121,6 +144,15 @@ struct SessionsView: View {
     }
 
     private var needsSetup: Bool { model.pairingPath == nil || model.setupStepsLeft }
+
+    private var setupLeft: Int { model.setupComplete ? 0 : SetupStep.shown.filter { !model.isDone($0) }.count }
+
+    /// What the Agents tab needs, if anything (the same test as its tab bar dot).
+    private var agentsIssue: String? {
+        if !ModelKeys.hasUsableKey { return String(localized: "No chat account") }
+        if case .offline = model.relayStatus { return String(localized: "Relay offline") }
+        return nil
+    }
 
     /// The sessions matching the search field: name, first message or last line.
     private var shown: [SavedSession] {

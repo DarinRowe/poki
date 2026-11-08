@@ -66,7 +66,7 @@ struct RootView: View {
                      openModel: { openAgents(AgentsRoute.accounts) },
                      openConnectors: { tab = .agents; agents = NavigationPath() },
                      openDetails: { tab = .agents }, openVoice: openLiveVoice,
-                     openSetup: openSetup)
+                     openSetup: { tab = .setup; setup = NavigationPath() })
     }
 
     @ViewBuilder private func page(_ route: HomeRoute, split: Bool) -> some View {
