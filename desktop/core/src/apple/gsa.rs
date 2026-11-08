@@ -15,6 +15,7 @@ use sha2::Sha256;
 const GS_SERVICE: &str = "https://gsa.apple.com/grandslam/GsService2";
 const TRUSTED_DEVICE: &str = "https://gsa.apple.com/auth/verify/trusteddevice";
 const VALIDATE: &str = "https://gsa.apple.com/grandslam/GsService2/validate";
+const AUTH_INFO: &str = "https://gsa.apple.com/auth";
 const SMS_START: &str = "https://gsa.apple.com/auth/verify/phone/";
 const SMS_CODE: &str = "https://gsa.apple.com/auth/verify/phone/securitycode";
 const GSA_AGENT: &str = "akd/1.0 CFNetwork/978.0.7 Darwin/18.7.0";
@@ -74,6 +75,8 @@ pub struct Pending {
     password: String,
     session: Session,
     pub via: Factor,
+    /// The trusted phone number Apple texted (its id in Apple's list), for an SMS sign-in.
+    phone_id: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -224,11 +227,11 @@ impl Client {
         match (st.hsc, st.au.as_deref()) {
             (409, Some("trustedDeviceSecondaryAuth")) | (_, Some("trustedDeviceSecondaryAuth")) => {
                 self.start_trusted_device(&session).await?;
-                Ok(Outcome::NeedsCode(Pending { apple_id: apple_id.into(), password: password.into(), session, via: Factor::TrustedDevice }))
+                Ok(Outcome::NeedsCode(Pending { apple_id: apple_id.into(), password: password.into(), session, via: Factor::TrustedDevice, phone_id: 0 }))
             }
             (_, Some("secondaryAuth")) => {
-                self.start_sms(&session).await?;
-                Ok(Outcome::NeedsCode(Pending { apple_id: apple_id.into(), password: password.into(), session, via: Factor::Sms }))
+                let phone_id = self.start_sms(&session).await?;
+                Ok(Outcome::NeedsCode(Pending { apple_id: apple_id.into(), password: password.into(), session, via: Factor::Sms, phone_id }))
             }
             (_, Some(other)) => Err(Error::msg(format!("Apple asked for a verification step this app does not support ({other})."))),
             _ => Ok(Outcome::SignedIn(session)),
@@ -236,13 +239,19 @@ impl Client {
     }
 
     fn twofa_request(&self, rb: reqwest::RequestBuilder, session: &Session, anisette: &Anisette) -> reqwest::RequestBuilder {
+        self.twofa_request_as(rb, session, anisette, "text/x-xml-plist")
+    }
+
+    /// The 2FA headers with one Content-Type and Accept (`kind`). The SMS endpoints speak JSON; a
+    /// request that carries both the plist and the JSON type is turned away (HTTP 405).
+    fn twofa_request_as(&self, rb: reqwest::RequestBuilder, session: &Session, anisette: &Anisette, kind: &str) -> reqwest::RequestBuilder {
         let identity = base64::engine::general_purpose::STANDARD.encode(format!("{}:{}", session.adsid, session.gs_idms_token));
         let mut rb = rb
             .header("X-Apple-Identity-Token", identity)
             .header("X-Apple-App-Info", super::XCODE_APP_ID)
             .header("X-Xcode-Version", super::XCODE_VERSION)
-            .header("Content-Type", "text/x-xml-plist")
-            .header("Accept", "text/x-xml-plist")
+            .header("Content-Type", kind)
+            .header("Accept", kind)
             .header("Accept-Language", "en-us")
             .header("User-Agent", "Xcode");
         for (k, v) in &anisette.map {
@@ -263,20 +272,41 @@ impl Client {
         Ok(())
     }
 
-    async fn start_sms(&mut self, session: &Session) -> Result<()> {
+    /// Asks Apple to text a code. First reads the account's trusted phone numbers (GET /auth, which
+    /// also opens the verification on Apple's side), then asks for the text to the first one.
+    /// Returns the phone number's id, which the code is checked against.
+    async fn start_sms(&mut self, session: &Session) -> Result<u64> {
         let anisette = self.anisette.headers().await?;
-        let body = serde_json::json!({ "phoneNumber": { "id": 1 }, "mode": "sms" });
-        let res = self
-            .twofa_request(self.http.put(SMS_START), session, &anisette)
-            .header("Content-Type", "application/json")
-            .header("Accept", "application/json")
-            .body(body.to_string())
-            .send()
-            .await?;
-        if !res.status().is_success() {
-            return Err(Error::msg(format!("Apple could not text a code to your phone number (HTTP {}).", res.status())));
+        let mut phone_id = 1u64;
+        if let Ok(res) = self.twofa_request_as(self.http.get(AUTH_INFO), session, &anisette, "application/json").send().await {
+            if let Ok(v) = res.json::<serde_json::Value>().await {
+                if let Some(id) = first_phone_id(&v) {
+                    phone_id = id;
+                }
+            }
         }
-        Ok(())
+        let body = serde_json::json!({ "phoneNumber": { "id": phone_id }, "mode": "sms" });
+        let mut last = None;
+        // PUT is what Apple's own clients send; POST is tried when PUT is turned away.
+        for method in [reqwest::Method::PUT, reqwest::Method::POST] {
+            let res = self
+                .twofa_request_as(self.http.request(method.clone(), SMS_START), session, &anisette, "application/json")
+                .body(body.to_string())
+                .send()
+                .await?;
+            if res.status().is_success() {
+                return Ok(phone_id);
+            }
+            tracing::warn!("SMS request {method} answered {}", res.status());
+            last = Some(res.status());
+            if res.status() != reqwest::StatusCode::METHOD_NOT_ALLOWED {
+                break;
+            }
+        }
+        Err(Error::msg(format!(
+            "Apple could not text a code to your phone number (HTTP {}). Use a code from one of your Apple devices instead: on an iPhone, iPad or Mac signed in to this Apple Account, open Settings > [your name] > Sign-In & Security > Two-Factor Authentication > Get Verification Code.",
+            last.map(|s| s.to_string()).unwrap_or_default()
+        )))
     }
 
     /// Finishes a 2FA sign-in with the code the person typed.
@@ -301,11 +331,9 @@ impl Client {
                 }
             }
             Factor::Sms => {
-                let body = serde_json::json!({ "phoneNumber": { "id": 1 }, "securityCode": { "code": code }, "mode": "sms" });
+                let body = serde_json::json!({ "phoneNumber": { "id": pending.phone_id }, "securityCode": { "code": code }, "mode": "sms" });
                 let res = self
-                    .twofa_request(self.http.post(SMS_CODE), &pending.session, &anisette)
-                    .header("Content-Type", "application/json")
-                    .header("Accept", "application/json")
+                    .twofa_request_as(self.http.post(SMS_CODE), &pending.session, &anisette, "application/json")
                     .body(body.to_string())
                     .send()
                     .await?;
@@ -431,5 +459,23 @@ mod tests {
         et.extend_from_slice(&ct);
         let v = decrypt_gcm(&sk, &et).unwrap();
         assert_eq!(s(dict(dict(&v, "t").unwrap(), super::super::XCODE_APP_ID).unwrap(), "token"), Some("tok"));
+    }
+}
+
+/// The id of the trusted phone number to text: the one Apple marks for SMS, else the first.
+fn first_phone_id(v: &serde_json::Value) -> Option<u64> {
+    let phones = v.get("trustedPhoneNumbers").and_then(|p| p.as_array())?;
+    let pick = phones.iter().find(|p| p.get("pushMode").and_then(|m| m.as_str()) == Some("sms")).or_else(|| phones.first())?;
+    pick.get("id").and_then(|i| i.as_u64())
+}
+
+#[cfg(test)]
+mod sms_tests {
+    #[test]
+    fn picks_the_sms_phone() {
+        let v = serde_json::json!({ "trustedPhoneNumbers": [ { "id": 3, "pushMode": "voice" }, { "id": 7, "pushMode": "sms" } ] });
+        assert_eq!(super::first_phone_id(&v), Some(7));
+        assert_eq!(super::first_phone_id(&serde_json::json!({ "trustedPhoneNumbers": [ { "id": 2 } ] })), Some(2));
+        assert_eq!(super::first_phone_id(&serde_json::json!({})), None);
     }
 }
