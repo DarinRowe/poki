@@ -490,7 +490,7 @@ final class AppModel {
             guard let self else { return true }
             defer { self.pairingCheck = nil }
             do {
-                _ = try await SelfSigner.call(["op": "udid", "device_address": "10.7.0.1", "pairing_file": path, "host_name": "Poki"])
+                _ = try await SignerBridge.call(["op": "udid", "device_address": "10.7.0.1", "pairing_file": path, "host_name": "Poki"])
                 if self.pairingTrouble != nil { self.log.add("pairing", "check: accepted again") }
                 self.pairingTrouble = nil
                 self.pairingVerifiedAt = Date()
