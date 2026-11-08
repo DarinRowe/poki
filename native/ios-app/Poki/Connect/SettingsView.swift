@@ -102,6 +102,15 @@ struct SettingsHome: View {
                 if model.relayAddress == nil { Text("Set your relay address first: each agent’s address is on your relay.") }
             }
 
+            if model.automationPath == .inProcess {
+                Section {
+                    Toggle("Hide Banner When Idle", isOn: $model.closeSessionWhenIdle)
+                } header: {
+                    Text("Automation")
+                } footer: {
+                    Text("Ends the automation session, and iOS’s banner with it, when the agent stops. Being tested: if the agent can’t see the screen after this, turn it off and open Poki again.")
+                }
+            }
             // The in-process path has no Poki Runner to start or stop (ESP-152).
             if model.automationPath == .runner {
                 Section {

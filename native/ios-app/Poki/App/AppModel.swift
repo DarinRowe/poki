@@ -52,6 +52,11 @@ final class AppModel {
     /// Stop the runner after this long without agent activity; 0 never stops it.
     /// 60 s by default. An agent can think for about a minute between steps of a long task; after a
     /// longer pause the runner stops, and the agent's next request starts it again.
+    /// In-process: close the automation session (and iOS's banner) when Poki stands by. Off by
+    /// default until a session reopened in the same launch is shown to answer reads on the phone.
+    var closeSessionWhenIdle: Bool = UserDefaults.standard.bool(forKey: "inProcess.closeWhenIdle") {
+        didSet { UserDefaults.standard.set(closeSessionWhenIdle, forKey: "inProcess.closeWhenIdle"); log.add("runner", "close the session when idle: \(closeSessionWhenIdle ? "on" : "off")") }
+    }
     var idleStopSeconds: Int = UserDefaults.standard.object(forKey: "idleStopSeconds.v4") as? Int ?? 60 {
         didSet { UserDefaults.standard.set(idleStopSeconds, forKey: "idleStopSeconds.v4"); log.add("runner", "idle stop set to \(idleStopSeconds) s") }
     }
@@ -737,9 +742,11 @@ final class AppModel {
             // no tree reads on the phone (0.2.8 build 144, after a stand-by every look timed out until
             // Poki was relaunched), so standing by ends the task and leaves the session (and iOS's
             // banner) as they are. Turning Poki off still closes it.
-            log.add("runner", "standing by: \(reason); the in-process session stays open until Poki is turned off")
+            log.add("runner", closeSessionWhenIdle ? "standing by: \(reason); closing the in-process session, and the banner with it"
+                                                   : "standing by: \(reason); the in-process session stays open until Poki is turned off")
             // The task ends here too, as with the runner (ESP-176): nothing is switched.
             Task { [core] in _ = await core.finishTask(switching: false) }
+            if closeSessionWhenIdle { closeInProcess("standing by") }
             // The launcher stays: the disk image is mounted and the next session opens through
             // testmanagerd on the phone itself, so no loopback (and no Wi-Fi) is needed to wake.
             standBy(reason: reason)
