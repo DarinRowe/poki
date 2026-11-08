@@ -13,7 +13,7 @@ const answers: Record<string, unknown> = {
   connectors: [{ name: "Claude", url: `https://poki-relay.zhehan.workers.dev/v1/${"a".repeat(52)}/${"s".repeat(43)}/mcp`, added_at: now, last_check: { at: now, ok: true, relay_ok: true, phone_online: true, tools: ["look", "do", "screenshot"], detail: "Working: 12 tools through the phone." } }],
   connector_snippets: [["Claude Code", "claude mcp add --transport http poki \"https://…/mcp\""]],
   check_update: { current: "0.2.1-300", latest: "0.2.1-300", url: null, newer: false, channel: "stable" },
-  install_update: "",
+  install_update: { path: "", relaunching: false },
   channels: [
     { id: "stable", title: "Stable", selected: false, latest: null },
     { id: "beta", title: "Beta", selected: true, latest: { tag: "ios-v0.2.7", version: "0.2.7", build: "70", published_at: "", ipa_name: "Poki-external-0.2.7-70.ipa", channel: "beta" } },

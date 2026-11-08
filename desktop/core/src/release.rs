@@ -251,6 +251,9 @@ pub struct UpdateInfo {
     pub asset_name: Option<String>,
     pub newer: bool,
     pub channel: Channel,
+    /// The release's SHA256SUMS-desktop.txt, to check the download against.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sums_url: Option<String>,
 }
 
 /// The installer name suffix for this platform.
@@ -273,7 +276,8 @@ fn pick_desktop<'a>(list: &'a [GhRelease], channel: Channel, suffix: &str) -> Op
     channel.fallbacks().find_map(|want| {
         list.iter()
             .filter(|r| release_channel(r).map(|c| want.includes(c)).unwrap_or(false))
-            .find_map(|r| r.assets.iter().find_map(|a| desktop_asset_version(&a.name, suffix).map(|v| (r, a, v))))
+            .flat_map(|r| r.assets.iter().filter_map(move |a| desktop_asset_version(&a.name, suffix).map(|v| (r, a, v))))
+            .max_by(|a, b| version_key(&a.2).cmp(&version_key(&b.2)))
     })
 }
 
@@ -284,14 +288,30 @@ pub async fn desktop_update() -> Result<UpdateInfo> {
     let found = pick_desktop(&list, channel, platform_suffix());
     let newer = found.as_ref().map(|(_, _, v)| version_key(v) > version_key(&current)).unwrap_or(false);
     Ok(match found {
-        Some((r, a, v)) => UpdateInfo { current, latest: Some(v), url: r.html_url.clone(), asset_url: Some(a.browser_download_url.clone()), asset_name: Some(a.name.clone()), newer, channel },
-        None => UpdateInfo { current, latest: None, url: None, asset_url: None, asset_name: None, newer, channel },
+        Some((r, a, v)) => {
+            let sums_url = r.assets.iter().find(|a| a.name == "SHA256SUMS-desktop.txt").map(|a| a.browser_download_url.clone());
+            UpdateInfo { current, latest: Some(v), url: r.html_url.clone(), asset_url: Some(a.browser_download_url.clone()), asset_name: Some(a.name.clone()), newer, channel, sums_url }
+        }
+        None => UpdateInfo { current, latest: None, url: None, asset_url: None, asset_name: None, newer, channel, sums_url: None },
     })
 }
 
-/// Downloads the newer Poki Setup and opens it: the disk image on a Mac (drag it over the old
-/// one), the installer on Windows. Returns where it was saved.
-pub async fn install_desktop_update(reporter: &Reporter) -> Result<PathBuf> {
+/// What installing an update did.
+#[derive(Debug, Clone, Serialize)]
+pub struct Installed {
+    /// The downloaded installer.
+    pub path: PathBuf,
+    /// The new Poki Setup is in place (or its installer is running) and starts by itself once
+    /// this one quits: the app should quit now.
+    pub relaunching: bool,
+}
+
+/// Downloads the newer Poki Setup, checks it against the release's SHA256SUMS-desktop.txt, and
+/// installs it over this one: on a Mac the app inside the disk image replaces this app bundle and
+/// a helper opens the new one after this one quits; on Windows the installer runs in passive mode
+/// and starts Poki Setup again. When the swap is not possible (the app is not in a writable
+/// place, for example) the disk image or installer is opened for the person instead.
+pub async fn install_desktop_update(reporter: &Reporter) -> Result<Installed> {
     let info = desktop_update().await?;
     let (Some(url), Some(name), true) = (info.asset_url, info.asset_name, info.newer) else {
         return Err(Error::msg("Poki Setup is up to date."));
@@ -299,14 +319,122 @@ pub async fn install_desktop_update(reporter: &Reporter) -> Result<PathBuf> {
     let dir = paths::cache_dir()?.join("updates");
     std::fs::create_dir_all(&dir)?;
     let to = dir.join(&name);
-    if !to.is_file() {
+    let expected = match &info.sums_url {
+        Some(u) => client()?.get(u).send().await?.error_for_status()?.text().await.ok().and_then(|t| sum_for(&t, &name)),
+        None => None,
+    };
+    let good = |p: &std::path::Path| p.is_file() && expected.as_deref().map(|e| sha256_file(p).ok().as_deref() == Some(e)).unwrap_or(true);
+    if !good(&to) {
         let part = dir.join(format!("{name}.part"));
         download(&url, &part, reporter, "update").await?;
+        if let Some(e) = &expected {
+            let got = sha256_file(&part)?;
+            if &got != e {
+                let _ = std::fs::remove_file(&part);
+                return Err(Error::msg(format!("The downloaded update did not match its checksum ({got}). Try again.")));
+            }
+        }
         std::fs::rename(&part, &to)?;
     }
-    open_installer(&to)?;
-    Ok(to)
+    match install_in_place(&to) {
+        Ok(()) => Ok(Installed { path: to, relaunching: true }),
+        Err(e) => {
+            tracing::warn!("update not installed in place ({e}); opening the installer");
+            open_installer(&to)?;
+            Ok(Installed { path: to, relaunching: false })
+        }
+    }
 }
+
+fn sum_for(sums: &str, name: &str) -> Option<String> {
+    sums.lines().find_map(|l| {
+        let mut parts = l.split_whitespace();
+        let hash = parts.next()?;
+        (parts.next()?.trim_start_matches('*') == name).then(|| hash.to_lowercase())
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn install_in_place(dmg: &std::path::Path) -> Result<()> {
+    use std::process::Command;
+    // This process is Poki Setup.app/Contents/MacOS/<exe>.
+    let exe = std::env::current_exe()?;
+    let bundle = exe.ancestors().nth(3).filter(|p| p.extension().map(|e| e == "app").unwrap_or(false))
+        .ok_or_else(|| Error::msg("Poki Setup is not running from an app bundle."))?.to_path_buf();
+    let mount = std::env::temp_dir().join(format!("poki-setup-update-{}", std::process::id()));
+    std::fs::create_dir_all(&mount)?;
+    let st = Command::new("/usr/bin/hdiutil").args(["attach", "-nobrowse", "-readonly", "-noautoopen", "-mountpoint"]).arg(&mount).arg(dmg).status()?;
+    if !st.success() {
+        return Err(Error::msg("Could not open the update's disk image."));
+    }
+    let result = (|| -> Result<()> {
+        let new_app = std::fs::read_dir(&mount)?.filter_map(|e| e.ok()).map(|e| e.path())
+            .find(|p| p.extension().map(|e| e == "app").unwrap_or(false))
+            .ok_or_else(|| Error::msg("The update's disk image has no app in it."))?;
+        verify_mac_app(&new_app)?;
+        let staged = bundle.with_extension("app.new");
+        let old = bundle.with_extension("app.old");
+        let _ = std::fs::remove_dir_all(&staged);
+        let _ = std::fs::remove_dir_all(&old);
+        if !Command::new("/usr/bin/ditto").arg(&new_app).arg(&staged).status()?.success() {
+            let _ = std::fs::remove_dir_all(&staged);
+            return Err(Error::msg("Could not copy the new Poki Setup next to this one."));
+        }
+        // Swap: a running app keeps its open files after its bundle is renamed.
+        std::fs::rename(&bundle, &old)?;
+        if let Err(e) = std::fs::rename(&staged, &bundle) {
+            let _ = std::fs::rename(&old, &bundle);
+            return Err(e.into());
+        }
+        let _ = std::fs::remove_dir_all(&old);
+        Ok(())
+    })();
+    let _ = Command::new("/usr/bin/hdiutil").args(["detach", "-quiet"]).arg(&mount).status();
+    let _ = std::fs::remove_dir(&mount);
+    result?;
+    // Opens the new app once this one has quit (the app quits when told `relaunching`).
+    let pid = std::process::id();
+    let script = format!("while kill -0 {pid} 2>/dev/null; do sleep 0.3; done; sleep 0.5; /usr/bin/open \"$0\"");
+    use std::os::unix::process::CommandExt;
+    Command::new("/bin/sh").arg("-c").arg(script).arg(&bundle).process_group(0)
+        .stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null())
+        .spawn()?;
+    Ok(())
+}
+
+/// The new app must carry a valid signature from the same team as this one (Developer ID,
+/// notarized builds only), so a swapped download can never replace Poki Setup with something else.
+#[cfg(target_os = "macos")]
+fn verify_mac_app(app: &std::path::Path) -> Result<()> {
+    use std::process::Command;
+    let ok = Command::new("/usr/bin/codesign").args(["--verify", "--deep", "--strict"]).arg(app).status()?.success();
+    if !ok {
+        return Err(Error::msg("The update's signature did not check out."));
+    }
+    let team = |p: &std::path::Path| -> Option<String> {
+        let out = Command::new("/usr/bin/codesign").args(["-dv"]).arg(p).output().ok()?;
+        let text = String::from_utf8_lossy(&out.stderr).to_string();
+        text.lines().find_map(|l| l.strip_prefix("TeamIdentifier=")).map(|t| t.trim().to_string()).filter(|t| t != "not set")
+    };
+    let exe = std::env::current_exe()?;
+    let mine = exe.ancestors().nth(3).and_then(team);
+    let theirs = team(app);
+    match (mine, theirs) {
+        (Some(a), Some(b)) if a == b => Ok(()),
+        (None, _) => Err(Error::msg("This Poki Setup is not signed with a Developer ID, so it does not update itself.")),
+        (Some(a), b) => Err(Error::msg(format!("The update is signed by another team ({}), not {a}.", b.unwrap_or_else(|| "none".into())))),
+    }
+}
+
+#[cfg(windows)]
+fn install_in_place(setup: &std::path::Path) -> Result<()> {
+    // Tauri's NSIS installer: /P passive (progress only, no questions), /R starts the app again.
+    std::process::Command::new(setup).args(["/P", "/R"]).spawn()?;
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
+fn install_in_place(_: &std::path::Path) -> Result<()> { Err(Error::msg("Updates install by themselves on macOS and Windows only.")) }
 
 fn open_installer(path: &std::path::Path) -> Result<()> {
     #[cfg(target_os = "macos")]
@@ -506,5 +634,16 @@ mod tests {
     fn build_suffix_sorts_after_version() {
         assert!(version_key("0.2.1-5") > version_key("0.2.1"));
         assert!(version_key("0.2.2") > version_key("0.2.1-5"));
+    }
+}
+
+#[cfg(test)]
+mod update_tests {
+    #[test]
+    fn checksum_line_for_a_file() {
+        let sums = "aa11  PokiSetup-0.2.1-307-macos.dmg\nBB22 *PokiSetup-0.2.1-307-windows-x64-setup.exe\n";
+        assert_eq!(super::sum_for(sums, "PokiSetup-0.2.1-307-macos.dmg").as_deref(), Some("aa11"));
+        assert_eq!(super::sum_for(sums, "PokiSetup-0.2.1-307-windows-x64-setup.exe").as_deref(), Some("bb22"));
+        assert_eq!(super::sum_for(sums, "other"), None);
     }
 }

@@ -454,7 +454,7 @@ async fn dispatch(state: &Shared, out: &Out, cmd: &str, a: &Value) -> R {
             ok(b.path.display().to_string())
         }
         "check_update" => check_update().await,
-        "install_update" => ok(release::install_desktop_update(&out.reporter("update")).await?.display().to_string()),
+        "install_update" => ok(release::install_desktop_update(&out.reporter("update")).await?),
         "ping" => ok("pong"),
         other => Err(Failure { kind: "bad_request", message: format!("unknown command {other}") }),
     }

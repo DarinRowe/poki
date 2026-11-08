@@ -349,11 +349,19 @@ pub async fn support_bundle(udid: Option<String>, out_dir: String) -> R<String> 
 #[tauri::command]
 pub async fn check_update() -> R<release::UpdateInfo> { Ok(release::desktop_update().await?) }
 
-/// Downloads the newer Poki Setup and starts its installer.
+/// Downloads the newer Poki Setup and starts its installer in passive mode; the installer
+/// starts Poki Setup again, so this one quits.
 #[tauri::command]
-pub async fn install_update(app: AppHandle) -> R<String> {
-    let path = release::install_desktop_update(&reporter(&app, "update")).await?;
-    Ok(path.display().to_string())
+pub async fn install_update(app: AppHandle) -> R<release::Installed> {
+    let done = release::install_desktop_update(&reporter(&app, "update")).await?;
+    if done.relaunching {
+        let a = app.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+            a.exit(0);
+        });
+    }
+    Ok(done)
 }
 
 /// Every channel with its newest release, the chosen one marked.

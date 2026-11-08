@@ -41,6 +41,17 @@ struct ContentView: View {
             }
         }
         .animation(.snappy, value: model.banner)
+        .alert("Poki Setup \(model.updatePrompt ?? "") is available", isPresented: Binding(get: { model.updatePrompt != nil }, set: { if !$0 { model.updatePrompt = nil } })) {
+            Button("Restart to Update") {
+                Task {
+                    do { try await model.installUpdate() } catch { model.banner = error.localizedDescription }
+                }
+            }
+            .keyboardShortcut(.defaultAction)
+            Button("Later", role: .cancel) {}
+        } message: {
+            Text("Poki Setup downloads the update, checks its signature and restarts.")
+        }
     }
 }
 

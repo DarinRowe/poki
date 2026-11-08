@@ -156,3 +156,7 @@ pre.snippet { user-select: text; cursor: text; white-space: pre-wrap; word-break
 .seg button.on { background: var(--group); box-shadow: 0 1px 2px rgba(0,0,0,0.15); }
 .fade { animation: fade .2s ease-out; }
 @keyframes fade { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+
+/* Poki Setup's own update, offered at the top of the page. */
+.update-bar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; margin-bottom: 16px; border-radius: 10px; background: var(--card, rgba(127,127,127,0.12)); }
+.update-bar span { flex: 1; }
