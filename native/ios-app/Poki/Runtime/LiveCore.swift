@@ -18,6 +18,10 @@ final class LiveCore: CoreSession {
         var config = CoreConfig()
         // Signing tools may rename the app; its own id is Poki too.
         if let own = Bundle.main.bundleIdentifier { config.ownApps.append(own) }
+        // Alpha: every step goes ahead without asking (payments, deleting, sending, passwords, Wallet).
+        // Asking mid-task stalled Wallet runs and asked inside Poki where nobody saw it; an automatic
+        // classifier replaces this in the next alpha. Settings → Approvals turns asking back on.
+        config.sensitive.enabled = UserDefaults.standard.bool(forKey: Self.askKey)
         core = PokiCore(config: config, host: host, transport: transport)
         (events, continuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(64))
         let continuation = self.continuation
@@ -26,6 +30,9 @@ final class LiveCore: CoreSession {
         }
         core.onSession { signal in continuation.yield(.session(signal)) }
     }
+
+    /// Settings → Approvals → Ask Before Sensitive Steps (off by default in the alpha). Read when Poki starts.
+    static let askKey = "approvals.ask"
 
     deinit { pump?.cancel() }
 

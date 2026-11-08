@@ -57,6 +57,11 @@ final class AppModel {
     var closeSessionWhenIdle: Bool = UserDefaults.standard.bool(forKey: "inProcess.closeWhenIdle") {
         didSet { UserDefaults.standard.set(closeSessionWhenIdle, forKey: "inProcess.closeWhenIdle"); log.add("runner", "close the session when idle: \(closeSessionWhenIdle ? "on" : "off")") }
     }
+    /// Ask the owner before payments, deleting, sending, passwords and Wallet input. Off in the alpha;
+    /// PokiCore reads it when Poki starts.
+    var askBeforeSensitiveSteps: Bool = UserDefaults.standard.bool(forKey: LiveCore.askKey) {
+        didSet { UserDefaults.standard.set(askBeforeSensitiveSteps, forKey: LiveCore.askKey); log.add("approval", "ask before sensitive steps: \(askBeforeSensitiveSteps ? "on" : "off") (from the next start of Poki)") }
+    }
     var idleStopSeconds: Int = UserDefaults.standard.object(forKey: "idleStopSeconds.v4") as? Int ?? 60 {
         didSet { UserDefaults.standard.set(idleStopSeconds, forKey: "idleStopSeconds.v4"); log.add("runner", "idle stop set to \(idleStopSeconds) s") }
     }
