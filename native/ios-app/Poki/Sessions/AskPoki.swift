@@ -7,14 +7,16 @@ import PokiCore
 /// listed only once the owner has set up a model, and it waits while the owner's own chat runs a task.
 @MainActor
 enum AskPoki {
-    static let schema = #"{"type":"object","properties":{"task":{"type":"string","description":"What to do on the iPhone, in plain words, as you would ask a person. Include every detail Poki needs (names, text to type); Poki cannot ask you back."}},"required":["task"],"additionalProperties":false}"#
+    static let schema = #"{"type":"object","properties":{"task":{"type":"string","description":"What to do on the iPhone, in plain words, as you would ask a person. Include every detail Poki needs (names, text to type); Poki cannot ask you back."},"check":{"type":"boolean","description":"true: no new task; answer with the result of the task you handed over earlier, or say it is still running."}},"additionalProperties":false}"#
 
-    static let description = "Hand a whole task to Poki, the agent on this iPhone: it looks, taps and types by itself with the owner's own model and approvals, then answers with the result (and what it said). Use it for a self-contained phone task when you do not need to see each step; use look and do when you want to drive the phone yourself. One task at a time; it can take a few minutes."
+    static let description = "Hand a whole task to Poki, the agent on this iPhone: it looks, taps and types by itself with the owner's own model and approvals, then answers with the result (and what it said). Use it for a self-contained phone task when you do not need to see each step; use look and do when you want to drive the phone yourself. One task at a time. A task can take minutes: when it is not done before your call would time out, the answer says it is still working, and you call ask_poki with {\"check\": true} a little later for the result."
 
     private static weak var app: AppModel?
     /// The owner's chat (the Debug probe's `chat` mode sends to it).
     private(set) static weak var chat: ChatModel?
     private static var running: [String: ChatModel] = [:]
+    /// Hand-offs by the requester's session: the task under way, then its answer until it is read.
+    private static var jobs: [String: Task<(text: String, success: Bool?), Never>] = [:]
 
     static func install(app: AppModel, chat: ChatModel) {
         self.app = app
@@ -29,18 +31,25 @@ enum AskPoki {
     static func refresh() {
         guard let app else { return }
         guard ModelKeys.hasUsableKey || ModelKeys.selectedProvider == .custom && !ModelKeys.customURL.isEmpty else { app.setHostTools([]); return }
-        app.setHostTools([HostTool(name: "ask_poki", description: description, schemaJSON: schema) { arguments, session in
-            await run(arguments: arguments, session: session)
+        app.setHostTools([HostTool(name: "ask_poki", description: description, schemaJSON: schema) { arguments, session, timeLeft in
+            await run(arguments: arguments, session: session, timeLeft: timeLeft)
         }])
     }
 
-    static func run(arguments: String, session: String?) async -> PokiCore.ToolAnswer {
+    static func run(arguments: String, session: String?, timeLeft: Double? = nil) async -> PokiCore.ToolAnswer {
         let args = (arguments.data(using: .utf8).flatMap { try? JSONSerialization.jsonObject(with: $0) }) as? [String: Any] ?? [:]
+        let key = session ?? "local"
+        if args["check"] as? Bool == true {
+            guard let job = jobs[key] else {
+                return PokiCore.ToolAnswer(text: "nothing pending: no task was handed to Poki in this session, or its result was already given", jpeg: nil, isError: false)
+            }
+            return await answer(job, key: key, within: timeLeft)
+        }
         guard let task = (args["task"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !task.isEmpty else {
             return PokiCore.ToolAnswer(text: "error: task is empty; nothing was done", jpeg: nil, isError: true)
         }
         guard let app else { return PokiCore.ToolAnswer(text: "error: Poki is not ready", jpeg: nil, isError: true) }
-        if chat?.running == true || ChatModel.delegatedBusy != nil {
+        if chat?.running == true || ChatModel.delegatedBusy != nil || !running.isEmpty {
             return PokiCore.ToolAnswer(text: "busy: Poki's agent is already working on a task on this iPhone; nothing was done. Try again in a minute, or use look and do.", jpeg: nil, isError: true)
         }
         let store = SessionStore.shared
@@ -48,12 +57,46 @@ enum AskPoki {
         let id = store.handoffID(for: session)
         let handoff = ChatModel(app: app, kind: .handoff, requester: requester, sessionID: id)
         running[id] = handoff
-        defer { running[id] = nil }
         AppLog.shared.add("chat", "\(requester) handed a task to Poki (\(task.count) characters)")
-        let answer = await handoff.runDelegated(task)
-        return PokiCore.ToolAnswer(text: answer.text, jpeg: nil, isError: false)
+        jobs[key] = Task { @MainActor in
+            let result = await handoff.runDelegated(task)
+            running[id] = nil
+            return result
+        }
+        return await answer(jobs[key]!, key: key, within: timeLeft)
+    }
+
+    /// The task's answer when it ends within `seconds` (nil: however long it takes), else "still working".
+    private static func answer(_ job: Task<(text: String, success: Bool?), Never>, key: String, within seconds: Double?) async -> PokiCore.ToolAnswer {
+        let result: (text: String, success: Bool?)?
+        if let seconds {
+            // Whichever comes first: the task's end or the caller's deadline (the task goes on either way).
+            result = await withCheckedContinuation { continuation in
+                let once = Once(continuation)
+                Task { @MainActor in once.resume(await job.value) }
+                Task { @MainActor in try? await Task.sleep(for: .seconds(seconds)); once.resume(nil) }
+            }
+        } else {
+            result = await job.value
+        }
+        guard let result else {
+            return PokiCore.ToolAnswer(text: "working: Poki is still on the task. Call ask_poki with {\"check\": true} in a minute for the result.", jpeg: nil, isError: false)
+        }
+        jobs[key] = nil
+        return PokiCore.ToolAnswer(text: result.text, jpeg: nil, isError: false)
     }
 
     /// The hand-off running in this session, for its live transcript.
     static func live(_ id: String) -> ChatModel? { running[id] }
+}
+
+/// Resumes a continuation once; later answers are dropped.
+@MainActor
+private final class Once {
+    private var continuation: CheckedContinuation<(text: String, success: Bool?)?, Never>?
+    init(_ continuation: CheckedContinuation<(text: String, success: Bool?)?, Never>) { self.continuation = continuation }
+    func resume(_ value: (text: String, success: Bool?)?) {
+        continuation?.resume(returning: value)
+        continuation = nil
+    }
 }

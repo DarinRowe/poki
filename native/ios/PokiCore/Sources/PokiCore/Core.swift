@@ -168,15 +168,21 @@ public enum SessionSignal: Sendable, Equatable {
     case ended(id: String)
 }
 
-/// A tool the app adds to the MCP catalog (`ask_poki`, the in-app agent). It is listed after look, do and
-/// status and runs in `call()` outside the one-call-at-a-time gate, since it makes its own look and do
-/// calls. `schemaJSON` is the inputSchema as a JSON object.
+/// A tool the app adds to the MCP catalog (`ask_poki`, the in-app agent). It is listed after the core's
+/// own tools and runs in `call()` outside the one-call-at-a-time gate, since it makes its own look and do
+/// calls. `schemaJSON` is the inputSchema as a JSON object. A name the core already uses (look, do,
+/// routines, status) is not taken.
+///
+/// `timeLeft` is how many seconds the caller still waits for the answer (the relay's deadline less a
+/// margin), nil when nobody said; a tool that may take longer answers before then and lets the caller
+/// come back for the result. The catalog says `listChanged: false`: a client that read tools/list before
+/// the app added its tools sees them only after it initializes again.
 public struct HostTool: Sendable {
     public var name: String
     public var description: String
     public var schemaJSON: String
-    public var run: @Sendable (_ arguments: String, _ session: String?) async -> PokiCore.ToolAnswer
-    public init(name: String, description: String, schemaJSON: String, run: @escaping @Sendable (_ arguments: String, _ session: String?) async -> PokiCore.ToolAnswer) {
+    public var run: @Sendable (_ arguments: String, _ session: String?, _ timeLeft: Double?) async -> PokiCore.ToolAnswer
+    public init(name: String, description: String, schemaJSON: String, run: @escaping @Sendable (_ arguments: String, _ session: String?, _ timeLeft: Double?) async -> PokiCore.ToolAnswer) {
         self.name = name; self.description = description; self.schemaJSON = schemaJSON; self.run = run
     }
 }
@@ -272,7 +278,10 @@ public final class PokiCore: @unchecked Sendable {
     private let sessionSignal = LockedBox<(@Sendable (SessionSignal) -> Void)?>(nil)
 
     /// Replaces the app's tools (none: only look, do and status are listed).
-    public func setHostTools(_ tools: [HostTool]) { hostTools.value = tools }
+    public func setHostTools(_ tools: [HostTool]) {
+        let own: Set<String> = ["look", "do", "routines", "status"]
+        hostTools.value = tools.filter { !own.contains($0.name) }
+    }
     /// Told when an MCP client's session starts or ends.
     public func onSession(_ handler: @escaping @Sendable (SessionSignal) -> Void) { sessionSignal.value = handler }
 
@@ -405,6 +414,7 @@ public final class PokiCore: @unchecked Sendable {
             // The client ended its session: when it began the task, the task is over too.
             if let s = request.headers["mcp-session-id"] {
                 _ = sessions.update { $0.remove(s) }
+                clientNames.update { $0[s] = nil }
                 sessionSignal.value?(.ended(id: s))
                 _ = await endTask(session: s)
             }
@@ -509,7 +519,7 @@ public final class PokiCore: @unchecked Sendable {
         if name == "status" { return status() }
         if let tool = hostTools.value.first(where: { $0.name == name }) {
             // Outside the gate: the app's tool makes its own look and do calls, one at a time as any.
-            let answer = await tool.run(args.serialized(), session)
+            let answer = await tool.run(args.serialized(), session, answerBy.map { max(0, $0 - now() - 3) })
             return ToolResult(text: answer.text, jpeg: answer.jpeg, isError: answer.isError)
         }
         if name == "routines" {

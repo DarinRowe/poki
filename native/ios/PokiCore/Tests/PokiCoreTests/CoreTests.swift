@@ -498,7 +498,7 @@ final class MCPTests: XCTestCase {
         let signals = LockedBox<[SessionSignal]>([])
         core.onSession { signal in signals.update { $0.append(signal) } }
         let seen = LockedBox<String?>(nil)
-        core.setHostTools([HostTool(name: "ask_poki", description: "Hand a task to Poki.", schemaJSON: #"{"type":"object","properties":{"task":{"type":"string"}},"required":["task"]}"#) { [core] arguments, session in
+        core.setHostTools([HostTool(name: "ask_poki", description: "Hand a task to Poki.", schemaJSON: #"{"type":"object","properties":{"task":{"type":"string"}},"required":["task"]}"#) { [core] arguments, session, _ in
             seen.value = session
             let inner = await core.callTool("look", arguments: "{}")
             return PokiCore.ToolAnswer(text: "done: \(arguments) · inner \(inner.isError ? "failed" : "ok")", jpeg: nil, isError: false)
@@ -515,6 +515,11 @@ final class MCPTests: XCTestCase {
         XCTAssertEqual(seen.value, session)
         _ = await core.handle(RelayRequest(id: "d", method: "DELETE", headers: ["mcp-session-id": session], body: ""))
         XCTAssertEqual(signals.value.last, .ended(id: session))
+        XCTAssertNil(core.clientNames.value[session])
+        // An app tool cannot take a built-in's name.
+        core.setHostTools([HostTool(name: "look", description: "", schemaJSON: "{}") { _, _, _ in PokiCore.ToolAnswer(text: "shadow", jpeg: nil, isError: false) }])
+        let look = await core.callTool("look", arguments: "{}")
+        XCTAssertNotEqual(look.text, "shadow")
         core.setHostTools([])
         let after = try JSON.parse(await post(core, ["jsonrpc": "2.0", "id": 4, "method": "tools/list"]).body)
         XCTAssertEqual(after["result"]?["tools"]?.array?.count, 4)
