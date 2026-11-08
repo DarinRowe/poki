@@ -108,6 +108,8 @@ impl Channel {
             Some(Channel::PreAlpha)
         } else if rest.starts_with("alpha-") {
             Some(Channel::Alpha)
+        } else if rest.starts_with("beta-") {
+            Some(Channel::Beta)
         } else if rest.starts_with('v') {
             Some(if prerelease { Channel::Beta } else { Channel::Stable })
         } else {
@@ -178,7 +180,7 @@ fn installable(r: &GhRelease) -> Option<(Channel, Release)> {
     let stem = ipa.name.trim_start_matches("Poki-external-").trim_end_matches(".ipa");
     let (version, build) = match stem.rsplit_once('-') {
         Some((v, b)) if !v.is_empty() => (v.to_string(), b.to_string()),
-        _ => (r.tag_name.trim_start_matches("ios-v").trim_start_matches("ios-prealpha-").trim_start_matches("ios-alpha-").to_string(), String::new()),
+        _ => (r.tag_name.trim_start_matches("ios-v").trim_start_matches("ios-prealpha-").trim_start_matches("ios-alpha-").trim_start_matches("ios-beta-").to_string(), String::new()),
     };
     Some((
         channel,
@@ -198,8 +200,18 @@ fn installable(r: &GhRelease) -> Option<(Channel, Release)> {
     ))
 }
 
+/// The highest version and build the channel offers, whatever order GitHub lists releases in
+/// (rolling ios-*-latest releases keep their first creation date while their files change).
+/// On a tie the channel's own release wins, then the later published one.
 fn pick_exact(list: &[GhRelease], channel: Channel) -> Option<Release> {
-    list.iter().filter_map(installable).find(|(c, _)| channel.includes(*c)).map(|(_, r)| r)
+    list.iter()
+        .filter_map(installable)
+        .filter(|(c, _)| channel.includes(*c))
+        .max_by(|(ca, a), (cb, b)| {
+            let key = |c: &Channel, r: &Release| (version_key(&r.version), version_key(&r.build), *c == channel, r.published_at.clone());
+            key(ca, a).cmp(&key(cb, b))
+        })
+        .map(|(_, r)| r)
 }
 
 /// The newest release the channel offers; when it has none yet, the next less stable channel's,
@@ -577,6 +589,10 @@ mod tests {
         assert_eq!(Channel::of_tag("ios", "ios-v0.2.7", true), Some(Channel::Beta));
         assert_eq!(Channel::of_tag("ios", "ios-prealpha-0.2.7-252", true), Some(Channel::PreAlpha));
         assert_eq!(Channel::of_tag("ios", "ios-alpha-0.2.8-110", true), Some(Channel::Alpha));
+        assert_eq!(Channel::of_tag("ios", "ios-alpha-latest", true), Some(Channel::Alpha));
+        assert_eq!(Channel::of_tag("ios", "ios-prealpha-latest", true), Some(Channel::PreAlpha));
+        assert_eq!(Channel::of_tag("ios", "ios-beta-0.3.0-600", true), Some(Channel::Beta));
+        assert_eq!(Channel::of_tag("desktop", "desktop-beta-0.3.0-9", true), Some(Channel::Beta));
         assert_eq!(Channel::of_tag("desktop", "desktop-alpha-0.2.1-3", true), Some(Channel::Alpha));
         assert!(Channel::PreAlpha.includes(Channel::Alpha) && Channel::Alpha.includes(Channel::Beta) && !Channel::Beta.includes(Channel::Alpha));
         assert_eq!(Channel::parse("alpha"), Some(Channel::Alpha));
@@ -606,6 +622,26 @@ mod tests {
         assert_eq!(pick(&list[..2], Channel::Stable).unwrap().tag, "ios-prealpha-0.2.8-260");
         assert!(pick(&list[..1], Channel::Stable).is_none());
         assert_eq!(Channel::default(), Channel::Stable);
+    }
+
+    #[test]
+    fn rolling_release_wins_by_build_not_list_order() {
+        // Rolling releases keep their first date; a Beta made later sits above them in the list.
+        let list = vec![
+            gh("ios-beta-0.2.9-520", true, "2026-11-10T05:00:00Z", Some("Poki-external-0.2.9-520.ipa")),
+            gh("ios-prealpha-latest", true, "2026-11-08T05:00:00Z", Some("Poki-external-0.2.9-540.ipa")),
+            gh("ios-alpha-latest", true, "2026-11-08T05:00:00Z", Some("Poki-external-0.2.9-530.ipa")),
+        ];
+        assert_eq!(pick(&list, Channel::PreAlpha).unwrap().build, "540");
+        assert_eq!(pick(&list, Channel::Alpha).unwrap().build, "530");
+        assert_eq!(pick(&list, Channel::Beta).unwrap().tag, "ios-beta-0.2.9-520");
+        // Same build on two channels: Pre-alpha users get their own channel's release.
+        let tie = vec![
+            gh("ios-alpha-latest", true, "2026-11-08T05:00:00Z", Some("Poki-external-0.2.8-501.ipa")),
+            gh("ios-prealpha-latest", true, "2026-11-08T05:00:00Z", Some("Poki-external-0.2.8-501.ipa")),
+        ];
+        assert_eq!(pick(&tie, Channel::PreAlpha).unwrap().tag, "ios-prealpha-latest");
+        assert_eq!(pick(&tie, Channel::Alpha).unwrap().tag, "ios-alpha-latest");
     }
 
     #[test]
