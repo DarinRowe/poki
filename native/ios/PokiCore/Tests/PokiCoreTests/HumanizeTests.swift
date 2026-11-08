@@ -211,7 +211,8 @@ final class HumanizeTests: XCTestCase {
             XCTAssertEqual(d["w3c"], .bool(true))
             XCTAssertEqual(d["holdDuration"]?.double ?? 0, 0.25, accuracy: 0.03, "the slow tail, within 10 %")
         }
-        XCTAssertNotEqual(drags[0]["fromY"], drags[1]["fromY"], "no two swipes alike")
+        // A point varies by up to 2 pt and a time by up to 10 %, so one field can repeat by chance; the whole drag does not.
+        XCTAssertNotEqual(drags[0], drags[1], "no two swipes alike")
     }
 
     func testALongPressHoldsExactlyAsAskedAndThePasteMenuOpensWithOne() async {
