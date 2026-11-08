@@ -110,6 +110,8 @@ struct SessionsView: View {
         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: Text("Search Sessions"))
         .navigationTitle(Text(verbatim: "Poki"))
         .navigationBarTitleDisplayMode(.inline)
+        // The system title gives way to HomeBrand; "Poki" stays the back button's title.
+        .toolbar(removing: .title)
         .toolbar {
             HomeBrand()
             ToolbarItem(placement: .topBarTrailing) {
@@ -203,7 +205,6 @@ private extension View {
 /// without the toolbar's glass behind it on iOS 26.
 struct HomeBrand: ToolbarContent {
     var body: some ToolbarContent {
-        ToolbarItem(placement: .principal) { Color.clear.frame(width: 1, height: 1).accessibilityHidden(true) }
         if #available(iOS 26.0, *) {
             ToolbarItem(placement: .topBarLeading) { label }
                 .sharedBackgroundVisibility(.hidden)
