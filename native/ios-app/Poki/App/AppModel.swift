@@ -558,6 +558,14 @@ final class AppModel {
     /// (the runner dies with the tunnel, so every drop costs a restart).
     func loopbackChanged(from old: LoopbackMonitor.State, to new: LoopbackMonitor.State) {
         let wasWorking = { if case .working = old { true } else { false } }()
+        // 10.7.0.1 answers with no connection chosen in Setup: something outside Poki (a proxy app set
+        // up before, or by Poki Setup) provides it. The external connection is the recorded choice, so
+        // Setup's loopback step is done and Turn on does not ask to choose one (0.2.8 build 91: the step
+        // never let the owner continue although the loopback was on).
+        if loopback.isWorking, setup.loopback == .none {
+            setup.loopback = .proxy
+            log.add("loopback", "10.7.0.1 answers already: the external connection is the recorded choice")
+        }
         if wasWorking, !loopback.isWorking {
             log.add("loopback", "dropped: 10.7.0.1 stopped answering (\(loopback.state)); the runner cannot survive this")
         } else if !wasWorking, loopback.isWorking, old != .checking {
@@ -1007,7 +1015,9 @@ final class AppModel {
         switch step {
         case .runner: setup.runnerInstalled
         case .developerMode: setup.developerMode
-        case .loopback: setup.loopback != .none && loopback.isWorking
+        // A loopback that answers is the step done, whichever app provides it: one set up before Poki
+        // (or by Poki Setup on a computer) has no row tapped here, and `loopbackChanged` records it.
+        case .loopback: loopback.isWorking
         case .pairing: pairingPath != nil && pairingTrouble == nil && diskImage.isReady
         case .automation: setup.uiAutomation
         case .background: background.allowed && activity.enabled
