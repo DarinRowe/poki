@@ -19,8 +19,11 @@ final class ContinuedRun {
     /// Asks iOS for the task; must be called while Poki is in front. False when iOS refuses.
     func begin(subtitle: String) -> Bool {
         guard !isRunning, let bundle = Bundle.main.bundleIdentifier else { return isRunning }
-        let id = "\(bundle).run.\(UUID().uuidString.prefix(8).lowercased())"
-        let wildcard = "\(bundle).run.*"
+        // The identifier the Info.plist permits: the signed bundle id's when the signer renamed it,
+        // else the one the build carries (a Poki Setup that predates the rename).
+        let permitted = (Bundle.main.object(forInfoDictionaryKey: "BGTaskSchedulerPermittedIdentifiers") as? [String])?.first { $0.hasSuffix(".run.*") }
+        let wildcard = permitted ?? "\(bundle).run.*"
+        let id = String(wildcard.dropLast()) + UUID().uuidString.prefix(8).lowercased()
         if !registered.contains(wildcard) {
             let ok = BGTaskScheduler.shared.register(forTaskWithIdentifier: wildcard, using: .main) { [weak self] task in
                 guard let task = task as? BGContinuedProcessingTask else { task.setTaskCompleted(success: false); return }
