@@ -94,7 +94,8 @@ final class AppModel {
     private(set) var handoffText: String?
     private var launchingSince: Date?
     private var endCheck = 0
-    private var lastAgentActivity = Date()
+    /// Not set at launch: a fresh launch has run nothing, so Install is available at once.
+    private var lastAgentActivity = Date.distantPast
     /// The agent's step now running (its label and start), for the foreground check above.
     private var stepUnderWay: (summary: String, started: Date)?
     private var idleTimer: Timer?

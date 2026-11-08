@@ -98,7 +98,7 @@ struct SigningSection: View {
             LabeledContent {
                 if let expiry = signer.expiry {
                     // One line: the date, and how long is left in the warning colour when it is close.
-                    (Text(expiry, format: .dateTime.month(.abbreviated).day()) + Text(verbatim: " · ") + Text(expiry, style: .relative).foregroundStyle(countdownColor))
+                    (Text(expiry, format: .dateTime.month(.abbreviated).day().year()) + Text(verbatim: " · ") + Text(expiry, style: .relative).foregroundStyle(countdownColor))
                         .lineLimit(1).minimumScaleFactor(0.8)
                 } else {
                     Text("No Profile").foregroundStyle(Color(.secondaryLabel))
@@ -108,12 +108,16 @@ struct SigningSection: View {
             }
             if let next = signer.next {
                 LabeledContent {
-                    Text(next.kind == "update" ? "\(next.version) (\(next.build))" : "Until \(next.expires.formatted(.dateTime.month(.abbreviated).day()))").lineLimit(1)
+                    Text(next.kind == "update" ? "\(next.version) (\(next.build))" : "Until \(next.expires.formatted(.dateTime.month(.abbreviated).day().year()))").lineLimit(1)
                 } label: {
                     Label(next.kind == "update" ? "Update Ready" : "Refresh Ready", systemImage: "checkmark.seal")
                 }
-                Button(next.kind == "update" ? "Install Update" : "Install Refresh", systemImage: "arrow.down.app") { Task { await signer.install() } }
-                    .disabled(!model.signingIdle || signer.working != nil)
+                // Idle is partly time (a minute since the last agent step), which nothing observes, so
+                // the row looks again every few seconds instead of staying as it was first drawn.
+                TimelineView(.periodic(from: .now, by: 5)) { _ in
+                    Button(next.kind == "update" ? "Install Update" : "Install Refresh", systemImage: "arrow.down.app") { Task { await signer.install() } }
+                        .disabled(!model.signingIdle || signer.working != nil)
+                }
             } else if let latest = signer.latest, signer.isNewer(latest) {
                 LabeledContent { Text(verbatim: "\(latest.version) (\(latest.build))") } label: { Label("Update Available", systemImage: "sparkles") }
             }
