@@ -27,6 +27,8 @@ struct PokiActivityAttributes: ActivityAttributes {
         var label: String?
         /// The app in front.
         var app: String?
+        /// The outside agent driving the phone ("Claude Code"), nil for Poki's own chat.
+        var caller: String?
         /// Bumped whenever a new thumbnail is written to the App Group container.
         var thumbnailVersion: Int
         /// A pending approval, if any. Its buttons are App Intents; see ApprovalIntents.swift.

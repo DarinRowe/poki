@@ -65,6 +65,8 @@ struct ActivityFace: Hashable {
     var link: URL = ActivityLink.chat
     /// The app has not updated the activity for longer than it should have: what it shows may be old.
     var stale = false
+    /// Who is calling: the outside agent whose badge sits beside the meta value.
+    var caller: String?
 
     var hasAction: Bool {
         switch bottom {
@@ -118,6 +120,7 @@ extension PokiState {
     /// The face for the widget: `stale` when ActivityKit says the content is past its stale date.
     func face(stale: Bool) -> ActivityFace {
         var face = baseFace
+        face.caller = caller
         // A fresh event ("Started", "Allowed") takes the status word's place for a few seconds, in
         // its own colour. An app switch keeps the app's name as the word and only lights it up.
         if let event, !phase.holdsApproval {

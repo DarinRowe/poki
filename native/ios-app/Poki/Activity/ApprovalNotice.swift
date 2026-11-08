@@ -31,9 +31,9 @@ enum ApprovalNotice {
         }
     }
 
-    static func post(_ approval: PendingApproval) {
+    static func post(_ approval: PendingApproval, caller: String? = nil) {
         let content = UNMutableNotificationContent()
-        content.title = String(localized: "Poki needs your OK")
+        content.title = caller.map { String(localized: "\($0) needs your OK") } ?? String(localized: "Poki needs your OK")
         content.body = String(localized: "\(approval.summary) in \(approval.app). Touch and hold to allow or deny.")
         content.categoryIdentifier = category
         content.userInfo = ["approval": approval.id]

@@ -277,48 +277,11 @@ struct SessionAvatar: View {
     }
 }
 
+/// An outside agent's badge: its provider's logo, or its initials (see `CallerBadge`).
 struct AgentBadge: View {
     var name: String
     var size: CGFloat
-    var body: some View {
-        Group {
-            if let logo {
-                Image(logo).resizable().renderingMode(.template).scaledToFit()
-                    .frame(width: size * 0.52, height: size * 0.52)
-            } else {
-                Text(verbatim: initials)
-                    .font(.system(size: size * 0.38, weight: .semibold, design: .rounded))
-            }
-        }
-        .foregroundStyle(.white)
-        .frame(width: size, height: size)
-        .background(Color(hex: tint), in: .circle)
-        .accessibilityHidden(true)
-    }
-    /// The provider's own logo (Poki/ProviderIcons) for agents that run on it.
-    private var logo: String? {
-        let n = name.lowercased()
-        if n.contains("claude") || n.contains("anthropic") { return "Provider-anthropic" }
-        if n.contains("codex") || n.contains("chatgpt") || n.contains("openai") { return "Provider-openai" }
-        if n.contains("gemini") { return "Provider-googlegemini" }
-        if n.contains("deepseek") { return "Provider-deepseek" }
-        if n.contains("openrouter") { return "Provider-openrouter" }
-        return nil
-    }
-    private var initials: String {
-        let words = name.split(separator: " ")
-        if words.count >= 2 { return String(words[0].prefix(1) + words[1].prefix(1)).uppercased() }
-        return String(name.prefix(1)).uppercased()
-    }
-    /// The provider tiles' colours where they match, a calm grey otherwise.
-    private var tint: UInt32 {
-        let n = name.lowercased()
-        if n.contains("claude") { return 0xD97757 }
-        if n.contains("codex") || n.contains("chatgpt") { return 0x10A37F }
-        if n.contains("gemini") { return 0x4285F4 }
-        if n.contains("cursor") { return 0x111111 }
-        return 0x8E8E93
-    }
+    var body: some View { CallerBadge(name: name, size: size).accessibilityHidden(true) }
 }
 
 /// An outside agent's session or hand-off as a conversation: the agent's own steps as grey lines, its

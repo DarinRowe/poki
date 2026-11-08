@@ -115,6 +115,14 @@ final class AppModel {
     /// The gym probe answers approvals itself: with no session on, `handle` keeps them off the screen.
     var onProbeApproval: ((PendingApproval) -> Void)?
 
+    /// The outside agent driving the phone now: its MCP session's client, or the agent that handed
+    /// a task to Poki. nil while Poki's own chat drives it.
+    var currentCaller: String? {
+        let store = SessionStore.shared
+        if let id = store.activeSessionID, let client = store.session(id)?.client { return client }
+        return ChatModel.delegatedBusy
+    }
+
     init(launcher: RunnerLauncher = RustLauncher(), pairer: DevicePairing = RustPairing()) {
         ActivityController.endAll()
         // A reinstall emptied the container: the pairing file comes back from the Keychain (and the
@@ -673,12 +681,14 @@ final class AppModel {
             activityText = summary
             log.add("agent", "started: \(summary)")
             if problem?.hasPrefix("An approval ran out") == true { problem = nil }
+            let caller = currentCaller
             activity.update { state in
                 if state.approval == nil {
                     if state.phase != .working || state.since == nil { state.since = Date() }
                     state.phase = .working
                 }
                 state.headline = summary
+                state.caller = caller
             }
         case .toolFinished(let summary, let delivery, let app, let thumbnail, let error, _):
             lastAgentActivity = Date()
@@ -692,7 +702,8 @@ final class AppModel {
             // The owner's own record of every action, with the run it came from.
             let chat = AskPoki.chat
             ActionLog.shared.add(summary, app: app, ok: !failed,
-                                 session: SessionStore.shared.activeSessionID ?? (chat?.running == true ? chat?.sessionID : nil))
+                                 session: SessionStore.shared.activeSessionID ?? (chat?.running == true ? chat?.sessionID : nil),
+                                 caller: currentCaller)
             if recentSteps.count > 20 { recentSteps.removeFirst(recentSteps.count - 20) }
             activity.record(step: summary, ok: !failed)
             activity.update { state in state.app = app ?? state.app }
@@ -700,11 +711,12 @@ final class AppModel {
         case .approvalRequested(let approval):
             approvals.append(approval)
             log.add("approval", "requested \(approval.id) in \(approval.app): \(approval.summary); Live Activity \(activity.isRunning ? "running" : "NOT running: \(activity.lastError ?? "no error")")")
-            activity.update { $0.phase = .approval; $0.approval = approval; $0.headline = "Allow this step?" }
+            let caller = currentCaller
+            activity.update { $0.phase = .approval; $0.approval = approval; $0.headline = "Allow this step?"; $0.caller = caller }
             // The Live Activity pops up for it by itself; the notification is for when it is not running.
             // Before iOS 26 an approval is answered from the notification (touch and hold it); later, from
             // the Live Activity's own buttons when one is running.
-            if #available(iOS 26.0, *), activity.isRunning {} else { ApprovalNotice.post(approval) }
+            if #available(iOS 26.0, *), activity.isRunning {} else { ApprovalNotice.post(approval, caller: caller) }
         case .approvalEnded(let id, let approved):
             approvals.removeAll { $0.id == id }
             log.add("approval", "ended \(id): \(approved.map { $0 ? "approved" : "denied" } ?? "expired or replaced")")

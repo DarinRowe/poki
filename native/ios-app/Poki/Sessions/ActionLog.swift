@@ -15,6 +15,8 @@ final class ActionLog {
         var app: String?
         var ok: Bool
         var session: String?
+        /// The outside agent that asked for it; nil for Poki's own chat.
+        var caller: String? = nil
     }
 
     private(set) var entries: [Entry] = []
@@ -27,9 +29,9 @@ final class ActionLog {
         file = folder.appendingPathComponent("action-log.jsonl")
     }
 
-    func add(_ text: String, app: String?, ok: Bool, session: String?) {
+    func add(_ text: String, app: String?, ok: Bool, session: String?, caller: String? = nil) {
         load()
-        let entry = Entry(at: Date(), text: text, app: app, ok: ok, session: session)
+        let entry = Entry(at: Date(), text: text, app: app, ok: ok, session: session, caller: caller)
         entries.append(entry)
         guard var line = try? JSONEncoder().encode(entry) else { return }
         line.append(0x0A)
@@ -79,8 +81,18 @@ struct ActionLogView: View {
     }
 
     private func row(_ entry: ActionLog.Entry) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Image(systemName: entry.ok ? "checkmark.circle" : "xmark.circle").foregroundStyle(entry.ok ? Color.green : Color.red)
+        HStack(alignment: .center, spacing: 10) {
+            // Who asked for it: the agent's badge, or Poki's own.
+            Group {
+                if let caller = entry.caller { CallerBadge(name: caller, size: 28) } else { PokiAvatar(size: 28) }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                Image(systemName: entry.ok ? "checkmark.circle.fill" : "xmark.circle.fill")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(entry.ok ? Color.green : Color.red)
+                    .background(Circle().fill(Color(.systemBackground)).padding(-1))
+                    .offset(x: 3, y: 3)
+            }
             VStack(alignment: .leading, spacing: 2) {
                 Text(ActivityWords.label(entry.text)).foregroundStyle(Color(.label)).lineLimit(2)
                 Text([entry.app, entry.session.flatMap { SessionStore.shared.session($0)?.name }].compactMap { $0 }.joined(separator: " · "))

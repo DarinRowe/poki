@@ -69,6 +69,7 @@ private struct StatusRow: View {
                 .contentTransition(.interpolate)
             Spacer(minLength: 8)
             MetaView(meta: face.meta, surface: surface)
+            if let caller = face.caller { CallerBadge(name: caller, size: 20) }
         }
     }
 }
@@ -152,7 +153,10 @@ struct IslandLeading: View {
 struct IslandTrailing: View {
     var face: ActivityFace
     var body: some View {
-        MetaView(meta: face.meta, surface: .island)
+        HStack(spacing: 6) {
+            MetaView(meta: face.meta, surface: .island)
+            if let caller = face.caller { CallerBadge(name: caller, size: 20) }
+        }
             .padding(.trailing, ActivityMetrics.islandRowInset)
             .frame(maxHeight: .infinity, alignment: .center)
             .environment(\.colorScheme, .dark)
