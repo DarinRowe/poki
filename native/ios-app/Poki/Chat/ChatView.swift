@@ -467,6 +467,7 @@ struct ComposerInputView: View {
     @State private var input = ""
     @State private var dictation = FieldDictation()
     @FocusState private var focused: Bool
+    @State private var liveNote: String?
 
     private var voice: VoiceModel { model.voice }
     private var hasText: Bool { !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -481,6 +482,10 @@ struct ComposerInputView: View {
                 .font(.system(size: 12)).foregroundStyle(ChatColor.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20)
                 .transition(.opacity)
+            } else if let liveNote {
+                Text(liveNote).font(.system(size: 12)).foregroundStyle(ChatColor.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20)
+                    .onTapGesture { self.liveNote = nil; openModel() }
             } else if let problem = dictation.problem {
                 Text(problem).font(.system(size: 12)).foregroundStyle(Color(.systemRed))
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20)
@@ -544,7 +549,10 @@ struct ComposerInputView: View {
                 } else {
                     // The live voice conversation: Poki listens and answers out loud until you end it.
                     Button {
-                        if voice.isOn { voice.stop() } else { dictation.stop(model); openVoice() }
+                        if voice.isOn { voice.stop() }
+                        else if !voice.canTalkLive {
+                            liveNote = String(localized: "Live voice needs an OpenAI API key (tap here for Model) or the voice bridge. The microphone in the field dictates with any model.")
+                        } else { liveNote = nil; dictation.stop(model); openVoice() }
                     } label: {
                         Image(systemName: voice.isOn ? "waveform.circle.fill" : "waveform.circle")
                             .resizable().scaledToFit().frame(width: 30, height: 30)
