@@ -57,6 +57,15 @@ pub async fn list(phone: &Phone, bundle_id: &str, relative: &str) -> Result<Vec<
 }
 
 /// Puts the pairing record where Poki reads it: `Library/Application Support/Poki/pairing.plist`.
-pub async fn place_pairing_file(phone: &Phone, bundle_id: &str, record: &[u8]) -> Result<()> {
-    write_file(phone, bundle_id, &format!("{SUPPORT_DIR}/pairing.plist"), record).await
+/// Never replaces a pairing Poki already has (for example one it made on the phone itself):
+/// returns false then, true when the record was written or was already the same.
+pub async fn place_pairing_file(phone: &Phone, bundle_id: &str, record: &[u8]) -> Result<bool> {
+    let path = format!("{SUPPORT_DIR}/pairing.plist");
+    if let Ok(existing) = read_file(phone, bundle_id, &path).await {
+        if !existing.is_empty() {
+            return Ok(existing == record);
+        }
+    }
+    write_file(phone, bundle_id, &path, record).await?;
+    Ok(true)
 }

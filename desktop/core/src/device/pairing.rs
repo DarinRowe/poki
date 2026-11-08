@@ -117,3 +117,17 @@ pub async fn unpair(phone: &Phone) -> Result<()> {
     let _ = LABEL;
     Ok(())
 }
+
+
+/// Lets the iPhone accept this pairing over the network as well as the cable
+/// (`com.apple.mobile.wireless_lockdown` / `EnableWifiConnections`). Poki talks to the phone's
+/// own services over the loopback, which lockdown treats as a network connection: without this,
+/// the record works over USB only and Poki's connections fail with "device socket io failed".
+pub async fn enable_network(phone: &Phone) -> Result<()> {
+    let record = saved(&phone.udid)?.ok_or_else(|| Error::device("Pair the iPhone first."))?;
+    let provider = phone.provider()?;
+    let mut lockdown = idevice::lockdown::LockdownClient::connect(&*provider).await?;
+    lockdown.start_session(&record).await?;
+    lockdown.set_value("EnableWifiConnections", true.into(), Some("com.apple.mobile.wireless_lockdown")).await?;
+    Ok(())
+}
