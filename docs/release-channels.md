@@ -23,7 +23,7 @@ updates (`desktop-v*`, `desktop-alpha-*` and `desktop-prealpha-*` tags) follow t
   to the head of `poki/ios-integration`; pass another ref as the second argument). It tags the commit
   `ios-alpha-<VERSION>-<commit count>` or `ios-prealpha-<VERSION>-<commit count>` and pushes the tag;
   `.github/workflows/channel-release.yml` builds the app and publishes the prerelease with the same
-  files as a Beta: `Poki-external-*.ipa`, `Poki-*.ipa`, `Poki-signing.zip` and `SHA256SUMS`. The build
+  files as a Beta: `Poki-external-*.ipa`, `Poki-*.ipa`, `Poki-signing.zip`, `poki-relay-worker.js` (the relay Worker Poki Setup deploys) and `SHA256SUMS`. The build
   number is the commit count, so a later commit always has a bigger one. The same commit can be both a
   pre-alpha and, once it looks good, an alpha. `DRY_RUN=1` prints the tag without pushing it.
 

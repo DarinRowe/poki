@@ -64,6 +64,8 @@ jobs:
           cp app/Poki-signing.zip release/
           # Only the runner without Xcode's frameworks: the one the launcher is tested with.
           cp runner/poki-runner-unsigned.ipa "release/PokiRunner-$VERSION-$BUILD.ipa"
-          (cd release && sha256sum *.ipa > SHA256SUMS && cat SHA256SUMS)
+          # The relay Worker from this commit, so Poki Setup deploys the relay that matches this release.
+          cp deploy/cf-relay/worker.js release/poki-relay-worker.js
+          (cd release && sha256sum *.ipa poki-relay-worker.js > SHA256SUMS && cat SHA256SUMS)
           notes="Poki $VERSION ($BUILD). Choose Poki for the built-in local VPN (Network Extensions signing required), or Poki-external for an external VPN such as LocalDevVPN. Install your chosen app; Poki automates the iPhone itself. PokiRunner is only for the older Runner path (launch Poki with -automationPath runner); install it with the same signing tool and Apple ID as Poki. Entitlements are in Poki-signing.zip. See native/ios-app/README.md."
           gh release create "$GITHUB_REF_NAME" release/* --title "Poki $VERSION" --notes "$notes" --prerelease

@@ -82,7 +82,9 @@ jobs:
           if [ -f app/Poki-unsigned.ipa ]; then cp app/Poki-unsigned.ipa "release/Poki-$VERSION-$BUILD.ipa"; fi
           cp app/Poki-external-unsigned.ipa "release/Poki-external-$VERSION-$BUILD.ipa"
           cp app/Poki-signing.zip release/
-          (cd release && sha256sum *.ipa > SHA256SUMS && cat SHA256SUMS)
+          # The relay Worker from this commit, so Poki Setup deploys the relay that matches this release.
+          cp deploy/cf-relay/worker.js release/poki-relay-worker.js
+          (cd release && sha256sum *.ipa poki-relay-worker.js > SHA256SUMS && cat SHA256SUMS)
           # What changed since the previous release on this channel (or the last 15 commits for the first one).
           previous="$(git tag --list "ios-$CHANNEL-*" --sort=-creatordate | grep -vx "$GITHUB_REF_NAME" | head -1 || true)"
           if [ -n "$previous" ] && git merge-base --is-ancestor "$previous" HEAD; then
