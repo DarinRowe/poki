@@ -112,7 +112,8 @@ public final class GymScorecard {
         let first = text.split(separator: "\n").first.map(String.init) ?? ""
         var notes: [String] = []
         if Double(ms) / 1000 > budget { notes.append("slow: over \(Int(budget)) s") }
-        if pictures.isEmpty { notes.append("no picture") }
+        // The routines tool reads and writes the phone's memory only: it never sends a picture.
+        if pictures.isEmpty, name != "routines" { notes.append("no picture") }
         log("=== \(scenario) / \(step): \(ms) ms, \(pictures.count) image(s)\n\(text)\n")
         rows.append(GymRow(scenario: scenario, step: step, ms: ms, ok: notes.isEmpty, note: notes.isEmpty ? first.prefix(70).description : notes.joined(separator: "; ")))
         for n in notes { failures.append("\(scenario) / \(step): \(n)") }
@@ -473,7 +474,8 @@ public final class GymScorecard {
         let byHandFrom = rows.count
         a = await launchApp("Settings", "com.apple.Preferences")
         scenario = "routine"
-        a = await tap("General", in: a, expect: "About")
+        // The General page slides in after the tap; an agent waits for it to settle before the next tap.
+        a = await tap("General", in: a, expect: "About", then: [["wait_until": ["settled": true, "ms": 2000]]])
         a = await tap("About", in: a, expect: "Model Name", or: ["iOS Version", "Software Version", "Name"])
         let byHand = rows[byHandFrom...].filter { $0.ms > 0 }
         let byHandMs = byHand.reduce(0) { $0 + $1.ms }
