@@ -10,6 +10,8 @@ struct PokiApp: App {
         // PokiLauncher (Rust) and the relay write to sockets the other side may have closed. In an app,
         // unlike a Rust executable, nothing ignores SIGPIPE, and it would end the whole app.
         signal(SIGPIPE, SIG_IGN)
+        // iOS 26: the background task that keeps Poki up is registered before launch ends, as iOS asks.
+        if #available(iOS 26.0, *) { ContinuedRun.registerAtLaunch() }
         // Settings an update, a reinstall or a re-sign lost come back from the Keychain, before anything
         // reads them; from here on every change is mirrored there.
         SettingsVault.restore()

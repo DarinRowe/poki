@@ -2,6 +2,7 @@ import CryptoKit
 import PokiCore
 import SwiftUI
 import UIKit
+import UserNotifications
 
 /// The app's state and the glue between PokiCore, PokiLauncher, the loopback, the Live Activity and
 /// approvals. One instance, owned by PokiApp.
@@ -68,6 +69,10 @@ final class AppModel {
     }
     var classifierLevel: ApprovalClassifier.Level = ApprovalClassifier.Level.saved {
         didSet { UserDefaults.standard.set(classifierLevel.rawValue, forKey: ApprovalClassifier.levelKey); log.add("approval", "auto-classifier level: \(classifierLevel.rawValue)") }
+    }
+    /// Lists ask_poki for outside agents. Testing only, off.
+    var askPokiTool: Bool = UserDefaults.standard.bool(forKey: AskPoki.onKey) {
+        didSet { UserDefaults.standard.set(askPokiTool, forKey: AskPoki.onKey); log.add("chat", "ask_poki tool: \(askPokiTool ? "on" : "off")"); AskPoki.refresh() }
     }
     var idleStopSeconds: Int = UserDefaults.standard.object(forKey: "idleStopSeconds.v4") as? Int ?? 60 {
         didSet { UserDefaults.standard.set(idleStopSeconds, forKey: "idleStopSeconds.v4"); log.add("runner", "idle stop set to \(idleStopSeconds) s") }
@@ -259,10 +264,10 @@ final class AppModel {
             guard automationPath == .runner else {
                 Task { @MainActor in
                     guard let self else { return }
-                    self.log.add("runner", "PokiCore asked for a restart: closing the in-process session and opening a new one")
-                    // Opened again once the close is through, so the open does not find the old
-                    // session still there and answer "reused" for it.
-                    self.closeInProcess("a restart PokiCore asked for") { [weak self] in self?.warmInProcess("PokiCore's restart") }
+                    // A reopened session reads nothing in this launch, so the one open is kept: its
+                    // requests have deadlines of their own, and a busy app answers again by itself.
+                    self.log.add("runner", "PokiCore asked for a restart: the in-process session is kept (a reopened one cannot read the screen in the same launch)")
+                    self.warmInProcess("PokiCore's restart")
                 }
                 return
             }
@@ -304,6 +309,10 @@ final class AppModel {
             else if problem == tunnelAttention { problem = nil; tunnelAttention = nil }
         }
         if !diskImage.isReady { Task { await diskImage.download() } }
+        // An agent whose session began before this launch is named from its connector.
+        SessionStore.shared.connectorAgent = { [identity] hash in
+            identity.secrets.first { $0.hash == hash }.map { $0.named ? $0.name : ($0.agent ?? $0.name) }
+        }
         if UserDefaults.standard.string(forKey: "pokiSample") != nil { loadSample() }
         NotificationCenter.default.addObserver(forName: UIApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.appWillTerminate() }
@@ -329,6 +338,10 @@ final class AppModel {
     /// Counts closes, so an open that began before one is not taken as the state after it.
     private var inProcessEpoch = 0
     private var inProcessWarmToken = 0
+    /// A session of this launch was closed. One reopened in the same launch answers no reads (the
+    /// phone, builds 144-149: every look timed out after a stand-by, a restart, or Off then On), so
+    /// Poki starts again as a new process for the next one instead.
+    private var inProcessUsedUp = false
 
     /// Ends the in-process session (Automation Mode and the banner go with it) off the main thread.
     /// PokiCore's next request finds its session gone and opens a new one through prepare.
@@ -343,8 +356,23 @@ final class AppModel {
             let result = PKInProcess.shared().close()
             Task { @MainActor [weak self] in
                 let closed = (result["closed"] as? Bool) == true
+                if closed { self?.inProcessUsedUp = true }
                 self?.log.add("runner", closed ? "in-process session closed for \(why) (generation \(result["generation"] ?? 0)); the banner goes with it" : "in-process session was not open (\(why))")
                 then?()
+            }
+        }
+    }
+
+    /// Automation Mode off with the session kept (its banner goes; the session's reads stay), off the
+    /// main thread. The log says how, or what the session offers when it found no way.
+    private func pauseAutomationMode() {
+        guard automationPath == .inProcess, !Self.onSimulator else { return }
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = PKInProcess.shared().pauseAutomation()
+            Task { @MainActor [weak self] in
+                let paused = (result["paused"] as? Bool) == true
+                self?.log.add("runner", paused ? "Automation Mode turned off while standing by (\(result["how"] ?? "?")): the banner goes until an agent asks"
+                                               : "Automation Mode could not be turned off alone (\(result["how"] ?? "?"); the session offers: \(result["selectors"] ?? "nothing")): the banner stays while Poki is on")
             }
         }
     }
@@ -590,6 +618,10 @@ final class AppModel {
 
     func startSession(reconnectLocal: Bool = true) {
         guard !sessionOn, !sessionStarting else { return }
+        if automationPath == .inProcess, inProcessUsedUp, !Self.onSimulator {
+            relaunchForFreshSession()
+            return
+        }
         // The first automation after a restart (or ever) brings up iOS's own passcode screen. With
         // Poki in front, the owner is told first that it is expected and that Poki cannot see it.
         if passcodeExpected, passcodeHeadsUpSeen != BootClock.current, inFront, !Self.onSimulator {
@@ -670,6 +702,24 @@ final class AppModel {
         standBy(reason: nil)
         if let relay { core.start(relay: relay) }
         idleTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in Task { @MainActor in self?.checkIdle() } }
+    }
+
+    /// Turned on again after a session of this launch was closed: Poki starts over as a new process
+    /// (the only way to a session that reads the screen) and comes back on by itself. A notice reopens
+    /// it; `wantsOn` turns it on when it does.
+    private func relaunchForFreshSession() {
+        log.add("session", "turning on after the automation session was closed: Poki restarts so agents can see the screen")
+        wantsOn = true
+        let content = UNMutableNotificationContent()
+        content.title = String(localized: "Tap to Open Poki")
+        content.body = String(localized: "Poki restarted so agents can see the screen again. It turns on when it opens.")
+        content.userInfo = ["poki_link": "poki://chat"]
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "nz.zheha.poki.relaunch", content: content,
+                                                                      trigger: UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)))
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            UIApplication.shared.perform(NSSelectorFromString("suspend"))
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { exit(0) }
+        }
     }
 
     /// The owner tapped Install: Poki winds down for iOS to replace it. The automation session (and
@@ -754,11 +804,13 @@ final class AppModel {
             // no tree reads on the phone (0.2.8 build 144, after a stand-by every look timed out until
             // Poki was relaunched), so standing by ends the task and leaves the session (and iOS's
             // banner) as they are. Turning Poki off still closes it.
+            // Without closing it, Automation Mode alone is turned off where iOS offers a way, so the
+            // banner shows only while an agent works; the next request's prepare turns it on again.
             log.add("runner", closeSessionWhenIdle ? "standing by: \(reason); closing the in-process session, and the banner with it"
-                                                   : "standing by: \(reason); the in-process session stays open until Poki is turned off")
+                                                   : "standing by: \(reason); the in-process session stays open, Automation Mode (the banner) is turned off")
             // The task ends here too, as with the runner (ESP-176): nothing is switched.
             Task { [core] in _ = await core.finishTask(switching: false) }
-            if closeSessionWhenIdle { closeInProcess("standing by") }
+            if closeSessionWhenIdle { closeInProcess("standing by") } else { pauseAutomationMode() }
             // The launcher stays: the disk image is mounted and the next session opens through
             // testmanagerd on the phone itself, so no loopback (and no Wi-Fi) is needed to wake.
             standBy(reason: reason)
@@ -832,6 +884,11 @@ final class AppModel {
         lastAgentActivity = Date()
         log.add("runner", automationPath == .inProcess ? "an agent asked: opening the automation session again" : "an agent asked: starting the runner")
         activity.update { $0.runnerPaused = false; $0.phase = .working; $0.headline = "Starting the runner"; $0.since = Date() }
+        if automationPath == .inProcess, inProcessUsedUp {
+            log.add("runner", "an agent asked, but the session of this launch was closed: open Poki to start it again")
+            problem = String(localized: "Open Poki so agents can see the screen again: it restarts once.")
+            AttentionNotice.post(title: String(localized: "Open Poki"), body: String(localized: "An agent is waiting. Open Poki so it can see the screen again."))
+        }
         if automationPath == .inProcess, runner.isRunning { warmInProcess("an agent asked"); return }
         launchRunner()
     }

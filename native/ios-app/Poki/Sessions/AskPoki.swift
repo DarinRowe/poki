@@ -28,8 +28,13 @@ enum AskPoki {
     }
 
     /// Listed when the chosen model is set up; unlisted otherwise.
+    /// Diagnostics → Testing → ask_poki: off by default in the alpha (outside agents drive with look and do).
+    static let onKey = "askPoki.on"
+    static var isOn: Bool { UserDefaults.standard.bool(forKey: onKey) }
+
     static func refresh() {
         guard let app else { return }
+        guard isOn else { app.setHostTools([]); return }
         guard ModelKeys.hasUsableKey || ModelKeys.selectedProvider == .custom && !ModelKeys.customURL.isEmpty else { app.setHostTools([]); return }
         app.setHostTools([HostTool(name: "ask_poki", description: description, schemaJSON: schema) { arguments, session, timeLeft in
             await run(arguments: arguments, session: session, timeLeft: timeLeft)

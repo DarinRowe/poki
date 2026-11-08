@@ -498,6 +498,8 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
              @"detail": [_sessions closeDetail] ?: @""};
 }
 
+- (NSDictionary<NSString *, id> *)pauseAutomation { return [_sessions pauseAutomation]; }
+
 /// The prepared session and its generation, or why there is none.
 - (id)current:(uint64_t *)generation outcome:(PKOutcome **)outcome {
     NSError *error;

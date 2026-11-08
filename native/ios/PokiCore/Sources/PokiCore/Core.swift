@@ -476,6 +476,12 @@ public final class PokiCore: @unchecked Sendable {
         case "tools/call":
             let name = message["params"]?["name"]?.string ?? ""
             let args = message["params"]?["arguments"] ?? .object([:])
+            // A session Poki never saw begin (it began before Poki last started): the app is told,
+            // so it can name the client from what it kept (the connector's agent, the last client).
+            if let session, clientNames.value[session] == nil {
+                clientNames.update { $0[session] = "" }
+                sessionSignal.value?(.started(id: session, client: "", version: nil, connector: connector))
+            }
             let output = await call(name, args, session: session, answerBy: answerBy)
             var content: [JSON] = [["type": "text", "text": .string(output.text)]]
             if let jpeg = output.jpeg { content.append(["type": "image", "data": .string(jpeg.base64EncodedString()), "mimeType": "image/jpeg"]) }

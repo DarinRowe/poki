@@ -2,6 +2,7 @@
 #import <dlfcn.h>
 #import <unistd.h>
 #import <objc/runtime.h>
+#import <objc/message.h>
 
 // Selectors found by inspecting XCTest private classes at run time (NativeHIDProbe), not the public SDK.
 @interface NSObject (SRObservedPrivateAPI)
@@ -182,6 +183,59 @@ static BOOL SRABI(id target, SEL selector, const char *result, NSArray<NSString 
     NSLog(@"SRNativeSession close: %@", _closeDetail);
     return YES;
 }
+/// Selectors on `cls` (and its superclasses up to NSObject) whose name has `part`.
+static NSArray<NSString *> *SRSelectorsWith(Class cls, NSString *part) {
+    NSMutableArray *found = [NSMutableArray array];
+    for (Class c = cls; c && c != NSObject.class; c = class_getSuperclass(c)) {
+        unsigned int count = 0;
+        Method *methods = class_copyMethodList(c, &count);
+        for (unsigned int i = 0; i < count; i++) {
+            NSString *name = NSStringFromSelector(method_getName(methods[i]));
+            if ([name rangeOfString:part options:NSCaseInsensitiveSearch].location != NSNotFound) [found addObject:name];
+        }
+        free(methods);
+    }
+    return found;
+}
+
+- (NSDictionary<NSString *, id> *)pauseAutomation {
+    [_lifecycleLock lock];
+    id session = _observed;
+    BOOL open = session && !_invalidated && _token != nil;
+    [_lifecycleLock unlock];
+    if (!open) return @{@"paused": @NO, @"how": @"no session"};
+    NSArray *offered = SRSelectorsWith([session class], @"utomation");
+    BOOL paused = NO;
+    NSString *how = @"none offered";
+    // XCTRunnerDaemonSession's own counterpart of enableAutomationModeWithError:, where it has one.
+    SEL direct = NSSelectorFromString(@"disableAutomationModeWithError:");
+    if ([session respondsToSelector:direct] && SRABI(session, direct, "B", @[@"^@"])) {
+        NSError *error = nil;
+        paused = ((BOOL (*)(id, SEL, NSError **))objc_msgSend)(session, direct, &error);
+        how = paused ? @"disableAutomationModeWithError:" : [NSString stringWithFormat:@"disableAutomationModeWithError: failed: %@", error.localizedDescription ?: @"?"];
+    } else {
+        // testmanagerd's message for it, on the session's daemon proxy; the reply's arguments are
+        // not touched, so its exact shape does not matter.
+        id proxy = [session respondsToSelector:@selector(daemonProxy)] ? [session daemonProxy] : nil;
+        SEL message = NSSelectorFromString(@"_XCT_disableAutomationModeWithReply:");
+        NSMethodSignature *signature = [proxy methodSignatureForSelector:message];
+        if (proxy && signature && signature.numberOfArguments == 3 && !strcmp([signature getArgumentTypeAtIndex:2], "@?")) {
+            dispatch_semaphore_t done = dispatch_semaphore_create(0);
+            __block BOOL answered = NO;
+            void (^reply)(void) = ^{ answered = YES; dispatch_semaphore_signal(done); };
+            ((void (*)(id, SEL, id))objc_msgSend)(proxy, message, reply);
+            dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC));
+            paused = answered;
+            how = answered ? @"_XCT_disableAutomationModeWithReply:" : @"_XCT_disableAutomationModeWithReply: no answer";
+        }
+    }
+    if (paused) {
+        [_lifecycleLock lock]; _enabled = nil; _enabledGeneration = 0; [_lifecycleLock unlock];
+    }
+    NSLog(@"SRNativeSession pauseAutomation: %@ (%@)", how, [offered componentsJoinedByString:@", "]);
+    return @{@"paused": @(paused), @"how": how, @"selectors": [offered componentsJoinedByString:@", "]};
+}
+
 - (NSString *)closeDetail {
     [_lifecycleLock lock]; NSString *value = _closeDetail; [_lifecycleLock unlock]; return value;
 }

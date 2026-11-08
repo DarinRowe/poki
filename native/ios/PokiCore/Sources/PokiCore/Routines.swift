@@ -705,7 +705,7 @@ extension PokiCore {
         guard let store = computer.memory else { return ToolResult(text: "routines: no memory on this phone", jpeg: nil, isError: true) }
         let action = args["action"]?.string ?? "list"
         let name = args["name"]?.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let by = session == nil ? "Poki" : (clientNames.value[session!] ?? "an MCP client")
+        let by = session == nil ? "Poki" : (clientNames.value[session!].flatMap { $0.isEmpty ? nil : $0 } ?? "an MCP client")
         func fail(_ text: String) -> ToolResult { ToolResult(text: "routines \(action): \(text)", jpeg: nil, isError: true) }
         switch action {
         case "list":
