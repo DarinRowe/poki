@@ -99,6 +99,12 @@ final class SessionStore {
             UserDefaults.standard.set(kept, forKey: "sessions.clients")
         }
     }
+    /// The last outside client that gave its name at initialize, kept across launches.
+    private var lastClient: String? = UserDefaults.standard.string(forKey: "sessions.lastClient") {
+        didSet { UserDefaults.standard.set(lastClient, forKey: "sessions.lastClient") }
+    }
+    /// The agent (or the owner's name) of a connector, by the sha256 of its secret; set by AppModel.
+    var connectorAgent: ((String) -> String?)?
     /// The connector each outside agent session came through: id → sha256 of its secret.
     private var connectors: [String: String] = [:]
     /// The session whose call is running, for approvals and hand-offs (they carry no session).
@@ -246,7 +252,14 @@ final class SessionStore {
     func observe(_ event: ShellEvent, approvals: [PendingApproval]) {
         switch event {
         case .session(.started(let id, let client, _, let connector)):
-            clients[id] = AgentName.pretty(client)
+            if client.isEmpty {
+                // A session that began before Poki last started: named from the connector's agent,
+                // else the last client that said its name.
+                if clients[id] == nil, let name = connector.flatMap({ connectorAgent?($0) }) ?? lastClient { clients[id] = AgentName.pretty(name) }
+            } else {
+                clients[id] = AgentName.pretty(client)
+                lastClient = client
+            }
             if let connector { connectors[id] = connector }
         case .session(.ended(let id)):
             if var session = session(id), session.live {
@@ -313,7 +326,11 @@ final class SessionStore {
     /// stay apart: the hand-off gets its own row.
     func handoffID(for agentSession: String?) -> String { "\(agentSession ?? "agent")-ask-\(UUID().uuidString.prefix(8).lowercased())" }
 
-    func client(of agentSession: String?) -> String { agentSession.flatMap { clients[$0] } ?? String(localized: "An agent") }
+    func client(of agentSession: String?) -> String {
+        if let id = agentSession, let name = clients[id] { return name }
+        if let id = agentSession, let name = connectors[id].flatMap({ connectorAgent?($0) }) { return AgentName.pretty(name) }
+        return lastClient.map(AgentName.pretty) ?? String(localized: "An agent")
+    }
 
     // MARK: Routines and backup (dev/agent-routines)
 

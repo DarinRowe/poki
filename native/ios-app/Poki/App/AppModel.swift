@@ -309,6 +309,10 @@ final class AppModel {
             else if problem == tunnelAttention { problem = nil; tunnelAttention = nil }
         }
         if !diskImage.isReady { Task { await diskImage.download() } }
+        // An agent whose session began before this launch is named from its connector.
+        SessionStore.shared.connectorAgent = { [identity] hash in
+            identity.secrets.first { $0.hash == hash }.map { $0.named ? $0.name : ($0.agent ?? $0.name) }
+        }
         if UserDefaults.standard.string(forKey: "pokiSample") != nil { loadSample() }
         NotificationCenter.default.addObserver(forName: UIApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.appWillTerminate() }
@@ -355,6 +359,20 @@ final class AppModel {
                 if closed { self?.inProcessUsedUp = true }
                 self?.log.add("runner", closed ? "in-process session closed for \(why) (generation \(result["generation"] ?? 0)); the banner goes with it" : "in-process session was not open (\(why))")
                 then?()
+            }
+        }
+    }
+
+    /// Automation Mode off with the session kept (its banner goes; the session's reads stay), off the
+    /// main thread. The log says how, or what the session offers when it found no way.
+    private func pauseAutomationMode() {
+        guard automationPath == .inProcess, !Self.onSimulator else { return }
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = PKInProcess.shared().pauseAutomation()
+            Task { @MainActor [weak self] in
+                let paused = (result["paused"] as? Bool) == true
+                self?.log.add("runner", paused ? "Automation Mode turned off while standing by (\(result["how"] ?? "?")): the banner goes until an agent asks"
+                                               : "Automation Mode could not be turned off alone (\(result["how"] ?? "?"); the session offers: \(result["selectors"] ?? "nothing")): the banner stays while Poki is on")
             }
         }
     }
@@ -786,11 +804,13 @@ final class AppModel {
             // no tree reads on the phone (0.2.8 build 144, after a stand-by every look timed out until
             // Poki was relaunched), so standing by ends the task and leaves the session (and iOS's
             // banner) as they are. Turning Poki off still closes it.
+            // Without closing it, Automation Mode alone is turned off where iOS offers a way, so the
+            // banner shows only while an agent works; the next request's prepare turns it on again.
             log.add("runner", closeSessionWhenIdle ? "standing by: \(reason); closing the in-process session, and the banner with it"
-                                                   : "standing by: \(reason); the in-process session stays open until Poki is turned off")
+                                                   : "standing by: \(reason); the in-process session stays open, Automation Mode (the banner) is turned off")
             // The task ends here too, as with the runner (ESP-176): nothing is switched.
             Task { [core] in _ = await core.finishTask(switching: false) }
-            if closeSessionWhenIdle { closeInProcess("standing by") }
+            if closeSessionWhenIdle { closeInProcess("standing by") } else { pauseAutomationMode() }
             // The launcher stays: the disk image is mounted and the next session opens through
             // testmanagerd on the phone itself, so no loopback (and no Wi-Fi) is needed to wake.
             standBy(reason: reason)

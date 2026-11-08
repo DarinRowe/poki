@@ -41,6 +41,9 @@ typedef NS_ENUM(NSInteger, PKDelivery) {
 /// stays up. Keys: closed (whether one was open), generation (the one that ended), seconds. The next
 /// prepare opens a new session; iOS asks for no passcode again within the same boot.
 - (NSDictionary<NSString *, id> *)close;
+/// Automation Mode (and its banner) off with the session kept open, where iOS offers a way; the next
+/// prepare turns it on again. Keys: paused, how, selectors.
+- (NSDictionary<NSString *, id> *)pauseAutomation;
 /// One or more fingers, each a path pressed at its first point and lifted at its last, sent as one
 /// event. Waits up to `timeout` for the daemon's reply; a dispatched event is never sent again.
 - (PKOutcome *)touch:(NSArray<NSArray<PKTouchPoint *> *> *)fingers timeout:(double)timeout;

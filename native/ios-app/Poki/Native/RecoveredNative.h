@@ -26,6 +26,9 @@ NS_ASSUME_NONNULL_BEGIN
 - (nullable NSString *)closeDetail;
 - (uint64_t)generation;
 - (BOOL)enableWasReused;
+/// Turns Automation Mode (and iOS's banner) off while the session stays open, when this iOS offers a
+/// way; the next prepare turns it on again. Keys: paused, how, selectors (what the session offers).
+- (NSDictionary<NSString *, id> *)pauseAutomation;
 @end
 
 // Inserts into the CURRENTLY FOCUSED field. Does not focus, clear, paste or verify.
