@@ -424,6 +424,8 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
 @implementation PKInProcess {
     SRNativeSession *_sessions;
     uint64_t _accessibilityGeneration;
+    /// The AX client made for a session reopened after a close (nil while the first session lasts).
+    id _freshAX;
     CGRect _viewport;
     /// Bundle ids by pid, asked of testmanagerd once per process (a round trip each, on every read before).
     NSMutableDictionary<NSNumber *, NSString *> *_bundleByPID;
@@ -769,6 +771,19 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
     });
     id ax = PKAXClient();
     @synchronized (self) {
+        if (_accessibilityGeneration != 0 && _accessibilityGeneration != generation) {
+            // A new session after a close: requests the old one left hanging never return, so the
+            // pids they marked unresponsive (the accessibility server's among them) are asked again,
+            // and the AX client is a new one on the new session rather than XCUIDevice's, which keeps
+            // talking to the session that was closed (0.2.8 build 144: every read after a stand-by
+            // and reopen timed out until Poki was relaunched).
+            @synchronized (PKHungLock()) { [PKHungSince() removeAllObjects]; }
+            Class client = NSClassFromString(@"XCAXClient_iOS");
+            id fresh = [client instancesRespondToSelector:@selector(init)] ? [[client alloc] init] : nil;
+            if (fresh) _freshAX = fresh;
+            NSLog(@"PokiInProcess: session generation %llu: hung marks cleared, %@ AX client", generation, fresh ? @"a new" : @"the device's");
+        }
+        if (_freshAX) ax = _freshAX;
         if (_accessibilityGeneration != generation && [ax respondsToSelector:@selector(loadAccessibility:)]) {
             NSNumber *loaded = PKBounded(0, 4, NULL, ^id { NSError *error; return @([ax loadAccessibility:&error]); });
             if (loaded.boolValue) _accessibilityGeneration = generation;

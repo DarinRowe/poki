@@ -52,6 +52,11 @@ final class AppModel {
     /// Stop the runner after this long without agent activity; 0 never stops it.
     /// 60 s by default. An agent can think for about a minute between steps of a long task; after a
     /// longer pause the runner stops, and the agent's next request starts it again.
+    /// In-process: close the automation session (and iOS's banner) when Poki stands by. Off by
+    /// default until a session reopened in the same launch is shown to answer reads on the phone.
+    var closeSessionWhenIdle: Bool = UserDefaults.standard.bool(forKey: "inProcess.closeWhenIdle") {
+        didSet { UserDefaults.standard.set(closeSessionWhenIdle, forKey: "inProcess.closeWhenIdle"); log.add("runner", "close the session when idle: \(closeSessionWhenIdle ? "on" : "off")") }
+    }
     var idleStopSeconds: Int = UserDefaults.standard.object(forKey: "idleStopSeconds.v4") as? Int ?? 60 {
         didSet { UserDefaults.standard.set(idleStopSeconds, forKey: "idleStopSeconds.v4"); log.add("runner", "idle stop set to \(idleStopSeconds) s") }
     }
@@ -120,6 +125,8 @@ final class AppModel {
     private var lastAgentActivity = Date.distantPast
     /// The agent's step now running (its label and start), for the foreground check above.
     private var stepUnderWay: (summary: String, started: Date)?
+    /// When the last approval ended, so a Stop landing on the Live Activity right after is not taken.
+    private var lastApprovalAnswered: Date?
     private var idleTimer: Timer?
     private var launcherConfig: LauncherConfig?
 
@@ -138,8 +145,20 @@ final class AppModel {
 
     /// No task is running, so an install (which ends Poki) disturbs nothing: no agent step under way,
     /// no approval waiting, and a minute since the agent last did something.
-    var signingIdle: Bool {
-        stepUnderWay == nil && approvals.isEmpty && !sessionStarting && Date().timeIntervalSince(lastAgentActivity) > 60
+    var signingIdle: Bool { signingBusyReason == nil }
+
+    /// Why Install waits, or nil when nothing is under way. A step whose end never arrived (the
+    /// session was turned off mid-step, or the call hung) stops counting after two minutes, so a
+    /// lost event cannot keep Install off for good.
+    var signingBusyReason: String? {
+        if !approvals.isEmpty { return String(localized: "An approval is waiting for you.") }
+        if sessionStarting { return String(localized: "Poki is turning on.") }
+        if let step = stepUnderWay, sessionOn, Date().timeIntervalSince(step.started) < 120 {
+            return String(localized: "The agent is doing a step: \(step.summary).")
+        }
+        let since = Date().timeIntervalSince(lastAgentActivity)
+        if since < 60 { return String(localized: "The agent acted \(Int(since)) s ago; Install opens a minute after its last step.") }
+        return nil
     }
 
     /// Hands the signer the phone's own services and starts it (at launch).
@@ -149,6 +168,7 @@ final class AppModel {
             return ["device_address": "10.7.0.1", "pairing_file": path, "host_name": "Poki"]
         }
         signer.isIdle = { [weak self] in self?.signingIdle ?? false }
+        signer.busyReason = { [weak self] in self?.signingBusyReason }
         signer.beforeInstall = { [weak self] in self?.windDownForUpdate() }
         signer.start()
     }
@@ -511,6 +531,13 @@ final class AppModel {
     /// the same handshake the runner makes, a second or two, so a refused pairing shows on Setup and
     /// the home page before an agent or a chat needs the phone. true when it was accepted (or could
     /// not be checked now: the loopback is down, or the simulator).
+    /// A lockdown pairing record (from a computer: HostID, certificates), not an RPPairing file.
+    static func isLockdownRecord(_ path: String) -> Bool {
+        guard let data = FileManager.default.contents(atPath: path),
+              let dict = (try? PropertyListSerialization.propertyList(from: data, format: nil)) as? [String: Any] else { return false }
+        return dict["HostID"] != nil
+    }
+
     @discardableResult
     func verifyPairing(force: Bool = false) async -> Bool {
         if Self.onSimulator { return true }
@@ -532,6 +559,13 @@ final class AppModel {
                 if text.contains("Pair again") {
                     if self.pairingTrouble == nil { self.log.add("pairing", "check: refused: \(text)") }
                     self.pairingTrouble = text.replacingOccurrences(of: " Pair again in Poki's setup.", with: "")
+                    return false
+                }
+                // iOS 27 and later take only a pairing made on the phone over the loopback: a lockdown
+                // record from a computer (Poki Setup) fails its TLS session here every time.
+                if SetupStep.onDevicePairing, text.contains("device socket io failed"), Self.isLockdownRecord(path) {
+                    if self.pairingTrouble == nil { self.log.add("pairing", "check: the computer's pairing file does not open the loopback on this iOS; pair on this iPhone") }
+                    self.pairingTrouble = String(localized: "the pairing file from a computer does not work over the loopback on this iOS version. Pair this iPhone here once; the pairing stays.")
                     return false
                 }
                 self.log.add("pairing", "check could not finish: \(text)")
@@ -658,6 +692,7 @@ final class AppModel {
         background.stop()
         activity.end()
         sessionOn = false
+        stepUnderWay = nil
         runner = .idle
         relayStatus = .off
         activityText = "Idle"
@@ -693,13 +728,25 @@ final class AppModel {
     /// next agent request starts it again. From the Stop runner button, the Live Activity, or idle.
     func pauseRunner(reason: String = "Stopped") {
         guard sessionOn, !runnerPaused, approvals.isEmpty else { return }
+        // Allow on the Live Activity is followed by its layout changing under the finger: a Stop
+        // that lands within a few seconds of an answered approval is that same tap (build 144: an
+        // Allow, then "Stopped from the Live Activity" 0.7 s after the approval ended).
+        if reason == "Stopped from the Live Activity", let answered = lastApprovalAnswered, Date().timeIntervalSince(answered) < 4 {
+            log.add("runner", "a Stop from the Live Activity right after an approval was ignored")
+            return
+        }
         if automationPath == .inProcess {
             // The in-process session is closed, and with it Automation Mode and iOS's banner; the
             // next agent request opens a new one (a few seconds, no passcode within the same boot).
-            log.add("runner", "standing by: \(reason); closing the in-process session, and the banner with it")
+            // The session stays open while Poki is on: a session reopened in the same launch answered
+            // no tree reads on the phone (0.2.8 build 144, after a stand-by every look timed out until
+            // Poki was relaunched), so standing by ends the task and leaves the session (and iOS's
+            // banner) as they are. Turning Poki off still closes it.
+            log.add("runner", closeSessionWhenIdle ? "standing by: \(reason); closing the in-process session, and the banner with it"
+                                                   : "standing by: \(reason); the in-process session stays open until Poki is turned off")
             // The task ends here too, as with the runner (ESP-176): nothing is switched.
             Task { [core] in _ = await core.finishTask(switching: false) }
-            closeInProcess("standing by")
+            if closeSessionWhenIdle { closeInProcess("standing by") }
             // The launcher stays: the disk image is mounted and the next session opens through
             // testmanagerd on the phone itself, so no loopback (and no Wi-Fi) is needed to wake.
             standBy(reason: reason)
@@ -963,6 +1010,7 @@ final class AppModel {
             // the Live Activity's own buttons when one is running.
             if #available(iOS 26.0, *), activity.isRunning {} else { ApprovalNotice.post(approval, caller: caller) }
         case .approvalEnded(let id, let approved):
+            lastApprovalAnswered = Date()
             approvals.removeAll { $0.id == id }
             log.add("approval", "ended \(id): \(approved.map { $0 ? "approved" : "denied" } ?? "expired or replaced")")
             if approved == nil { problem = "An approval ran out before you answered, so that step was not done. The agent can ask again." }

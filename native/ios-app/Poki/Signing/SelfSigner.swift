@@ -81,6 +81,8 @@ final class SelfSigner {
     var phone: () -> [String: Any]? = { nil }
     /// No task is running, so Poki may be ended by an install.
     var isIdle: () -> Bool = { false }
+    /// Why an install waits, for the message under the button.
+    var busyReason: () -> String? = { nil }
     /// Before an install the owner asked for: Poki winds down (automation session, Live Activity)
     /// so it exits cleanly when iOS replaces it, and comes back on after.
     var beforeInstall: () -> Void = {}
@@ -248,13 +250,17 @@ final class SelfSigner {
 
     /// Installs the prepared build. iOS ends Poki when it lands; a notification brings it back.
     func install() async {
-        guard let p = next else { return }
+        guard let p = next else { log.add("signing", "install tapped, but no build is ready"); return }
+        log.add("signing", "install tapped: \(p.kind) \(p.version) (\(p.build))")
         guard isIdle() else {
-            lastError = String(localized: "Poki is running a task. Install when it has finished.")
+            let why = busyReason() ?? ""
+            lastError = String(localized: "Poki is running a task. Install when it has finished.") + (why.isEmpty ? "" : " " + why)
+            log.add("signing", "install waits: \(why)")
             return
         }
         guard var request = phone() else {
             lastError = String(localized: "Poki can't reach this iPhone. Turn on the loopback, then try again.")
+            log.add("signing", "install: no loopback or pairing file")
             return
         }
         request["op"] = "install"
