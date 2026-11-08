@@ -286,6 +286,9 @@ pub async fn run(signer: &mut Signer, opts: Options, reporter: &Reporter) -> Res
 
     reporter.step("pair", "Pairing with the iPhone");
     let record = device::pairing::pair(&phone, reporter, wait).await?;
+    if let Err(e) = device::pairing::enable_network(&phone).await {
+        reporter.note("pair", format!("Could not let the iPhone use this pairing over the network ({e}); Poki may need to pair on the phone."));
+    }
     let facts = device::info::read(&phone).await?;
     reporter.done("pair", Some(format!("{} · iOS {}", facts.name, facts.ios)));
 
@@ -329,16 +332,23 @@ pub async fn run(signer: &mut Signer, opts: Options, reporter: &Reporter) -> Res
     reporter.step("pairing_file", "Giving Poki its pairing file");
     let mut handed = false;
     // Right after an install the phone sometimes drops the first container connection; try again.
-    let mut placed = device::container::place_pairing_file(&phone, &built.bundle_id, &record).await;
+    // On iOS 27 and later Poki pairs with the phone itself (an RPPairing file), which is what its
+    // loopback connections use; a lockdown record from this computer would only get in the way.
+    let ios_major = facts.ios.split('.').next().and_then(|m| m.parse::<u32>().ok()).unwrap_or(0);
+    let mut placed = if ios_major >= 27 { Ok(false) } else { device::container::place_pairing_file(&phone, &built.bundle_id, &record).await };
     for _ in 0..2 {
         if placed.is_ok() { break; }
         tokio::time::sleep(Duration::from_secs(2)).await;
         placed = device::container::place_pairing_file(&phone, &built.bundle_id, &record).await;
     }
     match placed {
-        Ok(()) => {
+        Ok(true) => {
             handed = true;
             reporter.done("pairing_file", Some("placed in Poki's container".into()));
+        }
+        Ok(false) => {
+            handed = true;
+            reporter.done("pairing_file", Some(if ios_major >= 27 { "iOS 27 and later: Poki pairs on the iPhone itself".into() } else { "Poki already has its own pairing; kept it".into() }));
         }
         Err(e) => reporter.note("pairing_file", format!("Could not write into Poki's container ({e}); the QR hand-off below does it instead.")),
     }
