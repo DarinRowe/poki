@@ -85,3 +85,21 @@ enum ConnectionNotice {
         UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ["connection-\(ask.id)"])
     }
 }
+
+/// The pairing code as a time-sensitive banner, so it shows over Settings' Pair with Poki screen.
+enum PairingNotice {
+    static let id = "pairing-code"
+    @MainActor static func post(pin: String) {
+        let content = UNMutableNotificationContent()
+        let shown = pin.count == 6 ? "\(pin.prefix(3)) \(pin.suffix(3))" : pin
+        content.title = String(localized: "Pairing code \(shown)")
+        content.body = String(localized: "Type it on the Pair with Poki screen in Settings.")
+        content.sound = .default
+        content.interruptionLevel = .timeSensitive
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [id])
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
+    }
+    @MainActor static func clear() {
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [id])
+    }
+}

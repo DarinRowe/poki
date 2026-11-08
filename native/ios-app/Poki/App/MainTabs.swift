@@ -77,13 +77,27 @@ struct AgentsView: View {
                 }
 
                 Section {
-                    NavigationLink(value: SettingsRoute.relay) {
-                        LabeledContent("Relay") {
-                            Text(model.relayAddress.map { $0.origin.host() ?? $0.origin.absoluteString } ?? String(localized: "Not Set"))
-                                .foregroundStyle(model.relayAddress == nil ? Color.orange : Color.secondary)
+                    // On or off; it can't be turned on before an address is set, and is on once one is.
+                    Toggle(isOn: Binding(get: { model.relayEnabled && model.relayAddress != nil }, set: { model.setRelayEnabled($0) })) {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("MCP Relay")
+                                Text(model.relayAddress == nil ? String(localized: "Set an address first") : model.relayEnabled ? Health.relay(model).word : String(localized: "Off"))
+                                    .font(.footnote).foregroundStyle(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "antenna.radiowaves.left.and.right")
                         }
                     }
-                    LabeledContent("Status", value: Health.relay(model).word)
+                    .disabled(model.relayAddress == nil)
+                    NavigationLink(value: SettingsRoute.relay) {
+                        LabeledContent {
+                            Text(model.relayAddress.map { $0.origin.host() ?? $0.origin.absoluteString } ?? String(localized: "Not Set"))
+                                .foregroundStyle(model.relayAddress == nil ? Color.orange : Color.secondary)
+                        } label: {
+                            Label("Address", systemImage: "network")
+                        }
+                    }
                 } header: {
                     Text("MCP Relay")
                 } footer: {

@@ -12,6 +12,20 @@ final class AppModel {
     let identity = RelayIdentity()
     /// The person's own relay (Connect). Poki has no default relay and sends nothing until one is set.
     private(set) var relayAddress = RelayAddress.saved
+    /// The relay on or off (Agents > MCP Relay). On by default, and turned on when an address is set;
+    /// off, Poki makes no relay connection and only its own chat agent can use the phone.
+    private(set) var relayEnabled = UserDefaults.standard.object(forKey: "relayEnabled") as? Bool ?? true
+    /// The relay Poki connects to: the address, while the relay is on.
+    var activeRelay: RelayAddress? { relayEnabled ? relayAddress : nil }
+
+    func setRelayEnabled(_ on: Bool) {
+        guard on != relayEnabled, relayAddress != nil || !on else { return }
+        relayEnabled = on
+        UserDefaults.standard.set(on, forKey: "relayEnabled")
+        log.add("relay", on ? "turned on" : "turned off")
+        guard sessionOn else { return }
+        if on, let relayAddress { core.start(relay: relayAddress) } else { core.stop() }
+    }
     let loopback = LoopbackMonitor()
     let tunnel = LoopbackTunnel()
     let background = BackgroundKeeper()
@@ -495,7 +509,7 @@ final class AppModel {
         guard let pairing = pairingPath else { problem = "Pair this iPhone first (Setup)."; return }
         #endif
         // The chat's own model loop needs no relay; agents on a computer do.
-        let relay = relayAddress
+        let relay = activeRelay
         guard relay != nil || ModelKeys.hasUsableKey else { problem = Self.noRelay; return }
         if !inFront { loopback.resume(every: 6) }
         guard Self.onSimulator || diskImage.isReady && diskImage.recheck() else {
@@ -1070,6 +1084,8 @@ final class AppModel {
             return
         }
         pairing = .advertising
+        // The code also comes as a banner (PairingNotice): ask for notifications now, while in front.
+        ApprovalNotice.requestPermission()
         // Started now, while Poki is in front: the PIN arrives while the person is in Settings, when
         // iOS no longer lets Poki start a Live Activity.
         activity.start(deviceName: deviceName)
@@ -1117,7 +1133,12 @@ final class AppModel {
             // The PIN goes in the Live Activity, so it is visible while the user is in Settings.
             activity.start(deviceName: deviceName)
             activity.update { $0.phase = .pairing; $0.pin = pin; $0.headline = "Pairing code" }
+            // A banner with the code as well: it drops down over Settings by itself, also when the Live
+            // Activity is off, was dismissed, or iOS holds back its alert.
+            PairingNotice.post(pin: pin)
+            log.add("pairing", "code ready\(activity.isRunning ? "" : " (no Live Activity: \(activity.lastError ?? "unknown reason"))")")
         case .paired(let url):
+            PairingNotice.clear()
             pairingKeepAlive.stop()
             try? (url as NSURL).setResourceValue(URLFileProtection.completeUntilFirstUserAuthentication, forKey: .fileProtectionKey)
             setup.pairingFile = url.path
@@ -1127,6 +1148,7 @@ final class AppModel {
             activity.update { $0.phase = .idle; $0.pin = nil; $0.headline = "Paired" }
             if !sessionOn { Task { try? await Task.sleep(for: .seconds(4)); if !self.sessionOn { self.activity.end() } } }
         case .failed(let why):
+            PairingNotice.clear()
             pairingKeepAlive.stop()
             activity.update { $0.phase = .problem; $0.pin = nil; $0.label = "Pairing Failed"; $0.headline = Self.firstPart(why) }
             if !sessionOn { Task { try? await Task.sleep(for: .seconds(8)); if !self.sessionOn { self.activity.end() } } }
@@ -1193,9 +1215,12 @@ final class AppModel {
         guard let address = RelayAddress(text) else { return false }
         guard address != relayAddress else { return true }
         RelayAddress.saved = address
+        let first = relayAddress == nil
         relayAddress = address
         log.add("relay", "address set to \(address.origin.host() ?? "?")")
         if problem == Self.noRelay { problem = nil }
+        // A relay just set is on.
+        if first || !relayEnabled { relayEnabled = true; UserDefaults.standard.set(true, forKey: "relayEnabled") }
         if sessionOn {
             core.stop()
             core.start(relay: address)

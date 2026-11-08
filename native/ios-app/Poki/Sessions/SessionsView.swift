@@ -199,6 +199,18 @@ struct SessionsView: View {
 }
 
 private extension View {
+    /// On: the whole toolbar button filled blue (iOS 26's prominent toolbar button, which takes the
+    /// place of the bar's glass rather than sitting on it; a prominent circle before iOS 26). Off: the
+    /// plain toolbar button.
+    @ViewBuilder func powerStyle(on: Bool) -> some View {
+        if on {
+            if #available(iOS 26.0, *) { buttonStyle(.glassProminent).buttonBorderShape(.circle).tint(.blue) }
+            else { buttonStyle(.borderedProminent).buttonBorderShape(.circle).tint(.blue) }
+        } else {
+            foregroundStyle(.secondary)
+        }
+    }
+
     /// Blue-tinted Liquid Glass on iOS 26 and later; a blue prominent capsule before it.
     @ViewBuilder func newChatStyle() -> some View {
         if #available(iOS 26.0, *) { buttonStyle(.glassProminent).buttonBorderShape(.circle).tint(.blue) }
@@ -253,13 +265,12 @@ struct PowerButton: View {
                 turnOn()
             }
         } label: {
-            // Different shapes as well as colours, so on and off read without colour: a filled bolt
-            // while on, the plain power symbol while off.
-            Image(systemName: on ? "bolt.circle.fill" : "power")
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(on ? Color.blue : Color.secondary)
+            // Different shapes as well as colours, so on and off read without colour: a filled bolt on
+            // a blue filled button while on, the plain power symbol while off.
+            Image(systemName: on ? "bolt.fill" : "power")
                 .contentTransition(.symbolEffect(.replace.downUp))
         }
+        .powerStyle(on: on)
         .accessibilityLabel(Text(on ? "Turn Poki Off" : "Turn Poki On"))
         .accessibilityValue(Text(on ? "On" : "Off"))
     }
