@@ -39,11 +39,21 @@ impl Reporter {
         }))
     }
     pub fn emit(&self, p: Progress) { (self.0)(p) }
-    pub fn step(&self, id: &str, title: &str) { self.emit(Progress::Step { id: id.into(), title: title.into() }) }
+    pub fn step(&self, id: &str, title: &str) {
+        tracing::info!(step = id, "{title}");
+        self.emit(Progress::Step { id: id.into(), title: title.into() })
+    }
     pub fn part(&self, id: &str, fraction: f64, detail: Option<String>) { self.emit(Progress::Part { id: id.into(), fraction, detail }) }
-    pub fn note(&self, id: &str, text: impl Into<String>) { self.emit(Progress::Note { id: id.into(), text: text.into() }) }
+    pub fn note(&self, id: &str, text: impl Into<String>) {
+        let text = text.into();
+        tracing::info!(step = id, "{text}");
+        self.emit(Progress::Note { id: id.into(), text })
+    }
     pub fn waiting(&self, id: &str, text: impl Into<String>) { self.emit(Progress::Waiting { id: id.into(), text: text.into() }) }
-    pub fn done(&self, id: &str, detail: Option<String>) { self.emit(Progress::Done { id: id.into(), detail }) }
+    pub fn done(&self, id: &str, detail: Option<String>) {
+        tracing::info!(step = id, detail = detail.as_deref().unwrap_or(""), "done");
+        self.emit(Progress::Done { id: id.into(), detail })
+    }
 }
 
 impl std::fmt::Debug for Reporter {
