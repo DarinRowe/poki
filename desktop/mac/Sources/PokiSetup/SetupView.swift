@@ -8,6 +8,9 @@ struct SetupView: View {
     @State private var handOff = false
     @State private var result: InstallAnswer?
     @State private var failed: String?
+    @State private var update: UpdateInfo?
+    @State private var checking = false
+    @State private var channelError: String?
 
     private var installing: Bool { model.busyJobs.contains("install") }
 
@@ -25,6 +28,7 @@ struct SetupView: View {
             if let result { resultSection(result) }
         }
         .pokiPage()
+        .task { await model.refreshChannels() }
         .fileImporter(isPresented: $choosingIPA, allowedContentTypes: [UTType(filenameExtension: "ipa") ?? .data]) { r in
             if case .success(let url) = r { ipa = url }
         }
@@ -156,6 +160,43 @@ struct SetupView: View {
         }
     }
 
+    // MARK: Channel and updates
+
+    private var channelChoice: Binding<String> {
+        Binding(
+            get: { model.channel?.id ?? "stable" },
+            set: { id in
+                Task {
+                    do {
+                        try await model.setChannel(id)
+                        update = nil
+                        channelError = nil
+                    } catch { channelError = error.localizedDescription }
+                }
+            }
+        )
+    }
+
+    /// What the last check found: the newest Poki on the channel and whether Poki Setup is current.
+    private var updateLine: String? {
+        guard let update else { return nil }
+        var poki = "No Poki release published yet"
+        if let r = model.latest { poki = "Newest Poki \(r.version) (\(r.build))" }
+        let setup = update.newer ? "Poki Setup \(update.latest ?? "") is available" : "Poki Setup \(update.current) is up to date"
+        return "\(poki). \(setup)."
+    }
+
+    private func checkForUpdates() async {
+        checking = true
+        defer { checking = false }
+        await model.refreshChannels()
+        await model.refreshLatest()
+        do {
+            update = try await model.bridge.call("check_update")
+            channelError = nil
+        } catch { channelError = error.localizedDescription }
+    }
+
     // MARK: App
 
     @ViewBuilder private var appSection: some View {
@@ -168,12 +209,28 @@ struct SetupView: View {
                             .buttonStyle(.borderless).foregroundStyle(.secondary)
                             .accessibilityLabel("Use the latest release instead")
                     } else if let latest = model.latest {
-                        Text("\(model.channel?.title ?? "Latest") release, \(latest.version) (\(latest.build))").foregroundStyle(.secondary)
+                        Text(buildLine(latest)).foregroundStyle(.secondary)
                     } else {
                         Text("Choose a Poki IPA").foregroundStyle(.secondary)
                     }
                     Button("Choose…") { choosingIPA = true }
                 }
+            }
+            Picker("Channel", selection: channelChoice) {
+                ForEach(model.channels) { c in Text(c.title).tag(c.id) }
+            }
+            LabeledContent {
+                Button(checking ? "Checking…" : "Check for Updates") { Task { await checkForUpdates() } }
+                    .disabled(checking)
+            } label: {
+                Text("Updates")
+                if let line = updateLine { Text(line) }
+            }
+            if let u = update, u.newer, let s = u.url, let url = URL(string: s) {
+                Link("Download Poki Setup \(u.latest ?? "")", destination: url)
+            }
+            if let channelError {
+                Text(channelError).font(.callout).foregroundStyle(.red).textSelection(.enabled)
             }
             Toggle("Also show a QR code to send the pairing file over Wi-Fi", isOn: $handOff)
             HStack {
@@ -198,9 +255,19 @@ struct SetupView: View {
         }
     }
 
+    /// The release Install will use; says so when the chosen channel has none and a less stable one stands in.
+    private func buildLine(_ r: Release) -> String {
+        let id = r.channel ?? model.channel?.id ?? ""
+        let title = model.channels.first(where: { $0.id == id })?.title ?? id.capitalized
+        if let chosen = model.channel, !id.isEmpty, chosen.id != id {
+            return "No \(chosen.title) release yet. Using \(title) \(r.version) (\(r.build))"
+        }
+        return "\(title) release, \(r.version) (\(r.build))"
+    }
+
     private var footer: String {
         if model.account?.signedIn != true { return "Sign in first. Your Apple Account password goes to Apple only." }
-        if ipa == nil && model.latest == nil { return "No Poki release is published on the \(model.channel?.title ?? "chosen") channel yet. Pick another channel in Settings, or choose the Poki IPA you downloaded (the “external” one)." }
+        if ipa == nil && model.latest == nil { return "No Poki release is published on any channel yet. Choose the Poki IPA you downloaded (the “external” one)." }
         return "Poki Setup signs Poki for your team, installs it, and gives Poki its pairing file, so it can work on its own."
     }
 

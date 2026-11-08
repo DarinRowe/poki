@@ -325,8 +325,8 @@ final class AppModel: ObservableObject {
         connectors = [Connector(name: "Jane's iPhone", url: "https://poki-relay.jane.workers.dev/v1/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRST/s3cr3t/mcp", addedAt: now - 7200, lastCheck: Check(at: now - 60, ok: true, relayOk: true, phoneOnline: true, tools: ["look", "tap", "type", "swipe", "open_app"], detail: "5 tools"))]
         latest = Release(tag: "ios-v0.2.8", version: "0.2.8", build: "64", ipaName: "Poki-external-0.2.8-64.ipa", channel: "beta")
         channels = [
-            ChannelInfo(id: "stable", title: "Stable", selected: false, latest: nil),
-            ChannelInfo(id: "beta", title: "Beta", selected: true, latest: latest),
+            ChannelInfo(id: "stable", title: "Stable", selected: true, latest: nil),
+            ChannelInfo(id: "beta", title: "Beta", selected: false, latest: latest),
             ChannelInfo(id: "alpha", title: "Alpha", selected: false, latest: Release(tag: "ios-alpha-0.2.8-110", version: "0.2.8", build: "110", ipaName: "Poki-external-0.2.8-110.ipa", channel: "alpha")),
             ChannelInfo(id: "pre-alpha", title: "Pre-alpha", selected: false, latest: Release(tag: "ios-prealpha-0.2.8-260", version: "0.2.8", build: "260", ipaName: "Poki-external-0.2.8-260.ipa", channel: "pre-alpha")),
         ]
