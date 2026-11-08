@@ -8,97 +8,212 @@
 // into the keychain instead of a server's model list, and the agents on a computer below.
 import SwiftUI
 
+/// Accounts, as the Mail app lists mail accounts: every model account on this iPhone whatever its
+/// provider, each with what it is used for (the text chat, live voice) switched on or off inside it.
+/// What an account can power is worked out from its type: any wired provider can run the text chat;
+/// live voice needs OpenAI's Realtime API, so only an OpenAI API key can run it.
 struct ModelSettingsView: View {
     var openAgents: () -> Void
-    @State private var model = "\(ModelKeys.selectedProvider.rawValue)/\(ModelKeys.selectedModel)"
-    @State private var editing: ModelProvider?
+    @State private var adding = false
+    @State private var version = ModelKeys.saved
+
+    var body: some View {
+        List {
+            Section {
+                ForEach(ModelProvider.allCases.filter(ModelAccounts.isSetUp)) { provider in
+                    NavigationLink { AccountDetail(provider: provider) } label: { AccountRow(provider: provider) }
+                }
+                Button("Add Account", systemImage: "plus") { adding = true }
+            } header: {
+                Text("Accounts")
+            } footer: {
+                Text("Keys and sign-ins stay in this iPhone’s Keychain. Poki sends each one only to its own provider.")
+            }
+
+            Section {
+                LabeledContent("Text Chat", value: ModelKeys.hasUsableKey ? "\(ModelKeys.selectedProvider.name), \(ModelKeys.selectedModelName)" : String(localized: "No Account"))
+                LabeledContent("Live Voice", value: VoiceDirect.apiKey != nil ? String(localized: "OpenAI") : String(localized: "No Account"))
+                LabeledContent("Dictation", value: String(localized: "On This iPhone"))
+            } header: {
+                Text("In Use")
+            } footer: {
+                Text("Open an account to choose what it is used for. Dictation in the message field needs no account.")
+            }
+
+            Section {
+                Button(action: openAgents) { Label("Claude Code or Codex on a Computer", systemImage: "terminal") }
+            } footer: {
+                Text("Agents you already run can drive Poki over its MCP address; your computer does the thinking and Poki only taps and types.")
+            }
+        }
+        .id(version)
+        .listStyle(.insetGrouped)
+        .navigationTitle("Accounts")
+        .navigationBarTitleDisplayMode(.inline)
+        .onReceive(NotificationCenter.default.publisher(for: ModelKeys.changed)) { _ in version = ModelKeys.saved }
+        .sheet(isPresented: $adding) { AddAccount() }
+    }
+}
+
+/// What a model account is and what it can power.
+enum ModelAccounts {
+    static func isSetUp(_ provider: ModelProvider) -> Bool {
+        switch provider {
+        case .custom: !ModelKeys.customURL.isEmpty
+        case .chatgpt: ChatGPTAccount.signedIn
+        default: ModelKeys.hasKey(provider)
+        }
+    }
+
+    static func canChat(_ provider: ModelProvider) -> Bool { provider.wired }
+    /// Live voice is OpenAI's Realtime API: an OpenAI API key only (a ChatGPT sign-in can't open it).
+    static func canTalkLive(_ provider: ModelProvider) -> Bool { provider == .openai }
+
+    static func method(_ provider: ModelProvider) -> String {
+        switch provider {
+        case .chatgpt: String(localized: "Sign in with ChatGPT")
+        case .custom: String(localized: "OpenAI-compatible address")
+        default: String(localized: "API key")
+        }
+    }
+
+    /// "Text Chat, Live Voice", "Not in use".
+    static func uses(_ provider: ModelProvider) -> String {
+        var out: [String] = []
+        if ModelKeys.selectedProvider == provider, ModelKeys.hasUsableKey { out.append(String(localized: "Text Chat")) }
+        if canTalkLive(provider), VoiceDirect.apiKey != nil { out.append(String(localized: "Live Voice")) }
+        return out.isEmpty ? String(localized: "Not in use") : out.joined(separator: ", ")
+    }
+}
+
+private struct AccountRow: View {
+    var provider: ModelProvider
+    var body: some View {
+        HStack(spacing: 12) {
+            ProviderTile(provider: provider)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(verbatim: provider.name)
+                Text(ModelAccounts.uses(provider)).font(.footnote).foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+/// One account: its type and connection, what it is used for (switches; the ones it can't power are
+/// shown greyed with why), its model, and Delete.
+private struct AccountDetail: View {
+    @Environment(\.dismiss) private var dismiss
+    var provider: ModelProvider
+    @State private var editing = false
     @State private var signingIn = false
     @State private var version = ModelKeys.saved
+    @State private var model = ""
 
     var body: some View {
         Form {
             Section {
-                Picker("Model", selection: $model) {
-                    ForEach(ModelProvider.allCases.filter(\.wired)) { provider in
-                        ForEach(provider.models) { choice in
-                            Text(choice.name).tag("\(provider.rawValue)/\(choice.id)")
-                        }
+                LabeledContent("Type", value: provider.name)
+                LabeledContent("Connection", value: ModelAccounts.method(provider))
+                if provider == .custom { LabeledContent("Address", value: ModelKeys.customURL) }
+                Button(provider.signsIn ? "Sign In Again" : provider == .custom ? "Edit Address and Key" : "Replace Key") {
+                    if provider.signsIn { signingIn = true } else { editing = true }
+                }
+            }
+
+            Section {
+                Toggle(isOn: Binding(get: { ModelKeys.selectedProvider == provider }, set: { on in
+                    if on { ModelKeys.selectedProvider = provider }
+                    else if let other = ModelProvider.allCases.first(where: { $0 != provider && ModelAccounts.isSetUp($0) && ModelAccounts.canChat($0) }) {
+                        ModelKeys.selectedProvider = other
                     }
+                    version = ModelKeys.saved
+                })) {
+                    Label("Text Chat", systemImage: "bubble.left.and.text.bubble.right")
                 }
-                .onChange(of: model) { _, new in
-                    let parts = new.split(separator: "/", maxSplits: 1).map(String.init)
-                    guard parts.count == 2, let provider = ModelProvider(rawValue: parts[0]) else { return }
-                    ModelKeys.selectedProvider = provider
-                    ModelKeys.selectedModel = parts[1]
+                .disabled(!ModelAccounts.canChat(provider))
+                if ModelKeys.selectedProvider == provider, provider.models.count > 1 {
+                    Picker("Model", selection: $model) {
+                        ForEach(provider.models) { Text($0.name).tag($0.id) }
+                    }
+                    .onChange(of: model) { _, new in if !new.isEmpty { ModelKeys.selectedModel = new } }
                 }
+                Toggle(isOn: Binding(get: { ModelAccounts.canTalkLive(provider) && VoiceDirect.enabled }, set: { VoiceDirect.enabled = $0; version += 1 })) {
+                    Label("Live Voice", systemImage: "waveform")
+                }
+                .disabled(!ModelAccounts.canTalkLive(provider))
+            } header: {
+                Text("Use This Account For")
             } footer: {
-                Text("The model Poki’s text chat uses.")
+                if !ModelAccounts.canChat(provider) {
+                    Text("Poki keeps this key; chatting with \(provider.name) comes in an update.")
+                } else if !ModelAccounts.canTalkLive(provider) {
+                    Text("Live voice runs on OpenAI’s Realtime API, which only an OpenAI API key can open. Dictation in the message field works with this account.")
+                } else {
+                    Text("Only one account runs the text chat at a time.")
+                }
             }
 
             Section {
-                LabeledContent("Text Chat", value: ModelKeys.hasUsableKey ? ModelKeys.selectedModelName : String(localized: "Not Set Up"))
-                LabeledContent("Live Voice", value: VoiceDirect.apiKey != nil ? String(localized: "OpenAI API key") : String(localized: "Needs an OpenAI API key"))
-                LabeledContent("Dictation", value: String(localized: "On this iPhone"))
-            } header: {
-                Text("What Each Uses")
-            } footer: {
-                Text("A ChatGPT sign-in or any key runs the text chat. Live voice needs OpenAI’s Realtime API, so it needs an OpenAI API key (or the Mac voice bridge). Dictation needs no key.")
-            }
-
-            Section {
-                ForEach(ModelProvider.allCases) { provider in providerRow(provider) }
-            } header: {
-                Text("Your API Key")
-            } footer: {
-                Text("Keys stay in this iPhone’s Keychain. Poki sends each key only to its own provider.")
-            }
-
-            Section {
-                agentRow("Claude Code", tile: 0xD97757)
-                agentRow("Codex", tile: 0x111111)
-            } header: {
-                Text("Or Use an Agent You Already Run")
-            } footer: {
-                Text("Your computer does the thinking. Poki only taps and types.")
+                Button(provider.signsIn ? "Sign Out" : "Delete Account", role: .destructive) {
+                    if provider == .custom { ModelKeys.customURL = ""; ModelKeys.customModel = "" }
+                    ModelKeys.remove(provider)
+                    if ModelKeys.selectedProvider == provider, let other = ModelProvider.allCases.first(where: { ModelAccounts.isSetUp($0) && ModelAccounts.canChat($0) }) {
+                        ModelKeys.selectedProvider = other
+                    }
+                    dismiss()
+                }
             }
         }
         .id(version)
-        .navigationTitle("Model")
+        .navigationTitle(Text(verbatim: provider.name))
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(item: $editing, onDismiss: { version = ModelKeys.saved }) { provider in KeyEntry(provider: provider) }
-        .sheet(isPresented: $signingIn, onDismiss: { version = ModelKeys.saved; model = "\(ModelKeys.selectedProvider.rawValue)/\(ModelKeys.selectedModel)" }) { ChatGPTSignIn() }
+        .onAppear { model = ModelKeys.model(for: provider) }
+        .sheet(isPresented: $editing, onDismiss: { version = ModelKeys.saved }) { KeyEntry(provider: provider) }
+        .sheet(isPresented: $signingIn, onDismiss: { version = ModelKeys.saved }) { ChatGPTSignIn() }
     }
+}
 
-    private func providerRow(_ provider: ModelProvider) -> some View {
-        let hasKey = provider == .custom ? !ModelKeys.customURL.isEmpty : provider == .chatgpt ? ChatGPTAccount.signedIn : ModelKeys.hasKey(provider)
-        return Button { if provider.signsIn { signingIn = true } else { editing = provider } } label: {
-            HStack(spacing: 12) {
-                ProviderTile(provider: provider)
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(verbatim: provider.name).foregroundStyle(Color(.label))
-                    if provider == .custom {
-                        Text(hasKey ? ModelKeys.customURL : String(localized: "Any OpenAI-compatible URL")).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+/// Add Account: the account types, each with how it connects; choosing one opens its key, address or
+/// sign-in.
+private struct AddAccount: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var editing: ModelProvider?
+    @State private var signingIn = false
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(ModelProvider.allCases) { provider in
+                        Button { if provider.signsIn { signingIn = true } else { editing = provider } } label: {
+                            HStack(spacing: 12) {
+                                ProviderTile(provider: provider)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(verbatim: provider.name).foregroundStyle(Color(.label))
+                                    Text(capabilities(provider)).font(.footnote).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                if ModelAccounts.isSetUp(provider) { Image(systemName: "checkmark").foregroundStyle(.tint) }
+                            }
+                        }
                     }
-                }
-                Spacer()
-                if hasKey {
-                    Image(systemName: "checkmark").fontWeight(.semibold).foregroundStyle(.tint)
-                        .accessibilityLabel(provider.signsIn ? Text("Signed in") : Text("Key added"))
-                } else {
-                    Text(provider == .custom ? "Add URL" : provider.signsIn ? "Sign In" : "Add Key").foregroundStyle(.tint)
+                } footer: {
+                    Text("Text chat works with every account. Live voice needs an OpenAI API key.")
                 }
             }
+            .navigationTitle("Add Account")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+            .sheet(item: $editing, onDismiss: { if editing == nil { dismiss() } }) { provider in KeyEntry(provider: provider) }
+            .sheet(isPresented: $signingIn, onDismiss: { if ChatGPTAccount.signedIn { dismiss() } }) { ChatGPTSignIn() }
         }
     }
 
-    private func agentRow(_ name: String, tile: UInt32) -> some View {
-        Button(action: openAgents) {
-            HStack(spacing: 12) {
-                Image(systemName: "terminal.fill").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
-                    .frame(width: 29, height: 29).background(Color(hex: tile), in: .rect(cornerRadius: 7, style: .continuous))
-                LabeledContent(name, value: String(localized: "Via Relay")).foregroundStyle(Color(.label))
-            }
-        }
+    private func capabilities(_ provider: ModelProvider) -> String {
+        let how = ModelAccounts.method(provider)
+        if ModelAccounts.canTalkLive(provider) { return String(localized: "\(how) · Text chat and live voice") }
+        if ModelAccounts.canChat(provider) { return String(localized: "\(how) · Text chat") }
+        return String(localized: "\(how) · Coming in an update")
     }
 }
 

@@ -49,7 +49,7 @@ struct PokiDetailsView: View {
                         LabeledContent {
                             Text(hasKey ? ModelKeys.selectedModelName : String(localized: "Add Key")).foregroundStyle(hasKey ? Color.secondary : Color.orange)
                         } label: {
-                            Label { Text("Model") } icon: { ProviderTile(provider: provider, size: 29) }
+                            Label { Text("Accounts") } icon: { ProviderTile(provider: provider, size: 29) }
                         }
                     }
                     .id(ModelKeys.saved)

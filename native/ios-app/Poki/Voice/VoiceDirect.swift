@@ -14,7 +14,13 @@ enum VoiceDirect {
     static let model = "gpt-realtime-2.1"
 
     /// The OpenAI API key on this iPhone, when there is one.
-    static var apiKey: String? { ModelKeys.key(.openai) }
+    static var apiKey: String? { enabled ? ModelKeys.key(.openai) : nil }
+
+    /// The owner's switch in Accounts › OpenAI › Live Voice (on unless turned off).
+    static var enabled: Bool {
+        get { UserDefaults.standard.object(forKey: "voice.openai.enabled") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "voice.openai.enabled"); ModelKeys.saved += 1 }
+    }
 
     /// Dictation into the chat works with any model the chat can use.
     static var canDictate: Bool { ModelKeys.hasUsableKey }
