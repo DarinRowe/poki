@@ -74,7 +74,18 @@ final class VoiceLink: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelega
             let session = RTCAudioSession.sharedInstance()
             session.lockForConfiguration()
             defer { session.unlockForConfiguration() }
-            try session.setConfiguration(RTCAudioSessionConfiguration.webRTC(), active: true)
+            do {
+                try session.setConfiguration(RTCAudioSessionConfiguration.webRTC(), active: true)
+            } catch {
+                // After an earlier conversation (or the keep-alive) the shared session can refuse
+                // WebRTC's preferred sample rate, buffer or channel counts (OSStatus -50). Voice chat
+                // needs none of them: set the category and mode, activate, and tell WebRTC.
+                let av = AVAudioSession.sharedInstance()
+                try? av.setActive(false)
+                try av.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetoothHFP])
+                try av.setActive(true)
+                session.audioSessionDidActivate(av)
+            }
             let mic = factory.audioTrack(with: factory.audioSource(with: constraints), trackId: "poki-mic")
             peer.add(mic, streamIds: ["poki-voice"])
         } else {
@@ -175,6 +186,12 @@ final class VoiceLink: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelega
         peer?.close()
         channel = nil
         peer = nil
+        // Hand the audio session back through WebRTC, so its count of activations matches and the
+        // next conversation can set voice chat again.
+        let session = RTCAudioSession.sharedInstance()
+        session.lockForConfiguration()
+        if session.isActive { try? session.setActive(false) }
+        session.unlockForConfiguration()
     }
 
     private func lost(_ reason: String) {
