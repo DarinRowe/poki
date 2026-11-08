@@ -85,6 +85,10 @@ enum AppFiles {
     /// The pairing file lives in the app's container with complete-until-first-unlock protection, so
     /// the launcher can read it in the background after the first unlock.
     static var pairingFile: URL { support.appendingPathComponent("pairing.plist") }
+    /// A copy of the pairing made on this iPhone (RPPairing). Poki Setup's hand-off writes its own
+    /// lockdown record over pairing.plist, and on iOS 27 that record does not open the loopback; this
+    /// copy is used first.
+    static var phonePairingFile: URL { support.appendingPathComponent("pairing-phone.plist") }
     static var ddiDirectory: URL {
         let url = support.appendingPathComponent("ddi", isDirectory: true)
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
