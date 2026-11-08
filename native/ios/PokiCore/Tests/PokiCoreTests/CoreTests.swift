@@ -505,7 +505,7 @@ final class MCPTests: XCTestCase {
         XCTAssertEqual(signals.value, [.started(id: session, client: "claude-ai", version: "1.2")])
         let list = try JSON.parse(await post(core, ["jsonrpc": "2.0", "id": 2, "method": "tools/list"], session: session).body)
         XCTAssertEqual(list["result"]?["tools"]?.array?.compactMap { $0["name"]?.string }, ["look", "do", "routines", "status", "ask_poki"])
-        XCTAssertEqual(list["result"]?["tools"]?[3]?["inputSchema"]?["required"]?[0], "task")
+        XCTAssertEqual(list["result"]?["tools"]?[4]?["inputSchema"]?["required"]?[0], "task")
         let call = try JSON.parse(await post(core, ["jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": ["name": "ask_poki", "arguments": ["task": "read the time"]]], session: session).body)
         let text = call["result"]?["content"]?[0]?["text"]?.string ?? ""
         XCTAssertTrue(text.contains("read the time") && text.contains("inner ok"), text)
@@ -514,7 +514,7 @@ final class MCPTests: XCTestCase {
         XCTAssertEqual(signals.value.last, .ended(id: session))
         core.setHostTools([])
         let after = try JSON.parse(await post(core, ["jsonrpc": "2.0", "id": 4, "method": "tools/list"]).body)
-        XCTAssertEqual(after["result"]?["tools"]?.array?.count, 3)
+        XCTAssertEqual(after["result"]?["tools"]?.array?.count, 4)
     }
 
     /// Each tool event carries the session that made the call, so the app can show it in that session.
