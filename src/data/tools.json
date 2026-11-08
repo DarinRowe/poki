@@ -148,7 +148,7 @@
     },
     {
       "name": "list_elements",
-      "description": "Read accessibility elements, or OCR when auto mode cannot use accessibility. Return logical-point frames and short-lived element refs. Refresh refs after input or screen changes. max_elements defaults to 400. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "description": "Read accessibility elements, or OCR when auto mode cannot use accessibility. When accessibility names nothing across a third of the screen, auto mode adds the screenshot text it did not name, each marked source ocr. Return logical-point frames and short-lived element refs. Refresh refs after input or screen changes. max_elements defaults to 400. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
       "inputSchema": {
         "type": "object",
         "properties": {

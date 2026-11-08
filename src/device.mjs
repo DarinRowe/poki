@@ -18,6 +18,7 @@ import { simulatorRequest } from './simulator.mjs';
 import { prepareRecordingInput, resumeRecordings } from './recording.mjs';
 import { updateNotice } from './update-check.mjs';
 import * as cua from './cua.mjs';
+import { leavesUnnamedBand, textOutside } from './ocr-supplement.mjs';
 import { version, buildInfo, requireCurrentCode } from './build-info.mjs';
 
 export const text = value => ({ content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }] });
@@ -294,6 +295,10 @@ export class Devices {
     if (!elements) {
       elements = await this.ocr(frame);
       source = 'ocr';
+    } else if (args.source !== 'accessibility' && args.source !== 'ax' && leavesUnnamedBand(elements.filter(onScreen(frame)), frame)) {
+      // Without the recognizer the accessibility answer stands.
+      try { elements = [...elements, ...textOutside(await this.ocr(frame), elements, frame)]; }
+      catch (error) { if (stopped(error)) throw error; }
     }
     if (!args.include_offscreen) elements = elements.filter(onScreen(frame));
     const count = elements.length;

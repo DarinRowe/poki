@@ -63,7 +63,7 @@ Poki Agent starts its own stdio process with `POKI_MCP_TOOLS=all`. Its existing 
 - `look` and `do` work on a physical iPhone through the native bridge, on a booted simulator, and on a phone running WebDriverAgent (see below). A physical iPhone needs the bridge built from this version by `./bin/setup`, because typing uses its `type_keys` and `pasteboard` operations.
 - On a physical iPhone, typing uses hardware key presses (the bridge's `type_keys`). Only text the keyboard cannot type is pasted, and then the user's clipboard is saved first and put back afterwards; a clipboard that cannot be read back exactly is never pasted over. Key presses that fail part way are reported `unknown` and are never followed by a paste, with or without `clear`.
 - On a simulator, `launch` starts the app with `simctl` the way `launch_app` does, and `type` uses the simulator's own `type_text`: key presses, and for text the keyboard cannot type a paste through the simulator's pasteboard, which keeps that text afterwards.
-- Accessibility gets `POKI_CUA_TREE_MS` (default 2500 ms) per read; after that the screenshot's OCR answers instead. Actions and the wait after them get at most `POKI_CUA_ACTION_CAP_MS` (default 4000 ms).
+- Accessibility gets `POKI_CUA_TREE_MS` (default 2500 ms) per read; after that the screenshot's OCR answers instead. When accessibility names nothing across a third of the screen's height, the screenshot's text it did not name is listed after its elements, and the read says `accessibility + ocr`. Actions and the wait after them get at most `POKI_CUA_ACTION_CAP_MS` (default 4000 ms).
 - A locked or dark phone, or Poki's own app in front, stops the actions.
 - `POKI_CUA_BACKEND=wda` with `POKI_WDA_URL=http://<phone>:8100` reads and acts through a WebDriverAgent runner on the phone instead of the bridge. `look` and `do` answer the same way on either backend.
 
@@ -125,7 +125,7 @@ Accessibility can miss changes that affect only pixels, such as Calculator's dis
 | Screen | `start_recording` | Start recording the selected device display to an H.264 movie. |
 | Screen | `stop_recording` | Finalize the session recording and inspect the saved movie before returning its path and media details. |
 | Screen | `get_foreground_app` | Read the current foreground application from accessibility services. |
-| Screen | `list_elements` | Read accessibility elements, or OCR when auto mode cannot use accessibility. |
+| Screen | `list_elements` | Read accessibility elements, or OCR when auto mode cannot use accessibility. Auto mode adds screenshot text that accessibility leaves out across a third of the screen. |
 | Screen | `wait_for` | Poll visible text until it appears, or disappears when gone=true. |
 | Screen | `wait` | Pause for seconds without interacting with a device. |
 | Touch | `tap` | Tap at x/y in screen points or at the center of a current element ref. |
@@ -188,7 +188,7 @@ Accessibility can miss changes that affect only pixels, such as Calculator's dis
 
 ## Element Inspection & Delivery Flags
 
-- `list_elements` prefers Accessibility in `auto` mode and falls back to Vision OCR when Accessibility cannot be read. Every response reports which source was used.
+- `list_elements` prefers Accessibility in `auto` mode and falls back to Vision OCR when Accessibility cannot be read. Every response reports which source was used. Some apps draw a list with their own renderer and publish only a header to Accessibility. When the named elements leave a third of the screen's height empty, `auto` mode adds the screenshot text that Accessibility did not name, after the Accessibility elements, each with `"source": "ocr"`. `source: "accessibility"` turns this off.
 - Element `ref` identifiers are never reassigned within an MCP session. They expire after known input, a device change, a newly captured image showing a change, or **30 seconds**. Input and image changes observed by another session in the same daemon also invalidate the old observation. Re-fetch elements before acting on stale refs. Poki cannot detect an external touch or controller change until it observes that change; it does not continuously watch the display.
 - In action responses, `sent=true` means the touch or key report was written to the connection. It does not mean the device acted on it. The device does not acknowledge reports, and a dropped report returns no error.
 - A standalone action reads the screen back after it runs. `screen` lists the foreground app and visible text. When `screen_change_verified=true`, `screen_changed` indicates whether the accessibility output changed. This covers elements, text, values, positions, and selected, enabled, or focused states. `false` means no change was observed. It does not prove the action failed. The effect might not be exposed to accessibility, such as a canvas update, or might not have appeared yet. `true` does not prove the action caused the change, because another element may have updated at the same time. `screen_change_verified=false` means the before and after states could not be compared, such as in an app with no accessibility elements. In that case, inspect the screen directly.

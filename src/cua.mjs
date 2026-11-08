@@ -25,6 +25,7 @@
 //   {launch: "bundle id"}                      bring an app to the front
 //   {wait: ms}                                 pause
 // When accessibility returns nothing, the elements come from OCR of the screenshot, in the same shape.
+// When it names only part of the screen, the screenshot's text it did not name is added after its elements.
 // Each action is reported as sent, not_sent or unknown (it may have been delivered); an unknown one is
 // never sent again by us, and nothing after a failed action is sent. Element numbers not in the latest
 // read are refused before anything is sent. Actions and the wait after them get at most
@@ -33,6 +34,7 @@ import sharp from 'sharp';
 import { pause, stopped } from './work.mjs';
 import { wdaContext } from './cua-wda.mjs';
 import { platformTool } from './platform.mjs';
+import { leavesUnnamedBand, textOutside } from './ocr-supplement.mjs';
 
 const settleAfterMs = { tap: 450, type: 250, key: 300, swipe: 600, drag: 600, button: 700, launch: 900, wait: 0 };
 const imageWidth = 300, lineLimit = 120;
@@ -60,7 +62,7 @@ function listable(elements, size) {
 }
 
 // One read of the screen: a screenshot and the accessibility tree together; OCR of that
-// screenshot when the tree is empty or fails.
+// screenshot when the tree is empty or fails, or names only part of the screen.
 async function read(ctx) {
   const started = performance.now();
   // Both at once: the bridge runs the screenshot beside an accessibility read, so the read ends at
@@ -80,6 +82,12 @@ async function read(ctx) {
   }
   if (treeResult.status === 'fulfilled' && treeResult.value.elements?.length) {
     elements = treeResult.value.elements; foreground = treeResult.value.foreground;
+    if (leavesUnnamedBand(listable(elements, frame), frame)) {
+      try {
+        const added = textOutside(await ctx.ocr(frame), elements, frame);
+        if (added.length) { elements = [...elements, ...added]; source = 'accessibility + ocr'; }
+      } catch (error) { if (stopped(error)) throw error; }
+    }
   } else {
     if (treeResult.status === 'rejected' && stopped(treeResult.reason)) throw treeResult.reason;
     note = treeResult.status === 'rejected' ? treeResult.reason.message : 'accessibility returned no elements';
