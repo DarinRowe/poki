@@ -138,8 +138,20 @@ final class AppModel {
 
     /// No task is running, so an install (which ends Poki) disturbs nothing: no agent step under way,
     /// no approval waiting, and a minute since the agent last did something.
-    var signingIdle: Bool {
-        stepUnderWay == nil && approvals.isEmpty && !sessionStarting && Date().timeIntervalSince(lastAgentActivity) > 60
+    var signingIdle: Bool { signingBusyReason == nil }
+
+    /// Why Install waits, or nil when nothing is under way. A step whose end never arrived (the
+    /// session was turned off mid-step, or the call hung) stops counting after two minutes, so a
+    /// lost event cannot keep Install off for good.
+    var signingBusyReason: String? {
+        if !approvals.isEmpty { return String(localized: "An approval is waiting for you.") }
+        if sessionStarting { return String(localized: "Poki is turning on.") }
+        if let step = stepUnderWay, sessionOn, Date().timeIntervalSince(step.started) < 120 {
+            return String(localized: "The agent is doing a step: \(step.summary).")
+        }
+        let since = Date().timeIntervalSince(lastAgentActivity)
+        if since < 60 { return String(localized: "The agent acted \(Int(since)) s ago; Install opens a minute after its last step.") }
+        return nil
     }
 
     /// Hands the signer the phone's own services and starts it (at launch).
@@ -149,6 +161,7 @@ final class AppModel {
             return ["device_address": "10.7.0.1", "pairing_file": path, "host_name": "Poki"]
         }
         signer.isIdle = { [weak self] in self?.signingIdle ?? false }
+        signer.busyReason = { [weak self] in self?.signingBusyReason }
         signer.beforeInstall = { [weak self] in self?.windDownForUpdate() }
         signer.start()
     }
@@ -672,6 +685,7 @@ final class AppModel {
         background.stop()
         activity.end()
         sessionOn = false
+        stepUnderWay = nil
         runner = .idle
         relayStatus = .off
         activityText = "Idle"

@@ -116,7 +116,7 @@ struct SigningSection: View {
                 // the row looks again every few seconds instead of staying as it was first drawn.
                 TimelineView(.periodic(from: .now, by: 5)) { _ in
                     Button(next.kind == "update" ? "Install Update" : "Install Refresh", systemImage: "arrow.down.app") { Task { await signer.install() } }
-                        .disabled(!model.signingIdle || signer.working != nil)
+                        .disabled(signer.working != nil)
                 }
             } else if let latest = signer.latest, signer.isNewer(latest) {
                 LabeledContent { Text(verbatim: "\(latest.version) (\(latest.build))") } label: { Label("Update Available", systemImage: "sparkles") }
@@ -144,7 +144,7 @@ struct SigningSection: View {
         if signer.next != nil {
             return model.signingIdle
                 ? String(localized: "Installing closes Poki for a moment. Your chats and setup stay.")
-                : String(localized: "Install is available when Poki isn’t running a task.")
+                : (model.signingBusyReason ?? "") + " " + String(localized: "Install is available when Poki isn’t running a task.")
         }
         return String(localized: "Poki gets the next build ready by itself, \(Int(SelfSigner.refreshWithDaysLeft)) days before it expires or when your channel has an update. It installs only when you tap Install.")
     }
