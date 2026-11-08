@@ -18,6 +18,7 @@ struct ContentView: View {
                 }
             }
             .listStyle(.sidebar)
+            .noTopEdgeFade()
             .navigationSplitViewColumnWidth(min: 190, ideal: 210, max: 260)
             .safeAreaInset(edge: .bottom) { SidebarFooter() }
         } detail: {

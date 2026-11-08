@@ -322,6 +322,7 @@ mod tests {
         info.insert("PokiAppGroup".into(), "group.nz.zheha.poki".into());
         info.insert("CFBundleShortVersionString".into(), "0.2.7".into());
         info.insert("CFBundleVersion".into(), "70".into());
+        info.insert("BGTaskSchedulerPermittedIdentifiers".into(), plist::Value::Array(vec!["nz.zheha.poki.run.*".into(), "nz.zheha.pokiother".into()]));
         plist::to_file_binary(app.join("Info.plist"), &info).unwrap();
         std::fs::write(app.join("Poki"), b"binary").unwrap();
         let mut w = plist::Dictionary::new();
@@ -360,6 +361,8 @@ mod tests {
         assert_eq!(u.version, "0.2.7");
         let info = read_info(&u.app_dir).unwrap();
         assert_eq!(info.get("PokiAppGroup").unwrap().as_string(), Some("group.nz.zheha.poki.TEAM1"));
+        let ids: Vec<_> = info.get("BGTaskSchedulerPermittedIdentifiers").unwrap().as_array().unwrap().iter().filter_map(|v| v.as_string()).collect();
+        assert_eq!(ids, vec!["nz.zheha.poki.TEAM1.run.*", "nz.zheha.pokiother"]);
         assert_eq!(u.bundles[0].requested.get("com.apple.security.application-groups").unwrap().as_array().unwrap()[0].as_string(), Some("group.nz.zheha.poki.TEAM1"));
         let out = dir.path().join("out.ipa");
         pack(&u, &out).unwrap();
