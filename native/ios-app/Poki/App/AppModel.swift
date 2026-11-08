@@ -71,6 +71,25 @@ final class AppModel {
     private(set) var pairingVerifiedAt: Date?
     /// The runner has been launching for a while: iOS may be asking for the passcode.
     private(set) var passcodeHint = false
+    /// Turning on now will probably bring up iOS's passcode screen (no automation has started since
+    /// this iPhone last restarted, or ever): the owner is told first (`passcodeHeadsUp`).
+    var passcodeExpected: Bool { UserDefaults.standard.double(forKey: Self.automationBootKey) != BootClock.current }
+    /// The note before iOS's passcode screen is showing; Continue turns Poki on.
+    var passcodeHeadsUp = false
+    private var passcodeHeadsUpReconnect = true
+    private var passcodeHeadsUpSeen = 0.0
+    private static let automationBootKey = "automationStartedBoot"
+    /// Automation started in this boot: iOS will not ask again until the next restart.
+    private func automationStarted() {
+        guard UserDefaults.standard.double(forKey: Self.automationBootKey) != BootClock.current else { return }
+        UserDefaults.standard.set(BootClock.current, forKey: Self.automationBootKey)
+    }
+    /// Continue on the note: Poki turns on, and iOS's passcode screen comes next.
+    func continueAfterPasscodeHeadsUp() {
+        passcodeHeadsUp = false
+        passcodeHeadsUpSeen = BootClock.current
+        startSession(reconnectLocal: passcodeHeadsUpReconnect)
+    }
     /// The hand-off the agent asked the owner for, while it waits (shown on the home screen too).
     private(set) var handoffText: String?
     private var launchingSince: Date?
@@ -309,6 +328,7 @@ final class AppModel {
                 let warm = (result["warm_seconds"] as? Double).map { $0 > 0 ? String(format: ", first snapshot and screenshot %.2f s", $0) : "" } ?? ""
                 self.log.add("runner", ok ? "in-process session ready for \(why) (generation \(result["generation"] ?? 0), \((result["reused"] as? Bool) == true ? "already open" : "opened"), \(seconds) s\(warm))"
                                           : "in-process session not ready for \(why): \(result["code"] ?? "unknown") after \(seconds) s")
+                if ok { self.automationStarted() }
                 self.inProcessSession = ok ? .open : .failed(code: "\(result["code"] ?? "unknown")", detail: result["detail"] as? String ?? "")
                 if self.sessionOn { self.host.update(runner: self.coreState(of: self.runner)) }
             }
@@ -487,6 +507,14 @@ final class AppModel {
 
     func startSession(reconnectLocal: Bool = true) {
         guard !sessionOn, !sessionStarting else { return }
+        // The first automation after a restart (or ever) brings up iOS's own passcode screen. With
+        // Poki in front, the owner is told first that it is expected and that Poki cannot see it.
+        if passcodeExpected, passcodeHeadsUpSeen != BootClock.current, inFront, !Self.onSimulator {
+            passcodeHeadsUpReconnect = reconnectLocal
+            passcodeHeadsUp = true
+            log.add("runner", "no automation since this iPhone restarted: telling the owner iOS will ask for the passcode")
+            return
+        }
         if setup.loopback == .none {
             problem = "Choose and enable a local connection first (Setup)."
             return
@@ -784,6 +812,7 @@ final class AppModel {
             // file from Poki Setup then needs nothing more on the phone).
             if !setup.developerMode { setup.developerMode = true; log.add("setup", "Developer Mode is on (the runner started)") }
             if status.state == "running", !setup.uiAutomation { setup.uiAutomation = true; log.add("setup", "UI Automation is on (the runner runs)") }
+            if status.state == "running", automationPath == .runner { automationStarted() }
             if status.state == "launching", runner.state != "launching" { launchingSince = Date() }
         case "failed" where status.fix?.contains("Pair again") == true:
             if pairingTrouble == nil { log.add("pairing", "refused: \(status.detail ?? "")") }
@@ -1304,4 +1333,16 @@ enum RunnerProbe {
         guard let (_, response) = try? await URLSession(configuration: configuration).data(for: request) else { return false }
         return (response as? HTTPURLResponse)?.statusCode == 200
     }
+}
+
+/// When this iPhone last started (kern.boottime, seconds): iOS asks for the passcode before the first
+/// automation after each start.
+enum BootClock {
+    static let current: Double = {
+        var boot = timeval()
+        var size = MemoryLayout<timeval>.size
+        var mib: [Int32] = [CTL_KERN, KERN_BOOTTIME]
+        guard sysctl(&mib, 2, &boot, &size, nil, 0) == 0 else { return 0 }
+        return Double(boot.tv_sec)
+    }()
 }
