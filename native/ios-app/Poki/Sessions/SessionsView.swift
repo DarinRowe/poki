@@ -371,7 +371,6 @@ struct SessionView: View {
     @Environment(AppModel.self) private var model
     var id: String
     var back: () -> Void
-    var hidesTabBar = true
 
     @State private var renaming = false
     @State private var newName = ""
@@ -403,7 +402,6 @@ struct SessionView: View {
             Button("Cancel", role: .cancel) {}
             Button("Save") { SessionStore.shared.rename(id, to: newName) }
         }
-        .toolbar(hidesTabBar ? .hidden : .automatic, for: .tabBar)
     }
 
     private func caption(_ session: SavedSession?) -> String {

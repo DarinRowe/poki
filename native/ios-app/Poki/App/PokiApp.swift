@@ -62,10 +62,20 @@ struct RootView: View {
     /// In a wide window (iPad, the inner display of iPhone Duo, a large Split View or Stage Manager
     /// window) the Poki tab is split: sessions and controls on the left, the chat on the right.
     @State private var wide: HomeRoute = .chat
+    /// The tab bar leaves while a conversation is open on iPhone. It is set here, on the stack, and
+    /// changed inside an animation, so it eases out on the way in and eases back in on the way out
+    /// (a hidden tab bar set by the pushed page itself snaps).
+    @State private var tabBarHidden = false
 
     private func show(_ route: HomeRoute) {
         wide = route
         home = NavigationPath([route])
+        setTabBarHidden(route != .setup && width != .regular)
+    }
+
+    private func setTabBarHidden(_ hidden: Bool) {
+        guard hidden != tabBarHidden else { return }
+        withAnimation(.easeInOut(duration: 0.3)) { tabBarHidden = hidden }
     }
 
     private var sessions: some View {
@@ -83,7 +93,7 @@ struct RootView: View {
                      openSetup: openSetup, openModel: { openAgents(AgentsRoute.accounts) },
                      back: split ? nil : { home = NavigationPath() })
         case .session(let id):
-            SessionView(id: id, back: { home = NavigationPath() }, hidesTabBar: !split)
+            SessionView(id: id, back: { home = NavigationPath() })
         case .setup:
             SetupChecklist()
         }
@@ -107,6 +117,9 @@ struct RootView: View {
                     .navigationDestination(for: HomeRoute.self) { page($0, split: false) }
                     .navigationDestination(for: SetupStep.self) { SetupStepPage(step: $0) }
             }
+            .toolbarVisibility(tabBarHidden ? .hidden : .visible, for: .tabBar)
+            // Back (the button or the edge swipe) empties the path: the tab bar eases back in.
+            .onChange(of: home.isEmpty) { _, empty in if empty { setTabBarHidden(false) } }
         }
     }
 
