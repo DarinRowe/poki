@@ -6,9 +6,6 @@ struct ContentView: View {
     var body: some View {
         NavigationSplitView {
             List(selection: Binding(get: { model.page }, set: { if let p = $0 { model.page = p } })) {
-                SidebarBrand()
-                    .selectionDisabled()
-                    .listRowSeparator(.hidden)
                 Section {
                     ForEach([Page.setup, .phones, .account]) { p in
                         Label(p.title, systemImage: p.symbol).tag(p)
@@ -44,20 +41,6 @@ struct ContentView: View {
             }
         }
         .animation(.snappy, value: model.banner)
-    }
-}
-
-private struct SidebarBrand: View {
-    var body: some View {
-        HStack(spacing: 10) {
-            AppIconImage(size: 30)
-            VStack(alignment: .leading, spacing: 0) {
-                Text("Poki Setup").font(.headline).foregroundStyle(Color.primary)
-                Text("for iPhone").font(.caption).foregroundStyle(Color.secondary)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.vertical, 6)
     }
 }
 

@@ -308,7 +308,6 @@ struct SettingsView: View {
     @EnvironmentObject var model: AppModel
     @State private var choice = ""
     @State private var custom = ""
-    @State private var update: UpdateInfo?
     @State private var message: String?
 
     private let customTag = "custom"
@@ -338,34 +337,8 @@ struct SettingsView: View {
                 Text("Apple's sign-in wants proof that it talks to a Mac or PC (“anisette”). A server provides it; it never sees your Apple Account or password. If sign-in fails, try another one.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
-            Section {
-                Picker("Channel", selection: channelChoice) {
-                    ForEach(model.channels) { c in Text(c.title).tag(c.id) }
-                }
-                LabeledContent("Newest Poki") {
-                    if let r = model.channel?.latest {
-                        Text("\(r.version) (\(r.build))").foregroundStyle(.secondary)
-                    } else {
-                        Text("None published").foregroundStyle(.secondary)
-                    }
-                }
+            Section("About") {
                 LabeledContent("Version") { Text(model.info?.version ?? "").foregroundStyle(.secondary) }
-                HStack {
-                    if let u = update {
-                        if u.newer, let s = u.url, let url = URL(string: s) {
-                            Link("Poki Setup \(u.latest ?? "") is available", destination: url)
-                        } else {
-                            Text("Poki Setup is up to date.").foregroundStyle(.secondary)
-                        }
-                    }
-                    Spacer()
-                    Button("Check for Updates") { Task { update = try? await model.bridge.call("check_update") } }
-                }
-            } header: {
-                Text("Updates")
-            } footer: {
-                Text("Stable has tested releases only. Beta adds test builds. Alpha adds early builds. Pre-alpha adds every snapshot, which can break. Poki Setup installs and renews Poki from this channel and checks it for its own updates.")
-                    .font(.footnote).foregroundStyle(.secondary)
             }
             Section("Data") {
                 LabeledContent("Folder") {
@@ -378,21 +351,6 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .frame(width: 520, height: 560)
         .onAppear(perform: load)
-        .task { await model.refreshChannels() }
-    }
-
-    private var channelChoice: Binding<String> {
-        Binding(
-            get: { model.channel?.id ?? "beta" },
-            set: { id in
-                Task {
-                    do {
-                        try await model.setChannel(id)
-                        update = nil
-                    } catch { message = error.localizedDescription }
-                }
-            }
-        )
     }
 
     private func load() {

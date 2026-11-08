@@ -24,7 +24,7 @@ pub struct Release {
     pub notes: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 struct GhRelease {
     tag_name: String,
     prerelease: bool,
@@ -35,7 +35,7 @@ struct GhRelease {
     html_url: Option<String>,
     assets: Vec<GhAsset>,
 }
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 struct GhAsset {
     name: String,
     browser_download_url: String,
@@ -49,9 +49,9 @@ pub fn repo() -> String { std::env::var("POKI_RELEASE_REPO").unwrap_or_else(|_| 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Channel {
-    /// `ios-vX.Y.Z` / `desktop-vX.Y.Z` full releases.
+    /// `ios-vX.Y.Z` / `desktop-vX.Y.Z` full releases. The default.
     Stable,
-    /// The same tags published as prereleases. The default: every `ios-v*` release so far is one.
+    /// The same tags published as prereleases.
     Beta,
     /// `ios-alpha-X.Y.Z-N` / `desktop-alpha-*` early test builds, picked by hand.
     Alpha,
@@ -60,7 +60,7 @@ pub enum Channel {
 }
 
 impl Default for Channel {
-    fn default() -> Self { Channel::Beta }
+    fn default() -> Self { Channel::Stable }
 }
 
 impl Channel {
@@ -94,6 +94,9 @@ impl Channel {
         }
     }
 
+    /// This channel, then each less stable one in turn: where to look when this one has nothing yet.
+    pub fn fallbacks(self) -> impl Iterator<Item = Channel> { Channel::ALL.into_iter().filter(move |c| *c >= self) }
+
     /// Whether a release of channel `of` is offered to someone on this channel.
     pub fn includes(self, of: Channel) -> bool { of <= self }
 
@@ -125,7 +128,7 @@ struct ChannelFile {
 
 fn channel_file() -> Result<PathBuf> { Ok(paths::state_dir()?.join("channel.json")) }
 
-/// The chosen channel: `POKI_RELEASE_CHANNEL` when set, else the saved choice, else Beta.
+/// The chosen channel: `POKI_RELEASE_CHANNEL` when set, else the saved choice, else Stable.
 pub fn channel() -> Channel {
     if let Some(c) = std::env::var("POKI_RELEASE_CHANNEL").ok().and_then(|v| Channel::parse(&v)) {
         return c;
@@ -195,12 +198,18 @@ fn installable(r: &GhRelease) -> Option<(Channel, Release)> {
     ))
 }
 
-fn pick(list: &[GhRelease], channel: Channel) -> Option<Release> {
+fn pick_exact(list: &[GhRelease], channel: Channel) -> Option<Release> {
     list.iter().filter_map(installable).find(|(c, _)| channel.includes(*c)).map(|(_, r)| r)
 }
 
+/// The newest release the channel offers; when it has none yet, the next less stable channel's,
+/// one step at a time (Stable, then Beta, then Alpha, then Pre-alpha).
+fn pick(list: &[GhRelease], channel: Channel) -> Option<Release> {
+    channel.fallbacks().find_map(|c| pick_exact(list, c))
+}
+
 fn none_in(channel: Channel) -> Error {
-    Error::msg(format!("No Poki release with an installable IPA is published on the {} channel at github.com/{}. Pick another channel in Settings, or choose an IPA file.", channel.title(), repo()))
+    Error::msg(format!("No Poki release with an installable IPA is published on the {} channel at github.com/{}. Pick another channel, or choose an IPA file.", channel.title(), repo()))
 }
 
 /// The newest installable release on the chosen channel.
@@ -241,7 +250,8 @@ pub struct UpdateInfo {
 pub async fn desktop_update() -> Result<UpdateInfo> {
     let channel = channel();
     let current = crate::VERSION.to_string();
-    let found = list().await?.into_iter().find(|r| Channel::of_tag("desktop", &r.tag_name, r.prerelease).map(|c| channel.includes(c)).unwrap_or(false));
+    let list = list().await?;
+    let found = channel.fallbacks().find_map(|want| list.iter().find(|r| Channel::of_tag("desktop", &r.tag_name, r.prerelease).map(|c| want.includes(c)).unwrap_or(false)).cloned());
     let (latest, url) = match found {
         Some(r) => (Some(r.tag_name.trim_start_matches("desktop-v").trim_start_matches("desktop-prealpha-").trim_start_matches("desktop-alpha-").to_string()), r.html_url),
         None => (None, None),
@@ -360,14 +370,19 @@ mod tests {
         assert_eq!((p.version.as_str(), p.build.as_str(), p.channel), ("0.2.8", "260", Channel::PreAlpha));
         assert_eq!(pick(&list, Channel::Beta).unwrap().tag, "ios-v0.2.7");
         assert_eq!(pick(&list, Channel::Stable).unwrap().tag, "ios-v0.2.6");
-        assert!(pick(&list[..2], Channel::Stable).is_none());
+        // Sorted: v0.1.1, prealpha, v0.2.7 (beta), v0.2.6. Without a Stable release, Stable steps
+        // down to Beta; with only a Pre-alpha one it takes that; with no ios-* release, nothing.
+        assert_eq!(pick(&list[..3], Channel::Stable).unwrap().tag, "ios-v0.2.7");
+        assert_eq!(pick(&list[..2], Channel::Stable).unwrap().tag, "ios-prealpha-0.2.8-260");
+        assert!(pick(&list[..1], Channel::Stable).is_none());
+        assert_eq!(Channel::default(), Channel::Stable);
     }
 
     #[test]
     fn choice_is_saved() {
         let (_g, _d) = paths::test_home();
         unsafe { std::env::remove_var("POKI_RELEASE_CHANNEL") };
-        assert_eq!(channel(), Channel::Beta);
+        assert_eq!(channel(), Channel::Stable);
         set_channel(Channel::PreAlpha).unwrap();
         assert_eq!(channel(), Channel::PreAlpha);
     }
