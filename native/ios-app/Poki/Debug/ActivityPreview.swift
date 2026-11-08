@@ -15,27 +15,30 @@ struct ActivityPreview: View {
     init() { if Thumbnail.previewImage == nil { Thumbnail.previewImage = Self.sampleScreen() } }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
+        // A list of the Live Activity's states; each row starts the real one on this iPhone, which iOS
+        // draws on the Lock Screen and in the Dynamic Island.
+        List {
+            Section {
                 ForEach(Self.samples.filter { only == nil || $0.0 == only }, id: \.0) { name, state in
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack {
-                            Text(name).font(.footnote.weight(.semibold)).foregroundStyle(.secondary).textCase(.uppercase)
-                            Spacer()
-                            // The real thing: iOS draws it on the Lock Screen and in the Dynamic Island.
-                            Button("Show on iPhone", systemImage: "play.fill") { Task.detached { await DemoActivity.run(state) } }
-                                .font(.footnote.weight(.semibold)).buttonStyle(.bordered).controlSize(.small)
+                    Button { Task.detached { await DemoActivity.run(state) } } label: {
+                        LabeledContent {
+                            Image(systemName: "play.circle.fill").foregroundStyle(.blue).imageScale(.large)
+                        } label: {
+                            Label { Text(verbatim: Self.title(name)) } icon: { Image(systemName: state.face.symbol) }
                         }
-                        LockScreenFrame(state: state)
-                        IslandExpandedFrame(state: state)
-                        IslandCompactFrame(state: state)
                     }
+                    .foregroundStyle(Color(.label))
+                }
+            } footer: {
+                Text("Starts that Live Activity on this iPhone. Lock the phone or go to the Home Screen to see it; the next one replaces it.")
+            }
+            Section {
+                Button("End Live Activity", systemImage: "stop.circle", role: .destructive) {
+                    Task.detached { for old in Activity<PokiActivityAttributes>.activities { await old.end(nil, dismissalPolicy: .immediate) } }
                 }
             }
-            .padding(.vertical).padding(.horizontal, 16)
-            .frame(maxWidth: .infinity)
         }
-        .background(Color(.systemGroupedBackground).ignoresSafeArea())
+        .listStyle(.insetGrouped)
         .navigationTitle("Live Activity")
         .navigationBarTitleDisplayMode(.inline)
         .task {
@@ -43,6 +46,26 @@ struct ActivityPreview: View {
                 // Detached: going to the background must not cancel the demo's wait for its alert.
                 Task.detached { await DemoActivity.run(state) }
             }
+        }
+    }
+
+    private static func title(_ name: String) -> String {
+        switch name {
+        case "start": String(localized: "Task Started")
+        case "working": String(localized: "Working")
+        case "step": String(localized: "Next Step")
+        case "approval": String(localized: "Approval")
+        case "deciding": String(localized: "Approved")
+        case "yourturn": String(localized: "Your Turn")
+        case "passcode": String(localized: "Passcode")
+        case "done": String(localized: "Done")
+        case "ready": String(localized: "Ready")
+        case "idle": String(localized: "Runner Asleep")
+        case "problem": String(localized: "Problem")
+        case "pairing": String(localized: "Pairing")
+        case "code": String(localized: "Pairing Code")
+        case "setup": String(localized: "Setup")
+        default: name.capitalized
         }
     }
 

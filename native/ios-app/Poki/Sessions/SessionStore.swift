@@ -5,7 +5,7 @@ import SwiftUI
 /// One conversation in the Sessions list: an in-app chat with Poki, an outside agent's MCP session
 /// (its own look and do calls), or a task an outside agent handed to Poki (`ask_poki`).
 struct SavedSession: Codable, Identifiable, Equatable {
-    enum Kind: String, Codable { case poki, agent, handoff }
+    enum Kind: String, Codable { case poki, agent, handoff, voice }
     enum Outcome: String, Codable { case done, failed, stopped }
 
     var id: String
@@ -22,6 +22,8 @@ struct SavedSession: Codable, Identifiable, Equatable {
     /// The owner's own name for it (Rename), and the short name Poki's chat model gave it.
     var customName: String? = nil
     var autoName: String? = nil
+    /// sha256 of the connector secret an outside agent's session came through (the relay says).
+    var connector: String? = nil
 
     /// The row's second line: the last thing that happened.
     var lastLine: String {
@@ -48,6 +50,7 @@ struct SavedSession: Codable, Identifiable, Equatable {
         case .poki: return autoName ?? (title == String(localized: "New conversation") ? "Poki" : String(title.prefix(40)))
         case .agent: return client ?? String(localized: "An agent")
         case .handoff: return autoName.map { "\(client ?? String(localized: "An agent")) · \($0)" } ?? "\(client ?? String(localized: "An agent")) → Poki"
+        case .voice: return autoName ?? (title.isEmpty ? String(localized: "Voice chat") : String(title.prefix(40)))
         }
     }
 }
@@ -68,6 +71,8 @@ final class SessionStore {
     private var writeTask: Task<Void, Never>?
     /// The outside agent sessions seen since launch: id → client name.
     private var clients: [String: String] = [:]
+    /// The connector each outside agent session came through: id → sha256 of its secret.
+    private var connectors: [String: String] = [:]
     /// The session whose call is running, for approvals and hand-offs (they carry no session).
     private var currentSession: String?
     /// The outside agent session whose call is running, if any.
@@ -106,7 +111,7 @@ final class SessionStore {
         sessions.sorted { a, b in a.live != b.live ? a.live : a.updated > b.updated }
     }
 
-    var liveAgentCount: Int { sessions.filter { $0.live && $0.kind != .poki }.count }
+    var liveAgentCount: Int { sessions.filter { $0.live && ($0.kind == .agent || $0.kind == .handoff) }.count }
 
     // MARK: Chats
 
@@ -122,6 +127,31 @@ final class SessionStore {
         put(session)
     }
 
+    /// A live voice conversation (Realtime): what was said and the steps it took, as a read-only
+    /// transcript in the list. Hold-to-dictate turns go through the chat and are saved with it.
+    func save(voice id: String, started: Date, lines: [VoiceLine], live: Bool) {
+        var session = self.session(id) ?? SavedSession(id: id, kind: .voice, client: nil, title: "", started: started, updated: Date(),
+                                                         live: live, outcome: nil, entries: [], calls: [])
+        guard session.kind == .voice else { return }
+        var entries = [ChatEntry(.time(started))]
+        for line in lines {
+            switch line.role {
+            case .you: entries.append(ChatEntry(.you(line.text, delivered: true)))
+            case .poki: entries.append(ChatEntry(.poki(line.text)))
+            case .tool: entries.append(ChatEntry(.step(line.text, ok: true)))
+            case .note: entries.append(ChatEntry(.note(.problem(line.text))))
+            }
+        }
+        // Nothing said yet: no row.
+        guard entries.count > 1 || self.session(id) != nil else { return }
+        session.entries = entries
+        if session.title.isEmpty, let first = lines.first(where: { $0.role == .you }) { session.title = first.text }
+        session.live = live
+        if !live, session.outcome == nil { session.outcome = .done }
+        session.updated = Date()
+        put(session)
+    }
+
     func taskEnded(_ id: String, success: Bool?, stopped: Bool) {
         guard var session = session(id) else { return }
         session.live = false
@@ -130,18 +160,27 @@ final class SessionStore {
         put(session)
     }
 
-    /// Outside agents' sessions that came through a connector, newest first. The relay does not tell
-    /// the phone which connector a request used, so a session belongs to the connector whose name
-    /// matches its client's ("Claude" and "Claude Code"); with a single connector, every outside
-    /// session is its.
+    /// Outside agents' sessions that came through a connector, newest first. The relay names the
+    /// connector of each request (the sha256 of its secret); a hand-off belongs to the connector of
+    /// the agent session that asked. Sessions from before the relay said fall back to a name match
+    /// ("Claude" and "Claude Code"), or with a single connector, all of them.
     func sessions(for connector: ConnectorSecret, among all: [ConnectorSecret]) -> [SavedSession] {
-        let outside = ordered.filter { $0.kind != .poki }
-        if all.count <= 1 { return outside }
+        let outside = ordered.filter { $0.kind == .agent || $0.kind == .handoff }
+        let hash = connector.hash
         let name = connector.name.lowercased()
         return outside.filter { session in
+            if let known = connectorHash(of: session) { return known == hash }
+            if all.count <= 1 { return true }
             let client = (session.client ?? "").lowercased()
             return !client.isEmpty && (client.contains(name) || name.contains(client))
         }
+    }
+
+    private func connectorHash(of session: SavedSession) -> String? {
+        if let connector = session.connector { return connector }
+        guard session.kind == .handoff, let range = session.id.range(of: "-ask-") else { return nil }
+        let agent = String(session.id[..<range.lowerBound])
+        return connectors[agent] ?? self.session(agent)?.connector
     }
 
     /// The owner's name for a session; empty goes back to the automatic one.
@@ -172,8 +211,9 @@ final class SessionStore {
     /// Every PokiCore event, before the screen's own handling: outside agents' sessions and steps.
     func observe(_ event: ShellEvent, approvals: [PendingApproval]) {
         switch event {
-        case .session(.started(let id, let client, _)):
+        case .session(.started(let id, let client, _, let connector)):
             clients[id] = AgentName.pretty(client)
+            if let connector { connectors[id] = connector }
         case .session(.ended(let id)):
             clients[id] = nil
             if var session = session(id), session.live {
@@ -220,6 +260,7 @@ final class SessionStore {
         // A hand-off's own session is the in-app agent's (its steps come from ChatModel).
         guard session.kind == .agent else { return }
         session.live = true
+        session.connector = session.connector ?? connectors[id]
         change(&session)
         session.updated = Date()
         put(session)

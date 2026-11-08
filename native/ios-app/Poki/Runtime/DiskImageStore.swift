@@ -14,6 +14,12 @@ final class DiskImageStore {
         if let build = try? DeveloperDiskImage.verify(AppFiles.ddiDirectory) { state = .ready(build) }
     }
 
+    /// Files that appeared since (Poki Setup puts them in the container): counted without downloading.
+    func notice() {
+        guard !isReady, let build = try? DeveloperDiskImage.verify(AppFiles.ddiDirectory) else { return }
+        state = .ready(build)
+    }
+
     /// Checks the files again (they can be damaged or removed); false starts a fresh download.
     func recheck() -> Bool {
         if let build = try? DeveloperDiskImage.verify(AppFiles.ddiDirectory) { state = .ready(build); return true }

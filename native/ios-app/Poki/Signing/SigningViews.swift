@@ -86,31 +86,42 @@ struct SigningSection: View {
 
     var body: some View {
         Section {
-            LabeledContent("Signed Until") {
+            // The Apple Account Poki signs itself with: Setup's account step, opened from here.
+            NavigationLink(value: SetupStep.account) {
+                LabeledContent {
+                    if signer.signedIn { Text(verbatim: signer.status?.apple_id ?? "") }
+                    else { Text("Sign In").foregroundStyle(.orange) }
+                } label: {
+                    Label("Apple Account", systemImage: "person.crop.circle")
+                }
+            }
+            LabeledContent {
                 if let expiry = signer.expiry {
-                    VStack(alignment: .trailing) {
-                        Text(expiry, format: .dateTime.month().day().hour().minute())
-                        Text(expiry, style: .relative).font(.footnote).foregroundStyle(countdownColor)
-                    }
+                    // One line: the date, and how long is left in the warning colour when it is close.
+                    (Text(expiry, format: .dateTime.month(.abbreviated).day()) + Text(verbatim: " · ") + Text(expiry, style: .relative).foregroundStyle(countdownColor))
+                        .lineLimit(1).minimumScaleFactor(0.8)
                 } else {
                     Text("No Profile").foregroundStyle(.secondary)
                 }
+            } label: {
+                Label("Signed Until", systemImage: "signature")
             }
             if let next = signer.next {
-                LabeledContent(next.kind == "update" ? "Update Ready" : "Refresh Ready") {
-                    VStack(alignment: .trailing) {
-                        Text(next.kind == "update" ? "\(next.version) (\(next.build))" : "Until \(next.expires.formatted(date: .abbreviated, time: .omitted))")
-                        Text(next.team_name).font(.footnote).foregroundStyle(.secondary)
-                    }
+                LabeledContent {
+                    Text(next.kind == "update" ? "\(next.version) (\(next.build))" : "Until \(next.expires.formatted(.dateTime.month(.abbreviated).day()))").lineLimit(1)
+                } label: {
+                    Label(next.kind == "update" ? "Update Ready" : "Refresh Ready", systemImage: "checkmark.seal")
                 }
                 Button(next.kind == "update" ? "Install Update" : "Install Refresh", systemImage: "arrow.down.app") { Task { await signer.install() } }
                     .disabled(!model.signingIdle || signer.working != nil)
             } else if let latest = signer.latest, signer.isNewer(latest) {
-                LabeledContent("Update Available", value: "\(latest.version) (\(latest.build))")
+                LabeledContent { Text(verbatim: "\(latest.version) (\(latest.build))") } label: { Label("Update Available", systemImage: "sparkles") }
             }
             Button("Prepare Refresh Now", systemImage: "arrow.clockwise") { Task { await signer.prepare(kind: "refresh") } }
                 .disabled(!signer.signedIn || signer.working != nil)
-            NavigationLink { SigningOptionsPage() } label: { LabeledContent("Release Channel", value: signer.channelTitle) }
+            NavigationLink { SigningOptionsPage() } label: {
+                LabeledContent { Text(verbatim: signer.channelTitle) } label: { Label("Release Channel", systemImage: "antenna.radiowaves.left.and.right") }
+            }
         } header: {
             Text("Signing")
         } footer: {

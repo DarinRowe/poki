@@ -126,8 +126,14 @@ struct SessionsView: View {
                 renaming = nil
             }
         }
-        // A new chat with Poki's own agent, at the bottom left.
-        .safeAreaInset(edge: .bottom, alignment: .leading, spacing: 0) {
+        // A new chat with Poki's own agent, at the bottom right. On iOS 26 it is the round button on
+        // the tab bar's line instead (RootView's New Chat tab).
+        .safeAreaInset(edge: .bottom, alignment: .trailing, spacing: 0) {
+            if #unavailable(iOS 26.0) { newChatButton }
+        }
+    }
+
+    private var newChatButton: some View {
             Button { chat.newConversation(); openChat() } label: {
                 Image(systemName: "square.and.pencil").font(.title3.weight(.semibold))
                     .frame(width: 28, height: 28)
@@ -136,9 +142,8 @@ struct SessionsView: View {
             .controlSize(.large)
             .fixedSize()
             .disabled(chat.running)
-            .padding(.leading, 16).padding(.bottom, 8)
+            .padding(.trailing, 16).padding(.bottom, 8)
             .accessibilityLabel(Text("New Chat with Poki"))
-        }
     }
 
     /// "Working in Messages", "Ready", "Off".
@@ -317,6 +322,13 @@ struct SessionAvatar: View {
     var body: some View {
         switch session.kind {
         case .poki: PokiAvatar(size: size)
+        case .voice:
+            ZStack(alignment: .bottomTrailing) {
+                PokiAvatar(size: size)
+                Image(systemName: "waveform.circle.fill").font(.system(size: size * 0.42)).symbolRenderingMode(.palette)
+                    .foregroundStyle(.white, Color.blue).background(Circle().fill(Color(.systemBackground)).padding(-1.5))
+                    .offset(x: 3, y: 3).accessibilityHidden(true)
+            }
         case .agent: AgentBadge(name: session.client ?? "", size: size)
         case .handoff:
             ZStack(alignment: .bottomTrailing) {
@@ -373,6 +385,7 @@ struct SessionView: View {
         switch session.kind {
         case .agent: return String(localized: "Over MCP · \(ChatTime.row(session.started))")
         case .handoff: return String(localized: "Handed to Poki · \(ChatTime.row(session.started))")
+        case .voice: return String(localized: "Voice · \(ChatTime.row(session.started))")
         case .poki: return ""
         }
     }

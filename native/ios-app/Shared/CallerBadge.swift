@@ -5,26 +5,47 @@ import SwiftUI
 /// the connectors and the Live Activity.
 enum Caller {
     /// The provider logo for an agent's name ("Claude Code", "Codex", "Gemini CLI").
-    static func logo(_ name: String) -> String? {
+    /// Each known agent, in match order (more specific names first: "cursor-vscode" is Cursor), with its
+    /// logo in the asset catalog (nil: initials) and its colour.
+    private static let known: [(match: [String], logo: String?, tint: UInt32)] = [
+        (["claude", "anthropic"], "Provider-anthropic", 0xD97757),
+        (["cursor"], "Provider-cursor", 0x111111),
+        (["windsurf", "codeium"], "Provider-windsurf", 0x0B100F),
+        (["cline", "roo code", "roo-code", "roocode"], "Provider-cline", 0x111111),
+        (["codex", "chatgpt", "openai"], "Provider-openai", 0x10A37F),
+        (["github", "copilot", "visual studio code", "vscode", "vs code"], "Provider-githubcopilot", 0x24292F),
+        (["microsoft"], "Provider-copilot", 0x0078D4),
+        (["gemini", "google"], "Provider-googlegemini", 0x4285F4),
+        (["deepseek"], "Provider-deepseek", 0x4D6BFE),
+        (["openrouter"], "Provider-openrouter", 0x6566F1),
+        (["meta"], "Provider-metaai", 0x0866FF),
+        (["perplexity"], "Provider-perplexity", 0x1FB8CD),
+        (["mistral", "le chat", "le-chat", "lechat"], "Provider-mistral", 0xFA520F),
+        (["grok", "xai"], "Provider-grok", 0x111111),
+        (["raycast"], "Provider-raycast", 0xFF6363),
+        (["goose"], "Provider-goose", 0x111111),
+        (["manus"], "Provider-manus", 0x111111),
+        (["kimi", "moonshot"], "Provider-kimi", 0x111111),
+        (["qwen", "tongyi", "alibaba"], "Provider-qwen", 0x615CED),
+        (["lm studio", "lmstudio"], "Provider-lmstudio", 0x4338CA),
+        (["ollama"], "Provider-ollama", 0x111111),
+        (["hugging", "hf-mcp"], "Provider-huggingface", 0xFFB000),
+        (["n8n"], "Provider-n8n", 0xEA4B71),
+        (["zapier"], "Provider-zapier", 0xFF4F00),
+        (["openclaw"], "Provider-openclaw", 0xE5484D),
+        (["poke"], nil, 0x111111),
+        (["zed"], nil, 0x084CCF),
+    ]
+
+    private static func entry(_ name: String) -> (match: [String], logo: String?, tint: UInt32)? {
         let n = name.lowercased()
-        if n.contains("claude") || n.contains("anthropic") { return "Provider-anthropic" }
-        if n.contains("codex") || n.contains("chatgpt") || n.contains("openai") { return "Provider-openai" }
-        if n.contains("gemini") || n.contains("google") { return "Provider-googlegemini" }
-        if n.contains("deepseek") { return "Provider-deepseek" }
-        if n.contains("openrouter") { return "Provider-openrouter" }
-        return nil
+        return known.first { $0.match.contains { n.contains($0) } }
     }
 
+    static func logo(_ name: String) -> String? { entry(name)?.logo }
+
     /// The provider's colour, a calm grey otherwise.
-    static func tint(_ name: String) -> Color {
-        let n = name.lowercased()
-        if n.contains("claude") || n.contains("anthropic") { return Color(hex: 0xD97757) }
-        if n.contains("codex") || n.contains("chatgpt") || n.contains("openai") { return Color(hex: 0x10A37F) }
-        if n.contains("gemini") || n.contains("google") { return Color(hex: 0x4285F4) }
-        if n.contains("deepseek") { return Color(hex: 0x4D6BFE) }
-        if n.contains("cursor") { return Color(hex: 0x111111) }
-        return Color(hex: 0x8E8E93)
-    }
+    static func tint(_ name: String) -> Color { Color(hex: entry(name)?.tint ?? 0x8E8E93) }
 
     static func initials(_ name: String) -> String {
         let words = name.split(separator: " ")

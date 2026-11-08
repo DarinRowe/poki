@@ -54,7 +54,7 @@ struct RootView: View {
     /// Sessions is the first page; Poki's chat and an agent's session open over it, like a conversation
     /// in Messages; setup's checklist and its items are pushed there too.
     enum HomeRoute: Hashable { case chat, session(String), setup }
-    enum RootTab: Hashable { case chats, agents, setup }
+    enum RootTab: Hashable { case chats, agents, setup, newChat }
 
     @Environment(\.horizontalSizeClass) private var width
     /// In a wide window (iPad, the inner display of iPhone Duo, a large Split View or Stage Manager
@@ -110,25 +110,41 @@ struct RootView: View {
 
     var body: some View {
         TabView(selection: $tab) {
-            pokiTab
-                .tabItem { Label(String(localized: "Poki"), systemImage: "bubble.left.and.bubble.right.fill") }
-                .tag(RootTab.chats)
+            Tab(String(localized: "Poki"), systemImage: "bubble.left.and.bubble.right.fill", value: RootTab.chats) { pokiTab }
 
-            AgentsView(path: $agents, openSession: openRun)
-                .tabItem { Label("Agents", systemImage: "point.3.connected.trianglepath.dotted") }
-                // A dot when something there needs attention: no account for the chat, or the relay down.
-                .badge(agentsNeedAttention ? Text(verbatim: " ") : nil)
-                .tag(RootTab.agents)
+            Tab("Agents", systemImage: "point.3.connected.trianglepath.dotted", value: RootTab.agents) {
+                AgentsView(path: $agents, openSession: openRun)
+            }
+            // A dot when something there needs attention: no account for the chat, or the relay down.
+            .badge(agentsNeedAttention ? Text(verbatim: " ") : nil)
 
-            SetupTab(path: $setup)
-                .tabItem { Label("Setup", systemImage: "checklist") }
+            Tab("Setup", systemImage: "checklist", value: RootTab.setup) { SetupTab(path: $setup) }
                 // A dot while a setup item is still open.
                 .badge(model.setupComplete || SetupStep.shown.allSatisfy(model.isDone) ? nil : Text(verbatim: " "))
-                .tag(RootTab.setup)
+
+            // iOS 26: New Chat is the round button at the bottom right, on the tab bar's line (the
+            // place iOS gives a search tab). Choosing it starts a chat and goes back to the Poki tab.
+            if #available(iOS 26.0, *) {
+                Tab(String(localized: "New Chat"), systemImage: "square.and.pencil", value: RootTab.newChat, role: .search) { Color.clear }
+            }
+        }
+        .onChange(of: tab) { old, new in
+            guard new == .newChat else { return }
+            tab = .chats
+            if !chat.running { chat.newConversation() }
+            show(HomeRoute.chat)
         }
         .task { InProcessProbe.shared.startFromLaunchArguments(model: model) }
+        .alert(model.connectionAsk.map { String(localized: "Allow \($0.client) to connect?") } ?? "",
+               isPresented: Binding(get: { model.connectionAsk != nil }, set: { if !$0 { model.answerConnection(false) } }),
+               presenting: model.connectionAsk) { _ in
+            Button("Don’t Allow", role: .cancel) { model.answerConnection(false) }
+            Button("Allow") { model.answerConnection(true) }
+        } message: { ask in
+            Text("\(ask.client) is signing in through \(ask.connector) and returns to \(ask.callback), which isn’t on Poki’s list of known agents. Allow it only if you are connecting it yourself right now. It could then see your screen and act on this iPhone.")
+        }
         .onChange(of: scenePhase, initial: true) { _, phase in
-            if phase == .active { model.becameActive(); AskPoki.refresh(); model.startSigner(); model.signer.maintain() } else if phase == .background { model.wentToBackground() }
+            if phase == .active { model.becameActive(); AskPoki.refresh(); model.startSigner(); model.signer.maintain(); Task { await model.verifyPairing() } } else if phase == .background { model.wentToBackground() }
         }
         // A tap on the Live Activity opens the screen its state is about (ActivityFace.link): the chat,
         // the setup step, or the Activity Log for a problem; `poki://voice` opens the chat too (it
@@ -218,7 +234,7 @@ struct RootView: View {
         if defaults.string(forKey: "pokiChat") != nil { show(HomeRoute.chat) }
         switch defaults.string(forKey: "pokiScreen") {
         case "chat": show(HomeRoute.chat)
-        case "session": if let first = SessionStore.shared.ordered.first(where: { $0.kind != .poki }) { show(HomeRoute.session(first.id)) }
+        case "session": if let first = SessionStore.shared.ordered.first(where: { $0.kind == .agent || $0.kind == .handoff }) { show(HomeRoute.session(first.id)) }
         case "setup":
             let step = defaults.integer(forKey: "pokiSetupStep")
             tab = .setup

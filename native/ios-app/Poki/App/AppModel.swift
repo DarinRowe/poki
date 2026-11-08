@@ -159,6 +159,9 @@ final class AppModel {
         self.launcher = launcher
         self.pairer = pairer
         host.update(key: identity.signingKey, hashes: identity.accessHashes)
+        host.onConsent { [weak self] client, callback, connector in
+            await self?.askToConnect(client: client, callback: callback, connector: connector) ?? false
+        }
         // PokiCore asks for a restart after two silent requests in a row. A slow gesture can be one of
         // them while the runner is fine, so the runner is asked first; only a runner that does not
         // answer is started again (each restart costs seconds and flashes the automation banner).
@@ -274,6 +277,11 @@ final class AppModel {
     /// setup step the person just did in Settings.
     func becameActive() {
         inFront = true
+        // A pairing file and disk image Poki Setup put in the container while Poki was running (or
+        // since it last came to the front) count at once: mirrored to the Keychain, the disk image
+        // checked again, and the pairing checked as soon as the loopback answers.
+        SetupVault.mirrorPairingFromContainer()
+        diskImage.notice()
         warmInProcess("Poki came to the front")
         loopback.resume()
         // Poki in front while an agent's step is under way: nobody opened it on purpose. A tap near the
@@ -361,6 +369,80 @@ final class AppModel {
         loopback.check()
     }
 
+    /// A sign-in from a client outside the relay's known list, waiting for the owner (an alert in the
+    /// app and a notification). The relay gives up after 90 s, and so does this.
+    struct ConnectionAsk: Identifiable {
+        let id = UUID()
+        let client: String
+        let callback: String
+        let connector: String
+    }
+    private(set) var connectionAsk: ConnectionAsk?
+    private var connectionAnswer: CheckedContinuation<Bool, Never>?
+
+    func askToConnect(client: String, callback: String, connector: String) async -> Bool {
+        answerConnection(false) // one at a time: an older ask is declined
+        let name = identity.secrets.first { $0.hash == connector }?.name ?? String(localized: "a connector")
+        let ask = ConnectionAsk(client: client, callback: callback, connector: name)
+        log.add("relay", "\(client) at \(callback) asks to sign in through \(name): waiting for the owner")
+        ConnectionNotice.post(ask)
+        let ok = await withCheckedContinuation { (c: CheckedContinuation<Bool, Never>) in
+            connectionAsk = ask
+            connectionAnswer = c
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(88))
+                if self?.connectionAsk?.id == ask.id { self?.answerConnection(false) }
+            }
+        }
+        log.add("relay", ok ? "the owner allowed \(client) at \(callback)" : "\(client) at \(callback) was not allowed")
+        return ok
+    }
+
+    func answerConnection(_ ok: Bool) {
+        guard let answer = connectionAnswer else { return }
+        connectionAnswer = nil
+        if let ask = connectionAsk { ConnectionNotice.clear(ask) }
+        connectionAsk = nil
+        answer.resume(returning: ok)
+    }
+
+    private var pairingCheck: Task<Bool, Never>?
+
+    /// Asks the phone's own services, over the loopback, whether they still take this pairing file:
+    /// the same handshake the runner makes, a second or two, so a refused pairing shows on Setup and
+    /// the home page before an agent or a chat needs the phone. true when it was accepted (or could
+    /// not be checked now: the loopback is down, or the simulator).
+    @discardableResult
+    func verifyPairing(force: Bool = false) async -> Bool {
+        if Self.onSimulator { return true }
+        guard let path = pairingPath, loopback.isWorking else { return true }
+        if !force, pairingTrouble == nil, let at = pairingVerifiedAt, Date().timeIntervalSince(at) < 600 { return true }
+        if let pairingCheck { return await pairingCheck.value }
+        let task = Task { @MainActor [weak self] () -> Bool in
+            guard let self else { return true }
+            defer { self.pairingCheck = nil }
+            do {
+                _ = try await SelfSigner.call(["op": "udid", "device_address": "10.7.0.1", "pairing_file": path, "host_name": "Poki"])
+                if self.pairingTrouble != nil { self.log.add("pairing", "check: accepted again") }
+                self.pairingTrouble = nil
+                self.pairingVerifiedAt = Date()
+                return true
+            } catch {
+                let text = error.localizedDescription
+                // The launcher ends a refused pairing's message with its fix, "Pair again in Poki's setup."
+                if text.contains("Pair again") {
+                    if self.pairingTrouble == nil { self.log.add("pairing", "check: refused: \(text)") }
+                    self.pairingTrouble = text.replacingOccurrences(of: " Pair again in Poki's setup.", with: "")
+                    return false
+                }
+                self.log.add("pairing", "check could not finish: \(text)")
+                return true
+            }
+        }
+        pairingCheck = task
+        return await task.value
+    }
+
     func startSession(reconnectLocal: Bool = true) {
         guard !sessionOn, !sessionStarting else { return }
         if setup.loopback == .none {
@@ -379,9 +461,25 @@ final class AppModel {
                     try await tunnel.connect()
                     try Task.checkCancellation()
                     loopback.check()
+                    if !(await verifyPairing()) {
+                        problem = "The phone refused the pairing (\(pairingTrouble ?? "")). Pair again in Setup."
+                        return
+                    }
                     beginSession()
                 } catch is CancellationError { }
                 catch { problem = error.localizedDescription }
+            }
+        } else if loopback.isWorking, !Self.onSimulator, pairingPath != nil {
+            // Check the pairing first, so a refused one stops here with its fix instead of failing
+            // under the first agent's call.
+            sessionStarting = true
+            sessionStartTask = Task {
+                defer { sessionStarting = false; sessionStartTask = nil }
+                guard await verifyPairing(), !Task.isCancelled else {
+                    if let pairingTrouble { problem = "The phone refused the pairing (\(pairingTrouble)). Pair again in Setup." }
+                    return
+                }
+                beginSession()
             }
         } else { beginSession() }
     }
@@ -600,6 +698,8 @@ final class AppModel {
             log.add("loopback", "back: 10.7.0.1 answers again" + (sessionOn && !runner.isRunning && !runnerPaused ? "; starting the runner now" : ""))
             if sessionOn, !runner.isRunning, !runnerPaused { launcher.restart() }
         }
+        // The loopback answers: check the pairing now, before anything needs it.
+        if !wasWorking, loopback.isWorking { Task { await verifyPairing() } }
         if sessionOn { host.update(runner: coreState(of: runner)) }
     }
 
@@ -637,6 +737,11 @@ final class AppModel {
             if pairingTrouble != nil { log.add("pairing", "accepted again") }
             pairingTrouble = nil
             pairingVerifiedAt = Date()
+            // The disk image mounted and the runner is starting, so Developer Mode is on; a running
+            // runner means UI Automation is on too. Setup's confirm steps tick themselves (a pairing
+            // file from Poki Setup then needs nothing more on the phone).
+            if !setup.developerMode { setup.developerMode = true; log.add("setup", "Developer Mode is on (the runner started)") }
+            if status.state == "running", !setup.uiAutomation { setup.uiAutomation = true; log.add("setup", "UI Automation is on (the runner runs)") }
             if status.state == "launching", runner.state != "launching" { launchingSince = Date() }
         case "failed" where status.fix?.contains("Pair again") == true:
             if pairingTrouble == nil { log.add("pairing", "refused: \(status.detail ?? "")") }

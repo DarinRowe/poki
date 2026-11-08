@@ -67,3 +67,21 @@ final class ApprovalNoticeDelegate: NSObject, UNUserNotificationCenterDelegate, 
         [.banner, .sound, .list]
     }
 }
+
+/// The notification for a sign-in from a client outside the relay's known list. A tap opens Poki,
+/// where the owner answers (Allow asks for Face ID or the passcode on the alert's own button).
+enum ConnectionNotice {
+    @MainActor static func post(_ ask: AppModel.ConnectionAsk) {
+        let content = UNMutableNotificationContent()
+        content.title = String(localized: "Allow \(ask.client) to connect?")
+        content.body = String(localized: "A client Poki doesn’t know (\(ask.callback)) is signing in with \(ask.connector). Open Poki to allow or deny it.")
+        content.sound = .default
+        content.interruptionLevel = .timeSensitive
+        content.threadIdentifier = "connections"
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "connection-\(ask.id)", content: content, trigger: nil))
+    }
+
+    @MainActor static func clear(_ ask: AppModel.ConnectionAsk) {
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ["connection-\(ask.id)"])
+    }
+}

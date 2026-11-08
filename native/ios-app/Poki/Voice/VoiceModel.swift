@@ -193,7 +193,9 @@ enum VoicePhase: Equatable {
 final class VoiceModel {
     private(set) var bridge = VoiceBridge.saved
     private(set) var phase = VoicePhase.off
-    private(set) var lines: [VoiceLine] = []
+    private(set) var lines: [VoiceLine] = [] { didSet { saveTranscript() } }
+    /// The live conversation's row in the session list, and the lines that belong to it.
+    private var transcript: (id: String, started: Date, from: Int)?
     private(set) var calls: [VoiceCall] = []
     /// Model audio off: for silent test runs. Speech is still transcribed into `lines`.
     var muted = false { didSet { link?.setRemoteVolume(muted ? 0 : 1) } }
@@ -303,18 +305,31 @@ final class VoiceModel {
             let link = VoiceLink(onEvent: { [weak self] event in self?.handle(event, session: number) },
                                  onClosed: { [weak self] reason in self?.closed(reason, session: number) })
             self.link = link
+            transcript = ("voice-\(UUID().uuidString.prefix(8).lowercased())", Date(), lines.count)
             if microphone { holdingMicrophone = true }
             try await link.connect(secret: token.value, microphone: microphone)
             link.setRemoteVolume(muted ? 0 : 1)
             log.add("voice", "connected (\(token.model)), session \(number)")
             if microphone { link.diagnose { [log] line in log.add("voice", line) } }
         } catch {
+            transcript = nil
             link?.close()
             link = nil
             holdingMicrophone = false
             phase = .lost(error.localizedDescription)
             log.add("voice", "could not connect: \(error.localizedDescription)")
         }
+    }
+
+    private func saveTranscript() {
+        guard let transcript, lines.count >= transcript.from else { return }
+        SessionStore.shared.save(voice: transcript.id, started: transcript.started, lines: Array(lines[transcript.from...]), live: link != nil)
+    }
+
+    private func endTranscript() {
+        guard transcript != nil else { return }
+        saveTranscript()
+        transcript = nil
     }
 
     /// Ends the conversation. Calls already running keep running; the next session hears how they ended.
@@ -331,6 +346,7 @@ final class VoiceModel {
         activeResponse = nil
         wantsResponse = false
         phase = .off
+        endTranscript()
     }
 
     // MARK: Dictation
@@ -430,6 +446,7 @@ final class VoiceModel {
         wantsResponse = false
         phase = .lost("Connection lost")
         lines.append(VoiceLine(role: .note, text: "Connection lost (\(reason)). Nothing is sent again; reconnect to hear how running steps ended."))
+        endTranscript()
         log.add("voice", "connection lost: \(reason)")
     }
 

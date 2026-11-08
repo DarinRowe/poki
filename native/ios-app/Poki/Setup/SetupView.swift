@@ -612,11 +612,15 @@ private struct BackgroundPage: View {
                 Button("Open Settings", systemImage: "gear") { openSettings(model, for: .background) }
             } else if !model.background.allowed {
                 Button("Allow Location Access") { model.background.requestPermission() }
+            } else if !model.background.always {
+                Button("Change to Always Allow") { model.background.requestPermission() }
+                Button("Open Settings", systemImage: "gear") { openSettings(model, for: .background) }
             }
         } footer: {
-            Text(model.background.allowed ? "Poki stays active in the background and never records your location."
-                 : model.background.denied ? "Location Services is off for Poki, so iOS will suspend it shortly after you leave the app."
-                 : "iOS needs a background mode to keep apps running. Poki uses lowest-accuracy location and shows the location indicator while active.")
+            Text(model.background.always ? "Poki stays active in the background without the location indicator, and never records your location."
+                 : model.background.allowed ? "Poki keeps itself running with silent audio. Always Allow makes that sturdier, and iOS shows no location indicator for it. Poki never records your location."
+                 : model.background.denied ? "Location Services is off for Poki. It keeps itself running with silent audio, which iOS may stop during calls or other audio."
+                 : "iOS needs a background mode to keep apps running. Poki uses lowest-accuracy location with Always Allow, which shows no location indicator, and never records your location.")
         }
         Section {
             LabeledContent {
@@ -648,7 +652,8 @@ struct SetupChecklist: View {
     var body: some View {
         List {
             Section {
-                ForEach(SetupStep.shown) { step in
+                // The Apple Account is managed in Signing, below.
+                ForEach(SetupStep.shown.filter { $0 != .account }) { step in
                     NavigationLink(value: step) { SetupStepRow(step: step) }
                 }
             } footer: {

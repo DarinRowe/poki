@@ -108,6 +108,13 @@ final class AppCoreHost: CoreHost, @unchecked Sendable {
         return DeviceKey(key: key)
     }
     func accessHashes() -> [String] { lock.withLock { hashes } }
+    private var consent: (@Sendable (String, String, String) async -> Bool)?
+    /// The owner's OK for a client outside the relay's known list (AppModel.askToConnect).
+    func onConsent(_ action: @escaping @Sendable (String, String, String) async -> Bool) { lock.withLock { consent = action } }
+    func approveConnection(client: String, callback: String, connector: String) async -> Bool {
+        guard let ask = lock.withLock({ consent }) else { return false }
+        return await ask(client, callback, connector)
+    }
     /// PokiCore asks before every device tool. A paused runner is started here, so the call answers
     /// "starting" and the next one finds it running. A failed one is answered as it is, and the app
     /// is asked to try again for the next call.

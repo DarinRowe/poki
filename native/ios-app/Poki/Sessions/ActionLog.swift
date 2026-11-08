@@ -68,8 +68,13 @@ struct ActionLogView: View {
             ForEach(days, id: \.key) { day, entries in
                 Section(day.formatted(date: .complete, time: .omitted)) {
                     ForEach(entries) { entry in
-                        Button { if let id = entry.session { openSession(id) } } label: { row(entry) }
-                            .disabled(entry.session.flatMap { SessionStore.shared.session($0) } == nil)
+                        // A row whose run is gone is plain text, not a disabled button: iOS fades a disabled
+                        // button's whole label, which left most of the log close to invisible.
+                        if let id = entry.session, SessionStore.shared.session(id) != nil {
+                            Button { openSession(id) } label: { row(entry) }.foregroundStyle(Color(.label))
+                        } else {
+                            row(entry)
+                        }
                     }
                 }
             }
@@ -96,10 +101,10 @@ struct ActionLogView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(ActivityWords.label(entry.text)).foregroundStyle(Color(.label)).lineLimit(2)
                 Text([entry.app, entry.session.flatMap { SessionStore.shared.session($0)?.name }].compactMap { $0 }.joined(separator: " · "))
-                    .font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+                    .font(.footnote).foregroundStyle(Color(.secondaryLabel)).lineLimit(1)
             }
             Spacer(minLength: 4)
-            Text(entry.at, style: .time).font(.caption).monospacedDigit().foregroundStyle(.secondary)
+            Text(entry.at, style: .time).font(.footnote).monospacedDigit().foregroundStyle(Color(.secondaryLabel))
         }
     }
 }
