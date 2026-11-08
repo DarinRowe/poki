@@ -195,9 +195,11 @@ static BOOL SRABI(id target, SEL selector, const char *result, NSArray<NSString 
             SRFail(error, @"promise_api_unavailable"); return nil;
         }
     for (NSUInteger i = 0; i < 300 && ![promise promiseFulfilled]; i++) usleep(10000);
-    if (![promise promiseFulfilled]) { SRFail(error, @"session_timeout"); return nil; }
-    if ([promise error]) { if (error) *error = [promise error]; return nil; }
-    id session = [promise value];
+    // A shared session that is not there after 3 s (a busy testmanagerd) is not waited for further:
+    // a session of this process's own is opened instead, as after a close.
+    BOOL late = ![promise promiseFulfilled];
+    if (!late && [promise error]) { if (error) *error = [promise error]; return nil; }
+    id session = late ? nil : [promise value];
     [_lifecycleLock lock];
     // The session in use stays in use while it is current, whether it is XCTest's shared one or one
     // of this process's own; the shared promise is read only for the first session. After a close
@@ -207,7 +209,7 @@ static BOOL SRABI(id target, SEL selector, const char *result, NSArray<NSString 
     BOOL owned = getenv("POKI_INPROCESS_OWNED_SESSION") != NULL;
     BOOL closed;
     if (_observed && !_invalidated && _token) { session = _observed; closed = NO; }
-    else closed = (_observed != nil && _invalidated) || owned;
+    else closed = (_observed != nil && _invalidated) || owned || late || !session;
     [_lifecycleLock unlock];
     if (closed) {
         // The shared promise still holds the session that was closed: open one of this process's
@@ -220,7 +222,7 @@ static BOOL SRABI(id target, SEL selector, const char *result, NSArray<NSString 
         __block id opened; __block NSError *failure;
         dispatch_semaphore_t ready = dispatch_semaphore_create(0);
         [cls sessionWithConnection:connection completion:^(id s, NSError *e) { opened = s; failure = e; dispatch_semaphore_signal(ready); }];
-        if (dispatch_semaphore_wait(ready, dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC))) { SRFail(error, @"session_timeout"); return nil; }
+        if (dispatch_semaphore_wait(ready, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC))) { SRFail(error, @"session_timeout"); return nil; }
         if (!opened) { if (error) *error = failure ?: [NSError errorWithDomain:@"RecoveredNative" code:1 userInfo:@{NSLocalizedDescriptionKey: @"session_reopen_failed"}]; return nil; }
         session = opened;
     }
