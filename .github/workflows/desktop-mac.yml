@@ -50,9 +50,10 @@ jobs:
         run: |
           APP="$PWD/dist/Poki Setup.app/Contents/MacOS/PokiSetup"
           mkdir -p shots
-          POKI_SETUP_DEMO=1 POKI_SETUP_SNAPSHOT_DIR="$PWD/shots" perl -e 'alarm shift; exec @ARGV' 180 "$APP" || echo "demo run ended with $?"
-          POKI_SETUP_SNAPSHOT_DIR="$PWD/shots" perl -e 'alarm shift; exec @ARGV' 180 "$APP" || echo "live run ended with $?"
+          POKI_SETUP_DEMO=1 POKI_SETUP_SNAPSHOT_DIR="$PWD/shots" perl -e 'alarm shift; exec { $ARGV[0] } @ARGV' 180 "$APP" || echo "demo run ended with $?"
+          POKI_SETUP_SNAPSHOT_DIR="$PWD/shots" perl -e 'alarm shift; exec { $ARGV[0] } @ARGV' 180 "$APP" || echo "live run ended with $?"
           ls -la shots
+          test -n "$(ls shots)" || { echo 'no screenshots were saved'; exit 1; }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
