@@ -70,6 +70,8 @@ targets:
         # the relay connection and the launcher, running; silent audio is the fallback. Poki never reads
         # or sends the location itself.
         UIBackgroundModes: [location, audio]
+        # Documents/AgentBackup holds the agent's memory backup, which Poki Setup copies off and puts back.
+        UIFileSharingEnabled: true
         NSLocationWhenInUseUsageDescription: Poki keeps running in the background while it is on, so agents can reach this iPhone. Poki does not record or send your location.
         NSLocationAlwaysAndWhenInUseUsageDescription: Poki keeps running in the background while it is on, so agents can reach this iPhone. Poki does not record or send your location.
         CFBundleURLTypes:

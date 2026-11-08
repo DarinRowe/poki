@@ -68,6 +68,12 @@ final class Computer: @unchecked Sendable {
     /// app's tree under the new app's screen (gym: Photos launched from Safari).
     var pictureOnlyShare: Double?
 
+    /// The agent's memory, and this task's recorded steps (what routines {save} keeps).
+    var memory: RoutineStore?
+    var trace: [RecordedStep] = []
+    /// A routine ran whole in this task (the finish line does not offer to save it again).
+    var routineRanWhole = false
+
     var lastElements: [Element] { listed.map(\.element) }
     var layout: Layout { Layout(all: lastAll, screen: size ?? ScreenSize(width: 10_000, height: 10_000)) }
 
@@ -82,6 +88,7 @@ final class Computer: @unchecked Sendable {
         self.config = config
         self.humanize = Humanize(enabled: config.humanize ?? Humanize.envEnabled)
         self.approvals = approvals
+        self.memory = config.memory ?? RoutineStore.shared
     }
 
     // MARK: Reading and answering
@@ -391,9 +398,11 @@ final class Computer: @unchecked Sendable {
         let until = now() + config.toolDeadline
         if let blocked = await waitForRunner(until: until) { return blocked }
         let begins = beginsTask()
+        if begins { beginRecording() }
         async let locked = isLocked()
-        let result = restartNote(await readAndReply(until: until, full: full))
+        var result = restartNote(await readAndReply(until: until, full: full))
         if begins, let app = lastForeground { origin = (app, session, now()) } else { origin?.lastCall = now() }
+        if begins, let line = routinesLine() { result.text += "\n" + line }
         guard await locked else { return result }
         var lines = result.text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         lines.insert("screen: locked (the owner has to unlock the phone before anything can be done)", at: min(1, lines.count))
@@ -455,6 +464,8 @@ final class Computer: @unchecked Sendable {
     /// a wait for a busy runner): 9 s. A wait_until gets the time it asks for (up to 10 s) plus a read:
     /// 8000 ms asked became 6000 under the action cap (gym, an app relaunch under the wait).
     func actionCap(_ action: JSON) -> Double {
+        // A routine's steps each have their own time inside it; the run as a whole has the call's.
+        if action["run"] != nil { return max(config.actionCap, config.toolDeadline - config.readTimeout - 1) }
         if action["launch"] != nil { return max(config.actionCap, action["launch"]?["fresh"]?.bool == true ? 14 : 9) }
         if action["scroll_to"] != nil { return max(config.actionCap, Self.scrollCap) }
         if action["type"] != nil { return max(config.actionCap, 9) }
@@ -483,6 +494,7 @@ final class Computer: @unchecked Sendable {
         if let blocked = await waitForRunner(until: until) { return blocked }
         // The app the owner is in before anything is sent: the read before may be another task's.
         if beginsTask() {
+            beginRecording()
             if let front = try? await runner.call("GET", "/wda/activeAppInfo", timeout: 1.5), let bundle = front["bundleId"]?.string {
                 origin = (Foreground(bundleID: bundle, name: front["name"]?.string), session, now())
             }
@@ -658,6 +670,9 @@ final class Computer: @unchecked Sendable {
             let line = await returnToOrigin() ?? "finish: the app this task began in is not known, so the phone stays here"
             var lines = result.text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
             lines.insert(line, at: min(1, lines.count))
+            if trace.count >= 2, !routineRanWhole {
+                lines.append("learn: this task took \(trace.count) recorded steps; if it worked and may be asked for again, routines {action: \"save\", name, description} keeps them so do {run: name} repeats them in one call next time")
+            }
             result.text = lines.joined(separator: "\n")
         }
         return result
@@ -753,8 +768,10 @@ final class Computer: @unchecked Sendable {
             }
             let began = now()
             let givenUp = runner.actionsGivenUp.value
+            let recorded = recordable(action)
             do {
                 let (kind, text) = try await withDeadline(left, "action \(index + 1)") { [self] in try await perform(action, until: actionsUntil) }
+                if let recorded { trace.append(recorded) }
                 lastKind = kind
                 did.append("\(text) (sent, \(Int(((now() - began) * 1000).rounded())) ms)")
             } catch is CancellationError {

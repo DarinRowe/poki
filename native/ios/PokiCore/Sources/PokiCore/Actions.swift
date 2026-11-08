@@ -211,6 +211,9 @@ extension Computer {
 
     /// Returns the action's kind (for the settle pause) and what it did.
     func perform(_ action: JSON, until: Double) async throws -> (String, String) {
+        if let spec = action["run"] {
+            return ("run", try await runRoutine(spec, until: until))
+        }
         if let spec = action["tap"] {
             let p = try point(spec)
             try await tap(p, within: frame(of: spec))
