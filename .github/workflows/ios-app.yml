@@ -3,6 +3,13 @@ name: iOS app
 
 on:
   workflow_dispatch:
+  # channel-release.yml (Alpha, Pre-alpha) builds the app from the tagged commit with the release's version.
+  workflow_call:
+    inputs:
+      version: { type: string, required: true }
+      build: { type: string, required: true }
+      # Which connection options to build: external (the default, as for hand testing) and/or local.
+      editions: { type: string, required: false, default: external }
 
 permissions:
   contents: read
@@ -53,27 +60,36 @@ jobs:
         env:
           RELEASE_VERSION: ${{ inputs.version }}
           RELEASE_BUILD: ${{ inputs.build }}
+          POKI_EDITIONS: ${{ inputs.editions || 'external' }}
         run: |
           set -euo pipefail
           mkdir -p build out
           VERSION="${RELEASE_VERSION:-$(cat native/ios-app/VERSION)}"
           BUILD="${RELEASE_BUILD:-${{ github.run_number }}}"
           for edition in ${POKI_EDITIONS:-external}; do
-            project=Poki
-            ipa=Poki-unsigned.ipa
-            if [ "$edition" = external ]; then project=PokiExternal; ipa=Poki-external-unsigned.ipa; fi
-            xcodebuild build \
-              -project "native/ios-app/$project.xcodeproj" -scheme Poki -configuration Release \
-              -destination generic/platform=iOS -derivedDataPath "build/app-$edition" \
-              CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO ARCHS=arm64 \
-              MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$BUILD" \
-              2>&1 | tee "build/app-$edition.log" | grep -E "error:|BUILD (SUCCEEDED|FAILED)|\*\* "
-            native/ios-app/scripts/package-app.sh \
-              "build/app-$edition/Build/Products/Release-iphoneos/Poki.app" \
-              "$edition" "out/$ipa" "$VERSION" "$BUILD"
-            python3 native/ios-app/scripts/export-signing.py \
-              "build/app-$edition/Build/Products/Release-iphoneos/Poki.app" \
-              "$edition" "out/signing/$edition"
+            if ! (
+              # errexit does not apply inside an if condition, so each step is chained with &&.
+              set -uo pipefail
+              project=Poki
+              ipa=Poki-unsigned.ipa
+              if [ "$edition" = external ]; then project=PokiExternal; ipa=Poki-external-unsigned.ipa; fi
+              xcodebuild build \
+                -project "native/ios-app/$project.xcodeproj" -scheme Poki -configuration Release \
+                -destination generic/platform=iOS -derivedDataPath "build/app-$edition" \
+                CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO ARCHS=arm64 \
+                MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$BUILD" \
+                2>&1 | tee "build/app-$edition.log" | grep -E "error:|BUILD (SUCCEEDED|FAILED)|\*\* " &&
+              native/ios-app/scripts/package-app.sh \
+                "build/app-$edition/Build/Products/Release-iphoneos/Poki.app" \
+                "$edition" "out/$ipa" "$VERSION" "$BUILD" &&
+              python3 native/ios-app/scripts/export-signing.py \
+                "build/app-$edition/Build/Products/Release-iphoneos/Poki.app" \
+                "$edition" "out/signing/$edition"
+            ); then
+              # The external edition is the one Poki Setup installs; the local one is extra.
+              if [ "$edition" = external ]; then exit 1; fi
+              echo "::warning::the $edition edition did not build; continuing without it"; rm -f "out/Poki-unsigned.ipa"; rm -rf "out/signing/$edition"
+            fi
           done
           ditto -c -k --keepParent out/signing out/Poki-signing.zip
           (cd out && shasum -a 256 *.ipa | tee SHA256SUMS)
