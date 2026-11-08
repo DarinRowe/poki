@@ -101,6 +101,8 @@ enum VoiceError: LocalizedError {
     case realtime(Int, String)
     case noBridge
     case timeout(String)
+    /// The connection was set up but no network path to OpenAI opened (the ICE state at the end).
+    case noPath(String)
 
     var errorDescription: String? {
         switch self {
@@ -109,6 +111,7 @@ enum VoiceError: LocalizedError {
         case .realtime(let code, let reason): "OpenAI answered \(code): \(reason)"
         case .noBridge: "Set up Poki's model first (an OpenAI key talks fastest), or enter a voice bridge address from your Mac."
         case .timeout(let what): "\(what) took too long."
+        case .noPath: "The voice connection could not reach OpenAI over this network. Check Wi-Fi or cellular, or a VPN or proxy app that blocks calls, then try again."
         }
     }
 }
@@ -236,7 +239,11 @@ final class VoiceModel {
         didSet { if holdingMicrophone != oldValue { holdMicrophone(holdingMicrophone) } }
     }
 
-    var isOn: Bool { link != nil || dictation != nil }
+    /// On from the tap: while the key is exchanged and the connection opens (a second or two, longer
+    /// while AirPods switch to their microphone) the button and the bar already show it, and a second
+    /// tap ends it instead of starting another one.
+    var isOn: Bool { link != nil || dictation != nil || isConnecting }
+    private var isConnecting: Bool { if case .connecting = phase { return true }; return false }
 
     /// Voice can start: the OpenAI key on this iPhone (Realtime, no bridge), the Mac's voice bridge, or
     /// dictation into the chat with whichever model Poki uses.
@@ -288,7 +295,7 @@ final class VoiceModel {
     #endif
 
     func start(microphone: Bool = true) async {
-        guard link == nil, dictation == nil else { return }
+        guard link == nil, dictation == nil, !isConnecting else { return }
         // The OpenAI key on this iPhone first (no Mac needed), then the bridge, then dictation.
         let key = VoiceDirect.apiKey
         if key == nil, bridge == nil {
@@ -301,17 +308,37 @@ final class VoiceModel {
         do {
             let token: VoiceBridge.Token
             if let key { token = try await VoiceDirect.token(apiKey: key) } else { token = try await bridge!.token() }
+            // Ended (End, or the button again) while the key was exchanged.
+            guard number == session else { return }
             localTools = Set(token.local_tools)
-            let link = VoiceLink(onEvent: { [weak self] event in self?.handle(event, session: number) },
+            var link = VoiceLink(onEvent: { [weak self] event in self?.handle(event, session: number) },
                                  onClosed: { [weak self] reason in self?.closed(reason, session: number) })
             self.link = link
             transcript = ("voice-\(UUID().uuidString.prefix(8).lowercased())", Date(), lines.count)
             if microphone { holdingMicrophone = true }
-            try await link.connect(secret: token.value, microphone: microphone)
+            do {
+                try await link.connect(secret: token.value, microphone: microphone)
+            } catch VoiceError.noPath(let ice) {
+                // No path opened (ICE \(ice)): once more, off VPN interfaces (Poki's loopback, a proxy
+                // app) and with a fresh key, before telling the owner.
+                guard number == session else { return }
+                log.add("voice", "no network path opened (ICE \(ice)); trying again off VPN interfaces")
+                link.close()
+                let retry: VoiceBridge.Token
+                if let key { retry = try await VoiceDirect.token(apiKey: key) } else { retry = try await bridge!.token() }
+                guard number == session else { return }
+                link = VoiceLink(onEvent: { [weak self] event in self?.handle(event, session: number) },
+                                 onClosed: { [weak self] reason in self?.closed(reason, session: number) })
+                self.link = link
+                try await link.connect(secret: retry.value, microphone: microphone, direct: true)
+            }
+            guard number == session else { link.close(); return }
             link.setRemoteVolume(muted ? 0 : 1)
             log.add("voice", "connected (\(token.model)), session \(number)")
             if microphone { link.diagnose { [log] line in log.add("voice", line) } }
         } catch {
+            // Ended while connecting: stop() already put everything back.
+            guard number == session else { return }
             transcript = nil
             link?.close()
             link = nil
@@ -341,6 +368,8 @@ final class VoiceModel {
         }
         link?.close()
         link = nil
+        // A start still connecting sees this and stops where it is.
+        session += 1
         holdingMicrophone = false
         ready = false
         activeResponse = nil

@@ -503,6 +503,8 @@ struct ComposerInputView: View {
                             .foregroundStyle(voice.isOn ? AnyShapeStyle(Site.blue) : AnyShapeStyle(ChatColor.secondary))
                             .symbolEffect(.variableColor.iterative, isActive: voice.isOn)
                     }
+                    // A tap is felt at once, before the connection is up.
+                    .sensoryFeedback(.impact(weight: .medium), trigger: voice.isOn)
                     .accessibilityLabel(Text(voice.isOn ? "End Live Voice" : "Live Voice"))
                 }
             }

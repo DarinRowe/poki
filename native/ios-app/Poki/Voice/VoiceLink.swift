@@ -15,6 +15,17 @@ final class VoiceLink: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelega
         RTCAudioSessionConfiguration.setWebRTC(audio)
         return RTCPeerConnectionFactory()
     }()
+    /// The second try: the same, but WebRTC leaves VPN interfaces out. A loopback VPN or a proxy app
+    /// that drops UDP otherwise takes the voice packets, and the connection never opens.
+    private static let directFactory: RTCPeerConnectionFactory = {
+        _ = factory // the audio session configuration above, set once
+        let direct = RTCPeerConnectionFactory()
+        let options = RTCPeerConnectionFactoryOptions()
+        options.ignoreVPNNetworkAdapter = true
+        options.ignoreLoopbackNetworkAdapter = true
+        direct.setOptions(options)
+        return direct
+    }()
     #if DEBUG
     /// Test runs: WebRTC's own audio device would set up a voice-chat audio session, and iOS would ask
     /// for the microphone. This one never touches audio; the model's voice is received and dropped.
@@ -31,6 +42,8 @@ final class VoiceLink: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelega
     private var remoteAudio: RTCAudioTrack?
     private var volume = 1.0
     private var closing = false
+    /// Until the connection is open, a failure is connect's to report (it may try again), not a loss.
+    private var opened = false
 
     init(onEvent: @escaping @MainActor ([String: Any]) -> Void, onClosed: @escaping @MainActor (String) -> Void) {
         self.onEvent = onEvent
@@ -39,15 +52,20 @@ final class VoiceLink: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelega
 
     /// `microphone: false` (test runs) sends no audio track and needs no microphone permission; the
     /// model's voice still comes back.
-    func connect(secret: String, microphone: Bool = true) async throws {
+    /// `direct: true` keeps the connection off VPN interfaces (the retry after a try that never opened).
+    func connect(secret: String, microphone: Bool = true, direct: Bool = false) async throws {
         #if DEBUG
-        let factory = microphone ? Self.factory : Self.silentFactory
+        let factory = !microphone ? Self.silentFactory : direct ? Self.directFactory : Self.factory
         #else
-        let factory = Self.factory
+        let factory = direct ? Self.directFactory : Self.factory
         #endif
         let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
         let config = RTCConfiguration()
         config.sdpSemantics = .unifiedPlan
+        // A public address of our own as well, so the path opens behind NAT that host addresses alone
+        // do not get through.
+        config.iceServers = [RTCIceServer(urlStrings: ["stun:stun.l.google.com:19302", "stun:stun.cloudflare.com:3478"])]
+        config.continualGatheringPolicy = .gatherContinually
         guard let peer = factory.peerConnection(with: config, constraints: constraints, delegate: self) else { throw VoiceError.realtime(0, "WebRTC could not start") }
         self.peer = peer
         if microphone {
@@ -89,10 +107,24 @@ final class VoiceLink: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelega
         try await withCheckedThrowingContinuation { (done: CheckedContinuation<Void, Error>) in
             peer.setRemoteDescription(RTCSessionDescription(type: .answer, sdp: answer)) { error in if let error { done.resume(throwing: error) } else { done.resume() } }
         }
-        let deadline = Date().addingTimeInterval(10)
+        let deadline = Date().addingTimeInterval(12)
         while channel?.readyState != .open {
-            if Date() > deadline { throw VoiceError.timeout("Opening the voice connection") }
+            if Date() > deadline || peer.connectionState == .failed { throw VoiceError.noPath(Self.describe(peer.iceConnectionState)) }
             try await Task.sleep(for: .milliseconds(20))
+        }
+        lock.withLock { opened = true }
+    }
+
+    private static func describe(_ state: RTCIceConnectionState) -> String {
+        switch state {
+        case .new: "new"
+        case .checking: "checking"
+        case .connected: "connected"
+        case .completed: "completed"
+        case .failed: "failed"
+        case .disconnected: "disconnected"
+        case .closed: "closed"
+        default: "unknown"
         }
     }
 
@@ -147,7 +179,7 @@ final class VoiceLink: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelega
 
     private func lost(_ reason: String) {
         let first = lock.withLock { () -> Bool in
-            guard !closing else { return false }
+            guard !closing, opened else { return false }
             closing = true
             return true
         }
