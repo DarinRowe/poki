@@ -66,6 +66,8 @@ final class SessionStore {
     private var clients: [String: String] = [:]
     /// The session whose call is running, for approvals and hand-offs (they carry no session).
     private var currentSession: String?
+    /// The outside agent session whose call is running, if any.
+    var activeSessionID: String? { currentSession }
 
     private init() {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory())

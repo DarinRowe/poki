@@ -11,7 +11,8 @@ import Speech
 ///   audio, holding the button dictates on this iPhone (Apple's speech recognition, on the device when
 ///   it can) and lets go to send it to Poki's chat; Poki reads the answer out loud.
 enum VoiceDirect {
-    static let model = "gpt-realtime-2.1"
+    /// The live voice model the owner picked (Accounts › OpenAI › Live Voice), GPT Realtime 2.1 by default.
+    static var model: String { ModelCatalog.voiceModel }
 
     /// The OpenAI API key on this iPhone, when there is one.
     static var apiKey: String? { enabled ? ModelKeys.key(.openai) : nil }

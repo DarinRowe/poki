@@ -687,6 +687,10 @@ final class AppModel {
             log.add("agent", "\(failed ? "failed" : "done"): \(summary) · \(delivery.prefix(160))" + (error.map { " · \($0)" } ?? ""))
             if let app { currentApp = app }
             recentSteps.append(RecentStep(text: summary, app: app, failure: failed ? delivery : nil, at: Date()))
+            // The owner's own record of every action, with the run it came from.
+            let chat = AskPoki.chat
+            ActionLog.shared.add(summary, app: app, ok: !failed,
+                                 session: SessionStore.shared.activeSessionID ?? (chat?.running == true ? chat?.sessionID : nil))
             if recentSteps.count > 20 { recentSteps.removeFirst(recentSteps.count - 20) }
             activity.record(step: summary, ok: !failed)
             activity.update { state in state.app = app ?? state.app }

@@ -43,7 +43,31 @@ struct ChatView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button("New Conversation", systemImage: "square.and.pencil", action: chat.newConversation).disabled(chat.running)
-                    Button("Model: \(ModelKeys.selectedModelName)", systemImage: "cpu", action: openModel)
+                    Menu("Chat Model: \(ModelKeys.selectedModelName)", systemImage: "bubble.left.and.text.bubble.right") {
+                        ForEach(ModelProvider.allCases.filter { ModelAccounts.isSetUp($0) && ModelAccounts.canChat($0) }) { provider in
+                            Section(provider.name) {
+                                ForEach(ModelCatalog.available(provider)) { choice in
+                                    Button {
+                                        ModelKeys.selectedProvider = provider
+                                        ModelKeys.selectedModel = choice.id
+                                        ModelKeys.saved += 1
+                                    } label: {
+                                        if ModelKeys.selectedProvider == provider && ModelKeys.selectedModel == choice.id { Label(choice.name, systemImage: "checkmark") } else { Text(choice.name) }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if VoiceDirect.apiKey != nil {
+                        Menu("Voice Model: \(VoiceDirect.model)", systemImage: "waveform") {
+                            ForEach(ModelCatalog.voiceAvailable) { choice in
+                                Button { ModelCatalog.voiceModel = choice.id } label: {
+                                    if VoiceDirect.model == choice.id { Label(choice.name, systemImage: "checkmark") } else { Text(choice.name) }
+                                }
+                            }
+                        }
+                    }
+                    Button("Accounts", systemImage: "person.crop.circle", action: openModel)
                     Button("Status and Settings", systemImage: "gearshape", action: openDetails)
                 } label: { Image(systemName: "ellipsis.circle") }
                 .accessibilityLabel(Text("More"))

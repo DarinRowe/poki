@@ -8,14 +8,33 @@ import SwiftUI
 /// table the app's screens and the Live Activity both draw with.
 enum Site {
     static let blue = Color(hex: 0x0077FD)
-    /// Blue text on white: the text of a white capsule button.
-    static let ink = Color(hex: 0x0060D8)
-    /// Blue text on black: the Dynamic Island.
     static let sky = Color(hex: 0x5AA7FF)
-    static let ok = Color(hex: 0x5BE37A)
-    static let bad = Color(hex: 0xFF5F57)
     /// The page in dark mode (the docs site's blue); the boards draw light mode only.
     static let night = Color(hex: 0x0A2F6B)
+    #if POKI_APP
+    // The app's screens use the system's own colours, light and dark (grouped backgrounds, labels,
+    // separators); only the Live Activity keeps the website's palette below.
+    static let ink = Color.accentColor
+    static let ok = Color(.systemGreen)
+    static let bad = Color(.systemRed)
+    static let c3 = Color(.secondaryLabel)
+    static let c4 = Color(.secondaryLabel)
+    static let glass = Color(.secondarySystemGroupedBackground)
+    static let glass2 = Color(.tertiarySystemGroupedBackground)
+    static let edge = Color(.separator)
+    static let edgeTop = Color(.separator)
+    static let text = Color(.label)
+    static let text2 = Color(.secondaryLabel)
+    static let text3 = Color(.tertiaryLabel)
+    static let hair = Color(.separator)
+    static let tint = Color(.systemFill)
+    static let okInk = Color(.systemGreen)
+    static let danger = Color(.systemRed)
+    #else
+    /// Blue text on white: the text of a white capsule button.
+    static let ink = Color(hex: 0x0060D8)
+    static let ok = Color(hex: 0x5BE37A)
+    static let bad = Color(hex: 0xFF5F57)
     /// White text on blue, second and third level (--site-c3, --site-c4).
     static let c3 = Color.white.opacity(0.84)
     static let c4 = Color.white.opacity(0.72)
@@ -34,6 +53,7 @@ enum Site {
     /// Green and red text on white.
     static let okInk = Color(hex: 0x12A150)
     static let danger = Color(hex: 0xD93A32)
+    #endif
 }
 
 /// What a piece of the Live Activity is coloured by. Each face picks one; the surface's palette says

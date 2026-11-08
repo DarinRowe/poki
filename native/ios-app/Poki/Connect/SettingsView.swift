@@ -18,16 +18,9 @@ struct SettingsView: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            SettingsHome(path: $path, openSetup: openSetup, done: { dismiss() })
+            SettingsHome(push: { path.append($0) }, openSetup: openSetup, done: { dismiss() })
                 .navigationDestination(for: SettingsRoute.self) { route in
-                    switch route {
-                    case .connector(let secret): ConnectorDetail(secret: secret, back: { path.removeLast() })
-                    case .relay: RelayView(back: { path.removeLast() })
-                    case .diagnostics: DiagnosticsView(path: $path)
-                    case .log: LogView(back: { path.removeLast() })
-                    case .memory: MemoryView(back: { path.removeLast() })
-                    case .activityPreview: ActivityPreview()
-                    }
+                    SettingsDestination(route: route, push: { path.append($0) }, pop: { if !path.isEmpty { path.removeLast() } })
                 }
         }
         .presentationDragIndicator(.visible)
@@ -38,11 +31,32 @@ enum SettingsRoute: Hashable {
     case connector(ConnectorSecret), relay, diagnostics, log, activityPreview, memory
 }
 
-private struct SettingsHome: View {
+/// The page for a settings route, in whichever navigation stack pushed it.
+struct SettingsDestination: View {
+    var route: SettingsRoute
+    var push: (SettingsRoute) -> Void
+    var pop: () -> Void
+    var body: some View {
+        switch route {
+        case .connector(let secret): ConnectorDetail(secret: secret, back: pop)
+        case .relay: RelayView(back: pop)
+        // Diagnostics pushes its own pages (Log, Live Activity Preview) and pops itself.
+        case .diagnostics: DiagnosticsView(path: Binding(get: { [.diagnostics] }, set: { new in
+            if new.count > 1, let last = new.last { push(last) } else if new.isEmpty { pop() }
+        }))
+        case .log: LogView(back: pop)
+        case .memory: MemoryView(back: pop)
+        case .activityPreview: ActivityPreview()
+        }
+    }
+}
+
+/// Agents and Relay: this iPhone, the agents' MCP addresses, the runner and this iPhone's setup.
+struct SettingsHome: View {
     @Environment(AppModel.self) private var model
-    @Binding var path: [SettingsRoute]
+    var push: (SettingsRoute) -> Void
     var openSetup: () -> Void
-    var done: () -> Void
+    var done: (() -> Void)? = nil
     @State private var newName = ""
 
     var body: some View {
@@ -117,16 +131,12 @@ private struct SettingsHome: View {
                             .foregroundStyle(model.relayAddress == nil ? Color.red : Color.secondary)
                     }
                 }
-                NavigationLink(value: SettingsRoute.memory) {
-                    LabeledContent("Memory", value: String(localized: "\(RoutineStore.shared.routines.count) routines"))
-                }
                 Button(action: openSetup) {
                     LabeledContent("Setup") {
                         Text("\(done) of \(total)").foregroundStyle(done == total ? Color.green : Color.secondary)
                     }
                 }
                 .foregroundStyle(Color(.label))
-                NavigationLink("Diagnostics", value: SettingsRoute.diagnostics)
             } header: {
                 Text("This iPhone")
             } footer: {
@@ -135,10 +145,10 @@ private struct SettingsHome: View {
                      : "Memory holds the routines and notes every agent shares. Diagnostics: logs, checks, background hold, addresses, and Live Activity preview.")
             }
         }
-        .navigationTitle("Settings")
+        .navigationTitle("Agents and Relay")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .confirmationAction) { Button("Done", action: done) }
+            if let done { ToolbarItem(placement: .confirmationAction) { Button("Done", action: done) } }
         }
     }
 
@@ -147,7 +157,7 @@ private struct SettingsHome: View {
         guard model.relayAddress != nil, !name.isEmpty else { return }
         let secret = model.addConnector(name: name)
         newName = ""
-        path.append(.connector(secret))
+        push(.connector(secret))
     }
 
     static let idleChoices: [(Int, LocalizedStringKey)] = [
@@ -193,7 +203,7 @@ private struct SettingsHome: View {
 
 /// The person's own relay. There is no default: until it is set, Poki sends nothing anywhere. The
 /// board does not draw this page; it is Settings' white card and footnote style.
-private struct RelayView: View {
+struct RelayView: View {
     @Environment(AppModel.self) private var model
     var back: () -> Void
     @State private var text = ""
@@ -243,7 +253,7 @@ private struct RelayView: View {
 }
 
 /// One agent's MCP address: a QR code, the address with its secret hidden, Copy, and Revoke.
-private struct ConnectorDetail: View {
+struct ConnectorDetail: View {
     @Environment(AppModel.self) private var model
     var secret: ConnectorSecret
     var back: () -> Void

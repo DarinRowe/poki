@@ -21,9 +21,24 @@ enum Geist: String {
 extension View {
     /// Geist at a size and line height from the boards, with letter spacing in em.
     func site(_ size: CGFloat, _ weight: Geist = .regular, line: CGFloat? = nil, tracking em: CGFloat = 0) -> some View {
-        font(weight.font(size))
-            .lineSpacing(line.map { weight.spacing(size, lineHeight: $0) } ?? 0)
-            .tracking(size * em)
+        font(Self.systemFont(size, weight))
+    }
+
+    /// The system text style nearest to a board size, so Dynamic Type and the system font apply.
+    static func systemFont(_ size: CGFloat, _ weight: Geist) -> Font {
+        let style: Font = switch size {
+        case 26...: .title.bold()
+        case 20..<26: .title3
+        case 16.5..<20: .body
+        case 14.5..<16.5: .subheadline
+        case 12.5..<14.5: .footnote
+        default: .caption
+        }
+        switch weight {
+        case .regular: return style
+        case .medium: return style.weight(.medium)
+        case .semibold, .bold, .heavy: return style.weight(.semibold)
+        }
     }
 
     /// SF Mono, for addresses, codes and countdowns.
@@ -32,18 +47,14 @@ extension View {
     }
 
     /// A glass card on the blue page: white 8 %, a 1 pt white edge that is brighter along the top.
-    func glassCard(_ radius: CGFloat = 16, fill: Color = Site.glass) -> some View {
-        background(fill, in: .rect(cornerRadius: radius, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .strokeBorder(LinearGradient(stops: [.init(color: Site.edgeTop, location: 0), .init(color: Site.edge, location: 0.08)],
-                                                 startPoint: .top, endPoint: .bottom), lineWidth: 1)
-                    .allowsHitTesting(false))
+    /// A grouped section's card, as an inset grouped list draws it.
+    func glassCard(_ radius: CGFloat = 10, fill: Color = Site.glass) -> some View {
+        background(fill, in: .rect(cornerRadius: 10, style: .continuous))
     }
 
-    /// A white card on the blue page, for lists.
-    func whiteCard(_ radius: CGFloat = 16) -> some View {
-        background(Color.white, in: .rect(cornerRadius: radius, style: .continuous))
+    /// The same card, for lists.
+    func whiteCard(_ radius: CGFloat = 10) -> some View {
+        background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 10, style: .continuous))
     }
 }
 
@@ -54,11 +65,10 @@ struct SitePage<Content: View>: View {
     @ViewBuilder var content: Content
     var body: some View {
         ZStack {
-            Site.page(scheme).ignoresSafeArea()
+            Color(.systemGroupedBackground).ignoresSafeArea()
             content
         }
-        .foregroundStyle(.white)
-        .tint(.white)
+        .foregroundStyle(Color(.label))
     }
 }
 
@@ -131,12 +141,10 @@ struct CapsuleButton: View {
     var action: () -> Void
     var body: some View {
         Button(action: action) {
-            Text(title).site(17, .semibold, line: 22)
-                .foregroundStyle(enabled ? Site.ink : Site.c4)
-                .frame(maxWidth: .infinity).frame(height: height)
-                .background(enabled ? Color.white : Site.glass2, in: .capsule)
+            Text(title).font(.body.weight(.semibold)).frame(maxWidth: .infinity).frame(minHeight: 34)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.borderedProminent)
+        .controlSize(.large)
         .disabled(!enabled)
     }
 }
@@ -144,24 +152,7 @@ struct CapsuleButton: View {
 /// The boards' switch: on is a white track with a blue knob; off is a glass track with a white knob.
 struct SiteToggleStyle: ToggleStyle {
     func makeBody(configuration: Configuration) -> some View {
-        Button { withAnimation(.snappy(duration: 0.2)) { configuration.isOn.toggle() } } label: {
-            HStack(spacing: 12) {
-                configuration.label
-                ZStack(alignment: configuration.isOn ? .trailing : .leading) {
-                    if configuration.isOn {
-                        Capsule().fill(.white)
-                        Circle().fill(Site.blue).frame(width: 21, height: 21).padding(5)
-                    } else {
-                        Capsule().fill(Site.glass).overlay(Capsule().strokeBorder(Site.edge, lineWidth: 1))
-                        Circle().fill(.white).frame(width: 27, height: 27).padding(2)
-                    }
-                }
-                .frame(width: 51, height: 31)
-            }
-            .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .accessibilityValue(configuration.isOn ? Text("On") : Text("Off"))
+        Toggle(configuration).toggleStyle(.switch)
     }
 }
 
@@ -200,7 +191,7 @@ struct SheetHeader: View {
             }
             .frame(width: sideWidth, alignment: .trailing)
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(Color(.label))
         .frame(height: 52)
         .padding(.horizontal, 20)
     }
@@ -209,8 +200,7 @@ struct SheetHeader: View {
 /// The white grabber at the top of a sheet.
 struct Grabber: View {
     var body: some View {
-        Capsule().fill(.white).frame(width: 36, height: 5).padding(.top, 6).frame(maxWidth: .infinity)
-            .accessibilityHidden(true)
+        Color.clear.frame(height: 0).accessibilityHidden(true)
     }
 }
 
@@ -233,7 +223,7 @@ struct NumberedLines: View {
                         .foregroundStyle(onWhite ? Site.text3 : Site.c4)
                         .frame(width: onWhite ? 14 : 18, alignment: .trailing)
                     Text(LocalizedStringKey(line)).site(onWhite ? 14 : 15, line: onWhite ? 19 : 21)
-                        .foregroundStyle(onWhite ? Site.text2 : .white)
+                        .foregroundStyle(onWhite ? Site.text2 : Color(.label))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .fixedSize(horizontal: false, vertical: true)
                 }

@@ -12,11 +12,12 @@ struct PokiDetailsView: View {
     @Environment(\.dismiss) private var dismiss
     var openVoice: () -> Void
     var openSetup: () -> Void
-    var start: [DetailsRoute] = []
-    /// Shown as the Status tab: no Done button, a large title instead.
-    var inTab = false
-    @State private var path: [DetailsRoute] = []
-    @State private var sheet: DetailsSheet?
+    /// Opens a run in Chats (from the Activity Log).
+    var openSession: (String) -> Void = { _ in }
+    /// The Poki tab's pages: Accounts, History, Voice, Agents and the rest are pushed here, never shown
+    /// as overlays; Chats opens them by setting this path.
+    @Binding var path: NavigationPath
+    var inTab = true
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -28,7 +29,7 @@ struct PokiDetailsView: View {
                     HealthRow(title: "Relay", health: Health.relay(model))
                     if model.automationPath == .runner { HealthRow(title: "Runner", health: Health.runner(model)) }
                     if model.recentSteps.last != nil {
-                        NavigationLink(value: DetailsRoute.history) { LabeledContent("Last Run", value: lastRun) }
+                        NavigationLink(value: DetailsRoute.history) { LabeledContent("Last Action", value: lastRun) }
                     }
                     if model.sessionOn && !model.runnerPaused || chat.running {
                         Button("Pause", systemImage: "pause.fill") { chat.stop(); model.pauseRunner() }
@@ -36,7 +37,7 @@ struct PokiDetailsView: View {
                         Button("Resume", systemImage: "play.fill") { model.wakeRunner() }
                     }
                     ForEach(issues) { issue in
-                        IssueRow(issue: issue, openSetup: { if !inTab { dismiss() }; openSetup() })
+                        IssueRow(issue: issue, openSetup: openSetup)
                     }
                 } header: {
                     Text("Status")
@@ -53,36 +54,38 @@ struct PokiDetailsView: View {
                         }
                     }
                     .id(ModelKeys.saved)
-                    Button { if !inTab { dismiss() }; openVoice() } label: { Label("Start Live Voice", systemImage: "waveform") }
-                    Button { sheet = .voice } label: { Label("Voice and Speech", systemImage: "speaker.wave.2") }
-                    NavigationLink(value: DetailsRoute.history) { Label("History", systemImage: "clock") }
+                    NavigationLink(value: DetailsRoute.voice) { Label("Voice", systemImage: "waveform") }
+                    NavigationLink(value: DetailsRoute.history) { Label("Activity Log", systemImage: "list.bullet.rectangle") }
                 }
 
                 Section {
+                    NavigationLink(value: DetailsRoute.settings) { Label("Agents and Relay", systemImage: "point.3.connected.trianglepath.dotted") }
+                    NavigationLink(value: SettingsRoute.memory) { Label("Memory", systemImage: "brain") }
+                    NavigationLink(value: DetailsRoute.setup) {
+                        LabeledContent {
+                            Text(model.setupComplete ? String(localized: "Done") : String(localized: "\(SetupStep.shown.filter { !model.isDone($0) }.count) Needed"))
+                                .foregroundStyle(model.setupComplete ? Color.secondary : Color.orange)
+                        } label: { Label("Setup", systemImage: "checklist") }
+                    }
                     Button { openNotificationSettings() } label: { Label("Notifications", systemImage: "bell.badge") }
-                    Button { sheet = .settings([]) } label: { Label("Settings", systemImage: "gear") }
-                    Button { if !inTab { dismiss() }; openSetup() } label: { Label("Setup", systemImage: "checklist") }
+                    NavigationLink(value: SettingsRoute.diagnostics) { Label("Diagnostics", systemImage: "stethoscope") }
                 }
             }
             .listStyle(.insetGrouped)
             .navigationTitle(Text(verbatim: "Poki"))
-            .navigationBarTitleDisplayMode(inTab ? .large : .inline)
-            .toolbar {
-                if !inTab { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
-            }
+            .navigationBarTitleDisplayMode(.large)
             .navigationDestination(for: DetailsRoute.self) { route in
                 switch route {
-                case .model: ModelSettingsView(openAgents: { sheet = .settings([]) })
-                case .history: AllStepsView()
+                case .model: ModelSettingsView()
+                case .history: ActionLogView(openSession: openSession)
+                case .voice: VoiceView(embedded: true)
+                case .settings: SettingsHome(push: { path.append($0) }, openSetup: openSetup)
+                case .setup: SetupChecklist()
                 }
             }
-        }
-        .onAppear { if path.isEmpty, !start.isEmpty { path = start } }
-        .sheet(item: $sheet) { which in
-            switch which {
-            case .voice: VoiceView()
-            case .settings(let start):
-                SettingsView(start: start, openSetup: { sheet = nil; if !inTab { dismiss() }; Task { try? await Task.sleep(for: .milliseconds(450)); openSetup() } })
+            .navigationDestination(for: SetupStep.self) { SetupStepPage(step: $0) }
+            .navigationDestination(for: SettingsRoute.self) { route in
+                SettingsDestination(route: route, push: { path.append($0) }, pop: { if !path.isEmpty { path.removeLast() } })
             }
         }
     }
@@ -101,12 +104,7 @@ struct PokiDetailsView: View {
     }
 }
 
-enum DetailsRoute: Hashable { case model, history }
-
-private enum DetailsSheet: Identifiable {
-    case voice, settings([SettingsRoute])
-    var id: String { switch self { case .voice: "voice"; case .settings: "settings" } }
-}
+enum DetailsRoute: Hashable { case model, history, voice, settings, setup }
 
 // MARK: Rows
 

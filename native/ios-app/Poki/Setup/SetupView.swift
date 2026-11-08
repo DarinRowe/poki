@@ -233,7 +233,7 @@ private struct OpenSettingsRow: View {
 /// A row of plain text actions inside a glass card: "Import Pairing File ›", "Cancel Pairing".
 private struct GlassActionRow: View {
     var title: LocalizedStringKey
-    var color: Color = .white
+    var color: Color = Site.text
     var chevron = false
     var divider = true
     var action: () -> Void
@@ -262,7 +262,7 @@ private struct SectionCaption: View {
 /// An icon and a sentence on the blue: a problem, a state.
 private struct NoteLine: View {
     var symbol: String
-    var color: Color = .white
+    var color: Color = Site.text
     var text: String
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -284,9 +284,9 @@ private struct LoopbackPage: View {
     var body: some View {
         let monitor = model.loopback
         HStack(spacing: 12) {
-            Circle().fill(monitor.isWorking ? Site.ok : monitor.state == .checking || monitor.state == .off ? Color.white : Site.bad)
+            Circle().fill(monitor.isWorking ? Site.ok : monitor.state == .checking || monitor.state == .off ? Site.text3 : Site.bad)
                 .frame(width: 10, height: 10)
-                .background(Circle().fill(Color.white.opacity(0.22)).padding(-5))
+                .background(Circle().fill(Site.tint).padding(-5))
                 .padding(5)
             VStack(alignment: .leading, spacing: 1) {
                 Text(headline(monitor)).site(15, .semibold, line: 18)
@@ -392,7 +392,7 @@ private struct LoopbackPage: View {
             .overlay(alignment: .bottom) { Site.edge.frame(height: 1) }
             switch model.tunnel.state {
             case .connecting:
-                GlassActionRow(title: "Cancel Connection", color: Color(hex: 0xFFC9C5), divider: false) { model.tunnel.disconnect() }
+                GlassActionRow(title: "Cancel Connection", color: Site.danger, divider: false) { model.tunnel.disconnect() }
                     .disabled(connectionLocked)
             case .connected:
                 GlassActionRow(title: "Disconnect Local Connection", divider: false) { model.tunnel.disconnect() }
@@ -562,7 +562,7 @@ private struct PairingPage: View {
                 .padding(.horizontal, 20).padding(.top, 24)
                 VStack(spacing: 0) {
                     OpenSettingsRow(step: .pairing)
-                    GlassActionRow(title: "Cancel Pairing", color: Color(hex: 0xFFC9C5), divider: false) { model.cancelPairing() }
+                    GlassActionRow(title: "Cancel Pairing", color: Site.danger, divider: false) { model.cancelPairing() }
                 }
                 .glassCard().padding(.horizontal, 20).padding(.top, 16)
             case .failed(let why)?:
@@ -596,7 +596,7 @@ private struct PairingPage: View {
         }
         if let note = model.pairingNote {
             NoteLine(symbol: note.hasPrefix(String(localized: "Pairing file received.")) ? "checkmark.circle.fill" : "info.circle",
-                     color: note.hasPrefix(String(localized: "Pairing file received.")) ? Site.ok : .white, text: note)
+                     color: note.hasPrefix(String(localized: "Pairing file received.")) ? Site.ok : Site.text, text: note)
                 .padding(.horizontal, 36).padding(.top, 10)
         }
         diskImage.padding(.horizontal, 20).padding(.top, 14)
@@ -607,7 +607,7 @@ private struct PairingPage: View {
                 GlassActionRow(title: "Pair Again", divider: cancelShown) { Self.pair(model) }
             }
             if cancelShown {
-                GlassActionRow(title: "Cancel Pairing", color: Color(hex: 0xFFC9C5), divider: false) { model.cancelPairing() }
+                GlassActionRow(title: "Cancel Pairing", color: Site.danger, divider: false) { model.cancelPairing() }
             }
         }
         .glassCard().padding(.horizontal, 20)
@@ -616,7 +616,7 @@ private struct PairingPage: View {
             catch { importError = String(localized: "Invalid Pairing File: \(error.localizedDescription)") }
         }
         if let importError {
-            Text(importError).site(13, line: 18).foregroundStyle(Color(hex: 0xFFC9C5))
+            Text(importError).site(13, line: 18).foregroundStyle(Site.danger)
                 .padding(.horizontal, 36).padding(.top, 8)
         }
     }
@@ -693,7 +693,7 @@ private struct BackgroundPage: View {
     var body: some View {
         VStack(spacing: 12) {
             card(symbol: model.background.allowed ? "checkmark.circle.fill" : model.background.denied ? "exclamationmark.triangle" : "location",
-                 color: model.background.allowed ? Site.ok : .white,
+                 color: model.background.allowed ? Site.ok : Site.text,
                  title: "Location",
                  text: model.background.allowed ? "Location allowed. Poki stays active in the background and never records your location."
                      : model.background.denied ? "Location Services is off for Poki, so iOS will suspend it shortly after you leave the app."
@@ -701,7 +701,7 @@ private struct BackgroundPage: View {
                  action: model.background.allowed ? nil : model.background.denied ? ("Open Settings", { openSettings(model, for: .background) })
                      : ("Allow Location Access", { model.background.requestPermission() }))
             card(symbol: model.activitiesEnabled ? "checkmark.circle.fill" : "exclamationmark.triangle",
-                 color: model.activitiesEnabled ? Site.ok : .white,
+                 color: model.activitiesEnabled ? Site.ok : Site.text,
                  title: model.activitiesEnabled ? "Live Activities are on" : "Live Activities are off",
                  text: model.activitiesEnabled ? "Poki shows steps, pairing codes, and approvals on the Lock Screen."
                      : "Live Activities are off for Poki. Turn them on to view agent steps and approve sensitive actions.",
@@ -734,5 +734,135 @@ private struct BackgroundPage: View {
             }
         }
         .glassCard()
+    }
+}
+
+// MARK: Checklist
+
+/// Setup as one checklist: everything Poki needs to run on this iPhone, each with a tick or what is
+/// wrong, and a tap opens its fix. It is on the Chats page (the steps still open) and in the Poki tab.
+struct SetupChecklist: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        List {
+            Section {
+                ForEach(SetupStep.shown) { step in
+                    NavigationLink(value: step) { SetupStepRow(step: step) }
+                }
+            } footer: {
+                Text(model.setupComplete ? "Everything Poki needs is in place." : "Poki needs every item ticked before an agent or the chat can use this iPhone. Items tick themselves when the phone can check them.")
+            }
+        }
+        .listStyle(.insetGrouped)
+        .navigationTitle("Setup")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear { model.loopback.resume() }
+    }
+}
+
+/// One item: its symbol, its name, and Done or what is wrong.
+struct SetupStepRow: View {
+    @Environment(AppModel.self) private var model
+    var step: SetupStep
+
+    var body: some View {
+        let done = model.isDone(step)
+        LabeledContent {
+            if done {
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green).accessibilityLabel(Text("Done"))
+            } else {
+                Text(problem).foregroundStyle(.orange)
+            }
+        } label: {
+            Label(step.pageTitle, systemImage: step.symbol)
+        }
+    }
+
+    private var problem: String {
+        switch step {
+        case .loopback:
+            if model.loopback.state == .noAnswer { return String(localized: "No Answer") }
+            return model.setup.loopback == .none ? String(localized: "Needed") : String(localized: "Off")
+        case .pairing:
+            if model.pairingTrouble != nil { return String(localized: "Pair Again") }
+            if model.pairingPath != nil, !model.diskImage.isReady { return String(localized: "Downloading") }
+            return String(localized: "Needed")
+        default: return String(localized: "Needed")
+        }
+    }
+}
+
+/// One item's page: what it is for, how to do it, and its check or switch.
+struct SetupStepPage: View {
+    @Environment(AppModel.self) private var model
+    var step: SetupStep
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 8) {
+                    Image(systemName: model.isDone(step) ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                        .foregroundStyle(model.isDone(step) ? Color.green : Color.orange)
+                    Text(model.isDone(step) ? "Done" : "Needed").font(.subheadline.weight(.semibold))
+                }
+                .padding(.horizontal, 20).padding(.top, 12)
+                Text(step.pageSummary).font(.subheadline).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 20).padding(.top, 6)
+                content
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.bottom, 24)
+        }
+        .background(Color(.systemGroupedBackground))
+        .navigationTitle(Text(step.pageTitle))
+        .navigationBarTitleDisplayMode(.inline)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if step == .pairing, let action = PairingPage.mainAction(model) {
+                CapsuleButton(title: action.title) { action.run(model) }
+                    .padding(.horizontal, 20).padding(.vertical, 8)
+                    .background(.bar)
+            }
+        }
+        .onAppear {
+            model.loopback.resume()
+            if step == .loopback, model.setup.loopback == .builtIn, model.tunnel.available, !model.tunnel.connected, !model.tunnel.busy, !model.connectionInUse {
+                Task { try? await model.tunnel.connect(); model.loopback.check() }
+            }
+        }
+        .onDisappear { if step == .pairing { model.leftPairing() } }
+    }
+
+    private func binding(_ key: WritableKeyPath<SetupState, Bool>) -> Binding<Bool> {
+        Binding(get: { model.setup[keyPath: key] }, set: { model.setup[keyPath: key] = $0 })
+    }
+
+    @ViewBuilder private var content: some View {
+        switch step {
+        case .runner:
+            InstructionsCard(lines: [
+                "Install **Poki Runner** (poki-runner-unsigned.ipa) with the same tool and Apple ID you used for Poki.",
+                "Open **Settings › General › VPN & Device Management**, tap your Apple ID, then tap **Trust**.",
+                "Don’t open Poki Runner yourself. Poki starts it when an agent needs this iPhone.",
+            ])
+            ConfirmCard(step: .runner, title: "Poki Runner is installed and trusted", isOn: binding(\.runnerInstalled))
+        case .developerMode:
+            InstructionsCard(lines: [
+                SetupStep.inProcess ? "Open **Settings › Privacy & Security › Developer Mode**." : "Open **Settings › Privacy & Security › Developer Mode**. It appears once Poki Runner is installed.",
+                "Turn on Developer Mode, then tap **Restart**.",
+                "After restarting, unlock this iPhone and tap **Turn On**.",
+            ])
+            ConfirmCard(step: .developerMode, title: "Developer Mode is on", isOn: binding(\.developerMode))
+        case .loopback: LoopbackPage()
+        case .pairing: PairingPage()
+        case .automation:
+            InstructionsCard(lines: [
+                "Open **Settings › Developer**. It appears once Developer Mode is on.",
+                "Turn on **Enable UI Automation**.",
+            ])
+            ConfirmCard(step: .automation, title: "UI Automation is on", isOn: binding(\.uiAutomation))
+        case .background: BackgroundPage()
+        }
     }
 }

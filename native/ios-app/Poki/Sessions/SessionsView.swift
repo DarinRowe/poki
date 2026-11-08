@@ -44,17 +44,9 @@ struct SessionsView: View {
                     }
                 }
                 .foregroundStyle(Color(.label))
-                if needsSetup {
-                    Button(action: openSetup) {
-                        Label {
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(model.pairingPath != nil ? "Finish Setting Up" : "Set Up This iPhone")
-                                Text(model.pairingPath != nil ? "One step is left before Poki can use this iPhone." : "About 5 minutes, once.")
-                                    .font(.footnote).foregroundStyle(.secondary)
-                            }
-                        } icon: { Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.orange) }
-                    }
-                    .foregroundStyle(Color(.label))
+                // Every setup item still open, each straight to its fix.
+                ForEach(SetupStep.shown.filter { !model.isDone($0) }) { step in
+                    NavigationLink(value: step) { SetupStepRow(step: step) }
                 }
                 if !ModelKeys.hasUsableKey {
                     Button(action: openModel) {

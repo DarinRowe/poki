@@ -112,6 +112,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(POKI_BUNDLE_ID)
+        # The app draws with the system's colours; the Live Activity keeps the website's blue (Site).
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) POKI_APP
         # PokiLauncher: the Rust static library from native/launcher, built for aarch64-apple-ios
         # before this project (see .github/workflows/ios-app.yml).
         SWIFT_OBJC_BRIDGING_HEADER: Poki/Runtime/Poki-Bridging-Header.h

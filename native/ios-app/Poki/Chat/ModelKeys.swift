@@ -145,10 +145,13 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
         if let model = getModel(provider: piProvider, modelId: id) { return model }
         // PiSwift's catalog (pi-mono, October 2026) lacks gpt-6.1-terra, which pi-ai 1.5.0 lists with the
         // same API and inputs as gpt-6.1-sol.
-        guard self == .openai || self == .chatgpt, id == "gpt-6.1-terra", let sol = getModel(provider: piProvider, modelId: "gpt-6.1-sol"),
-              var json = (try? JSONSerialization.jsonObject(with: JSONEncoder().encode(sol))) as? [String: Any] else { return nil }
+        // A model from the provider's own list that pi's catalog lacks takes the shape of a built-in one of
+        // the same provider (same API and inputs), with its own id.
+        let template = (self == .openai || self == .chatgpt) && id == "gpt-6.1-terra" ? "gpt-6.1-sol" : models.lazy.compactMap { getModel(provider: piProvider, modelId: $0.id) }.first?.id
+        guard let template, let base = getModel(provider: piProvider, modelId: template),
+              var json = (try? JSONSerialization.jsonObject(with: JSONEncoder().encode(base))) as? [String: Any] else { return nil }
         json["id"] = id
-        json["name"] = "GPT-6.1 Terra"
+        json["name"] = id == "gpt-6.1-terra" ? "GPT-6.1 Terra" : id
         return (try? JSONSerialization.data(withJSONObject: json)).flatMap { try? JSONDecoder().decode(Model.self, from: $0) }
     }
 }
@@ -210,7 +213,8 @@ enum ModelKeys {
     /// Each provider's model: its first (Claude Sonnet 5.5, GPT-6.1 Terra) unless the owner picks another.
     static func model(for provider: ModelProvider) -> String {
         let saved = UserDefaults.standard.string(forKey: "chat.model.\(provider.rawValue)")
-        return saved.flatMap { id in provider.models.contains { $0.id == id } ? id : nil } ?? provider.models.first?.id ?? ""
+        let available = ModelCatalog.available(provider)
+        return saved.flatMap { id in available.contains { $0.id == id } ? id : nil } ?? available.first?.id ?? provider.models.first?.id ?? ""
     }
 
     static var selectedModel: String {
@@ -219,7 +223,7 @@ enum ModelKeys {
     }
 
     static var selectedModelName: String {
-        selectedProvider.models.first { $0.id == selectedModel }?.name ?? selectedModel
+        ModelCatalog.all(selectedProvider).first { $0.id == selectedModel }?.name ?? selectedModel
     }
 
     /// Bumped on every change, so views that read keys can redraw; `changed` is posted too (ask_poki is

@@ -13,7 +13,6 @@ import SwiftUI
 /// What an account can power is worked out from its type: any wired provider can run the text chat;
 /// live voice needs OpenAI's Realtime API, so only an OpenAI API key can run it.
 struct ModelSettingsView: View {
-    var openAgents: () -> Void
     @State private var adding = false
     @State private var version = ModelKeys.saved
 
@@ -40,11 +39,6 @@ struct ModelSettingsView: View {
                 Text("Open an account to choose what it is used for. Dictation in the message field needs no account.")
             }
 
-            Section {
-                Button(action: openAgents) { Label("Claude Code or Codex on a Computer", systemImage: "terminal") }
-            } footer: {
-                Text("Agents you already run can drive Poki over its MCP address; your computer does the thinking and Poki only taps and types.")
-            }
         }
         .id(version)
         .listStyle(.insetGrouped)
@@ -107,7 +101,6 @@ private struct AccountDetail: View {
     @State private var editing = false
     @State private var signingIn = false
     @State private var version = ModelKeys.saved
-    @State private var model = ""
 
     var body: some View {
         Form {
@@ -121,24 +114,16 @@ private struct AccountDetail: View {
             }
 
             Section {
-                Toggle(isOn: Binding(get: { ModelKeys.selectedProvider == provider }, set: { on in
-                    if on { ModelKeys.selectedProvider = provider }
-                    else if let other = ModelProvider.allCases.first(where: { $0 != provider && ModelAccounts.isSetUp($0) && ModelAccounts.canChat($0) }) {
-                        ModelKeys.selectedProvider = other
-                    }
-                    version = ModelKeys.saved
-                })) {
-                    Label("Text Chat", systemImage: "bubble.left.and.text.bubble.right")
+                NavigationLink { TextChatFeature(provider: provider) } label: {
+                    LabeledContent {
+                        Text(ModelKeys.selectedProvider == provider ? ModelKeys.selectedModelName : ModelAccounts.canChat(provider) ? String(localized: "Off") : String(localized: "Not Supported"))
+                    } label: { Label("Text Chat", systemImage: "bubble.left.and.text.bubble.right") }
                 }
                 .disabled(!ModelAccounts.canChat(provider))
-                if ModelKeys.selectedProvider == provider, provider.models.count > 1 {
-                    Picker("Model", selection: $model) {
-                        ForEach(provider.models) { Text($0.name).tag($0.id) }
-                    }
-                    .onChange(of: model) { _, new in if !new.isEmpty { ModelKeys.selectedModel = new } }
-                }
-                Toggle(isOn: Binding(get: { ModelAccounts.canTalkLive(provider) && VoiceDirect.enabled }, set: { VoiceDirect.enabled = $0; version += 1 })) {
-                    Label("Live Voice", systemImage: "waveform")
+                NavigationLink { LiveVoiceFeature() } label: {
+                    LabeledContent {
+                        Text(ModelAccounts.canTalkLive(provider) ? (VoiceDirect.enabled ? VoiceDirect.model : String(localized: "Off")) : String(localized: "Not Supported"))
+                    } label: { Label("Live Voice", systemImage: "waveform") }
                 }
                 .disabled(!ModelAccounts.canTalkLive(provider))
             } header: {
@@ -148,8 +133,6 @@ private struct AccountDetail: View {
                     Text("Poki keeps this key; chatting with \(provider.name) comes in an update.")
                 } else if !ModelAccounts.canTalkLive(provider) {
                     Text("Live voice runs on OpenAI’s Realtime API, which only an OpenAI API key can open. Dictation in the message field works with this account.")
-                } else {
-                    Text("Only one account runs the text chat at a time.")
                 }
             }
 
@@ -167,9 +150,102 @@ private struct AccountDetail: View {
         .id(version)
         .navigationTitle(Text(verbatim: provider.name))
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear { model = ModelKeys.model(for: provider) }
+        .onReceive(NotificationCenter.default.publisher(for: ModelKeys.changed)) { _ in version = ModelKeys.saved }
         .sheet(isPresented: $editing, onDismiss: { version = ModelKeys.saved }) { KeyEntry(provider: provider) }
         .sheet(isPresented: $signingIn, onDismiss: { version = ModelKeys.saved }) { ChatGPTSignIn() }
+    }
+}
+
+/// Account › Text Chat: whether this account runs the chat, its model, and which of its models the
+/// chat's model menu offers.
+private struct TextChatFeature: View {
+    var provider: ModelProvider
+    @State private var version = ModelKeys.saved
+    @State private var loading = false
+    @State private var problem: String?
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Use for Text Chat", isOn: Binding(get: { ModelKeys.selectedProvider == provider }, set: { on in
+                    if on { ModelKeys.selectedProvider = provider }
+                    else if let other = ModelProvider.allCases.first(where: { $0 != provider && ModelAccounts.isSetUp($0) && ModelAccounts.canChat($0) }) {
+                        ModelKeys.selectedProvider = other
+                    }
+                }))
+                if ModelKeys.selectedProvider == provider {
+                    Picker("Chat Model", selection: Binding(get: { ModelKeys.selectedModel }, set: { ModelKeys.selectedModel = $0; ModelKeys.saved += 1 })) {
+                        ForEach(ModelCatalog.available(provider)) { Text($0.name).tag($0.id) }
+                    }
+                }
+            } footer: {
+                Text("Only one account runs the text chat at a time.")
+            }
+            Section {
+                ForEach(ModelCatalog.all(provider)) { choice in
+                    Toggle(isOn: Binding(get: { ModelCatalog.enabled(provider).contains(choice.id) }, set: { ModelCatalog.set(choice.id, on: $0, for: provider) })) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(choice.name)
+                            if ModelCatalog.fast(choice.id) { Text("Fast").font(.caption).foregroundStyle(.secondary) }
+                        }
+                    }
+                }
+                if provider != .chatgpt {
+                    Button(loading ? "Reading the Model List…" : "Refresh Model List") { refresh() }.disabled(loading)
+                }
+            } header: {
+                Text("Models to Choose From")
+            } footer: {
+                Text(problem ?? String(localized: "Fast models without long thinking answer quickest on the phone. Models from \(provider.name)’s list start switched off."))
+            }
+        }
+        .id(version)
+        .navigationTitle("Text Chat")
+        .navigationBarTitleDisplayMode(.inline)
+        .onReceive(NotificationCenter.default.publisher(for: ModelKeys.changed)) { _ in version = ModelKeys.saved }
+        .task { if ModelCatalog.listed(provider).isEmpty, provider != .chatgpt { refresh() } }
+    }
+
+    private func refresh() {
+        loading = true
+        problem = nil
+        Task {
+            do { _ = try await ModelCatalog.refresh(provider) } catch { problem = String(localized: "\(provider.name) didn’t return its model list. The built-in models still work.") }
+            loading = false
+        }
+    }
+}
+
+/// Account › Live Voice (OpenAI only): on or off, the voice model, and which voice models to offer.
+private struct LiveVoiceFeature: View {
+    @State private var version = ModelKeys.saved
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Use for Live Voice", isOn: Binding(get: { VoiceDirect.enabled }, set: { VoiceDirect.enabled = $0 }))
+                if VoiceDirect.enabled {
+                    Picker("Voice Model", selection: Binding(get: { ModelCatalog.voiceModel }, set: { ModelCatalog.voiceModel = $0 })) {
+                        ForEach(ModelCatalog.voiceAvailable) { Text($0.name).tag($0.id) }
+                    }
+                }
+            } footer: {
+                Text("Live voice is a spoken conversation with OpenAI’s Realtime model: it listens, taps and types, and answers out loud.")
+            }
+            Section {
+                ForEach(ModelCatalog.voiceAll) { choice in
+                    Toggle(choice.name, isOn: Binding(get: { ModelCatalog.voiceEnabled.contains(choice.id) }, set: { ModelCatalog.setVoice(choice.id, on: $0) }))
+                }
+            } header: {
+                Text("Voice Models to Choose From")
+            } footer: {
+                Text("Refresh the model list under Text Chat to add the other Realtime models your key can use.")
+            }
+        }
+        .id(version)
+        .navigationTitle("Live Voice")
+        .navigationBarTitleDisplayMode(.inline)
+        .onReceive(NotificationCenter.default.publisher(for: ModelKeys.changed)) { _ in version = ModelKeys.saved }
     }
 }
 

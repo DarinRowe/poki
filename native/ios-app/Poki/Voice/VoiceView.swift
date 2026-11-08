@@ -6,6 +6,8 @@ struct VoiceView: View {
     @Environment(AppModel.self) private var app
     /// Set when Voice is a sheet over Home: the Done button closes it.
     var close: (() -> Void)?
+    /// Pushed in the Poki tab: no navigation stack or Done of its own.
+    var embedded = false
     @State private var bridgeText = ""
     @State private var editingBridge = false
     @State private var bridgeRejected = false
@@ -14,9 +16,12 @@ struct VoiceView: View {
     private var voice: VoiceModel { app.voice }
 
     var body: some View {
+        if embedded { form } else { NavigationStack { form.toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { if let close { close() } else { dismiss() } } } } } }
+    }
+
+    private var form: some View {
         @Bindable var voice = voice
-        NavigationStack {
-            Form {
+        return Form {
                 // Voice runs in the chat (the waveform button for a live conversation, the microphone
                 // for dictation). This page only says how it runs and keeps its options.
                 Section {
@@ -43,10 +48,6 @@ struct VoiceView: View {
             }
             .navigationTitle("Voice")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("Done") { if let close { close() } else { dismiss() } } }
-            }
-        }
     }
 
     @Environment(\.dismiss) private var dismiss
