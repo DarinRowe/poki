@@ -918,6 +918,9 @@ final class AppModel {
                 pairingNote = String(localized: "The pairing link carried no file.")
             }
             return .pairing
+        case "setup" where item("step") != nil:
+            // The Live Activity's link to a setup step (pairing).
+            return item("step").flatMap(SetupStep.init(rawValue:))
         case "setup":
             // Poki Setup hands over the relay it configured (the Cloudflare proxy); the chat shows it.
             if let relay = item("relay") { log.add("relay", setRelay(relay) ? "set by link" : "link carried no relay address") }

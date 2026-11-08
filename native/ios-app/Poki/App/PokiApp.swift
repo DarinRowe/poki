@@ -118,7 +118,8 @@ struct RootView: View {
         .onChange(of: scenePhase, initial: true) { _, phase in
             if phase == .active { model.becameActive(); AskPoki.refresh() } else if phase == .background { model.wentToBackground() }
         }
-        // A tap on the Live Activity brings the chat to the front; `poki://voice` opens the chat too (it
+        // A tap on the Live Activity opens the screen its state is about (ActivityFace.link): the chat,
+        // the setup step, or the Activity Log for a problem; `poki://voice` opens the chat too (it
         // never turns on the microphone).
         .onOpenURL { url in
             AppLog.shared.add("app", "opened by link poki://\(url.host() ?? "")")
@@ -129,6 +130,12 @@ struct RootView: View {
             if let step = model.open(link: url) {
                 tab = .setup
                 setup = NavigationPath([step])
+            } else if url.host() == "setup", !url.absoluteString.contains("relay=") {
+                // The Live Activity during setup: the Setup tab.
+                tab = .setup
+            } else if url.host() == "log" {
+                // The Live Activity's problem: what went wrong is in the Activity Log.
+                openAgents(.activityLog)
             } else {
                 if url.host() == "voice" { model.voice.open(url) }
                 tab = .chats; show(HomeRoute.chat)

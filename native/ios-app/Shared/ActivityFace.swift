@@ -3,15 +3,20 @@ import Foundation
 typealias PokiState = PokiActivityAttributes.ContentState
 
 /// What the Live Activity shows for a state, worked out once per phase. The Lock Screen, the expanded
-/// island, the compact island and the minimal circle all draw this, so a phase's words and colours
-/// live in one table (`PokiState.face`) instead of a switch in every view. The layout and colours
-/// follow ESP-139's final board 02; the words are ESP-162's shorter ones: a status word and one
-/// content line, and below them only the step line (with Stop), the setup steps or, for an approval,
-/// Deny and Allow. See ActivityWords for the limits and the languages.
+/// island, the compact island and the minimal view all draw this, so the four presentations always say
+/// the same thing in the same order.
+///
+/// The one fact to read at a glance is what Poki is doing on the phone right now, or what it needs
+/// from you. Every presentation is built around it: a state glyph in the state's colour (the same glyph
+/// in all four), a short status word, and in the larger presentations the content line (the step, the
+/// question, the result) in the large size. Below it there is at most one action: Stop while working,
+/// the Allow/Deny decision while an approval waits, or Done for a step handed to you. Progress is a bar
+/// only where there is a real total (setup's steps); an agent's run has no known length, so it shows
+/// the step number, not a bar.
 struct ActivityFace: Hashable {
     enum Meta: Hashable {
         case none
-        /// A short count ("Step 7", "2/6").
+        /// A short count ("Step 7", "2/6") or a duration.
         case text(String)
         /// The time left on an approval, counted down by the system.
         case countdown(Date)
@@ -21,35 +26,29 @@ struct ActivityFace: Hashable {
         case elapsed(Date)
     }
     enum Compact: Hashable {
-        /// A short count ("Step 7", "2/6").
+        /// A short word or count ("Step 7", "2/6", "Done").
         case text(String, ActivityTone)
         /// The pairing code, tabular digits.
         case code(String)
         case countdown(Date)
-        case symbol(String, ActivityTone)
+        case elapsed(Date)
     }
     enum Bottom: Hashable {
         case none
-        /// One dot per step on a line, the missed ones larger and red, the current step hollow; the
-        /// line turns green when the run is finished. Stop (an icon, no word) at its end while working.
-        case progress(outcomes: [Bool], current: Bool, finished: Bool, stop: Bool)
+        /// Stop, beside the content line, while the agent is working.
+        case stop
         case approval(id: String)
-        /// "Done, carry on" for a screen the agent handed to the person.
+        /// "I'm Done" for a screen the agent handed to the person.
         case handoff(id: String)
-        /// The setup steps: done, the current one, the rest.
-        case segments(number: Int, count: Int)
-    }
-    enum Minimal: Hashable {
-        case avatar
-        /// The avatar in a ring that fills with the run's steps.
-        case ring(Double)
-        case approval
-        case problem
+        /// A real fraction (setup: steps done of all steps).
+        case progress(Double)
     }
 
+    /// The SF Symbol for the state, drawn in `tone` in every presentation.
+    var symbol: String
     /// The status word ("Approval"), coloured by `tone`.
     var status: String
-    /// The same, short enough for the expanded island's leading region ("Stopped").
+    /// The same, short enough for the expanded island's leading region and the compact island.
     var shortStatus: String
     var tone: ActivityTone
     /// The value at the status word's right, on the Lock Screen and beside the camera.
@@ -59,13 +58,31 @@ struct ActivityFace: Hashable {
     /// The content is the pairing code.
     var contentIsCode = false
     var bottom: Bottom
-    /// The latest screenshot beside the Lock Screen card's words (while working, when done, and for
-    /// an approval).
-    var thumbnail = false
     var compact: Compact
-    var minimal: Minimal = .avatar
-    /// Outline the island in the website's blue (an approval waiting).
+    /// Outline the island while the person is needed.
     var outlined = false
+    /// The screen a tap opens.
+    var link: URL = ActivityLink.chat
+    /// The app has not updated the activity for longer than it should have: what it shows may be old.
+    var stale = false
+
+    var hasAction: Bool {
+        switch bottom {
+        case .stop, .approval, .handoff: true
+        default: false
+        }
+    }
+}
+
+/// Where a tap on the Live Activity goes, handled by RootView's onOpenURL.
+enum ActivityLink {
+    /// The chat that runs the agent (also approvals and handoffs, which the chat shows).
+    static let chat = URL(string: "poki://chat")!
+    /// The Activity Log, where a problem's details are.
+    static let log = URL(string: "poki://log")!
+    static func setup(_ step: String? = nil) -> URL {
+        URL(string: step.map { "poki://setup?step=\($0)" } ?? "poki://setup")!
+    }
 }
 
 extension PokiActivityAttributes.Event {
@@ -96,7 +113,10 @@ extension PokiState {
         failedCount > 0 ? String(activity: "\(runLine), \(failedCount) missed") : runLine
     }
 
-    var face: ActivityFace {
+    var face: ActivityFace { face(stale: false) }
+
+    /// The face for the widget: `stale` when ActivityKit says the content is past its stale date.
+    func face(stale: Bool) -> ActivityFace {
         var face = baseFace
         // A fresh event ("Started", "Allowed") takes the status word's place for a few seconds, in
         // its own colour. An app switch keeps the app's name as the word and only lights it up.
@@ -105,6 +125,20 @@ extension PokiState {
             face.status = word
             face.shortStatus = word
             face.tone = event.tone
+        }
+        if stale, phase == .working || phase == .handoff {
+            // The app stopped updating (closed, or iOS suspended it): say so, and drop the action,
+            // which needs the app.
+            let word = String(activity: "Not updating")
+            face.symbol = "clock.badge.exclamationmark"
+            face.status = word
+            face.shortStatus = String(activity: "Paused")
+            face.tone = .quiet
+            face.meta = .none
+            face.bottom = .none
+            face.compact = .text(String(activity: "Paused"), .quiet)
+            face.outlined = false
+            face.stale = true
         }
         return face
     }
@@ -115,12 +149,9 @@ extension PokiState {
         case .working:
             let name = app ?? String(activity: "Working")
             return ActivityFace(
-                status: name, shortStatus: name, tone: .quiet, meta: .text(step),
-                content: ActivityWords.step(headline),
-                bottom: .progress(outcomes: outcomes, current: true, finished: false, stop: true),
-                thumbnail: hasThumbnail,
-                compact: .text(step, .plain),
-                minimal: .ring(Double(outcomes.count) / Double(Self.outcomeLimit)))
+                symbol: "hand.tap.fill", status: name, shortStatus: name, tone: .accent, meta: .text(step),
+                content: ActivityWords.step(headline), bottom: .stop,
+                compact: .text(step, .plain))
         case .approval, .deciding:
             guard let approval else { return quietFace }
             let question = ActivityWords.brief(approval.question)
@@ -128,66 +159,68 @@ extension PokiState {
                 let allowed = decision == true
                 let word = allowed ? String(activity: "Allowed") : String(activity: "Denied")
                 return ActivityFace(
-                    status: word, shortStatus: word, tone: allowed ? .approval : .quiet, meta: .none,
+                    symbol: allowed ? "checkmark.circle.fill" : "xmark.circle.fill",
+                    status: word, shortStatus: word, tone: allowed ? .done : .quiet, meta: .none,
                     content: question, bottom: .none,
-                    compact: .symbol(allowed ? "checkmark" : "xmark", allowed ? .approval : .quiet),
-                    minimal: .approval)
+                    compact: .text(word, allowed ? .done : .quiet))
             }
             let word = String(activity: "Approval")
             return ActivityFace(
-                status: word, shortStatus: word, tone: .approval, meta: .countdown(approval.expires),
+                symbol: "hand.raised.fill", status: word, shortStatus: word, tone: .approval,
+                meta: .countdown(approval.expires),
                 content: question, bottom: .approval(id: approval.id),
-                thumbnail: hasThumbnail,
                 compact: .countdown(approval.expires),
-                minimal: .approval,
                 outlined: true)
         case .done:
             let word = String(activity: "Done")
             return ActivityFace(
-                status: word, shortStatus: word, tone: .done, meta: endedAt.map { .clock($0) } ?? .none,
-                content: runLine,
-                bottom: .progress(outcomes: outcomes, current: false, finished: true, stop: false),
-                thumbnail: hasThumbnail,
-                compact: .symbol("checkmark", .done))
+                symbol: "checkmark.circle.fill", status: word, shortStatus: word, tone: .done,
+                meta: endedAt.map { .clock($0) } ?? .none,
+                content: runSummary, bottom: .none,
+                compact: .text(word, .done))
         case .problem:
+            let short = label == "Pairing Failed" ? String(activity: "Failed") : String(activity: "Stopped")
             return ActivityFace(
-                status: ActivityWords.local(label ?? "Problem"),
-                shortStatus: label == "Pairing Failed" ? String(activity: "Failed") : String(activity: "Stopped"),
+                symbol: "exclamationmark.triangle.fill",
+                status: ActivityWords.local(label ?? "Problem"), shortStatus: short,
                 tone: .problem, meta: .none,
                 content: ActivityWords.brief(ActivityWords.local(headline)), bottom: .none,
-                compact: .symbol("exclamationmark", .problem),
-                minimal: .problem)
+                compact: .text(short, .problem),
+                link: label == "Pairing Failed" ? ActivityLink.setup("pairing") : ActivityLink.log)
         case .pairing:
             if let pin {
                 return ActivityFace(
-                    status: String(activity: "Pairing Code"), shortStatus: String(activity: "Pairing"), tone: .accent, meta: .none,
+                    symbol: "link", status: String(activity: "Pairing Code"), shortStatus: String(activity: "Pairing"),
+                    tone: .accent, meta: .none,
                     content: pin.count == 6 ? "\(pin.prefix(3)) \(pin.suffix(3))" : pin, contentIsCode: true,
                     bottom: .none,
-                    compact: .code(pin))
+                    compact: .code(pin),
+                    link: ActivityLink.setup("pairing"))
             }
             let word = String(activity: "Pairing")
             return ActivityFace(
-                status: word, shortStatus: word, tone: .accent, meta: .none,
+                symbol: "link", status: word, shortStatus: word, tone: .accent, meta: .none,
                 content: String(activity: "Pair in Settings"), bottom: .none,
-                compact: .symbol("link", .accent))
+                compact: .text(word, .accent),
+                link: ActivityLink.setup("pairing"))
         case .setup:
             guard let guide else { return quietFace }
             let word = String(activity: "Setup")
             let count = "\(guide.number)/\(guide.count)"
             return ActivityFace(
-                status: word, shortStatus: word, tone: .accent, meta: .text(count),
+                symbol: "checklist", status: word, shortStatus: word, tone: .accent, meta: .text(count),
                 content: ActivityWords.brief(ActivityWords.local(guide.title)),
-                bottom: .segments(number: guide.number, count: guide.count),
-                compact: .text(count, .plain))
+                bottom: .progress(Double(max(0, guide.number - 1)) / Double(max(1, guide.count))),
+                compact: .text(count, .plain),
+                link: ActivityLink.setup())
         case .handoff:
             guard let handoff else { return quietFace }
             let word = String(activity: "Your turn")
             return ActivityFace(
-                status: word, shortStatus: word, tone: .approval, meta: .elapsed(handoff.since),
+                symbol: handoff.symbol, status: word, shortStatus: word, tone: .approval, meta: .elapsed(handoff.since),
                 content: ActivityWords.brief(handoff.line),
                 bottom: .handoff(id: handoff.id),
-                compact: .symbol(handoff.symbol, .approval),
-                minimal: .approval,
+                compact: .elapsed(handoff.since),
                 outlined: true)
         case .idle:
             return quietFace
@@ -198,9 +231,10 @@ extension PokiState {
     private var quietFace: ActivityFace {
         let word = runnerPaused ? String(activity: "Idle") : String(activity: "Ready")
         return ActivityFace(
-            status: word, shortStatus: word, tone: runnerPaused ? .quiet : .done, meta: .none,
+            symbol: runnerPaused ? "moon.fill" : "checkmark.circle", status: word, shortStatus: word,
+            tone: runnerPaused ? .quiet : .done, meta: .none,
             content: ActivityWords.brief(ActivityWords.local(headline)), bottom: .none,
-            compact: .symbol(runnerPaused ? "moon.zzz.fill" : "checkmark", runnerPaused ? .quiet : .done))
+            compact: .text(word, runnerPaused ? .quiet : .done))
     }
 }
 

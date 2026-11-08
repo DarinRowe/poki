@@ -10,36 +10,34 @@ struct PokiWidgetsBundle: WidgetBundle {
     var body: some Widget { PokiLiveActivity() }
 }
 
-/// Poki's Live Activity: what the agent is doing and how its steps went, the pairing code while
-/// pairing, the current setup step while setting up, and Allow/Deny for sensitive actions. The
-/// buttons are for the person; PokiCore sends no input while an approval waits, so the runner never
-/// taps them.
-///
-/// The Lock Screen card is the website's blue with white text and a glass edge; the Dynamic Island
-/// stays black, with the website's light blue for its accents.
+/// Poki's Live Activity: what the agent is doing on the phone, or what it needs from you. The pairing
+/// code while pairing, the current setup step while setting up, and Allow/Deny for sensitive actions.
+/// The buttons are for the person; PokiCore sends no input while an approval waits, so the runner never
+/// taps them. A tap anywhere else opens the screen the state is about (`ActivityFace.link`).
 struct PokiLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: PokiActivityAttributes.self) { context in
-            LockScreenCard(state: context.shown)
+            let face = context.face
+            LockScreenCard(face: face)
                 .activityBackgroundTint(ActivityTheme.current.lockBackground)
+                .widgetURL(face.link)
         } dynamicIsland: { context in
-            let state = context.shown
+            let face = context.face
             let insets = ActivityMetrics.islandInsets
             return DynamicIsland {
-                DynamicIslandExpandedRegion(.leading) { IslandLeading(state: state) }
-                DynamicIslandExpandedRegion(.trailing) { IslandTrailing(state: state) }
-                DynamicIslandExpandedRegion(.bottom) { IslandBottom(state: state) }
+                DynamicIslandExpandedRegion(.leading) { IslandLeading(face: face) }
+                DynamicIslandExpandedRegion(.trailing) { IslandTrailing(face: face) }
+                DynamicIslandExpandedRegion(.bottom) { IslandBottom(face: face) }
             } compactLeading: {
-                CompactLeading(state: state)
+                CompactLeading(face: face)
             } compactTrailing: {
-                CompactTrailing(state: state)
+                CompactTrailing(face: face)
             } minimal: {
-                MinimalView(state: state)
+                MinimalView(face: face)
             }
-            // The outline goes blue while an approval waits; otherwise the system's own.
-            .keylineTint(state.face.outlined ? ActivityTheme.current.approvalOutline : nil)
-            // The board's margins. iOS clips the corners tighter, so the rows inside move further in
-            // where they reach them (ActivityMetrics.islandRowInset and the rest).
+            .widgetURL(face.link)
+            // The outline takes the state's blue while the person is needed; otherwise the system's own.
+            .keylineTint(face.outlined ? ActivityTheme.current.approvalOutline : nil)
             .contentMargins(.leading, insets.leading, for: .expanded)
             .contentMargins(.trailing, insets.trailing, for: .expanded)
             .contentMargins(.top, insets.top, for: .expanded)
@@ -49,17 +47,19 @@ struct PokiLiveActivity: Widget {
 }
 
 extension ActivityViewContext<PokiActivityAttributes> {
-    /// The state to draw. An approval's stale date is its expiry: once it passes, the buttons go
-    /// even if the app has not had a chance to update yet, so nobody taps Allow on a dead request.
-    var shown: PokiState {
+    /// The face to draw. An approval's stale date is its expiry: once it passes, the buttons go even if
+    /// the app has not had a chance to update yet, so nobody taps Allow on a dead request. Any other
+    /// state past its stale date says it is not updating.
+    var face: ActivityFace {
         var state = self.state
-        if isStale, state.approval != nil {
+        if isStale, state.approval != nil, state.phase.holdsApproval {
             state.approval = nil
             state.decision = nil
             state.phase = .working
             state.headline = "Step skipped"
             state.event = .init(kind: .expired, text: "Timed out")
+            return state.face(stale: false)
         }
-        return state
+        return state.face(stale: isStale)
     }
 }

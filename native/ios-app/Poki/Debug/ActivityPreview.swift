@@ -137,7 +137,7 @@ private struct LockScreenFrame: View {
     var state: PokiState
     var body: some View {
         let card = RoundedRectangle(cornerRadius: ActivityMetrics.lockCorner, style: .continuous)
-        LockScreenCard(state: state)
+        LockScreenCard(face: state.face)
             .frame(maxWidth: 371)
             .background(ActivityTheme.current.lockBackground ?? Color(.secondarySystemGroupedBackground), in: card)
             .containerShape(card)
@@ -157,11 +157,11 @@ private struct IslandExpandedFrame: View {
         // iPhone 17 Pro simulator), so the height badge matches the real island.
         VStack(spacing: 4) {
             HStack(spacing: 0) {
-                IslandLeading(state: state).frame(width: 110, height: 25)
+                IslandLeading(face: state.face).frame(width: 110, height: 25)
                 Spacer(minLength: 120)
-                IslandTrailing(state: state).frame(width: 110, height: 25)
+                IslandTrailing(face: state.face).frame(width: 110, height: 25)
             }
-            IslandBottom(state: state)
+            IslandBottom(face: state.face)
         }
         .padding(insets)
         .frame(maxWidth: 371)
@@ -179,14 +179,14 @@ private struct IslandCompactFrame: View {
     var body: some View {
         HStack(spacing: 12) {
             HStack(spacing: 0) {
-                CompactLeading(state: state).frame(width: 44, alignment: .leading)
+                CompactLeading(face: state.face).frame(width: 44, alignment: .leading)
                 Color.clear.frame(width: 120)
-                CompactTrailing(state: state).frame(width: 60, alignment: .trailing)
+                CompactTrailing(face: state.face).frame(width: 60, alignment: .trailing)
             }
             .padding(.horizontal, 8).frame(height: 37)
             .background(.black, in: .capsule)
             .overlay { if state.face.outlined { Capsule().strokeBorder(ActivityTheme.current.approvalOutline, lineWidth: 1.5) } }
-            MinimalView(state: state).frame(width: 37, height: 37).background(.black, in: .circle)
+            MinimalView(face: state.face).frame(width: 37, height: 37).background(.black, in: .circle)
         }
         .environment(\.colorScheme, .dark)
     }
