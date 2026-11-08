@@ -22,9 +22,14 @@ updates (`desktop-v*`, `desktop-alpha-*` and `desktop-prealpha-*` tags) follow t
 - Alpha or Pre-alpha: run `native/ios-app/scripts/cut-release.sh alpha` or `... pre-alpha` (defaults
   to the head of `poki/ios-integration`; pass another ref as the second argument). It tags the commit
   `ios-alpha-<VERSION>-<commit count>` or `ios-prealpha-<VERSION>-<commit count>` and pushes the tag;
-  `.github/workflows/channel-release.yml` builds the app and publishes the prerelease with the same
-  files as a Beta: `Poki-external-*.ipa`, `Poki-*.ipa`, `Poki-signing.zip`, `poki-relay-worker.js` (the relay Worker Poki Setup deploys) and `SHA256SUMS`. The build
-  number is the commit count, so a later commit always has a bigger one. The same commit can be both a
+  `.github/workflows/channel-release.yml` builds the app and puts it into the channel's one rolling
+  prerelease, `ios-alpha-latest` or `ios-prealpha-latest` (replacing the previous build's files, title
+  and notes, so the Releases page never fills up with test builds), with the same files as a Beta: `Poki-external-*.ipa`, `Poki-*.ipa`, `Poki-signing.zip`, `poki-relay-worker.js` (the relay Worker Poki Setup deploys) and `SHA256SUMS`. The build
+  number is the commit count, so a later commit always has a bigger one. The versioned tag stays as
+  the record of each build; Poki Setup reads the version from the IPA's name. Poki Setup's own
+  installers (`PokiSetup-<version>-<build>-macos.dmg` / `-windows-x64-setup.exe` with
+  `SHA256SUMS-desktop.txt`) are added to the same rolling release and replaced the same way. Only a
+  Stable release is ever marked Latest. The same commit can be both a
   pre-alpha and, once it looks good, an alpha. `DRY_RUN=1` prints the tag without pushing it.
 
 Both workflows run only on their tags, never on branch pushes. The Mac server's update notice
