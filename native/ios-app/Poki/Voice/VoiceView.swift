@@ -34,14 +34,14 @@ struct VoiceView: View {
                         if voice.isOn { voice.stop() } else { Task { await begin() } }
                     }
                     .buttonStyle(.glassProminent).controlSize(.large).frame(maxWidth: .infinity)
-                    .disabled(voice.bridge == nil)
+                    .disabled(!voice.canTalk)
                     if voice.isOn {
                         Button("Stop talking", systemImage: "speaker.slash") { voice.stopTalking() }
                         Toggle("Mute Poki's voice", isOn: $voice.muted)
                     }
                 } footer: {
                     if micDenied { Text("Poki can't use the microphone. Allow it in Settings, Privacy, Microphone.").foregroundStyle(.orange) }
-                    else { Text("Stop talking ends Poki's reply; a step already running on the phone still finishes and Poki tells you how it went.") }
+                    else { Text("Voice uses: \(voice.route). Stop talking ends Poki's reply; a step already running on the phone still finishes and Poki tells you how it went.") }
                 }
                 bridgeSection
                 if !voice.lines.isEmpty {
@@ -77,7 +77,7 @@ struct VoiceView: View {
             Text("Your Mac")
         } footer: {
             if bridgeRejected { Text("That is not a voice bridge address. It looks like http://192.168.1.10:47830/voice/ followed by a long code.").foregroundStyle(.orange) }
-            else { Text("Run bin/voice-bridge.mjs on your Mac and enter the address it gives. The Mac holds your OpenAI key and gives this phone a key that works for one minute, so the phone never stores it. Audio goes straight from this phone to OpenAI.") }
+            else { Text("Optional: with an OpenAI key in Poki › Model, voice needs no Mac. Otherwise run bin/voice-bridge.mjs on your Mac and enter the address it gives. The Mac holds your OpenAI key and gives this phone a key that works for one minute, so the phone never stores it. Audio goes straight from this phone to OpenAI.") }
         }
     }
 

@@ -107,7 +107,7 @@ enum VoiceError: LocalizedError {
         case .bridge(404, _): "The voice bridge doesn't know this address. Copy it again from the Mac."
         case .bridge(let code, let reason): "The voice bridge answered \(code): \(reason)"
         case .realtime(let code, let reason): "OpenAI answered \(code): \(reason)"
-        case .noBridge: "Enter the voice bridge address from your Mac first."
+        case .noBridge: "Set up Poki's model first (an OpenAI key talks fastest), or enter a voice bridge address from your Mac."
         case .timeout(let what): "\(what) took too long."
         }
     }
@@ -234,7 +234,21 @@ final class VoiceModel {
         didSet { if holdingMicrophone != oldValue { holdMicrophone(holdingMicrophone) } }
     }
 
-    var isOn: Bool { link != nil }
+    var isOn: Bool { link != nil || dictation != nil }
+
+    /// Voice can start: the OpenAI key on this iPhone (Realtime, no bridge), the Mac's voice bridge, or
+    /// dictation into the chat with whichever model Poki uses.
+    var canTalk: Bool { VoiceDirect.apiKey != nil || bridge != nil || VoiceDirect.canDictate }
+
+    /// How voice runs now, for the settings screen.
+    var route: String {
+        if VoiceDirect.apiKey != nil { return String(localized: "Your OpenAI key, straight from this iPhone") }
+        if let bridge { return String(localized: "Voice bridge at \(bridge.display)") }
+        if VoiceDirect.canDictate { return String(localized: "Dictation to \(ModelKeys.selectedModelName); Poki reads the answer aloud") }
+        return String(localized: "Not set up")
+    }
+
+    private var dictation: Dictation?
 
     func setBridge(_ text: String) -> Bool {
         guard let bridge = VoiceBridge(text) else { return false }
@@ -265,13 +279,19 @@ final class VoiceModel {
     #endif
 
     func start(microphone: Bool = true) async {
-        guard link == nil else { return }
-        guard let bridge else { phase = .lost(VoiceError.noBridge.localizedDescription); return }
+        guard link == nil, dictation == nil else { return }
+        // The OpenAI key on this iPhone first (no Mac needed), then the bridge, then dictation.
+        let key = VoiceDirect.apiKey
+        if key == nil, bridge == nil {
+            if VoiceDirect.canDictate, microphone { await startDictation() } else { phase = .lost(VoiceError.noBridge.localizedDescription) }
+            return
+        }
         phase = .connecting
         session += 1
         let number = session
         do {
-            let token = try await bridge.token()
+            let token: VoiceBridge.Token
+            if let key { token = try await VoiceDirect.token(apiKey: key) } else { token = try await bridge!.token() }
             localTools = Set(token.local_tools)
             let link = VoiceLink(onEvent: { [weak self] event in self?.handle(event, session: number) },
                                  onClosed: { [weak self] reason in self?.closed(reason, session: number) })
@@ -292,6 +312,11 @@ final class VoiceModel {
 
     /// Ends the conversation. Calls already running keep running; the next session hears how they ended.
     func stop() {
+        if let dictation {
+            dictation.stopSpeaking()
+            Task { _ = await dictation.finish() }
+            self.dictation = nil
+        }
         link?.close()
         link = nil
         holdingMicrophone = false
@@ -301,8 +326,66 @@ final class VoiceModel {
         phase = .off
     }
 
+    // MARK: Dictation
+
+    /// The button pressed: starts the conversation, or (dictating) listens for the next request.
+    func press() async {
+        if let dictation {
+            guard phase != .hearing, phase != .thinking else { return }
+            do { try dictation.listen(); phase = .hearing } catch { phase = .lost(error.localizedDescription) }
+            return
+        }
+        if !isOn, canTalk { await start() }
+    }
+
+    /// The button let go. Realtime knows by itself when you stopped; dictation sends what it heard.
+    func released() {
+        guard let dictation, phase == .hearing else { return }
+        phase = .thinking
+        Task {
+            let text = await dictation.finish()
+            if lines.last?.role == .you, lines.last?.text != text { lines.removeLast() }
+            guard !text.isEmpty else { phase = .listening; return }
+            if lines.last?.text != text { lines.append(VoiceLine(role: .you, text: text)) }
+            guard let chat = AskPoki.chat else { phase = .lost(VoiceError.noBridge.localizedDescription); return }
+            if chat.running { lines.append(VoiceLine(role: .note, text: String(localized: "Poki is still on the last task."))); phase = .listening; return }
+            let before = chat.entries.count
+            chat.send(text)
+            while chat.running { try? await Task.sleep(for: .milliseconds(200)) }
+            let reply = chat.entries.dropFirst(before).compactMap { entry -> String? in if case .poki(let t) = entry.kind { return t }; return nil }.last
+                ?? String(localized: "Done.")
+            lines.append(VoiceLine(role: .poki, text: reply))
+            guard self.dictation === dictation else { return }
+            phase = .speaking
+            dictation.speak(reply.replacingOccurrences(of: "**", with: ""))
+        }
+    }
+
+    private func startDictation() async {
+        guard await Dictation.allowed() else { phase = .lost(String(localized: "Poki needs the microphone and speech recognition: allow them in Settings › Poki.")); return }
+        let dictation = Dictation()
+        dictation.onHeard = { [weak self] text in
+            guard let self, self.phase == .hearing else { return }
+            if self.lines.last?.role == .you { self.lines.removeLast() }
+            self.lines.append(VoiceLine(role: .you, text: text))
+        }
+        dictation.onSpoken = { [weak self] in if self?.phase == .speaking { self?.phase = .listening } }
+        self.dictation = dictation
+        holdingMicrophone = true
+        do {
+            try dictation.listen()
+            phase = .hearing
+            log.add("voice", "dictation to the chat (no Realtime key or bridge)")
+        } catch {
+            self.dictation = nil
+            holdingMicrophone = false
+            phase = .lost(error.localizedDescription)
+        }
+    }
+
     /// Stops Poki's voice reply. Anything running on the phone keeps running.
     func stopTalking() {
+        if let dictation { dictation.stopSpeaking(); if phase == .speaking { phase = .listening }; return }
         guard let link else { return }
         if activeResponse != nil { link.send(["type": "response.cancel"]) }
         link.send(["type": "output_audio_buffer.clear"])

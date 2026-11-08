@@ -45,7 +45,7 @@ struct VoicePage: View {
             case .ready:
                 Text("Hold and say it.").font(.system(size: 34, weight: .bold)).foregroundStyle(.white)
                 Text(readyLine).font(.system(size: 17)).foregroundStyle(.white.opacity(0.72)).multilineTextAlignment(.center)
-                    .onTapGesture { if voice.bridge == nil { openVoiceSettings() } }
+                    .onTapGesture { if !voice.canTalk { openVoiceSettings() } }
             case .listening:
                 heard.font(.system(size: 40, weight: .bold)).foregroundStyle(.white).multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
@@ -76,7 +76,7 @@ struct VoicePage: View {
 
     private var readyLine: String {
         if case .lost(let why) = voice.phase { return why }
-        if voice.bridge == nil { return String(localized: "Set the voice bridge first: tap here, or Poki › Voice and Speech.") }
+        if !voice.canTalk { return String(localized: "Set up Poki’s model first: tap here, or Poki › Model.") }
         return String(localized: "“Text Mom I’m on my way.”")
     }
 
@@ -122,13 +122,12 @@ struct VoicePage: View {
                 if !holding {
                     holding = true
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                    if !voice.isOn, voice.bridge != nil { Task { await voice.start() } }
-                    if voice.bridge == nil { openVoiceSettings() }
+                    if voice.canTalk { Task { await voice.press() } } else { openVoiceSettings() }
                 }
                 cancelling = value.translation.height < -60
             }
             .onEnded { _ in
-                if cancelling { voice.stop() }
+                if cancelling { voice.stop() } else { voice.released() }
                 holding = false
                 cancelling = false
             }

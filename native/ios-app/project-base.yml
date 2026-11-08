@@ -79,6 +79,7 @@ targets:
             CFBundleURLSchemes: [poki]
         NSLocalNetworkUsageDescription: Poki connects to this iPhone's own developer services to pair with it and to run the automation, and to the voice bridge on your Mac.
         NSMicrophoneUsageDescription: Poki listens while you talk to it in Voice, and sends that audio to OpenAI to understand what you ask.
+        NSSpeechRecognitionUsageDescription: Without an OpenAI key, Poki turns what you say in Voice into text on this iPhone and sends the text to your chosen model.
         # The voice bridge runs on the person's Mac on the local network, over plain HTTP.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
