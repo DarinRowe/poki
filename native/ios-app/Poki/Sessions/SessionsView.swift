@@ -26,18 +26,6 @@ struct SessionsView: View {
             // What matters before any conversation: whether Poki is on, whether agents can reach it,
             // and what setup still needs.
             Section {
-                // Whether Poki is on: the power button at the top right turns it on (tap) and off (hold).
-                Label {
-                    Text(runLine)
-                } icon: {
-                    Image(systemName: model.sessionOn ? "power.circle.fill" : "power.circle")
-                        .foregroundStyle(model.sessionOn ? Color.green : Color.secondary)
-                }
-                if model.sessionOn, chat.running || !model.runnerPaused {
-                    Button("Pause", systemImage: "pause.fill") { chat.stop(); model.pauseRunner() }
-                } else if model.sessionOn {
-                    Button("Resume", systemImage: "play.fill") { model.wakeRunner() }
-                }
                 // Every setup item still open, each straight to its fix.
                 ForEach(SetupStep.shown.filter { !model.isDone($0) && $0 != .loopback }) { step in
                     NavigationLink(value: step) { SetupStepRow(step: step) }
@@ -118,10 +106,12 @@ struct SessionsView: View {
         // A new chat with Poki's own agent, at the bottom left.
         .safeAreaInset(edge: .bottom, alignment: .leading, spacing: 0) {
             Button { chat.newConversation(); openChat() } label: {
-                Label("New Chat", systemImage: "square.and.pencil").fontWeight(.semibold)
+                Image(systemName: "square.and.pencil").font(.title3.weight(.semibold))
+                    .frame(width: 28, height: 28)
             }
             .newChatStyle()
             .controlSize(.large)
+            .fixedSize()
             .disabled(chat.running)
             .padding(.leading, 16).padding(.bottom, 8)
             .accessibilityLabel(Text("New Chat with Poki"))
@@ -184,63 +174,36 @@ struct SessionsView: View {
 private extension View {
     /// Blue-tinted Liquid Glass on iOS 26 and later; a blue prominent capsule before it.
     @ViewBuilder func newChatStyle() -> some View {
-        if #available(iOS 26.0, *) { buttonStyle(.glassProminent).buttonBorderShape(.capsule).tint(.blue) }
-        else { buttonStyle(.borderedProminent).buttonBorderShape(.capsule).tint(.blue) }
+        if #available(iOS 26.0, *) { buttonStyle(.glassProminent).buttonBorderShape(.circle).tint(.blue) }
+        else { buttonStyle(.borderedProminent).buttonBorderShape(.circle).tint(.blue) }
     }
 }
 
-/// Poki's power, at the top right: a round button, green and filled while Poki is on. A tap turns it
-/// on; turning it off takes a long press, so a stray tap never cuts off an agent mid-task. Each change
-/// has its own haptic; a tap while on gives a light warning tap and says to hold.
+/// Poki's power, at the top right of the Poki tab: a plain toolbar button (the bar draws the glass),
+/// the filled green power symbol while on, the grey outline while off. A tap turns it on or off, with
+/// a haptic for each.
 struct PowerButton: View {
     var on: Bool
     var turnOn: () -> Void
     var turnOff: () -> Void
-    @State private var hint = false
 
     var body: some View {
         Button {
             if on {
                 UINotificationFeedbackGenerator().notificationOccurred(.warning)
-                hint = true
+                turnOff()
             } else {
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
                 turnOn()
             }
         } label: {
-            Image(systemName: "power")
-                .font(.system(size: 17, weight: .bold))
-                .foregroundStyle(on ? Color.white : Color.secondary)
+            Image(systemName: on ? "power.circle.fill" : "power.circle")
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(on ? Color.green : Color.secondary)
                 .contentTransition(.symbolEffect(.replace))
         }
-        .powerStyle(on: on)
-        .simultaneousGesture(LongPressGesture(minimumDuration: 0.6).onEnded { _ in
-            guard on else { return }
-            UINotificationFeedbackGenerator().notificationOccurred(.success)
-            turnOff()
-        })
-        .popover(isPresented: $hint) {
-            Text("Touch and hold to turn Poki off.")
-                .font(.subheadline).padding()
-                .presentationCompactAdaptation(.popover)
-        }
-        .accessibilityLabel(Text(on ? "Poki is on" : "Poki is off"))
-        .accessibilityHint(Text(on ? "Touch and hold to turn off." : "Double-tap to turn on."))
-        .accessibilityAction(named: Text("Turn Off")) { if on { turnOff() } }
-        .animation(.snappy, value: on)
-    }
-}
-
-private extension View {
-    /// Round Liquid Glass on iOS 26 (tinted green while on); a round bordered button before it.
-    @ViewBuilder func powerStyle(on: Bool) -> some View {
-        if #available(iOS 26.0, *) {
-            if on { buttonStyle(.glassProminent).buttonBorderShape(.circle).tint(.green) }
-            else { buttonStyle(.glass).buttonBorderShape(.circle) }
-        } else {
-            if on { buttonStyle(.borderedProminent).buttonBorderShape(.circle).tint(.green) }
-            else { buttonStyle(.bordered).buttonBorderShape(.circle).tint(.secondary) }
-        }
+        .accessibilityLabel(Text(on ? "Turn Poki Off" : "Turn Poki On"))
+        .accessibilityValue(Text(on ? "On" : "Off"))
     }
 }
 
