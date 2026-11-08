@@ -59,7 +59,54 @@ jobs:
         with: { workspaces: desktop }
       - run: npm ci --no-audit --no-fund
         working-directory: desktop/app
+      # The bundler downloads WiX and NSIS from GitHub releases, which often answers 504 on
+      # Windows runners; what it already got stays cached, so trying again gets further.
       - name: Build the installers
+        id: build1
+        continue-on-error: true
+        uses: tauri-apps/tauri-action@v0
+        # Signing and notarization: add APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD,
+        # APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_PASSWORD and APPLE_TEAM_ID here once the
+        # secrets exist. An empty value makes the bundler try to import nothing and fail, so they
+        # are not listed until then; the unsigned app opens with right-click > Open.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: desktop/app
+          args: ${{ matrix.args }}
+          tagName: ${{ (startsWith(github.ref, 'refs/tags/desktop-v') && inputs.release) && github.ref_name || '' }}
+          releaseName: ${{ (startsWith(github.ref, 'refs/tags/desktop-v') && inputs.release) && 'Poki Setup __VERSION__' || '' }}
+          releaseDraft: true
+          prerelease: true
+      - name: Wait before trying again
+        if: steps.build1.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Build the installers (try 2)
+        id: build2
+        if: steps.build1.outcome == 'failure'
+        continue-on-error: true
+        uses: tauri-apps/tauri-action@v0
+        # Signing and notarization: add APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD,
+        # APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_PASSWORD and APPLE_TEAM_ID here once the
+        # secrets exist. An empty value makes the bundler try to import nothing and fail, so they
+        # are not listed until then; the unsigned app opens with right-click > Open.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: desktop/app
+          args: ${{ matrix.args }}
+          tagName: ${{ (startsWith(github.ref, 'refs/tags/desktop-v') && inputs.release) && github.ref_name || '' }}
+          releaseName: ${{ (startsWith(github.ref, 'refs/tags/desktop-v') && inputs.release) && 'Poki Setup __VERSION__' || '' }}
+          releaseDraft: true
+          prerelease: true
+      - name: Wait before the last try
+        if: steps.build1.outcome == 'failure' && steps.build2.outcome == 'failure'
+        shell: bash
+        run: sleep 90
+      - name: Build the installers (try 3)
+        id: build3
+        if: steps.build1.outcome == 'failure' && steps.build2.outcome == 'failure'
         uses: tauri-apps/tauri-action@v0
         # Signing and notarization: add APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD,
         # APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_PASSWORD and APPLE_TEAM_ID here once the
