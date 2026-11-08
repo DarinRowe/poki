@@ -328,7 +328,14 @@ pub async fn run(signer: &mut Signer, opts: Options, reporter: &Reporter) -> Res
 
     reporter.step("pairing_file", "Giving Poki its pairing file");
     let mut handed = false;
-    match device::container::place_pairing_file(&phone, &built.bundle_id, &record).await {
+    // Right after an install the phone sometimes drops the first container connection; try again.
+    let mut placed = device::container::place_pairing_file(&phone, &built.bundle_id, &record).await;
+    for _ in 0..2 {
+        if placed.is_ok() { break; }
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        placed = device::container::place_pairing_file(&phone, &built.bundle_id, &record).await;
+    }
+    match placed {
         Ok(()) => {
             handed = true;
             reporter.done("pairing_file", Some("placed in Poki's container".into()));
@@ -344,7 +351,7 @@ pub async fn run(signer: &mut Signer, opts: Options, reporter: &Reporter) -> Res
     }
     let handoff = if opts.hand_off || !handed {
         let server = pairshare::serve(record.clone()).await?;
-        reporter.waiting("pairing_file", format!("Scan the QR in Poki, or open {}", server.handoff.link));
+        reporter.waiting("pairing_file", format!("Scan the code with the iPhone's Camera, or open {} on the iPhone", server.handoff.link));
         Some(server)
     } else {
         None

@@ -203,7 +203,7 @@ pub async fn install(app: AppHandle, state: State<'_, Shared>, udid: Option<Stri
         *busy = true;
     }
     let r = reporter(&app, "install");
-    let opts = setup::Options { udid, ipa: ipa.map(Into::into), signing_zip: None, wait: None, hand_off, seed_ddi: false };
+    let opts = setup::Options { udid, ipa: ipa.map(Into::into), signing_zip: None, wait: None, hand_off, seed_ddi: true };
     let result = with_signer(&state, async |s| setup::run(s, opts, &r).await).await;
     *state.busy.lock().await = false;
     let done = result?;

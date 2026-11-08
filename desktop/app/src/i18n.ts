@@ -36,7 +36,7 @@ const zh: Record<string, string> = {
   "days left": "天后到期",
   "expired": "已过期",
   "Show pairing QR": "显示配对二维码",
-  "Scan this in Poki on the iPhone (same Wi-Fi).": "在 iPhone 上用 Poki 扫描（同一 Wi-Fi）。",
+  "Scan this with the iPhone's Camera (same Wi-Fi). Poki opens and takes the pairing file.": "用 iPhone 相机扫描（同一 Wi-Fi），Poki 会打开并接收配对文件。",
   "Stop": "停止",
   "No iPhone set up from this computer yet.": "这台电脑还没有安装过任何 iPhone。",
   "Your relay": "你的中继",

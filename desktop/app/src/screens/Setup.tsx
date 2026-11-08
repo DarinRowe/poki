@@ -116,7 +116,7 @@ export default function Setup({ goAccount }: { goAccount: () => void }) {
             <div className="row" style={{ marginTop: 14, alignItems: "flex-start" }}>
               <Qr svg={result.handoff.qr_svg} />
               <div className="grow">
-                <p style={{ marginTop: 0 }}>{t("Scan this in Poki on the iPhone (same Wi-Fi).")}</p>
+                <p style={{ marginTop: 0 }}>{t("Scan this with the iPhone's Camera (same Wi-Fi). Poki opens and takes the pairing file.")}</p>
                 <code className="small" style={{ userSelect: "text" }}>{result.handoff.link}</code>
               </div>
             </div>
