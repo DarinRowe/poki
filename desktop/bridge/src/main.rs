@@ -274,7 +274,9 @@ async fn dispatch(state: &Shared, out: &Out, cmd: &str, a: &Value) -> R {
             let ipa: Option<String> = arg(a, "ipa")?;
             let hand_off: bool = arg::<Option<bool>>(a, "hand_off")?.unwrap_or(false);
             let r = out.reporter("install");
-            let opts = setup::Options { udid, ipa: ipa.map(Into::into), signing_zip: None, wait: None, hand_off, seed_ddi: false };
+            // Poki counts pairing as done only with the disk image in place, so it goes in with the pairing file.
+            let seed_ddi: bool = arg::<Option<bool>>(a, "seed_ddi")?.unwrap_or(true);
+            let opts = setup::Options { udid, ipa: ipa.map(Into::into), signing_zip: None, wait: None, hand_off, seed_ddi };
             let result = with_signer(state, async |s| setup::run(s, opts, &r).await).await;
             *state.busy.lock().await = false;
             let done = result?;
