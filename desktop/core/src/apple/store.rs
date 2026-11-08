@@ -1,0 +1,91 @@
+//! Where the Apple session lives between runs: the OS keychain (macOS Keychain, Windows
+//! Credential Manager, Secret Service on Linux). The password is kept only when the person
+//! turns on "Keep me signed in for weekly re-signing"; otherwise only the session tokens are.
+use super::anisette::Source;
+use super::gsa::{AppToken, Session};
+use crate::{Error, Result, paths};
+use serde::{Deserialize, Serialize};
+
+const SERVICE: &str = "nz.zheha.poki.setup";
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct Account {
+    pub session: Option<Session>,
+    pub xcode_token: Option<AppToken>,
+    pub password: Option<String>,
+    pub team_id: Option<String>,
+    pub anisette: Option<Source>,
+}
+
+impl Account {
+    pub fn apple_id(&self) -> Option<&str> { self.session.as_ref().map(|s| s.apple_id.as_str()) }
+    pub fn display_name(&self) -> Option<String> {
+        self.session.as_ref().map(|s| {
+            let n = format!("{} {}", s.first_name, s.last_name).trim().to_string();
+            if n.is_empty() { s.apple_id.clone() } else { n }
+        })
+    }
+}
+
+fn entry() -> Result<keyring::Entry> {
+    keyring::Entry::new(SERVICE, "apple-account").map_err(|e| Error::msg(format!("keychain: {e}")))
+}
+
+/// Tests and headless machines: POKI_SETUP_FILE_SECRETS=1 keeps the account in a 0600 file.
+fn file_mode() -> bool { std::env::var("POKI_SETUP_FILE_SECRETS").map(|v| v == "1").unwrap_or(false) }
+
+fn file_path() -> Result<std::path::PathBuf> { Ok(paths::state_dir()?.join("account.json")) }
+
+pub fn load() -> Result<Account> {
+    if file_mode() {
+        return Ok(std::fs::read_to_string(file_path()?).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default());
+    }
+    match entry()?.get_password() {
+        Ok(json) => Ok(serde_json::from_str(&json).unwrap_or_default()),
+        Err(keyring::Error::NoEntry) => Ok(Account::default()),
+        Err(e) => Err(Error::msg(format!("Could not read the keychain: {e}"))),
+    }
+}
+
+pub fn save(account: &Account) -> Result<()> {
+    let json = serde_json::to_string(account)?;
+    if file_mode() {
+        let p = file_path()?;
+        std::fs::write(&p, &json)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600))?;
+        }
+        return Ok(());
+    }
+    entry()?.set_password(&json).map_err(|e| Error::msg(format!("Could not write the keychain: {e}")))
+}
+
+pub fn clear() -> Result<()> {
+    if file_mode() {
+        let _ = std::fs::remove_file(file_path()?);
+        return Ok(());
+    }
+    match entry()?.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(Error::msg(format!("keychain: {e}"))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn file_round_trip() {
+        let (_lock, _dir) = crate::paths::test_home();
+        unsafe { std::env::set_var("POKI_SETUP_FILE_SECRETS", "1") };
+        assert!(load().unwrap().session.is_none());
+        let mut a = Account::default();
+        a.team_id = Some("ABC".into());
+        save(&a).unwrap();
+        assert_eq!(load().unwrap().team_id.as_deref(), Some("ABC"));
+        clear().unwrap();
+        assert!(load().unwrap().team_id.is_none());
+    }
+}

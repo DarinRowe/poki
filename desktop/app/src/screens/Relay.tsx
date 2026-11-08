@@ -1,0 +1,63 @@
+import { useEffect, useState } from "react";
+import { api, failureText, onProgress, type CfAccount, type Deployed } from "../api";
+import { t } from "../i18n";
+import { Capsule, Card, Copy, ErrorBox, Field, Pill, Qr, Steps, useSteps } from "../ui";
+
+export default function Relay() {
+  const [relay, setRelay] = useState<Deployed | null>(null);
+  const [token, setToken] = useState("");
+  const [accounts, setAccounts] = useState<CfAccount[]>([]);
+  const [accountId, setAccountId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [up, setUp] = useState<boolean | null>(null);
+  const [qr, setQr] = useState<string | null>(null);
+  const { steps, apply, fail, reset } = useSteps([{ id: "relay", title: "Deploy" }]);
+  useEffect(() => {
+    api.relayState().then(setRelay);
+    const un = onProgress("relay", apply);
+    return () => { un.then((f) => f()); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const lookup = async () => {
+    setError(null);
+    try { const a = await api.relayAccounts(token); setAccounts(a); setAccountId(a[0]?.id ?? ""); } catch (e) { setError(failureText(e)); }
+  };
+  const deploy = async () => {
+    setBusy(true); setError(null); reset(); apply({ job: "relay", kind: "step", id: "relay", title: "Deploy" });
+    try { const d = await api.relayDeploy(token, accountId); setRelay(d); setToken(""); setAccounts([]); apply({ job: "relay", kind: "done", id: "relay", detail: d.address }); }
+    catch (e) { fail(failureText(e)); setError(failureText(e)); }
+    setBusy(false);
+  };
+  return (
+    <>
+      <h1 className="page-title">{t("Relay")}</h1>
+      <p className="page-sub">Poki has no shared relay: this deploys the Worker to your own Cloudflare account, so screenshots and taps pass only through a Worker you control.</p>
+      <ErrorBox error={error} />
+      {relay && (
+        <Card>
+          <div className="row between">
+            <div className="grow"><h2 style={{ margin: 0 }}>{t("Your relay")}</h2><code className="small" style={{ userSelect: "text" }}>{relay.address}</code><div className="muted small">{relay.account_name}</div></div>
+            {up !== null && <Pill tone={up ? "ok" : "bad"}>{t(up ? "Answering" : "Not answering")}</Pill>}
+            <Copy text={relay.address} />
+            <Capsule kind="ghost" sm onClick={() => api.relayCheck(relay.address).then(setUp)}>{t("Check")}</Capsule>
+            <Capsule kind="ghost" sm onClick={() => api.qrSvg(relay.phone_link).then(setQr)}>{t("Show QR for the phone")}</Capsule>
+          </div>
+          {qr && <div className="row" style={{ marginTop: 14, alignItems: "flex-start" }}><Qr svg={qr} /><div className="grow"><p style={{ marginTop: 0 }}>In Poki on the iPhone, open Connect and scan this, or type the address under Relay address.</p><code className="small" style={{ userSelect: "text" }}>{relay.phone_link}</code></div></div>}
+        </Card>
+      )}
+      <Card>
+        <h2>{t("Deploy to my Cloudflare account")}</h2>
+        <p className="muted small">Make a token at dash.cloudflare.com/profile/api-tokens with the "Edit Cloudflare Workers" template. It is used for this deploy and not kept. The Worker runs inside Workers Paid's included amounts; see deploy/cf-relay/DEPLOY.md.</p>
+        <div className="stack">
+          <Field label={t("Cloudflare API token")}><div className="row"><input className="input mono grow" type="password" value={token} onChange={(e) => setToken(e.target.value)} /><Capsule kind="ghost" onClick={lookup} disabled={token.length < 20}>{t("Continue")}</Capsule></div></Field>
+          {accounts.length > 0 && (
+            <Field label="Account"><select className="input" value={accountId} onChange={(e) => setAccountId(e.target.value)}>{accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></Field>
+          )}
+          {accounts.length > 0 && <div><Capsule onClick={deploy} disabled={busy || !accountId}>{busy ? t("Deploying…") : t("Deploy")}</Capsule></div>}
+          {(busy || steps[0].state !== "todo") && <Steps steps={steps} />}
+        </div>
+      </Card>
+    </>
+  );
+}
