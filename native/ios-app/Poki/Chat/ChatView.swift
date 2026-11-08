@@ -504,7 +504,7 @@ struct ComposerInputView: View {
                     }
                     .accessibilityLabel(Text("Send"))
                 } else {
-                    // The live voice conversation: Poki listens and answers out loud until you end it.
+                    // The live voice conversation: Poki listens and answers out loud. It ends 8 s after an answer if nobody speaks, in the background, or when you end it.
                     Button {
                         if voice.isOn { voice.stop() }
                         else if !voice.canTalkLive {
