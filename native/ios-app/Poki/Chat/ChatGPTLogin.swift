@@ -174,7 +174,7 @@ struct SignInPage: UIViewRepresentable {
 
     func makeCoordinator() -> SignInRedirect { SignInRedirect() }
 
-    func makeUIView(context: Context) -> WKWebView {
+    func makeUIView(context: UIViewRepresentableContext<SignInPage>) -> WKWebView {
         let view = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
         view.navigationDelegate = context.coordinator
         view.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
@@ -182,7 +182,7 @@ struct SignInPage: UIViewRepresentable {
         return view
     }
 
-    func updateUIView(_ view: WKWebView, context: Context) {}
+    func updateUIView(_ view: WKWebView, context: UIViewRepresentableContext<SignInPage>) {}
 }
 
 /// Hands the redirect to Poki's own listener instead of loading it.
