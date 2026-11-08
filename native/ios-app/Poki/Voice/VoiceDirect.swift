@@ -28,16 +28,21 @@ enum VoiceDirect {
     Only the user approves, with their own finger: never open Poki to tap Allow, Deny or anything else in it.
     If the user tells you to stop or be quiet, stop talking, but anything already running keeps running; when its result arrives, report it in one sentence.
     To read a page, open it first, then read the screen.
-    With do, open an app by its bundle id (Notes com.apple.mobilenotes, Weather com.apple.weather, Settings com.apple.Preferences, Messages com.apple.MobileSMS, Calculator com.apple.calculator, Clock com.apple.mobiletimer) and put several actions in one do when you know them; tap elements by the numbers from the latest look or do.
+    You can open and operate every app installed on this iPhone, Apple's and anyone else's (WeChat, Instagram, Uber, a bank, a game): never tell the user an app is out of reach before you have tried. With do, open an app by its bundle id ({launch: "com.apple.mobilenotes"}, Messages com.apple.MobileSMS, Settings com.apple.Preferences, Safari com.apple.mobilesafari are only examples). When you do not know an app's bundle id, go home ({button: "home"}), swipe down on the Home Screen to search, type the app's name and tap it. Put several actions in one do when you know them; tap elements by the numbers from the latest look or do.
     """
 
     private static let empty: [String: Any] = ["type": "object", "properties": [String: Any](), "additionalProperties": false]
     private static let tools: [[String: Any]] = [
         ["type": "function", "name": "get_ios_version", "description": "Read the iPhone model and its iOS version. Changes nothing on the phone.", "parameters": empty],
         ["type": "function", "name": "look", "description": "Read the iPhone screen now: the app in front and its numbered elements (role, label, frame in points).", "parameters": empty],
-        ["type": "function", "name": "do", "description": "Run actions on the iPhone in order, then read the screen once. Actions: {launch: \"bundle id\"}; {tap: n} or {tap: [x, y]}; {type: \"text\", ref?: n} (taps n first, then types); {key: \"return\"}; {scroll_to: \"text\"}; {swipe: \"up\"|\"down\"|\"left\"|\"right\"}; {button: \"home\"}; {wait_until: \"text\"}; {wait: ms}. The answer says what each action did and what is new on screen.",
+        ["type": "function", "name": "do", "description": doDescription,
          "parameters": ["type": "object", "properties": ["actions": ["type": "array", "items": ["type": "object"]]], "required": ["actions"], "additionalProperties": false]],
     ]
+
+    /// PokiCore's own description of do (the text chat's), so voice knows every action the chat knows:
+    /// launch any app, scroll_to, back, long_press, handoff and the rest.
+    private static let doDescription: String = Harness.phoneTools.first { $0.name == "do" }?.description
+        ?? "Run actions on the iPhone in order, then read the screen once. Actions: {launch: \"bundle id\"} (any installed app); {tap: n} or {tap: [x, y]}; {type: \"text\", ref?: n} (taps n first, then types); {key: \"return\"}; {scroll_to: \"text\"}; {swipe: \"up\"|\"down\"|\"left\"|\"right\"}; {button: \"home\"}; {wait_until: \"text\"}; {wait: ms}; {back: true}. The answer says what each action did and what is new on screen."
 
     /// A one-minute Realtime key from OpenAI, made with the owner's API key (sent only to OpenAI).
     static func token(apiKey: String) async throws -> VoiceBridge.Token {

@@ -29,13 +29,14 @@ struct PokiApp: App {
     }
 }
 
-/// Chat and Voice side by side, a swipe apart (ESP-171 "对标 iMessage" boards). Poki's details open from
-/// the picture on top, like a contact in Messages; settings and setup open from there or from the chat.
+/// Two tabs, as a native iPhone app has them: Chats (the Sessions list, Poki's chat and an agent's session
+/// over it, like Messages) and Status (Poki's run status, model, history and settings). Voice lives inside
+/// the chat: a live conversation button and dictation into the message field.
 struct RootView: View {
     @Environment(AppModel.self) private var model
     @Environment(ChatModel.self) private var chat
     @Environment(\.scenePhase) private var scenePhase
-    @State private var page = RootPage.chat
+    @State private var tab = RootTab.chats
     @State private var home: [HomeRoute] = []
     @State private var setupStart: SetupStart?
     @State private var settings: SettingsStart?
@@ -47,19 +48,20 @@ struct RootView: View {
     /// Sessions is the first page; Poki's chat and an agent's session open over it, like a conversation
     /// in Messages.
     enum HomeRoute: Hashable { case chat, session(String) }
+    enum RootTab: Hashable { case chats, status }
 
     var body: some View {
-        TabView(selection: $page) {
+        TabView(selection: $tab) {
             NavigationStack(path: $home) {
                 SessionsView(openChat: { home = [.chat] }, openSession: { home = [.session($0)] },
                              openModel: { details = DetailsStart(path: [.model]) },
                              openConnectors: { settings = SettingsStart(path: []) },
-                             openDetails: { details = DetailsStart() }, openVoice: { withAnimation { page = .voice } },
+                             openDetails: { tab = .status }, openVoice: openLiveVoice,
                              openSetup: openSetup)
                     .navigationDestination(for: HomeRoute.self) { route in
                         switch route {
                         case .chat:
-                            ChatView(openDetails: { details = DetailsStart() }, openVoice: { withAnimation { page = .voice } },
+                            ChatView(openDetails: { tab = .status }, openVoice: openLiveVoice,
                                      openSetup: openSetup, openModel: { details = DetailsStart(path: [.model]) },
                                      back: { home = [] })
                         case .session(let id):
@@ -67,18 +69,16 @@ struct RootView: View {
                         }
                     }
             }
-                .tag(RootPage.chat)
-            VoicePage(openDetails: { details = DetailsStart() }, openVoiceSettings: { settings = nil; details = DetailsStart() },
-                      select: { target in withAnimation { page = target } })
-                .tag(RootPage.voice)
+            .tabItem { Label("Chats", systemImage: "bubble.left.and.bubble.right.fill") }
+            .tag(RootTab.chats)
+
+            PokiDetailsView(openVoice: openLiveVoice, openSetup: openSetup, inTab: true)
+                .tabItem { Label("Status", systemImage: model.sessionOn ? "bolt.circle.fill" : "circle.dashed") }
+                .tag(RootTab.status)
         }
-        .tabViewStyle(.page(indexDisplayMode: .never))
-        // The pages keep the safe area for their content and draw their own colour behind the status bar.
-        // Only the container's edges: the keyboard's stays, so the chat's input box rises above it.
-        .ignoresSafeArea(.container)
-        .background((page == .voice ? Site.blue : Color(.systemBackground)).ignoresSafeArea())
+        .tint(Site.blue)
         .fullScreenCover(item: $details) { start in
-            PokiDetailsView(openVoice: { withAnimation { page = .voice } }, openSetup: openSetup, start: start.path)
+            PokiDetailsView(openVoice: { details = nil; openLiveVoice() }, openSetup: openSetup, start: start.path)
         }
         .sheet(item: $settings) { start in
             SettingsView(start: start.path, openSetup: { settings = nil; Task { try? await Task.sleep(for: .milliseconds(350)); openSetup() } })
@@ -88,7 +88,8 @@ struct RootView: View {
         .onChange(of: scenePhase, initial: true) { _, phase in
             if phase == .active { model.becameActive(); AskPoki.refresh() } else if phase == .background { model.wentToBackground() }
         }
-        // A tap on the Live Activity brings the chat to the front; `poki://voice` only shows the voice page.
+        // A tap on the Live Activity brings the chat to the front; `poki://voice` opens the chat too (it
+        // never turns on the microphone).
         .onOpenURL { url in
             AppLog.shared.add("app", "opened by link poki://\(url.host() ?? "")")
             // Pairing is not interrupted: it stays on the pairing step, where the PIN is.
@@ -97,20 +98,30 @@ struct RootView: View {
             // A pairing file or a setup link (from Poki Setup on a computer, AirDrop or Files) opens
             // setup at that step, where the result is shown.
             if let step = model.open(link: url) {
-                page = .chat
+                tab = .chats
                 setupStart = SetupStart(index: SetupStep.shown.firstIndex(of: step) ?? 0)
-            } else if url.host() == "voice" { page = .voice; model.voice.open(url) } else { page = .chat; home = [.chat] }
+            } else {
+                if url.host() == "voice" { model.voice.open(url) }
+                tab = .chats; home = [.chat]
+            }
         }
         .onAppear(perform: openLaunchScreen)
         .task {
             #if DEBUG
             // Development builds: `-pokiVoiceLink "poki://voice?…"` at launch starts a silent test run.
             if let link = UserDefaults.standard.string(forKey: "pokiVoiceLink"), let url = URL(string: link), url.host() == "voice" {
-                page = .voice
+                tab = .chats; home = [.chat]
                 model.voice.openAtLaunch(url)
             }
             #endif
         }
+    }
+
+    /// The live voice conversation runs inside Poki's chat: the chat opens and the conversation starts.
+    private func openLiveVoice() {
+        tab = .chats
+        home = [.chat]
+        if !model.voice.isOn, model.voice.canTalkLive { Task { await model.voice.start() } }
     }
 
     private func openSetup() { setupStart = SetupStart(index: SetupView.firstOpen(model)) }
@@ -134,10 +145,10 @@ struct RootView: View {
         case "debug": settings = SettingsStart(path: [.diagnostics])
         case "activity": settings = SettingsStart(path: [.diagnostics, .activityPreview])
         case "connector": settings = SettingsStart(path: model.identity.secrets.first.map { [.connector($0)] } ?? [])
-        case "details", "status": details = DetailsStart()
+        case "details", "status": tab = .status
         case "model": details = DetailsStart(path: [.model])
         case "steps": details = DetailsStart(path: [.history])
-        case "voice": page = .voice
+        case "voice": home = [.chat]
         default: break
         }
     }

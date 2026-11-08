@@ -240,6 +240,13 @@ final class VoiceModel {
     /// dictation into the chat with whichever model Poki uses.
     var canTalk: Bool { VoiceDirect.apiKey != nil || bridge != nil || VoiceDirect.canDictate }
 
+    /// A live (Realtime) conversation can start: the OpenAI key on this iPhone or the voice bridge.
+    /// Without one, voice is dictation into the message field, turn by turn.
+    var canTalkLive: Bool { VoiceDirect.apiKey != nil || bridge != nil }
+
+    /// A live Realtime conversation is on (not the hold-to-dictate fallback).
+    var isLive: Bool { link != nil }
+
     /// How voice runs now, for the settings screen.
     var route: String {
         if VoiceDirect.apiKey != nil { return String(localized: "Your OpenAI key, straight from this iPhone") }

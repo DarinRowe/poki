@@ -3,7 +3,7 @@ name: Poki
 options:
   bundleIdPrefix: nz.zheha.poki
   deploymentTarget:
-    iOS: "26.0"
+    iOS: "18.0"
   createIntermediateGroups: true
 packages:
   PokiCore:

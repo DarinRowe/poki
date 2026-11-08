@@ -53,7 +53,6 @@ struct SessionsView: View {
                         .disabled(chat.running)
                 }
             }
-            ModeLabels(page: .chat, dark: false, select: { if $0 == .voice { openVoice() } })
         }
         .background(Color(.systemBackground))
     }

@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 
 /// The chat page (ESP-171 boards "M Chat empty", "M Chat working", "M Chat approved"): Poki's picture and
@@ -13,17 +14,29 @@ struct ChatView: View {
     /// Back to the Sessions list, when the chat was opened from it.
     var back: (() -> Void)? = nil
 
+    private var voice: VoiceModel { model.voice }
+
     var body: some View {
-        VStack(spacing: 0) {
-            MessageListHeader(dark: false, subtitle: ModelKeys.selectedModelName, back: back, openDetails: openDetails)
-            ChatTranscript(entries: chat.entries, typing: chat.awaitingModel, canRetry: chat.canRetry, retry: chat.retry) {
-                if needsSetup { SetupBubble(paired: model.pairingPath != nil, openSetup: openSetup) }
+        ChatTranscript(entries: chat.entries, typing: chat.awaitingModel, canRetry: chat.canRetry, retry: chat.retry) {
+            if needsSetup { SetupBubble(paired: model.pairingPath != nil, openSetup: openSetup) }
+            LiveVoiceTranscript(voice: voice)
+        }
+        // The header and the message field are insets of the conversation, so the field sits right on
+        // the keyboard (or the home indicator) and the bubbles scroll under both, as in Messages.
+        .safeAreaInset(edge: .top, spacing: 0) {
+            VStack(spacing: 0) {
+                MessageListHeader(dark: false, subtitle: ModelKeys.selectedModelName, back: back, openDetails: openDetails)
+                if voice.isLive || voice.isOn { LiveVoiceBar(voice: voice).transition(.move(edge: .top).combined(with: .opacity)) }
             }
-            ComposerInputView(running: chat.running, send: chat.send, stop: chat.stop, openVoice: openVoice, openModel: openModel, newConversation: chat.newConversation)
-            ModeLabels(page: .chat, dark: false)
+            .animation(.snappy, value: voice.isOn)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            ComposerInputView(running: chat.running, send: chat.send, stop: chat.stop, openVoice: openVoice, openModel: openModel,
+                              newConversation: chat.newConversation)
         }
         .background(Color(.systemBackground))
         .toolbar(.hidden, for: .navigationBar)
+        .toolbar(.hidden, for: .tabBar)
     }
 
     /// Setup is not finished (nothing paired yet, or a step left after pairing, such as UI Automation):
@@ -436,76 +449,274 @@ struct ModeLabels: View {
 
 // MARK: Composer
 
-// ComposerInputView is from GetStream/swiftui-iMessage-clone (commit df114b4,
+// ComposerInputView started from GetStream/swiftui-iMessage-clone (commit df114b4,
 // iMessageClone/MessageList/View/Composer/ComposerInputView.swift, by Stefan Blos; no licence file in
 // the repository), with the plus button in front from exyte/Chat (commit f382a14,
-// Sources/ExyteChat/Views/InputView/InputView.swift, Copyright (c) 2019 exyte, MIT License). Changed: the
-// board's sizes and greys, a microphone that opens Voice instead of the "not implemented" alert, a stop
-// button while a task runs, and the plus button's menu.
+// Sources/ExyteChat/Views/InputView/InputView.swift, Copyright (c) 2019 exyte, MIT License). Now: a
+// Liquid Glass field on iOS 26 (a bar material before it), dictation that writes into the field as you
+// speak, the live voice button, and a stop button while a task runs.
 struct ComposerInputView: View {
+    @Environment(AppModel.self) private var model
     var running: Bool
     var send: (String) -> Void
     var stop: () -> Void
+    /// Starts the live voice conversation.
     var openVoice: () -> Void
     var openModel: () -> Void
     var newConversation: () -> Void
     @State private var input = ""
+    @State private var dictation = FieldDictation()
+    @FocusState private var focused: Bool
+
+    private var voice: VoiceModel { model.voice }
+    private var hasText: Bool { !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: 8) {
-            Menu {
-                Button("New Conversation", systemImage: "square.and.pencil", action: newConversation)
-                Button("Model", systemImage: "cpu", action: openModel)
-            } label: {
-                Image(systemName: "plus").font(.system(size: 15, weight: .semibold)).foregroundStyle(Color(.secondaryLabel))
-                    .frame(width: 34, height: 34).background(ChatColor.incoming, in: .circle)
+        VStack(spacing: 4) {
+            if dictation.on {
+                HStack(spacing: 6) {
+                    Circle().fill(Color(.systemRed)).frame(width: 7, height: 7)
+                    Text("Dictating. Your words go into the message; tap Send when it reads right.")
+                }
+                .font(.system(size: 12)).foregroundStyle(ChatColor.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20)
+                .transition(.opacity)
+            } else if let problem = dictation.problem {
+                Text(problem).font(.system(size: 12)).foregroundStyle(Color(.systemRed))
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20)
             }
-            .padding(.bottom, 1)
-            .accessibilityLabel(Text("More"))
+            HStack(alignment: .bottom, spacing: 8) {
+                Menu {
+                    Button("New Conversation", systemImage: "square.and.pencil", action: newConversation)
+                    Button("Model", systemImage: "cpu", action: openModel)
+                } label: {
+                    Image(systemName: "plus").font(.system(size: 17, weight: .semibold)).foregroundStyle(Color(.label))
+                        .frame(width: 40, height: 40)
+                        .composerGlass(in: Circle())
+                }
+                .accessibilityLabel(Text("More"))
 
-            HStack(alignment: .bottom, spacing: 10) {
-                TextField(text: $input, prompt: Text("Message Poki").foregroundStyle(ChatColor.placeholder), axis: .vertical) { Text("Message Poki") }
-                    .font(.system(size: 17))
-                    .multilineTextAlignment(.leading)
-                    .lineLimit(1...5)
-                    .padding(.vertical, 6.5)
-                    .submitLabel(.send)
-                    .onSubmit(submit)
-                trailing.frame(height: 34)
+                HStack(alignment: .bottom, spacing: 4) {
+                    TextField(text: $input, prompt: Text(dictation.on ? "Listening…" : "Message Poki").foregroundStyle(ChatColor.placeholder), axis: .vertical) { Text("Message Poki") }
+                        .font(.system(size: 17))
+                        .focused($focused)
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(1...6)
+                        .padding(.vertical, 9)
+                        .submitLabel(.send)
+                        .onSubmit(submit)
+                    trailing.frame(height: 40)
+                }
+                .padding(.leading, 16).padding(.trailing, 4)
+                .frame(minHeight: 40)
+                .composerGlass(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
             }
-            .padding(.leading, 14).padding(.trailing, 6)
-            .frame(minHeight: 36)
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(ChatColor.fieldEdge, lineWidth: 1))
+            .padding(.horizontal, 12).padding(.top, 6).padding(.bottom, 8)
         }
-        .padding(.horizontal, 12).padding(.vertical, 6)
+        .animation(.snappy, value: dictation.on)
+        .onChange(of: dictation.text) { _, text in if dictation.on { input = dictation.base + text } }
+        .onDisappear { dictation.stop(model) }
     }
 
     @ViewBuilder private var trailing: some View {
-        if !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !running {
-            Button(action: submit) {
-                Image(systemName: "arrow.up.circle.fill")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 26, height: 26)
-                    .foregroundStyle(.white, Site.blue)
+        HStack(spacing: 2) {
+            if running {
+                Button(action: stop) {
+                    Image(systemName: "stop.circle.fill").resizable().scaledToFit().frame(width: 30, height: 30).foregroundStyle(.white, Site.blue)
+                }
+                .accessibilityLabel(Text("Stop"))
+            } else {
+                // Dictation: the words appear in the field; nothing is sent until you tap Send.
+                Button { dictation.on ? dictation.stop(model) : dictation.start(model, after: input) } label: {
+                    Image(systemName: dictation.on ? "mic.fill" : "mic")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(dictation.on ? Color(.systemRed) : ChatColor.secondary)
+                        .symbolEffect(.pulse, isActive: dictation.on)
+                        .frame(width: 34, height: 40).contentShape(.rect)
+                }
+                .disabled(voice.isOn)
+                .accessibilityLabel(Text(dictation.on ? "Stop Dictation" : "Dictate"))
+                if hasText {
+                    Button(action: submit) {
+                        Image(systemName: "arrow.up.circle.fill").resizable().scaledToFit().frame(width: 30, height: 30).foregroundStyle(.white, Site.blue)
+                    }
+                    .accessibilityLabel(Text("Send"))
+                } else {
+                    // The live voice conversation: Poki listens and answers out loud until you end it.
+                    Button {
+                        if voice.isOn { voice.stop() } else { dictation.stop(model); openVoice() }
+                    } label: {
+                        Image(systemName: voice.isOn ? "waveform.circle.fill" : "waveform.circle")
+                            .resizable().scaledToFit().frame(width: 30, height: 30)
+                            .foregroundStyle(voice.isOn ? AnyShapeStyle(Site.blue) : AnyShapeStyle(ChatColor.secondary))
+                            .symbolEffect(.variableColor.iterative, isActive: voice.isOn)
+                    }
+                    .accessibilityLabel(Text(voice.isOn ? "End Live Voice" : "Live Voice"))
+                }
             }
-            .accessibilityLabel(Text("Send"))
-        } else if running {
-            Button(action: stop) {
-                Image(systemName: "stop.circle.fill").resizable().scaledToFit().frame(width: 26, height: 26).foregroundStyle(.white, Site.blue)
-            }
-            .accessibilityLabel(Text("Stop"))
-        } else {
-            Button(action: openVoice) {
-                Image(systemName: "mic.fill").font(.system(size: 17)).foregroundStyle(ChatColor.secondary).frame(width: 24, height: 34)
-            }
-            .accessibilityLabel(Text("Voice"))
         }
     }
 
     private func submit() {
-        guard !running else { return }
+        guard !running, hasText else { return }
+        dictation.stop(model)
         send(input)
         input = ""
+    }
+}
+
+/// Dictation into the message field (Apple's speech recognition, on the device when it can), separate
+/// from the live conversation: it only writes words, it never sends them.
+@MainActor
+@Observable
+final class FieldDictation {
+    private(set) var on = false
+    private(set) var text = ""
+    private(set) var base = ""
+    private(set) var problem: String?
+    private var engine: Dictation?
+
+    func start(_ model: AppModel, after current: String) {
+        guard !on else { return }
+        problem = nil
+        let trimmed = current.trimmingCharacters(in: .whitespacesAndNewlines)
+        base = trimmed.isEmpty ? "" : trimmed + " "
+        text = ""
+        Task {
+            guard await Dictation.allowed() else {
+                problem = String(localized: "Poki needs the microphone and speech recognition: allow them in Settings › Poki.")
+                return
+            }
+            let engine = Dictation()
+            engine.onHeard = { [weak self] heard in self?.text = heard }
+            model.background.pauseAudio()
+            do {
+                try engine.listen()
+                self.engine = engine
+                on = true
+            } catch {
+                model.background.resumeAudio()
+                problem = error.localizedDescription
+            }
+        }
+    }
+
+    func stop(_ model: AppModel) {
+        guard on, let engine else { return }
+        on = false
+        self.engine = nil
+        Task {
+            _ = await engine.finish()
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            model.background.resumeAudio()
+        }
+    }
+}
+
+// MARK: Live voice
+
+/// Under the header while a live conversation is on: whether Poki is listening, hearing you, working or
+/// speaking, and the buttons to quiet it or end it.
+struct LiveVoiceBar: View {
+    var voice: VoiceModel
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: symbol)
+                .font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
+                .symbolEffect(.variableColor.iterative, isActive: voice.phase == .hearing || voice.phase == .speaking)
+                .frame(width: 30, height: 30).background(tint, in: .circle)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(voice.isLive ? "Live Voice" : "Voice, turn by turn").font(.system(size: 15, weight: .semibold))
+                Text(detail).font(.system(size: 13)).foregroundStyle(ChatColor.secondary).lineLimit(1)
+            }
+            Spacer(minLength: 4)
+            if voice.phase == .speaking {
+                Button { voice.stopTalking() } label: { Image(systemName: "speaker.slash.fill") }
+                    .buttonStyle(.bordered).buttonBorderShape(.circle).accessibilityLabel(Text("Stop Talking"))
+            }
+            Button("End", role: .destructive) { voice.stop() }
+                .buttonStyle(.borderedProminent).buttonBorderShape(.capsule).tint(Color(.systemRed)).controlSize(.small)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .composerGlass(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .padding(.horizontal, 12).padding(.top, 6).padding(.bottom, 4)
+    }
+
+    private var symbol: String {
+        switch voice.phase {
+        case .hearing: "waveform"
+        case .thinking: "ellipsis"
+        case .speaking: "speaker.wave.2.fill"
+        case .connecting: "antenna.radiowaves.left.and.right"
+        case .lost: "exclamationmark"
+        default: "mic.fill"
+        }
+    }
+
+    private var tint: Color {
+        switch voice.phase {
+        case .hearing: Color(.systemRed)
+        case .lost: Color(.systemOrange)
+        default: Site.blue
+        }
+    }
+
+    private var detail: String {
+        switch voice.phase {
+        case .connecting: String(localized: "Connecting…")
+        case .listening: voice.isLive ? String(localized: "Listening. Just talk; Poki answers when you pause.") : String(localized: "Ready")
+        case .hearing: String(localized: "Hearing you…")
+        case .thinking: String(localized: "Working on it…")
+        case .speaking: String(localized: "Speaking")
+        case .off: String(localized: "Off")
+        case .lost(let why): why
+        }
+    }
+}
+
+/// What was said in the live conversation, as bubbles under the chat: your words (grey while Poki is
+/// still hearing them), Poki's answers, and its steps as grey lines.
+struct LiveVoiceTranscript: View {
+    var voice: VoiceModel
+
+    var body: some View {
+        if voice.isOn || !voice.lines.isEmpty {
+            let lines = Array(voice.lines.suffix(24))
+            VStack(spacing: 4) {
+                if !lines.isEmpty {
+                    Label("Voice conversation", systemImage: "waveform")
+                        .font(.system(size: 12, weight: .medium)).foregroundStyle(ChatColor.secondary)
+                        .padding(.top, 12).padding(.bottom, 4).frame(maxWidth: .infinity)
+                }
+                ForEach(Array(lines.enumerated()), id: \.element.id) { i, line in
+                    let pending = i == lines.count - 1 && line.role == .you && voice.phase == .hearing
+                    switch line.role {
+                    case .you:
+                        MessageBubble(direction: .outgoing, text: line.text, tail: true).opacity(pending ? 0.55 : 1)
+                    case .poki:
+                        MessageBubble(direction: .incoming, text: line.text, tail: true)
+                    case .tool, .note:
+                        Text(line.text).font(.system(size: 12)).foregroundStyle(ChatColor.secondary)
+                            .multilineTextAlignment(.center).lineLimit(2).padding(.vertical, 3).frame(maxWidth: .infinity)
+                    }
+                }
+                if voice.phase == .hearing, lines.last?.role != .you {
+                    MessageBubble(direction: .outgoing, text: String(localized: "Listening…"), tail: true).opacity(0.55)
+                }
+            }
+            .animation(PlanMotion.enter, value: voice.lines)
+        }
+    }
+}
+
+extension View {
+    /// Liquid Glass on iOS 26 and later; the bar material with a hairline edge before it.
+    @ViewBuilder func composerGlass<S: Shape>(in shape: S) -> some View {
+        if #available(iOS 26.0, *) {
+            self.glassEffect(.regular.interactive(), in: shape)
+        } else {
+            self.background(.bar, in: shape).overlay(shape.stroke(ChatColor.fieldEdge, lineWidth: 0.5))
+        }
     }
 }

@@ -33,7 +33,7 @@ struct VoiceView: View {
                     Button(voice.isOn ? "End conversation" : "Talk to Poki", systemImage: voice.isOn ? "stop.fill" : "mic.fill") {
                         if voice.isOn { voice.stop() } else { Task { await begin() } }
                     }
-                    .buttonStyle(.glassProminent).controlSize(.large).frame(maxWidth: .infinity)
+                    .prominentGlass().controlSize(.large).frame(maxWidth: .infinity)
                     .disabled(!voice.canTalk)
                     if voice.isOn {
                         Button("Stop talking", systemImage: "speaker.slash") { voice.stopTalking() }
@@ -112,5 +112,12 @@ struct VoiceView: View {
         case .tool: "hand.tap"
         case .note: "info.circle"
         }
+    }
+}
+
+private extension View {
+    /// Liquid Glass on iOS 26; the bordered prominent style before it.
+    @ViewBuilder func prominentGlass() -> some View {
+        if #available(iOS 26, *) { buttonStyle(.glassProminent) } else { buttonStyle(.borderedProminent) }
     }
 }

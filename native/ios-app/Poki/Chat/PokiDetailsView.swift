@@ -13,6 +13,8 @@ struct PokiDetailsView: View {
     var openVoice: () -> Void
     var openSetup: () -> Void
     var start: [DetailsRoute] = []
+    /// Shown as the Status tab: no Done button, a large title instead.
+    var inTab = false
     @State private var path: [DetailsRoute] = []
     @State private var sheet: DetailsSheet?
 
@@ -20,8 +22,10 @@ struct PokiDetailsView: View {
         NavigationStack(path: $path) {
             ScrollView {
                 VStack(spacing: 0) {
-                    HStack { Spacer(); Button("Done") { dismiss() }.font(.system(size: 17, weight: .semibold)).foregroundStyle(Site.blue) }
-                        .padding(.horizontal, 20).padding(.top, 4)
+                    if !inTab {
+                        HStack { Spacer(); Button("Done") { dismiss() }.font(.system(size: 17, weight: .semibold)).foregroundStyle(Site.blue) }
+                            .padding(.horizontal, 20).padding(.top, 4)
+                    }
                     header
                     actions.padding(.horizontal, 16).padding(.bottom, 22)
                     NavigationLink(value: DetailsRoute.model) { modelRow }
@@ -75,7 +79,7 @@ struct PokiDetailsView: View {
                     if model.sessionOn { model.wakeRunner() } else { model.startSession() }
                 }
             }
-            ActionTile(title: "Voice", symbol: "mic.fill") { dismiss(); openVoice() }
+            ActionTile(title: "Voice", symbol: "waveform") { if !inTab { dismiss() }; openVoice() }
             ActionTile(title: "History", symbol: "clock") { path.append(.history) }
         }
     }
