@@ -18,7 +18,19 @@ use std::{
 pub use supervisor::{Config, Launcher};
 
 /// One runtime for everything the library does, on two worker threads.
+/// aws-lc as the process's rustls provider, before anything makes a TLS connection. idevice's
+/// lockdown and tunnel sessions use it; the signer's anisette client would otherwise install ring for
+/// the whole process (it ignores the error when one is already set), and the phone's lockdown TLS then
+/// fails with "device socket io failed".
+pub(crate) fn pin_crypto_provider() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+    });
+}
+
 pub(crate) fn runtime() -> &'static tokio::runtime::Runtime {
+    pin_crypto_provider();
     static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
     RUNTIME.get_or_init(|| {
         tokio::runtime::Builder::new_multi_thread()
@@ -31,6 +43,7 @@ pub(crate) fn runtime() -> &'static tokio::runtime::Runtime {
 }
 
 fn pair_runtime() -> &'static tokio::runtime::Runtime {
+    pin_crypto_provider();
     static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
     RUNTIME.get_or_init(|| {
         tokio::runtime::Builder::new_multi_thread()
@@ -75,6 +88,7 @@ pub struct PokiLauncher {
 /// Makes a launcher from its JSON config; null when the config is unreadable.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn poki_launcher_new(config_json: *const c_char, cb: EventCallback, context: *mut c_void) -> *mut PokiLauncher {
+    pin_crypto_provider();
     let Some(text) = (unsafe { read_str(config_json) }) else { return std::ptr::null_mut() };
     let Ok(config) = serde_json::from_str::<Config>(&text) else { return std::ptr::null_mut() };
     let callback = Callback { function: cb, context };
@@ -136,6 +150,7 @@ pub struct PokiPairing {
 /// paired {path}, failed {detail}. Null when the config is unreadable.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn poki_pair_start(config_json: *const c_char, cb: EventCallback, context: *mut c_void) -> *mut PokiPairing {
+    pin_crypto_provider();
     let Some(text) = (unsafe { read_str(config_json) }) else { return std::ptr::null_mut() };
     let Ok(value) = serde_json::from_str::<Value>(&text) else { return std::ptr::null_mut() };
     let Some(out_path) = value["out_path"].as_str() else { return std::ptr::null_mut() };
@@ -212,6 +227,7 @@ impl poki_setup_core::vault::Vault for KeychainVault {
 /// Installs the Keychain for the signer, once per process; 0 when installed, 1 when one already was.
 #[unsafe(no_mangle)]
 pub extern "C" fn poki_signer_set_vault(get: VaultGet, set: VaultSet, delete: VaultDelete, context: *mut c_void) -> i32 {
+    pin_crypto_provider();
     if poki_setup_core::vault::install(Box::new(KeychainVault { get, set, delete, context })) { 0 } else { 1 }
 }
 
@@ -220,6 +236,7 @@ pub extern "C" fn poki_signer_set_vault(get: VaultGet, set: VaultSet, delete: Va
 /// {"event":"result","ok":false,"error":"...","code":"..."}. -1 when the request is unreadable.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn poki_signer_call(request_json: *const c_char, cb: EventCallback, context: *mut c_void) -> i32 {
+    pin_crypto_provider();
     let Some(text) = (unsafe { read_str(request_json) }) else { return -1 };
     let Ok(request) = serde_json::from_str::<Value>(&text) else { return -1 };
     let callback = Callback { function: cb, context };

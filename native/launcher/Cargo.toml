@@ -19,6 +19,9 @@ plist = "1.7"
 # Poki Setup's core without its desktop-only parts: Apple sign-in, portal, re-signing, releases.
 poki-setup-core = { path = "../../desktop/core", default-features = false }
 base64 = "0.22"
+# Pinned as the process default before anything else makes TLS: idevice talks to the phone with aws-lc,
+# and the signer's HTTP stack would otherwise install ring for the whole process.
+rustls = { version = "0.23", default-features = false, features = ["aws-lc-rs", "std"] }
 
 [dev-dependencies]
 tokio = { version = "1.43", features = ["full", "test-util"] }

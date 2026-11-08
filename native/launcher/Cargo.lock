@@ -2547,6 +2547,7 @@ dependencies = [
  "idevice",
  "plist",
  "poki-setup-core",
+ "rustls",
  "serde",
  "serde_json",
  "tokio",
