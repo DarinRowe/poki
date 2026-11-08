@@ -22,7 +22,6 @@ struct PokiLiveActivity: Widget {
         ActivityConfiguration(for: PokiActivityAttributes.self) { context in
             LockScreenCard(state: context.shown)
                 .activityBackgroundTint(ActivityTheme.current.lockBackground)
-                .activitySystemActionForegroundColor(.white)
         } dynamicIsland: { context in
             let state = context.shown
             let insets = ActivityMetrics.islandInsets

@@ -82,15 +82,15 @@ struct ActivityPalette {
     var done: Color
     var problem: Color
     /// Secondary buttons (Stop, Deny).
-    var buttonFill = Color.white.opacity(0.16)
+    var buttonFill = Color(.tertiarySystemFill)
     /// The setup steps already done, and those still to do.
     var segmentDone: Color
     var track: Color
     /// The step line of a finished run.
     var finished: Color
     /// The one main button (Allow, Open Poki): a white capsule with blue text.
-    var primaryFill = Color.white
-    var primaryText = Site.ink
+    var primaryFill = Color.blue
+    var primaryText = Color.white
 
     func color(_ tone: ActivityTone) -> Color {
         switch tone {
@@ -107,26 +107,29 @@ struct ActivityPalette {
 /// Every colour, font and size the Live Activity draws with: the website's design language.
 struct ActivityTheme {
     /// White words on the blue card: the status word itself says which phase it is.
+    // The system's own Live Activity background, light or dark with the Lock Screen, and the
+    // system's colours on it.
     var lock = ActivityPalette(
-        quiet: .white.opacity(0.72), accent: .white, approval: .white, done: .white,
-        problem: .white, segmentDone: .white, track: .white.opacity(0.28), finished: .white)
+        text: .primary, quiet: .secondary, accent: .blue, approval: .orange, done: .green,
+        problem: .red, segmentDone: .green, track: Color(.tertiarySystemFill), finished: .green)
     var island = ActivityPalette(
         quiet: Color(hex: 0x9A9A96), accent: Site.sky, approval: Site.sky, done: Site.ok,
         problem: Color(hex: 0xFF6961), segmentDone: Site.ok, track: Color(hex: 0x3A3A3A),
         finished: Color(hex: 0x3CCF7A))
-    var lockBackground = Site.blue
+    /// nil: the system's own background.
+    var lockBackground: Color? = nil
     /// The glass edge on the blue card: a 1 pt white line, brighter along the top.
-    var glassEdge = Color.white.opacity(0.28)
+    var glassEdge = Color(.separator)
     var glassHighlight = Color.white.opacity(0.55)
     /// The island's outline while an approval waits.
     var approvalOutline = Site.blue
     /// The step line: steps that went through, one that did not, the hollow current step's centre.
     /// A finished run takes the surface's `finished` colour.
-    var stepLine = Color.white
+    var stepLine = Color.primary
     var stepMissed = Site.bad
-    var stepHole = Color.black
+    var stepHole = Color(.systemBackground)
     /// The Face ID glyph on Allow.
-    var primaryIcon = Color.black
+    var primaryIcon = Color.white
 
     /// Two text sizes and no more (ESP-162): `contentSize` only for the content line, the one thing
     /// that matters in a state; `textSize` for everything else.
@@ -135,7 +138,8 @@ struct ActivityTheme {
     /// Geist for English, as on the board; the system font for Chinese. Geist has no Chinese
     /// characters, and with it the Lock Screen and the island laid Chinese lines out narrower than
     /// they drew them, cutting off their ends (seen on the iPhone 17 Pro simulator).
-    static let usesGeist = Bundle.main.preferredLocalizations.first?.hasPrefix("zh") != true
+    /// The system font everywhere, as the Lock Screen and the island draw their own text.
+    static let usesGeist = false
     private static func font(_ name: String, _ weight: Font.Weight, _ size: CGFloat) -> Font {
         usesGeist ? .custom(name, size: size) : .system(size: size, weight: weight)
     }

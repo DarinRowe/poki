@@ -85,7 +85,6 @@ struct LockScreenCard: View {
         content(face)
             .padding(ActivityMetrics.lockInsets)
             .foregroundStyle(theme.lock.text)
-            .overlay { GlassEdge() }
             .tapShield()
             .animation(ActivityMotion.phase, value: face)
     }

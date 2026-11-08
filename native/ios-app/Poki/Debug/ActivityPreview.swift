@@ -139,11 +139,10 @@ private struct LockScreenFrame: View {
         let card = RoundedRectangle(cornerRadius: ActivityMetrics.lockCorner, style: .continuous)
         LockScreenCard(state: state)
             .frame(maxWidth: 371)
-            .background(ActivityTheme.current.lockBackground, in: card)
+            .background(ActivityTheme.current.lockBackground ?? Color(.secondarySystemGroupedBackground), in: card)
             .containerShape(card)
             .clipShape(card)
             .overlay(alignment: .bottomTrailing) { HeightBadge() }
-            .environment(\.colorScheme, .dark)
     }
 }
 
