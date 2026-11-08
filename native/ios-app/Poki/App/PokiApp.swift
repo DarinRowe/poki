@@ -19,6 +19,8 @@ struct PokiApp: App {
             UINavigationBar.appearance().largeTitleTextAttributes = [.font: large]
             UINavigationBar.appearance().titleTextAttributes = [.font: inline]
         }
+        // The tab bar's attention dots (Setup items open, Agents trouble) are orange, the warning colour.
+        UITabBarItem.appearance().badgeColor = .systemOrange
         #if DEBUG && targetEnvironment(simulator)
         TestCredential.importIfGiven()
         #endif
