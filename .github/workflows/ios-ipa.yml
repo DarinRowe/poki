@@ -1,0 +1,109 @@
+# Only the unsigned IPA, with no tests (those run in ios-app.yml): a fast build for hand testing.
+name: iOS IPA
+
+on:
+  workflow_dispatch:
+  # channel-release.yml (Alpha, Pre-alpha) builds the app from the tagged commit with the release's version.
+  workflow_call:
+    inputs:
+      version: { type: string, required: true }
+      build: { type: string, required: true }
+      # Which connection options to build: external (the default, as for hand testing) and/or local.
+      editions: { type: string, required: false, default: external }
+
+permissions:
+  contents: read
+
+jobs:
+  app:
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use the newest Xcode
+        run: |
+          XCODE="$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+          sudo xcode-select -s "$XCODE/Contents/Developer"
+          xcodebuild -version && xcrun --sdk iphoneos --show-sdk-version
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            native/launcher/target
+            build/app-external
+            ~/Library/Developer/Xcode/DerivedData/ModuleCache.noindex
+          key: ipa-fast-${{ github.sha }}
+          restore-keys: ipa-fast-
+      - name: PokiLauncher (Rust static library for the phone)
+        run: |
+          set -euo pipefail
+          # idevice at the revision bin/setup pins, with Poki's patch (run_over_rsd).
+          native/launcher/fetch-idevice.sh
+          rustup update stable --no-self-update && rustup default stable
+          rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+          cargo build --release --locked --target aarch64-apple-ios --manifest-path native/launcher/Cargo.toml
+          cargo build --release --locked --target aarch64-apple-ios-sim --manifest-path native/launcher/Cargo.toml
+          ls -la native/launcher/target/aarch64-apple-ios/release/libpoki_launcher.a
+          # The C ABI's symbols, for the log (the app's link step is the real check).
+          (nm -g native/launcher/target/aarch64-apple-ios/release/libpoki_launcher.a 2>/dev/null | grep -E '_poki_(launcher|pair|string)_' | sort -u) || echo "nm listed no poki_ symbols"
+
+      - name: Assets and project
+        run: |
+          native/ios-app/scripts/make-assets.sh
+          brew install xcodegen
+          xcodegen generate --spec native/ios-app/project.yml
+          xcodegen generate --spec native/ios-app/project-external.yml
+
+      - name: Build and package both connection options (unsigned)
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_BUILD: ${{ inputs.build }}
+          POKI_EDITIONS: ${{ inputs.editions || 'external' }}
+        run: |
+          set -euo pipefail
+          mkdir -p build out
+          VERSION="${RELEASE_VERSION:-$(cat native/ios-app/VERSION)}"
+          BUILD="${RELEASE_BUILD:-${{ github.run_number }}}"
+          for edition in ${POKI_EDITIONS:-external}; do
+            if ! (
+              # errexit does not apply inside an if condition, so each step is chained with &&.
+              set -uo pipefail
+              project=Poki
+              ipa=Poki-unsigned.ipa
+              if [ "$edition" = external ]; then project=PokiExternal; ipa=Poki-external-unsigned.ipa; fi
+              xcodebuild build \
+                -project "native/ios-app/$project.xcodeproj" -scheme Poki -configuration Release \
+                -destination generic/platform=iOS -derivedDataPath "build/app-$edition" \
+                CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO ARCHS=arm64 \
+                MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$BUILD" \
+                2>&1 | tee "build/app-$edition.log" | grep -E "error:|BUILD (SUCCEEDED|FAILED)|\*\* " &&
+              native/ios-app/scripts/package-app.sh \
+                "build/app-$edition/Build/Products/Release-iphoneos/Poki.app" \
+                "$edition" "out/$ipa" "$VERSION" "$BUILD" &&
+              python3 native/ios-app/scripts/export-signing.py \
+                "build/app-$edition/Build/Products/Release-iphoneos/Poki.app" \
+                "$edition" "out/signing/$edition"
+            ); then
+              # The external edition is the one Poki Setup installs; the local one is extra.
+              if [ "$edition" = external ]; then exit 1; fi
+              echo "::warning::the $edition edition did not build; continuing without it"; rm -f "out/Poki-unsigned.ipa"; rm -rf "out/signing/$edition"
+            fi
+          done
+          ditto -c -k --keepParent out/signing out/Poki-signing.zip
+          (cd out && shasum -a 256 *.ipa | tee SHA256SUMS)
+          for ipa in out/*.ipa; do
+            unzip -p "$ipa" Payload/Poki.app/Info.plist > build/ipa-Info.plist
+            V=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' build/ipa-Info.plist)
+            B=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' build/ipa-Info.plist)
+            echo "$ipa: Poki $V ($B)"; test "$V" = "$VERSION" && test "$B" = "$BUILD"
+          done
+
+      # The app on the iOS Simulator: it launches, stays up, and draws its first screen. The launcher
+      # cannot reach a simulator's developer services, so this checks the shell, not automation.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Poki-unsigned
+          path: out/
+          if-no-files-found: error
