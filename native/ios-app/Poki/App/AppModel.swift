@@ -16,6 +16,8 @@ final class AppModel {
     let tunnel = LoopbackTunnel()
     let background = BackgroundKeeper()
     let diskImage = DiskImageStore()
+    /// Poki keeps its own signing: the Apple Account, the next build ready ahead of time, Install.
+    let signer = SelfSigner()
     let voice: VoiceModel
     private(set) var runner = RunnerStatus.idle
     private(set) var relayStatus = RelayStatus.off
@@ -77,6 +79,22 @@ final class AppModel {
     private var eventsTask: Task<Void, Never>?
     private var sessionStartTask: Task<Void, Never>?
     private(set) var sessionStarting = false
+
+    /// No task is running, so an install (which ends Poki) disturbs nothing: no agent step under way,
+    /// no approval waiting, and a minute since the agent last did something.
+    var signingIdle: Bool {
+        stepUnderWay == nil && approvals.isEmpty && !sessionStarting && Date().timeIntervalSince(lastAgentActivity) > 60
+    }
+
+    /// Hands the signer the phone's own services and starts it (at launch).
+    func startSigner() {
+        signer.phone = { [weak self] in
+            guard let self, let path = self.pairingPath, self.loopback.isWorking else { return nil }
+            return ["device_address": "10.7.0.1", "pairing_file": path, "host_name": "Poki"]
+        }
+        signer.isIdle = { [weak self] in self?.signingIdle ?? false }
+        signer.start()
+    }
 
     var connectionInUse: Bool {
         if sessionOn || sessionStarting { return true }
@@ -1030,6 +1048,7 @@ final class AppModel {
         // (or by Poki Setup on a computer) has no row tapped here, and `loopbackChanged` records it.
         case .loopback: loopback.isWorking
         case .pairing: pairingPath != nil && pairingTrouble == nil && diskImage.isReady
+        case .account: signer.signedIn
         case .automation: setup.uiAutomation
         case .background: background.allowed && activity.enabled
         }

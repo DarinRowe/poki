@@ -120,7 +120,7 @@ struct RootView: View {
         }
         .task { InProcessProbe.shared.startFromLaunchArguments(model: model) }
         .onChange(of: scenePhase, initial: true) { _, phase in
-            if phase == .active { model.becameActive(); AskPoki.refresh() } else if phase == .background { model.wentToBackground() }
+            if phase == .active { model.becameActive(); AskPoki.refresh(); model.startSigner(); model.signer.maintain() } else if phase == .background { model.wentToBackground() }
         }
         // A tap on the Live Activity opens the screen its state is about (ActivityFace.link): the chat,
         // the setup step, or the Activity Log for a problem; `poki://voice` opens the chat too (it

@@ -65,7 +65,7 @@ struct SetupView: View {
     }
 
     /// The current step's own check passed: the pairing took, location and Live Activities are on.
-    private var checkedByPhone: Bool { step == .pairing || step == .background ? model.isDone(step) : false }
+    private var checkedByPhone: Bool { step == .pairing || step == .account || step == .background ? model.isDone(step) : false }
 
     private var header: some View {
         HStack(spacing: 12) {
@@ -104,6 +104,7 @@ struct SetupView: View {
             ConfirmCard(step: .developerMode, title: "Developer Mode is on", isOn: binding(\.developerMode))
         case .loopback: LoopbackPage()
         case .pairing: PairingPage()
+        case .account: AccountPage()
         case .automation:
             InstructionsCard(lines: [
                 "Open **Settings › Developer**. It appears once Developer Mode is on.",
@@ -156,6 +157,7 @@ extension SetupStep {
         case .developerMode: "Turn On Developer Mode"
         case .loopback: "Turn On Loopback"
         case .pairing: "Pair This iPhone"
+        case .account: "Sign In to Apple Account"
         case .automation: "Allow UI Automation"
         case .background: "Keep Poki Running"
         }
@@ -167,6 +169,7 @@ extension SetupStep {
         case .developerMode: SetupStep.inProcess ? "Allows Poki to use this iPhone’s developer services." : "Allows this iPhone to run Poki Runner."
         case .loopback: "Allows Poki to reach this iPhone’s developer services through your proxy app."
         case .pairing: "Gives Poki its own key to this iPhone. The key stays on this device."
+        case .account: "Lets Poki sign itself again every week and install updates, with no computer. A free Apple Account works."
         case .automation: SetupStep.inProcess ? "Allows Poki to control other apps." : "Allows Poki Runner to control other apps."
         case .background: "Keeps Poki connected in the background and shows its activity on the Lock Screen."
         }
@@ -651,6 +654,7 @@ struct SetupChecklist: View {
             } footer: {
                 Text(model.setupComplete ? "Everything Poki needs is in place." : "Poki needs every item ticked before an agent or the chat can use this iPhone. Items tick themselves when the phone can check them.")
             }
+            SigningSection()
             Section {
                 Button { guiding = true } label: { Label("Setup Guide", systemImage: "list.number") }
             } footer: {
@@ -819,6 +823,7 @@ struct SetupStepPage: View {
             ConfirmCard(step: .developerMode, title: "Developer Mode is on", isOn: binding(\.developerMode))
         case .loopback: LoopbackPage()
         case .pairing: PairingPage()
+        case .account: AccountPage()
         case .automation:
             InstructionsCard(lines: [
                 "Open **Settings › Developer**. It appears once Developer Mode is on.",

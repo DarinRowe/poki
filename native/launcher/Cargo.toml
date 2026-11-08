@@ -11,11 +11,14 @@ name = "poki_launcher"
 crate-type = ["staticlib", "rlib"]
 
 [dependencies]
-idevice = { path = "../../.deps/idevice-launcher/idevice", default-features = false, features = ["aws-lc", "tcp", "core_device_proxy", "rsd", "tunnel_tcp_stack", "dvt", "installation_proxy", "remote_pairing", "cryptexd", "xctest", "device_info"] }
+idevice = { path = "../../.deps/idevice-launcher/idevice", default-features = false, features = ["aws-lc", "tcp", "core_device_proxy", "rsd", "tunnel_tcp_stack", "dvt", "installation_proxy", "afc", "misagent", "remote_pairing", "cryptexd", "xctest", "device_info"] }
 tokio = { version = "1.43", features = ["rt-multi-thread", "net", "time", "sync", "macros", "io-util"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 plist = "1.7"
+# Poki Setup's core without its desktop-only parts: Apple sign-in, portal, re-signing, releases.
+poki-setup-core = { path = "../../desktop/core", default-features = false }
+base64 = "0.22"
 
 [dev-dependencies]
 tokio = { version = "1.43", features = ["full", "test-util"] }

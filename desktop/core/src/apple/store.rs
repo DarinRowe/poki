@@ -7,6 +7,7 @@ use super::gsa::{AppToken, Session};
 use crate::{Error, Result, paths};
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "os-keychain")]
 const SERVICE: &str = "nz.zheha.poki.setup";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
