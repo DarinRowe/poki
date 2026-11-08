@@ -94,10 +94,24 @@ struct SessionsView: View {
             }
         }
         .listStyle(.insetGrouped)
+        // Home's own header: a soft translucent blue that fades into the list, the bear and "Poki" in
+        // Geist at the top left. The other pages keep the system's plain bars.
+        .scrollContentBackground(.hidden)
+        .background {
+            ZStack(alignment: .top) {
+                Color(.systemGroupedBackground)
+                LinearGradient(colors: [Color.blue.opacity(0.30), Color.blue.opacity(0.10), Color.blue.opacity(0)],
+                               startPoint: .top, endPoint: .bottom)
+                    .frame(height: 320)
+            }
+            .ignoresSafeArea()
+        }
+        .toolbarBackground(.hidden, for: .navigationBar)
         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: Text("Search Sessions"))
         .navigationTitle(Text(verbatim: "Poki"))
-        .toolbarTitleDisplayMode(.inlineLarge)
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            HomeBrand()
             ToolbarItem(placement: .topBarTrailing) {
                 PowerButton(on: model.sessionOn, turnOn: { model.startSession() }, turnOff: { chat.stop(); model.stopSession() })
             }
@@ -182,6 +196,36 @@ private extension View {
     @ViewBuilder func newChatStyle() -> some View {
         if #available(iOS 26.0, *) { buttonStyle(.glassProminent).buttonBorderShape(.circle).tint(.blue) }
         else { buttonStyle(.borderedProminent).buttonBorderShape(.circle).tint(.blue) }
+    }
+}
+
+/// The home page's title: the bear and "Poki" in Geist, at the top left in place of the system title,
+/// without the toolbar's glass behind it on iOS 26.
+struct HomeBrand: ToolbarContent {
+    var body: some ToolbarContent {
+        ToolbarItem(placement: .principal) { Color.clear.frame(width: 1, height: 1).accessibilityHidden(true) }
+        if #available(iOS 26.0, *) {
+            ToolbarItem(placement: .topBarLeading) { label }
+                .sharedBackgroundVisibility(.hidden)
+        } else {
+            ToolbarItem(placement: .topBarLeading) { label }
+        }
+    }
+
+    private var label: some View {
+        HStack(spacing: 10) {
+            Image("Bear").resizable().scaledToFill()
+                .frame(width: 34, height: 34)
+                .clipShape(.rect(cornerRadius: 9, style: .continuous))
+                .shadow(color: .blue.opacity(0.35), radius: 6, y: 2)
+            Text(verbatim: "Poki")
+                .font(Prominent.font(.title, .bold))
+                .foregroundStyle(.primary)
+        }
+        .fixedSize()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: "Poki"))
+        .accessibilityAddTraits(.isHeader)
     }
 }
 
