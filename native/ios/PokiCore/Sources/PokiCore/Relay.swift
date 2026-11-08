@@ -229,7 +229,7 @@ final class RelayClient: @unchecked Sendable {
                 for (k, v) in frame["headers"]?.object ?? [:] { if let s = v.string { headers[k.lowercased()] = s } }
                 // Which connector URL the request came through (the relay's sha256 of its secret). Set
                 // only from the relay's own field, never from a header the caller sent.
-                headers[Core.connectorHeader] = frame["s"]?.string
+                headers[PokiCore.connectorHeader] = frame["s"]?.string
                 let answerBy = state.value.requestTimeout.map { now() + $0 }
                 let request = RelayRequest(id: id, method: frame["method"]?.string ?? "POST", headers: headers, body: frame["body"]?.string ?? "", answerBy: answerBy)
                 let task = Task { [weak self] in
