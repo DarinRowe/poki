@@ -144,6 +144,13 @@ struct RootView: View {
             }
         }
         .onChange(of: tab) { old, new in
+            // Leaving the Poki tab from a conversation (to Accounts, Setup, a connector): the Poki
+            // tab is back at Sessions, with its tab bar, when you come back. Done without animation
+            // while the other tab is in front, so nothing flashes and the tab bar is laid out afresh.
+            if old == .chats, new != .chats, new != .newChat, width != .regular, !home.isEmpty {
+                var quiet = Transaction(); quiet.disablesAnimations = true
+                withTransaction(quiet) { home = NavigationPath(); tabBarHidden = false }
+            }
             guard new == .newChat else { return }
             tab = .chats
             if !chat.running { chat.newConversation() }
