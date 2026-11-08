@@ -16,7 +16,6 @@ struct AgentsView: View {
     @Environment(AppModel.self) private var model
     @Binding var path: NavigationPath
     var openSession: (String) -> Void
-    @State private var newName = ""
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -53,8 +52,8 @@ struct AgentsView: View {
                                 Label {
                                     Text(verbatim: secret.name)
                                 } icon: {
-                                    // The provider of the agent that used it last.
-                                    if let client = last?.client {
+                                    // The agent that connected through it (or used it last).
+                                    if let client = secret.agent ?? last?.client {
                                         AgentBadge(name: client, size: 28)
                                     } else {
                                         Image(systemName: "point.3.connected.trianglepath.dotted")
@@ -64,16 +63,22 @@ struct AgentsView: View {
                         }
                         .swipeActions { Button("Revoke", role: .destructive) { model.revoke(secret) } }
                     }
-                    HStack {
-                        TextField("New agent, e.g., Claude", text: $newName).submitLabel(.done).onSubmit(add)
-                        Button("Add", action: add).disabled(model.relayAddress == nil || newName.trimmingCharacters(in: .whitespaces).isEmpty)
+                    // A new connector is "Connector N" until an agent connects through it (or you
+                    // name it on its page).
+                    Button(action: add) {
+                        Label {
+                            Text("Add Agent")
+                        } icon: {
+                            Image(systemName: "plus.circle.fill").foregroundStyle(.blue)
+                        }
                     }
+                    .disabled(model.relayAddress == nil)
                 } header: {
                     Text("External Agents")
                 } footer: {
                     Text(model.relayAddress == nil
                          ? "Set your relay first: each agent gets its own MCP address on it."
-                         : "Each agent gets its own MCP address; add it as a remote MCP server in Claude, Codex or any MCP client. Swipe to revoke.")
+                         : "Each agent gets its own MCP address; add it as a remote MCP server in Claude, Codex or any MCP client. It takes the agent’s name and icon when the agent first connects, unless you renamed it. Swipe to revoke.")
                 }
 
                 Section {
@@ -126,10 +131,8 @@ struct AgentsView: View {
     }
 
     private func add() {
-        let name = newName.trimmingCharacters(in: .whitespaces)
-        guard model.relayAddress != nil, !name.isEmpty else { return }
-        let secret = model.addConnector(name: name)
-        newName = ""
+        guard model.relayAddress != nil else { return }
+        let secret = model.addConnector(name: "")
         path.append(SettingsRoute.connector(secret))
     }
 }

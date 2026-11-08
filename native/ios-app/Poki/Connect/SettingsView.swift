@@ -57,7 +57,6 @@ struct SettingsHome: View {
     var push: (SettingsRoute) -> Void
     var openSetup: () -> Void
     var done: (() -> Void)? = nil
-    @State private var newName = ""
 
     var body: some View {
         @Bindable var model = model
@@ -90,10 +89,10 @@ struct SettingsHome: View {
                     .swipeActions { Button("Revoke", role: .destructive) { model.revoke(secret) } }
                     .contextMenu { Button("Revoke Access", systemImage: "xmark.circle", role: .destructive) { model.revoke(secret) } }
                 }
-                HStack {
-                    TextField("Name, e.g., Claude", text: $newName).submitLabel(.done).onSubmit(add)
-                    Button("Add", action: add).disabled(model.relayAddress == nil || newName.trimmingCharacters(in: .whitespaces).isEmpty)
+                Button(action: add) {
+                    Label { Text("Add Agent") } icon: { Image(systemName: "plus.circle.fill").foregroundStyle(.blue) }
                 }
+                .disabled(model.relayAddress == nil)
                 if let error = model.identity.error {
                     Label(Self.friendly(error), systemImage: "exclamationmark.triangle").foregroundStyle(.red)
                 }
@@ -153,11 +152,8 @@ struct SettingsHome: View {
     }
 
     private func add() {
-        let name = newName.trimmingCharacters(in: .whitespaces)
-        guard model.relayAddress != nil, !name.isEmpty else { return }
-        let secret = model.addConnector(name: name)
-        newName = ""
-        push(.connector(secret))
+        guard model.relayAddress != nil else { return }
+        push(.connector(model.addConnector(name: "")))
     }
 
     static let idleChoices: [(Int, LocalizedStringKey)] = [
@@ -228,9 +224,16 @@ struct RelayView: View {
 /// One agent's MCP address: a QR code, the address with its secret hidden, Copy, and Revoke.
 struct ConnectorDetail: View {
     @Environment(AppModel.self) private var model
-    var secret: ConnectorSecret
+    /// As the page was opened; its name and agent are read live (`secret`), since both can change.
+    var opened: ConnectorSecret
     var back: () -> Void
     @State private var copied = false
+    @State private var renaming = false
+    @State private var newName = ""
+
+    init(secret: ConnectorSecret, back: @escaping () -> Void) { opened = secret; self.back = back }
+
+    private var secret: ConnectorSecret { model.identity.secrets.first { $0.secret == opened.secret } ?? opened }
 
     var body: some View {
         // Rows and Add open this only once a relay is set, so the address is there.
@@ -288,6 +291,17 @@ struct ConnectorDetail: View {
         }
         .navigationTitle(Text(verbatim: secret.name))
         .navigationBarTitleDisplayMode(.inline)
+        // The name is the title; its menu renames it, as a session's does.
+        .toolbarTitleMenu {
+            Button("Rename", systemImage: "pencil") { newName = secret.name; renaming = true }
+        }
+        .alert("Rename Agent", isPresented: $renaming) {
+            TextField("Name", text: $newName)
+            Button("Cancel", role: .cancel) {}
+            Button("Save") { model.rename(secret, to: newName) }
+        } message: {
+            Text("Your name stays when an agent connects through this address.")
+        }
     }
 }
 

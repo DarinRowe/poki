@@ -399,8 +399,8 @@ final class AppModel {
         if relayAddress == nil { relayAddress = RelayAddress("https://your-relay.example") }
         #if targetEnvironment(simulator)
         if identity.secrets.isEmpty {
-            _ = addConnector(name: "Claude")
-            _ = addConnector(name: "Codex")
+            _ = addConnector(name: "")
+            _ = addConnector(name: "")
         }
         #endif
         Thumbnail.previewImage = ActivityPreview.sampleScreen()
@@ -861,6 +861,10 @@ final class AppModel {
         if case .approvalRequested(let approval) = event, let probe = onProbeApproval { probe(approval) }
         // Every outside agent's session and step goes into the Sessions list, on or off.
         SessionStore.shared.observe(event, approvals: approvals)
+        // The first agent through a connector names it (unless the owner did) and gives it its icon.
+        if case .session(.started(_, let client, _, let connector?)) = event {
+            identity.noteAgent(hash: connector, client: AgentName.pretty(client))
+        }
         // Events after Turn off (the core's own "stopped") are not for the screen. An approval is
         // the exception: a call that asks one (the on-device chat, the gym probe) waits on the
         // owner's answer whether or not Poki is on, and dropping it left that call waiting for the
@@ -1302,6 +1306,7 @@ final class AppModel {
         return secret
     }
     func revoke(_ secret: ConnectorSecret) { identity.revoke(secret); accessChanged() }
+    func rename(_ secret: ConnectorSecret, to name: String) { identity.rename(secret, to: name) }
     private func accessChanged() {
         host.update(key: identity.signingKey, hashes: identity.accessHashes)
         core.accessChanged()

@@ -7,37 +7,41 @@ enum Caller {
     /// The provider logo for an agent's name ("Claude Code", "Codex", "Gemini CLI").
     /// Each known agent, in match order (more specific names first: "cursor-vscode" is Cursor), with its
     /// logo in the asset catalog (nil: initials) and its colour.
-    private static let known: [(match: [String], logo: String?, tint: UInt32)] = [
-        (["claude", "anthropic"], "Provider-anthropic", 0xD97757),
-        (["cursor"], "Provider-cursor", 0x111111),
-        (["windsurf", "codeium"], "Provider-windsurf", 0x0B100F),
-        (["cline", "roo code", "roo-code", "roocode"], "Provider-cline", 0x111111),
-        (["codex", "chatgpt", "openai"], "Provider-openai", 0x10A37F),
-        (["github", "copilot", "visual studio code", "vscode", "vs code"], "Provider-githubcopilot", 0x24292F),
-        (["microsoft"], "Provider-copilot", 0x0078D4),
-        (["gemini", "google"], "Provider-googlegemini", 0x4285F4),
-        (["deepseek"], "Provider-deepseek", 0x4D6BFE),
-        (["openrouter"], "Provider-openrouter", 0x6566F1),
-        (["meta"], "Provider-metaai", 0x0866FF),
-        (["perplexity"], "Provider-perplexity", 0x1FB8CD),
-        (["mistral", "le chat", "le-chat", "lechat"], "Provider-mistral", 0xFA520F),
-        (["grok", "xai"], "Provider-grok", 0x111111),
-        (["raycast"], "Provider-raycast", 0xFF6363),
-        (["goose"], "Provider-goose", 0x111111),
-        (["manus"], "Provider-manus", 0x111111),
-        (["kimi", "moonshot"], "Provider-kimi", 0x111111),
-        (["qwen", "tongyi", "alibaba"], "Provider-qwen", 0x615CED),
-        (["lm studio", "lmstudio"], "Provider-lmstudio", 0x4338CA),
-        (["ollama"], "Provider-ollama", 0x111111),
-        (["hugging", "hf-mcp"], "Provider-huggingface", 0xFFB000),
-        (["n8n"], "Provider-n8n", 0xEA4B71),
-        (["zapier"], "Provider-zapier", 0xFF4F00),
-        (["openclaw"], "Provider-openclaw", 0xE5484D),
-        (["poke"], nil, 0x111111),
-        (["zed"], nil, 0x084CCF),
+    private static let known: [(match: [String], logo: String?, tint: UInt32, mark: UInt32)] = [
+        // Claude is Claude's spark, not Anthropic's mark (that one is for an Anthropic API account).
+        (["claude"], "Provider-claude", 0xD97757, 0xFFFFFF),
+        (["anthropic"], "Provider-anthropic", 0x191919, 0xF0EEE6),
+        // ChatGPT: the black mark on white; OpenAI (Codex, the API): the white mark on black.
+        (["chatgpt"], "Provider-openai", 0xFFFFFF, 0x000000),
+        (["cursor"], "Provider-cursor", 0x111111, 0xFFFFFF),
+        (["windsurf", "codeium"], "Provider-windsurf", 0x0B100F, 0xFFFFFF),
+        (["cline", "roo code", "roo-code", "roocode"], "Provider-cline", 0x111111, 0xFFFFFF),
+        (["codex", "openai"], "Provider-openai", 0x000000, 0xFFFFFF),
+        (["github", "copilot", "visual studio code", "vscode", "vs code"], "Provider-githubcopilot", 0x24292F, 0xFFFFFF),
+        (["microsoft"], "Provider-copilot", 0x0078D4, 0xFFFFFF),
+        (["gemini", "google"], "Provider-googlegemini", 0x4285F4, 0xFFFFFF),
+        (["deepseek"], "Provider-deepseek", 0x4D6BFE, 0xFFFFFF),
+        (["openrouter"], "Provider-openrouter", 0x6566F1, 0xFFFFFF),
+        (["meta"], "Provider-metaai", 0x0866FF, 0xFFFFFF),
+        (["perplexity"], "Provider-perplexity", 0x1FB8CD, 0xFFFFFF),
+        (["mistral", "le chat", "le-chat", "lechat"], "Provider-mistral", 0xFA520F, 0xFFFFFF),
+        (["grok", "xai"], "Provider-grok", 0x111111, 0xFFFFFF),
+        (["raycast"], "Provider-raycast", 0xFF6363, 0xFFFFFF),
+        (["goose"], "Provider-goose", 0x111111, 0xFFFFFF),
+        (["manus"], "Provider-manus", 0x111111, 0xFFFFFF),
+        (["kimi", "moonshot"], "Provider-kimi", 0x111111, 0xFFFFFF),
+        (["qwen", "tongyi", "alibaba"], "Provider-qwen", 0x615CED, 0xFFFFFF),
+        (["lm studio", "lmstudio"], "Provider-lmstudio", 0x4338CA, 0xFFFFFF),
+        (["ollama"], "Provider-ollama", 0x111111, 0xFFFFFF),
+        (["hugging", "hf-mcp"], "Provider-huggingface", 0xFFB000, 0xFFFFFF),
+        (["n8n"], "Provider-n8n", 0xEA4B71, 0xFFFFFF),
+        (["zapier"], "Provider-zapier", 0xFF4F00, 0xFFFFFF),
+        (["openclaw"], "Provider-openclaw", 0xE5484D, 0xFFFFFF),
+        (["poke"], nil, 0x111111, 0xFFFFFF),
+        (["zed"], nil, 0x084CCF, 0xFFFFFF),
     ]
 
-    private static func entry(_ name: String) -> (match: [String], logo: String?, tint: UInt32)? {
+    private static func entry(_ name: String) -> (match: [String], logo: String?, tint: UInt32, mark: UInt32)? {
         let n = name.lowercased()
         return known.first { $0.match.contains { n.contains($0) } }
     }
@@ -46,6 +50,11 @@ enum Caller {
 
     /// The provider's colour, a calm grey otherwise.
     static func tint(_ name: String) -> Color { Color(hex: entry(name)?.tint ?? 0x8E8E93) }
+
+    static func isLight(_ name: String) -> Bool { entry(name)?.tint == 0xFFFFFF }
+
+    /// The logo's (or initials') colour on that tile.
+    static func mark(_ name: String) -> Color { Color(hex: entry(name)?.mark ?? 0xFFFFFF) }
 
     static func initials(_ name: String) -> String {
         let words = name.split(separator: " ")
@@ -68,9 +77,11 @@ struct CallerBadge: View {
                     .font(.system(size: size * 0.4, weight: .semibold, design: .rounded))
             }
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(Caller.mark(name))
         .frame(width: size, height: size)
         .background(Caller.tint(name), in: .circle)
+        // A white tile (ChatGPT) keeps its edge on a white page.
+        .overlay(Circle().strokeBorder(Color(.separator), lineWidth: Caller.isLight(name) ? 0.5 : 0))
         .accessibilityLabel(Text(verbatim: name))
     }
 }
