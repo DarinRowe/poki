@@ -196,18 +196,22 @@ final class HumanizeTests: XCTestCase {
         XCTAssertEqual(wda.bodies("POST /wda/pressAndDragWithVelocity").first?["holdDuration"]?.double, 0)
     }
 
-    func testScrollToStillDragsToARestSoTheListStopsWhereTheFingerDid() async {
+    /// scroll_to keeps its slow tail with shaped input (the shaped resting drag moved the gym's list
+    /// 392-640 pt a swipe, the slow tail a steady 442-471), with its points and times varied a little.
+    func testScrollToKeepsItsSlowTailVariedALittle() async {
         let (core, wda, _) = makeCore { $0.humanize = true }
         wda.source((1...30).map { ("Cell", "Row \($0)") })
         _ = await core.call("look", [:])
         let result = await core.call("do", ["actions": [["scroll_to": ["text": "Row 99", "max_swipes": 2]]]])
         XCTAssertFalse(result.isError, result.text)
-        let drags = wda.bodies("POST /actions")
-        XCTAssertEqual(drags.count, 2, "two swipes, both shaped: \(wda.sent)")
+        // The fake runner records scroll_to's one-finger W3C drag under the press-drag route.
+        let drags = wda.bodies("POST /wda/pressAndDragWithVelocity")
+        XCTAssertEqual(drags.count, 2, "two swipes: \(wda.sent)")
         for d in drags {
-            XCTAssertEqual(steps(d).dropLast().last?["type"]?.string, "pause")
-            XCTAssertEqual(steps(d).dropLast().last?["duration"]?.double ?? 0, 250, accuracy: 1, "scroll_to's 250 ms rest")
+            XCTAssertEqual(d["w3c"], .bool(true))
+            XCTAssertEqual(d["holdDuration"]?.double ?? 0, 0.25, accuracy: 0.03, "the slow tail, within 10 %")
         }
+        XCTAssertNotEqual(drags[0]["fromY"], drags[1]["fromY"], "no two swipes alike")
     }
 
     func testALongPressHoldsExactlyAsAskedAndThePasteMenuOpensWithOne() async {

@@ -170,9 +170,17 @@ extension Computer {
     /// them gets the press-drag.
     func scrollDrag(_ path: (Double, Double, Double, Double), seconds: Double, rest: Double, until: Double) async throws {
         let distance = max(1, hypot(path.2 - path.0, path.3 - path.1))
-        // Shaped input (Humanize) already ends a resting drag on a minimum-jerk slowdown to a stop,
-        // real motion to the lift, so it takes that path; plain input gets the slow tail.
-        guard distance > 24, !humanize.enabled else { return try await gesture(path, seconds: seconds, rest: rest, until: until) }
+        // The slow tail with shaped input too: the shaped resting drag moved the gym's list 392-640 pt
+        // per swipe where the slow tail moved a steady 442-471 (run 42435103942), and scroll_to's
+        // overshoot check fired on the spread. Shaped input varies the tail's points by a point or
+        // two and its times by up to 10 %, so no two swipes are alike.
+        guard distance > 24 else { return try await gesture(path, seconds: seconds, rest: rest, until: until) }
+        var path = path, seconds = seconds, rest = rest
+        if humanize.enabled {
+            path = (path.0 + humanize.uniform(-2, 2), path.1 + humanize.uniform(-2, 2), path.2 + humanize.uniform(-2, 2), path.3 + humanize.uniform(-2, 2))
+            seconds *= humanize.uniform(0.92, 1.08)
+            rest *= humanize.uniform(0.92, 1.08)
+        }
         let tail = 12.0
         let near = (x: path.2 - (path.2 - path.0) / distance * tail, y: path.3 - (path.3 - path.1) / distance * tail)
         let expected = seconds + rest
