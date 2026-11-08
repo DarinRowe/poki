@@ -80,11 +80,31 @@ pub fn spki_of_cert(der: &[u8]) -> Option<Vec<u8>> {
     cert.tbs_certificate.subject_public_key_info.to_der().ok()
 }
 
+/// Whether a certificate carries this key. Compares the public key info, and falls back to finding
+/// the key's modulus in the certificate's bytes, so a certificate the X.509 parser rejects still
+/// matches.
 pub fn certificate_matches(key_pkcs8: &[u8], cert_der: &[u8]) -> bool {
-    match (spki_of_key(key_pkcs8), spki_of_cert(cert_der)) {
-        (Ok(a), Some(b)) => a == b,
-        _ => false,
+    if cert_der.is_empty() {
+        return false;
     }
+    if let (Ok(a), Some(b)) = (spki_of_key(key_pkcs8), spki_of_cert(cert_der)) {
+        if a == b {
+            return true;
+        }
+    }
+    use rsa::traits::PublicKeyParts;
+    match RsaPrivateKey::from_pkcs8_der(key_pkcs8) {
+        Ok(k) => {
+            let n = k.n().to_bytes_be();
+            n.len() >= 128 && cert_der.windows(n.len()).any(|w| w == n.as_slice())
+        }
+        Err(_) => false,
+    }
+}
+
+fn same_serial(a: &str, b: &str) -> bool {
+    let norm = |s: &str| s.trim().trim_start_matches('0').to_ascii_uppercase();
+    !a.trim().is_empty() && norm(a) == norm(b)
 }
 
 /// Days until the certificate expires, negative if it has.
@@ -120,31 +140,47 @@ pub async fn ensure(portal: &mut Portal<'_>, team: &str, reporter: &crate::Repor
     let machine_id = machine_id()?;
     let machine_name = format!("Poki Setup on {}", hostname());
     let csr = csr_pem(&key, "Poki Setup")?;
-    let submit = portal.submit_csr(team, &csr, &machine_id, &machine_name).await;
-    if let Err(Error::Apple { code, .. }) = &submit {
-        if *code == 3250 || *code == 7250 || *code == 9100 {
+    let submitted = match portal.submit_csr(team, &csr, &machine_id, &machine_name).await {
+        Ok(c) => c,
+        Err(Error::Apple { code, .. }) if code == 3250 || code == 7250 || code == 9100 => {
             // Free teams get one development certificate: retire the old Poki Setup one.
             if let Some(old) = certs.iter().find(|c| c.machine_name.starts_with("Poki Setup") || c.name.contains("Poki")) {
                 reporter.note("identity", "Replacing this team's previous Poki Setup certificate");
                 portal.revoke_certificate(team, &old.serial_number).await?;
-                portal.submit_csr(team, &csr, &machine_id, &machine_name).await?;
+                portal.submit_csr(team, &csr, &machine_id, &machine_name).await?
             } else {
-                return Err(Error::apple(*code, "This team already has its one development certificate, made by another computer or app. Revoke it at developer.apple.com (Certificates) or in that app, then try again."));
+                return Err(Error::apple(code, "This team already has its one development certificate, made by another computer or app. Revoke it at developer.apple.com (Certificates) or in that app, then try again."));
             }
-        } else {
-            submit?;
         }
-    } else {
-        submit?;
+        Err(e) => return Err(e),
+    };
+    if certificate_matches(&key, &submitted.der) {
+        return Ok(Identity { team_id: team.into(), certificate: submitted, key_pkcs8: key });
     }
-    for _ in 0..10 {
+    // Apple can take a little while to list the new certificate. Find it by its id or serial
+    // number (it was made from this computer's key), or by the key itself.
+    let mut last: Vec<Certificate> = Vec::new();
+    for attempt in 0..20 {
+        if attempt > 0 {
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        }
         let certs = portal.certificates(team).await?;
-        if let Some(c) = certs.into_iter().find(|c| certificate_matches(&key, &c.der)) {
-            return Ok(Identity { team_id: team.into(), certificate: c, key_pkcs8: key });
+        let found = certs.iter().find(|c| certificate_matches(&key, &c.der)).or_else(|| {
+            certs.iter().find(|c| {
+                !c.der.is_empty()
+                    && ((!submitted.certificate_id.is_empty() && c.certificate_id == submitted.certificate_id) || same_serial(&submitted.serial_number, &c.serial_number))
+            })
+        });
+        if let Some(c) = found {
+            return Ok(Identity { team_id: team.into(), certificate: c.clone(), key_pkcs8: key });
         }
-        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        last = certs;
     }
-    Err(Error::msg("Apple accepted the certificate request but has not issued it yet. Try again in a minute."))
+    for c in &last {
+        tracing::warn!(id = %c.certificate_id, serial = %c.serial_number, machine = %c.machine_name, bytes = c.der.len(), parses = spki_of_cert(&c.der).is_some(), "certificate on the team");
+    }
+    tracing::warn!(id = %submitted.certificate_id, serial = %submitted.serial_number, "the requested certificate was not found");
+    Err(Error::msg("Apple accepted the certificate request but has not listed the certificate yet. Try again in a minute; if it keeps happening, save a Support Bundle from Diagnostics."))
 }
 
 fn rcgen_key(key_pkcs8: &[u8]) -> Result<rcgen::KeyPair> {

@@ -176,7 +176,7 @@ impl<'a> Portal<'a> {
             .filter_map(|d| d.as_dictionary())
             .map(|d| Certificate {
                 certificate_id: st(d, "certificateId"),
-                serial_number: st(d, "serialNumber"),
+                serial_number: { let s = st(d, "serialNumber"); if s.is_empty() { st(d, "serialNum") } else { s } },
                 name: st(d, "name"),
                 machine_name: st(d, "machineName"),
                 der: d.get("certContent").and_then(|c| c.as_data()).unwrap_or(&[]).to_vec(),
@@ -184,13 +184,25 @@ impl<'a> Portal<'a> {
             .collect())
     }
 
-    pub async fn submit_csr(&mut self, team: &str, csr_pem: &str, machine_id: &str, machine_name: &str) -> Result<()> {
+    /// Sends the CSR. Apple answers with the new certificate request (its id and serial number,
+    /// sometimes the certificate itself), which is how the new certificate is found afterwards.
+    pub async fn submit_csr(&mut self, team: &str, csr_pem: &str, machine_id: &str, machine_name: &str) -> Result<Certificate> {
         let mut p = Self::team_params(team);
         p.insert("machineId".into(), machine_id.into());
         p.insert("machineName".into(), machine_name.into());
         p.insert("csrContent".into(), csr_pem.into());
-        self.call("ios/submitDevelopmentCSR.action", p).await?;
-        Ok(())
+        let v = self.call("ios/submitDevelopmentCSR.action", p).await?;
+        let d = v.get("certRequest").and_then(|d| d.as_dictionary());
+        let get = |k: &str| d.map(|d| st(d, k)).unwrap_or_default();
+        let serial = { let s = get("serialNumber"); if s.is_empty() { get("serialNum") } else { s } };
+        tracing::info!(certificate_id = %get("certificateId"), cert_request_id = %get("certRequestId"), serial = %serial, "certificate request accepted");
+        Ok(Certificate {
+            certificate_id: get("certificateId"),
+            serial_number: serial,
+            name: get("name"),
+            machine_name: get("machineName"),
+            der: d.and_then(|d| d.get("certContent")).and_then(|c| c.as_data()).unwrap_or(&[]).to_vec(),
+        })
     }
 
     pub async fn revoke_certificate(&mut self, team: &str, serial_number: &str) -> Result<()> {
