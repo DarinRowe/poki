@@ -275,11 +275,19 @@ struct PowerButton: View {
                 openSetup()
             }
         } label: {
-            Text(word)
-                .font(.subheadline.weight(.semibold))
-                .lineLimit(1)
-                .frame(width: 72)
-                .contentTransition(.interpolate)
+            // The state's symbol before its word, a touch taller than the text, in a pill of fixed width.
+            HStack(spacing: 5) {
+                Image(systemName: symbol)
+                    .font(.body.weight(.semibold))
+                    .imageScale(.medium)
+                    .contentTransition(.symbolEffect(.replace))
+                Text(word)
+                    .font(.callout.weight(.semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .contentTransition(.interpolate)
+            }
+            .frame(width: 96)
         }
         .powerStyle(tint: tint)
         .animation(.snappy, value: state)
@@ -293,6 +301,14 @@ struct PowerButton: View {
         case .ready: "Ready"
         case .stopped: "Stopped"
         case .paused: "Paused"
+        }
+    }
+
+    private var symbol: String {
+        switch state {
+        case .ready: "checkmark.circle.fill"
+        case .stopped: "power"
+        case .paused: "exclamationmark.triangle.fill"
         }
     }
 
