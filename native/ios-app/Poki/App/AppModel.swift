@@ -62,6 +62,13 @@ final class AppModel {
     var askBeforeSensitiveSteps: Bool = UserDefaults.standard.bool(forKey: LiveCore.askKey) {
         didSet { UserDefaults.standard.set(askBeforeSensitiveSteps, forKey: LiveCore.askKey); log.add("approval", "ask before sensitive steps: \(askBeforeSensitiveSteps ? "on" : "off") (from the next start of Poki)") }
     }
+    /// Approvals are decided by the chat model (ApprovalClassifier) instead of the owner. Testing only, off.
+    var approvalClassifier: Bool = UserDefaults.standard.bool(forKey: ApprovalClassifier.onKey) {
+        didSet { UserDefaults.standard.set(approvalClassifier, forKey: ApprovalClassifier.onKey); log.add("approval", "auto-classifier: \(approvalClassifier ? "on" : "off") (from the next start of Poki)") }
+    }
+    var classifierLevel: ApprovalClassifier.Level = ApprovalClassifier.Level.saved {
+        didSet { UserDefaults.standard.set(classifierLevel.rawValue, forKey: ApprovalClassifier.levelKey); log.add("approval", "auto-classifier level: \(classifierLevel.rawValue)") }
+    }
     var idleStopSeconds: Int = UserDefaults.standard.object(forKey: "idleStopSeconds.v4") as? Int ?? 60 {
         didSet { UserDefaults.standard.set(idleStopSeconds, forKey: "idleStopSeconds.v4"); log.add("runner", "idle stop set to \(idleStopSeconds) s") }
     }
@@ -1005,6 +1012,16 @@ final class AppModel {
             activity.record(step: summary, ok: !failed)
             activity.update { state in state.app = app ?? state.app }
             activity.setThumbnail(thumbnail)
+        case .approvalRequested(let approval) where ApprovalClassifier.isOn:
+            // The chat model decides, out of sight: no Live Activity card, no notification, no tap.
+            approvals.append(approval)
+            log.add("approval", "requested \(approval.id) in \(approval.app): \(approval.summary); asking the auto-classifier")
+            Task { [weak self] in
+                let verdict = await ApprovalClassifier.decide(approval, level: ApprovalClassifier.Level.saved, voice: self?.voice.lines ?? [])
+                guard let self else { return }
+                self.log.add("approval", "auto-classifier \(verdict.allowed ? "allowed" : "refused") \(approval.id): \(verdict.reason)")
+                self.core.resolveApproval(id: approval.id, approved: verdict.allowed)
+            }
         case .approvalRequested(let approval):
             approvals.append(approval)
             log.add("approval", "requested \(approval.id) in \(approval.app): \(approval.summary); Live Activity \(activity.isRunning ? "running" : "NOT running: \(activity.lastError ?? "no error")")")
@@ -1018,7 +1035,7 @@ final class AppModel {
             lastApprovalAnswered = Date()
             approvals.removeAll { $0.id == id }
             log.add("approval", "ended \(id): \(approved.map { $0 ? "approved" : "denied" } ?? "expired or replaced")")
-            if approved == nil { problem = "An approval ran out before you answered, so that step was not done. The agent can ask again." }
+            if approved == nil, !ApprovalClassifier.isOn { problem = "An approval ran out before you answered, so that step was not done. The agent can ask again." }
             ApprovalNotice.clear(id)
             activity.update { state in
                 if state.approval?.id == id { state.approval = nil; state.phase = .working; state.headline = approved == true ? "Continuing" : "Step skipped" }

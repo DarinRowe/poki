@@ -21,7 +21,7 @@ final class LiveCore: CoreSession {
         // Alpha: every step goes ahead without asking (payments, deleting, sending, passwords, Wallet).
         // Asking mid-task stalled Wallet runs and asked inside Poki where nobody saw it; an automatic
         // classifier replaces this in the next alpha. Settings → Approvals turns asking back on.
-        config.sensitive.enabled = UserDefaults.standard.bool(forKey: Self.askKey)
+        config.sensitive.enabled = UserDefaults.standard.bool(forKey: Self.askKey) || ApprovalClassifier.isOn
         core = PokiCore(config: config, host: host, transport: transport)
         (events, continuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(64))
         let continuation = self.continuation

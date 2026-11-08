@@ -372,6 +372,15 @@ private struct NoteLine: View {
             case .problem(let text):
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Color(.systemOrange))
                 Text(text)
+            case .modelChecking:
+                ProgressView().controlSize(.mini)
+                Text("The model is checking this step")
+            case .modelApproved(let why):
+                Text(verbatim: "✓").fontWeight(.semibold).foregroundStyle(ChatColor.green)
+                Text(why.isEmpty ? String(localized: "Approved by model") : String(localized: "Approved by model: \(why)"))
+            case .modelDeclined(let why):
+                Text(verbatim: "✕").fontWeight(.semibold).foregroundStyle(Color(.systemRed))
+                Text(why.isEmpty ? String(localized: "Not approved by model. Say yes in the chat to let it through.") : String(localized: "Not approved by model: \(why). Say yes in the chat to let it through."))
             }
         }
         .font(.system(size: 12)).foregroundStyle(ChatColor.secondary)
