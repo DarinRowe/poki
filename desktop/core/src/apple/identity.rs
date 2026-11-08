@@ -221,6 +221,13 @@ fn machine_id() -> Result<String> {
 }
 
 pub fn hostname() -> String {
+    #[cfg(target_os = "macos")]
+    if let Ok(o) = std::process::Command::new("/usr/sbin/scutil").args(["--get", "ComputerName"]).output() {
+        let name = String::from_utf8_lossy(&o.stdout).trim().to_string();
+        if o.status.success() && !name.is_empty() {
+            return name;
+        }
+    }
     std::env::var("COMPUTERNAME").ok().or_else(|| std::env::var("HOSTNAME").ok()).or_else(|| std::fs::read_to_string("/etc/hostname").ok().map(|s| s.trim().to_string())).filter(|s| !s.is_empty()).unwrap_or_else(|| "this computer".into())
 }
 

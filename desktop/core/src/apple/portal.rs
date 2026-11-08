@@ -172,7 +172,7 @@ impl<'a> Portal<'a> {
     pub async fn certificates_raw(&mut self, team: &str) -> Result<Vec<String>> {
         let v = self.call("ios/listAllDevelopmentCerts.action", Self::team_params(team)).await?;
         let mut out = vec![format!("top-level keys: {:?}", v.keys().collect::<Vec<_>>())];
-        for d in v.get("certRequests").and_then(|d| d.as_array()).into_iter().flatten().filter_map(|d| d.as_dictionary()) {
+        for d in v.get("certificates").or_else(|| v.get("certRequests")).and_then(|d| d.as_array()).into_iter().flatten().filter_map(|d| d.as_dictionary()) {
             let mut fields = vec![];
             for (k, val) in d {
                 let shown = match val {
@@ -194,7 +194,7 @@ impl<'a> Portal<'a> {
 
     pub async fn certificates(&mut self, team: &str) -> Result<Vec<Certificate>> {
         let v = self.call("ios/listAllDevelopmentCerts.action", Self::team_params(team)).await?;
-        Ok(v.get("certRequests")
+        Ok(v.get("certificates").or_else(|| v.get("certRequests"))
             .and_then(|d| d.as_array())
             .into_iter()
             .flatten()
