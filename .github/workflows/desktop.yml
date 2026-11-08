@@ -72,6 +72,27 @@ jobs:
           else
             echo "No WiX on this runner; the bundler downloads it."
           fi
+      # Same for NSIS: GitHub's release download (nsis-3.13.zip) keeps answering 502/503/504 to the
+      # bundler, which does not retry. Fetch it here with retries and unpack it where the bundler
+      # looks first (%LOCALAPPDATA%\tauri\NSIS); it then only fetches its small plugin DLL.
+      - name: Fetch NSIS for the bundler
+        shell: bash
+        run: |
+          tools="$(cygpath "$LOCALAPPDATA")/tauri"
+          mkdir -p "$tools"
+          for i in 1 2 3 4 5 6; do
+            curl -fL --retry 8 --retry-all-errors --retry-delay 10 -o "$RUNNER_TEMP/nsis.zip" \
+              https://github.com/tauri-apps/binary-releases/releases/download/nsis-3.13/nsis-3.13.zip && break
+            sleep 30
+          done
+          if [ -s "$RUNNER_TEMP/nsis.zip" ]; then
+            rm -rf "$RUNNER_TEMP/nsis" && mkdir -p "$RUNNER_TEMP/nsis"
+            unzip -q "$RUNNER_TEMP/nsis.zip" -d "$RUNNER_TEMP/nsis"
+            top="$(ls -d "$RUNNER_TEMP"/nsis/*/ | head -1)"
+            rm -rf "$tools/NSIS" && mv "$top" "$tools/NSIS" && ls "$tools/NSIS" | head
+          else
+            echo "NSIS not fetched; the bundler tries itself."
+          fi
       # The bundler downloads WiX and NSIS from GitHub releases, which often answers 504 on
       # Windows runners; what it already got stays cached, so trying again gets further.
       - name: Build the installers
