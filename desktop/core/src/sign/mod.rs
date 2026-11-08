@@ -96,6 +96,15 @@ pub fn unpack(ipa: &Path, team: &str, requested: &std::collections::HashMap<Stri
         let old_id = info.get("CFBundleIdentifier").and_then(|s| s.as_string()).unwrap_or("").to_string();
         let new_id = team_bundle_id(&old_id, team);
         info.insert("CFBundleIdentifier".into(), new_id.clone().into());
+        // Background task identifiers must start with the bundle id (iOS 26's continued run).
+        if let Some(plist::Value::Array(ids)) = info.get_mut("BGTaskSchedulerPermittedIdentifiers") {
+            for id in ids.iter_mut() {
+                let renamed = id.as_string().and_then(|s| s.strip_prefix(old_id.as_str()))
+                    .filter(|rest| rest.is_empty() || rest.starts_with('.'))
+                    .map(|rest| format!("{new_id}{rest}"));
+                if let Some(renamed) = renamed { *id = renamed.into(); }
+            }
+        }
         if info.contains_key("PokiAppGroup") {
             info.insert("PokiAppGroup".into(), group.clone().into());
         }
@@ -253,6 +262,7 @@ mod tests {
         info.insert("PokiAppGroup".into(), "group.nz.zheha.poki".into());
         info.insert("CFBundleShortVersionString".into(), "0.2.7".into());
         info.insert("CFBundleVersion".into(), "70".into());
+        info.insert("BGTaskSchedulerPermittedIdentifiers".into(), plist::Value::Array(vec!["nz.zheha.poki.run.*".into(), "nz.zheha.pokiother".into()]));
         plist::to_file_binary(app.join("Info.plist"), &info).unwrap();
         std::fs::write(app.join("Poki"), b"binary").unwrap();
         let mut w = plist::Dictionary::new();
@@ -291,6 +301,8 @@ mod tests {
         assert_eq!(u.version, "0.2.7");
         let info = read_info(&u.app_dir).unwrap();
         assert_eq!(info.get("PokiAppGroup").unwrap().as_string(), Some("group.nz.zheha.poki.TEAM1"));
+        let ids: Vec<_> = info.get("BGTaskSchedulerPermittedIdentifiers").unwrap().as_array().unwrap().iter().filter_map(|v| v.as_string()).collect();
+        assert_eq!(ids, vec!["nz.zheha.poki.TEAM1.run.*", "nz.zheha.pokiother"]);
         assert_eq!(u.bundles[0].requested.get("com.apple.security.application-groups").unwrap().as_array().unwrap()[0].as_string(), Some("group.nz.zheha.poki.TEAM1"));
         let out = dir.path().join("out.ipa");
         pack(&u, &out).unwrap();
