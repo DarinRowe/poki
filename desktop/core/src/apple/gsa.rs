@@ -230,8 +230,15 @@ impl Client {
                 Ok(Outcome::NeedsCode(Pending { apple_id: apple_id.into(), password: password.into(), session, via: Factor::TrustedDevice, phone_id: 0 }))
             }
             (_, Some("secondaryAuth")) => {
-                let phone_id = self.start_sms(&session).await?;
-                Ok(Outcome::NeedsCode(Pending { apple_id: apple_id.into(), password: password.into(), session, via: Factor::Sms, phone_id }))
+                match self.start_sms(&session).await {
+                    Ok(phone_id) => Ok(Outcome::NeedsCode(Pending { apple_id: apple_id.into(), password: password.into(), session, via: Factor::Sms, phone_id })),
+                    // No text went out: a code from one of the person's Apple devices (Get
+                    // Verification Code) is checked the trusted-device way, so wait for that one.
+                    Err(e) => {
+                        tracing::warn!("SMS code not sent, waiting for a device code instead: {e}");
+                        Ok(Outcome::NeedsCode(Pending { apple_id: apple_id.into(), password: password.into(), session, via: Factor::TrustedDevice, phone_id: 0 }))
+                    }
+                }
             }
             (_, Some(other)) => Err(Error::msg(format!("Apple asked for a verification step this app does not support ({other})."))),
             _ => Ok(Outcome::SignedIn(session)),
