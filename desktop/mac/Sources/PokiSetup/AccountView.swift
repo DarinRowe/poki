@@ -72,9 +72,9 @@ struct AccountView: View {
             .padding(.vertical, 4)
         }
         Section {
-            TextField("Email or Phone Number", text: $appleID)
+            TextField("Email or Phone Number", text: $appleID, prompt: Text("name@example.com"))
                 .textContentType(.username)
-            SecureField("Password", text: $password)
+            SecureField("Password", text: $password, prompt: Text("Required"))
                 .textContentType(.password)
                 .onSubmit { Task { await signIn() } }
             Toggle("Keep me signed in to renew Poki automatically", isOn: $keep)

@@ -110,6 +110,7 @@ final class AppModel: ObservableObject {
     // MARK: Refresh
 
     func refreshAccount() async {
+        if demo { return }
         do {
             account = try await bridge.call("account")
             if account?.signedIn == true, teams.isEmpty {
@@ -121,6 +122,7 @@ final class AppModel: ObservableObject {
     }
 
     func refreshPhones() async {
+        if demo { return }
         if busyJobs.contains("install") || busyJobs.contains("pair") || busyJobs.contains("devmode") { return }
         do {
             let rows: [PhoneRow] = try await bridge.call("phones")
@@ -136,10 +138,12 @@ final class AppModel: ObservableObject {
     }
 
     func refreshRecords() async {
+        if demo { return }
         records = (try? await bridge.call("records")) ?? []
     }
 
     func refreshLatest() async {
+        if demo { return }
         do {
             latest = try await bridge.call("latest_release")
             latestError = nil

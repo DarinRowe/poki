@@ -46,7 +46,7 @@ struct RelayView: View {
                 }
             }
             Section {
-                SecureField("Cloudflare API Token", text: $token)
+                SecureField("Cloudflare API Token", text: $token, prompt: Text("Paste the token"))
                 if !accounts.isEmpty {
                     Picker("Account", selection: $accountID) {
                         ForEach(accounts) { Text($0.name).tag($0.id) }
@@ -244,7 +244,9 @@ struct DiagnosticsView: View {
                 }
             }
             .formStyle(.grouped)
-            .frame(height: 250)
+            .scrollDisabled(true)
+            .frame(height: message == nil ? 318 : 350)
+            Divider()
             ScrollViewReader { proxy in
                 ScrollView {
                     let lines = showHelperLog ? model.bridge.helperLog : model.logLines
@@ -257,6 +259,13 @@ struct DiagnosticsView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .background(Color(nsColor: .textBackgroundColor))
+                .overlay {
+                    if (showHelperLog ? model.bridge.helperLog : model.logLines).isEmpty {
+                        Text(showHelperLog ? "The helper has not logged anything yet." : (model.selectedPhone == nil ? "Connect an iPhone to see its log here." : "Press Start to see the iPhone's log here."))
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                }
                 .onChange(of: model.logLines.count) { _, _ in proxy.scrollTo(min(model.logLines.count, 2000) - 1, anchor: .bottom) }
             }
         }
