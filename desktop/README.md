@@ -18,7 +18,7 @@ desktop/
 | Developer Mode | turned on through AMFI; the phone restarts once and asks |
 | Signs in | Apple's GSA (SRP-6a, 2FA by trusted device or SMS); anisette from macOS itself, or an anisette v3 server on Windows |
 | Developer portal | registers the phone, makes an RSA key and certificate for this computer, App IDs `nz.zheha.poki.<TEAM>` and `.widgets`, the app group, team profiles |
-| Signs Poki | the newest release on the chosen channel (Settings › Updates, or `poki-setup channel`): Stable = `ios-v*` full releases, Beta (default) = `ios-v*` prereleases too, Pre-alpha = `ios-prealpha-*` snapshots too; its external edition, re-signed with apple-codesign (pure Rust); the packet-tunnel extension is left out because a team profile cannot carry its entitlement |
+| Signs Poki | the newest release on the chosen channel (Settings › Updates, or `poki-setup channel`): Stable = `ios-v*` full releases, Beta (default) = `ios-v*` prereleases too, Alpha = `ios-alpha-*` builds too, Pre-alpha = `ios-prealpha-*` snapshots too; its external edition, re-signed with apple-codesign (pure Rust); the packet-tunnel extension is left out because a team profile cannot carry its entitlement |
 | Installs | installation_proxy, profiles through misagent |
 | Pairing file | written straight into Poki's container, and offered as a `poki://pairing?url=…&sha256=…` QR on the LAN |
 | Keeps it alive | the phones this computer set up, with their expiry; renewal is due with 2 days left and runs by itself every 6 h when the password is kept |

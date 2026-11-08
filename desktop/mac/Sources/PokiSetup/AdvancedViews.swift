@@ -364,7 +364,7 @@ struct SettingsView: View {
             } header: {
                 Text("Updates")
             } footer: {
-                Text("Stable has tested releases only. Beta adds test builds. Pre-alpha adds every snapshot, which can break. Poki Setup installs and renews Poki from this channel and checks it for its own updates.")
+                Text("Stable has tested releases only. Beta adds test builds. Alpha adds early builds. Pre-alpha adds every snapshot, which can break. Poki Setup installs and renews Poki from this channel and checks it for its own updates.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
             Section("Data") {

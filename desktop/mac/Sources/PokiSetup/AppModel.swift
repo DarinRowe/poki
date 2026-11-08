@@ -327,6 +327,7 @@ final class AppModel: ObservableObject {
         channels = [
             ChannelInfo(id: "stable", title: "Stable", selected: false, latest: nil),
             ChannelInfo(id: "beta", title: "Beta", selected: true, latest: latest),
+            ChannelInfo(id: "alpha", title: "Alpha", selected: false, latest: Release(tag: "ios-alpha-0.2.8-110", version: "0.2.8", build: "110", ipaName: "Poki-external-0.2.8-110.ipa", channel: "alpha")),
             ChannelInfo(id: "pre-alpha", title: "Pre-alpha", selected: false, latest: Release(tag: "ios-prealpha-0.2.8-260", version: "0.2.8", build: "260", ipaName: "Poki-external-0.2.8-260.ipa", channel: "pre-alpha")),
         ]
         steps["install"] = [

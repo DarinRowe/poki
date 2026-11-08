@@ -52,8 +52,8 @@ private struct SidebarBrand: View {
         HStack(spacing: 10) {
             AppIconImage(size: 30)
             VStack(alignment: .leading, spacing: 0) {
-                Text("Poki Setup").font(.headline)
-                Text("for iPhone").font(.caption).foregroundStyle(.secondary)
+                Text("Poki Setup").font(.headline).foregroundStyle(Color.primary)
+                Text("for iPhone").font(.caption).foregroundStyle(Color.secondary)
             }
             Spacer(minLength: 0)
         }

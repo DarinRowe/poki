@@ -148,7 +148,7 @@ enum Cmd {
         #[arg(long)]
         all: bool,
     },
-    /// Show or set the release channel (stable, beta, pre-alpha) for installs, renewals and updates.
+    /// Show or set the release channel (stable, beta, alpha, pre-alpha) for installs, renewals and updates.
     Channel {
         /// The channel to use from now on.
         set: Option<String>,

@@ -32,7 +32,7 @@ export default function Settings({ info }: { info: AppInfo | null }) {
       </Card>
       <Card>
         <h2>{t("Updates")}</h2>
-        <p className="muted small">{t("Stable has tested releases only. Beta adds test builds. Pre-alpha adds every snapshot, which can break. Poki Setup installs and renews Poki from this channel and checks it for its own updates.")}</p>
+        <p className="muted small">{t("Stable has tested releases only. Beta adds test builds. Alpha adds early builds. Pre-alpha adds every snapshot, which can break. Poki Setup installs and renews Poki from this channel and checks it for its own updates.")}</p>
         <div className="row" style={{ alignItems: "center" }}>
           <div className="seg" role="radiogroup" aria-label={t("Channel")}>
             {channels.map((c) => <button key={c.id} role="radio" aria-checked={c.selected} className={c.selected ? "on" : ""} onClick={() => api.setChannel(c.id).then((l) => { setChannels(l); setUpdate(null); }).catch((e) => setError(failureText(e)))}>{t(c.title)}</button>)}
