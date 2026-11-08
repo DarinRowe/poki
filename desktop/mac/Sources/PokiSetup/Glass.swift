@@ -118,7 +118,9 @@ struct PageHero<Trailing: View>: View {
                         .font(.system(size: 24, weight: .medium))
                         .foregroundStyle(.white)
                         .frame(width: 52, height: 52)
-                        .pokiGlass(in: Circle(), tinted: true)
+                        .background(LinearGradient(colors: [Color.pokiSky, Color.pokiBlue], startPoint: .topLeading, endPoint: .bottomTrailing), in: Circle())
+                        .overlay(Circle().stroke(.white.opacity(0.35), lineWidth: 1))
+                        .shadow(color: Color.pokiBlue.opacity(0.35), radius: 8, y: 3)
                 } else {
                     AppIconImage(size: 60)
                 }
