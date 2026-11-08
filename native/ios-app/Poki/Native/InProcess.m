@@ -27,6 +27,8 @@
 - (id)screenshot;
 - (NSData *)PNGRepresentation;
 - (void)_XCT_requestBundleIDForPID:(int)pid reply:(void (^)(NSString *, NSError *))reply;
+- (void)_XCT_requestScreenshotOfScreenWithID:(long long)screenID withRect:(CGRect)rect uti:(NSString *)uti compressionQuality:(double)quality withReply:(void (^)(NSData *, NSError *))reply;
+- (long long)displayID;
 - (NSArray *)children;
 - (long long)elementType;
 - (CGRect)frame;
@@ -112,8 +114,36 @@ static id PKRequestSnapshot(id ax, id element, NSInteger maxDepth, NSInteger max
 
 /// The front app's AX element. One active app is the front one. Several (an alert over an app, split
 /// screen, picture in picture): SpringBoard set aside, the one owning the screen's centre.
+/// The system app's frame (the screen in its current orientation), read again after 5 s: one AX
+/// round trip on every read before.
+static CGRect PKScreenFrame(id ax, id system) {
+    static CGRect frame;
+    static NSTimeInterval at = -100;
+    static NSObject *lock;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ lock = [NSObject new]; frame = CGRectNull; });
+    NSTimeInterval now = NSProcessInfo.processInfo.systemUptime;
+    @synchronized (lock) { if (now - at < 5 && !CGRectIsEmpty(frame)) return frame; }
+    CGRect read = system ? [PKRequestSnapshot(ax, system, 1, 1, NULL) frame] : CGRectNull;
+    @synchronized (lock) { if (!CGRectIsEmpty(read)) { frame = read; at = now; } }
+    return read;
+}
+
+static id PKForegroundElementTimed(id ax, NSString *(^bundleForPID)(int));
+
 static id PKForegroundElement(id ax, NSString *(^bundleForPID)(int)) {
+    NSTimeInterval started = NSProcessInfo.processInfo.systemUptime;
+    id chosen = PKForegroundElementTimed(ax, bundleForPID);
+    int ms = (int)lround((NSProcessInfo.processInfo.systemUptime - started) * 1000);
+    if (ms > 60) NSLog(@"PokiInProcess timing: foreground %d ms", ms);
+    return chosen;
+}
+
+static id PKForegroundElementTimed(id ax, NSString *(^bundleForPID)(int)) {
+    NSTimeInterval started = NSProcessInfo.processInfo.systemUptime;
     NSArray *active = PKActiveApplications(ax);
+    int activeMs = (int)lround((NSProcessInfo.processInfo.systemUptime - started) * 1000);
+    if (activeMs > 60) NSLog(@"PokiInProcess timing: active apps %d ms, %lu", activeMs, (unsigned long)active.count);
     if (active.count == 1 && PKAXPid(active.firstObject) > 0) return active.firstObject;
     id system = [ax respondsToSelector:@selector(systemApplication)] ? [ax systemApplication] : nil;
     int springBoardPID = PKAXPid(system);
@@ -127,7 +157,7 @@ static id PKForegroundElement(id ax, NSString *(^bundleForPID)(int)) {
     }
     if (candidates.count == 1) return candidates.firstObject;
     if (!candidates.count) return springBoard ?: system;
-    CGRect screen = system ? [PKRequestSnapshot(ax, system, 1, 1, NULL) frame] : CGRectNull;
+    CGRect screen = PKScreenFrame(ax, system);
     // The app under the screen's centre is the front one. Poki's own process is the answer only when
     // it is there and fills the screen; beside the target app (the iPhone Duo's side-by-side apps,
     // iPad windows) the centre can fall on Poki, and the other app is the one being driven. (A
@@ -304,6 +334,19 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
     return out.length ? out : png;
 }
 
+/// One front-app search shared by the tree read and the screenshot PokiCore asks for together.
+@interface PKFrontSearch : NSObject
+@property (nonatomic) NSTimeInterval started;
+@property (nonatomic) NSTimeInterval ended;
+@property (nonatomic) uint64_t inputs;
+@property (nonatomic, strong) dispatch_group_t done;
+@property (nonatomic, strong, nullable) id element;
+@property (nonatomic, strong, nullable) id ax;
+@property (nonatomic, copy, nullable) NSDictionary *info;
+@end
+@implementation PKFrontSearch
+@end
+
 @implementation PKInProcess {
     SRNativeSession *_sessions;
     uint64_t _accessibilityGeneration;
@@ -316,6 +359,9 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
     NSDictionary<NSString *, id> *_lastFront;
     NSTimeInterval _lastFrontAt;
     uint64_t _lastFrontGeneration;
+    /// Counts touches, keys, buttons and app changes; a shared search from before one is not reused.
+    uint64_t _inputs;
+    PKFrontSearch *_search;
 }
 
 + (instancetype)shared {
@@ -466,18 +512,45 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
     return [self await:context timeout:timeout started:started generation:generation];
 }
 
+/// The screen as a JPEG from testmanagerd, as WebDriverAgent asks for it, or nil within 1.5 s.
+- (nullable NSData *)daemonJPEG {
+    PKOutcome *refused;
+    uint64_t generation = 0;
+    id session = [self current:&generation outcome:&refused];
+    id proxy = [session daemonProxy];
+    id screen = [NSClassFromString(@"XCUIScreen") mainScreen];
+    if (!proxy || ![screen respondsToSelector:@selector(displayID)]) return nil;
+    long long display = [screen displayID];
+    dispatch_semaphore_t got = dispatch_semaphore_create(0);
+    __block NSData *data;
+    @try {
+        [proxy _XCT_requestScreenshotOfScreenWithID:display withRect:CGRectNull uti:@"public.jpeg" compressionQuality:0.6 withReply:^(NSData *value, NSError *error) {
+            data = value; dispatch_semaphore_signal(got);
+        }];
+    } @catch (__unused NSException *e) { return nil; }
+    if (dispatch_semaphore_wait(got, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)))) return nil;
+    return data.length ? data : nil;
+}
+
 - (nullable NSData *)screenshot:(NSString **)code {
     @try {
         NSTimeInterval started = NSProcessInfo.processInfo.systemUptime;
         id screen = [NSClassFromString(@"XCUIScreen") mainScreen];
-        // XCTest's own quality API (what WebDriverAgent uses): quality 1 is a JPEG from the daemon, a
-        // fraction of the PNG's bytes to encode, send and decode. PokiCore reads any image and makes its
-        // own 402-pixel JPEG from it. Original quality (0) is the PNG; it is the fallback.
-        SEL quality = NSSelectorFromString(@"screenshotDataForQuality:rect:error:");
+        // A JPEG from testmanagerd (what WebDriverAgent uses): a fraction of the PNG's bytes to
+        // encode, send and decode; PokiCore makes its own 402-pixel JPEG from any image. XCTest's
+        // quality API next, then the PNG. (The quality API was not there on the CI simulator: every
+        // picture was a 190 KB PNG at ~220 ms.)
         NSData *picture = nil;
         NSString *kind = @"png";
+        // Three misses in a row and the daemon is not asked again in this process.
+        static int daemonMisses = 0;
+        if (daemonMisses < 3) {
+            picture = [self daemonJPEG];
+            if (picture.length) { kind = @"daemon jpeg"; daemonMisses = 0; } else daemonMisses++;
+        }
+        SEL quality = NSSelectorFromString(@"screenshotDataForQuality:rect:error:");
         NSString *rect = @"{CGRect={CGPoint=dd}{CGSize=dd}}";
-        if ([screen respondsToSelector:quality] && (PKMatches([screen methodSignatureForSelector:quality], "@", @[@"Q", rect, @"^@"]) || PKMatches([screen methodSignatureForSelector:quality], "@", @[@"q", rect, @"^@"]))) {
+        if (!picture.length && [screen respondsToSelector:quality] && (PKMatches([screen methodSignatureForSelector:quality], "@", @[@"Q", rect, @"^@"]) || PKMatches([screen methodSignatureForSelector:quality], "@", @[@"q", rect, @"^@"]))) {
             NSError *error = nil;
             picture = ((NSData *(*)(id, SEL, NSUInteger, CGRect, NSError **))objc_msgSend)(screen, quality, 1, CGRectNull, &error);
             if (picture.length) kind = @"jpeg";
@@ -485,9 +558,12 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
         if (!picture.length) picture = [[screen screenshot] PNGRepresentation];
         if (picture.length) {
             NSLog(@"PokiInProcess timing: screenshot %d ms, %lu bytes (%@)", (int)lround((NSProcessInfo.processInfo.systemUptime - started) * 1000), (unsigned long)picture.length, kind);
-            // The front app's part of the screen only, when it has a part (beside another app).
+            // The front app's part of the screen only, when it has a part (beside another app). The
+            // front app comes from the search the tree read beside it makes (shared, not made twice),
+            // and its frame from one shallow snapshot, so the first picture after a change of layout
+            // is cut too.
             NSDictionary *info; id ax;
-            id element = [self front:&info ax:&ax];
+            id element = [self sharedFront:&info ax:&ax];
             if (element) [self noteViewport:[PKRequestSnapshot(ax, element, 1, 1, NULL) frame]];
             CGRect viewport = self.viewport;
             return CGRectIsNull(viewport) ? picture : PKCropped(picture, viewport);
@@ -533,7 +609,45 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
 
 /// Any touch, key, button or app change can change the front app: the tree read's no longer stands.
 - (void)forgetFront {
-    @synchronized (self) { _lastFront = nil; }
+    @synchronized (self) { _lastFront = nil; _inputs++; }
+}
+
+/// The front app's element for a tree read or a screenshot: a search still running, or ended under
+/// 150 ms ago with no input since, is waited for and shared (the two requests come together on two
+/// queues, and each searched on its own: ~220 ms of AX round trips twice per read). A poll a while
+/// later searches again.
+- (id)sharedFront:(NSDictionary **)info ax:(id *)client {
+    PKFrontSearch *search;
+    BOOL mine = NO;
+    NSTimeInterval now = NSProcessInfo.processInfo.systemUptime;
+    @synchronized (self) {
+        PKFrontSearch *last = _search;
+        if (last && last.inputs == _inputs && (last.ended == 0 || now - last.ended < 0.15) && now - last.started < 1.5) {
+            search = last;
+        } else {
+            search = [PKFrontSearch new];
+            search.started = now;
+            search.inputs = _inputs;
+            search.done = dispatch_group_create();
+            dispatch_group_enter(search.done);
+            _search = search;
+            mine = YES;
+        }
+    }
+    if (mine) {
+        NSDictionary *found = nil;
+        id ax = nil;
+        id element = nil;
+        @try { element = [self front:&found ax:&ax]; } @catch (__unused NSException *e) {}
+        search.element = element; search.ax = ax; search.info = found;
+        search.ended = NSProcessInfo.processInfo.systemUptime;
+        dispatch_group_leave(search.done);
+    } else if (dispatch_group_wait(search.done, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)))) {
+        return [self front:info ax:client];
+    }
+    if (info) *info = search.info;
+    if (client) *client = search.ax;
+    return search.element;
 }
 
 - (void)rememberFront:(NSDictionary<NSString *, id> *)front {
@@ -632,7 +746,7 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
         NSTimeInterval started = NSProcessInfo.processInfo.systemUptime;
         id ax;
         NSDictionary *info;
-        id app = [self front:&info ax:&ax];
+        id app = [self sharedFront:&info ax:&ax];
         if (!app) { if (code) *code = @"no_front_app"; return nil; }
         NSTimeInterval frontAt = NSProcessInfo.processInfo.systemUptime;
         id root = PKSnapshotTreeBounded(ax, app, maxDepth, maxChildren, code);
