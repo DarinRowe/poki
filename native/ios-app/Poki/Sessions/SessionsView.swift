@@ -30,7 +30,7 @@ struct SessionsView: View {
                 Section {
                     Label {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Poki can’t work fully yet").font(.headline)
+                            Text("Poki can’t work fully yet").font(Prominent.font(.headline, .semibold))
                             Text("Fix the items below. Each one has a dot on its tab.")
                                 .font(.subheadline).foregroundStyle(.secondary)
                         }
@@ -232,7 +232,7 @@ struct SessionRow: View {
                 }
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text(verbatim: session.name).font(.system(size: 17, weight: .semibold)).foregroundStyle(Color(.label)).lineLimit(1)
+                    Text(verbatim: session.name).font(Prominent.font(.body, .semibold)).foregroundStyle(Color(.label)).lineLimit(1)
                     Spacer(minLength: 6)
                     Text(session.live ? String(localized: "now") : ChatTime.row(session.updated)).font(.system(size: 15)).foregroundStyle(ChatColor.secondary)
                     Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(Color(.tertiaryLabel))

@@ -67,6 +67,20 @@ struct ActivityFace: Hashable {
     var stale = false
     /// Who is calling: the outside agent whose badge sits beside the meta value.
     var caller: String?
+    /// The run's latest steps for the step bar (true went through), and whether one is under way.
+    var steps: [Bool] = []
+    var stepUnderWay = false
+    var finished = false
+    /// The ring around the glyph in the compact and minimal island.
+    var ring: Ring = .none
+
+    enum Ring: Hashable {
+        case none
+        /// A share of the step bar filled.
+        case fraction(Double)
+        /// Time left on an approval, run down by the system.
+        case timer(ClosedRange<Date>)
+    }
 
     var hasAction: Bool {
         switch bottom {
@@ -154,7 +168,9 @@ extension PokiState {
             return ActivityFace(
                 symbol: "hand.tap.fill", status: name, shortStatus: name, tone: .accent, meta: .text(step),
                 content: ActivityWords.step(headline), bottom: .stop,
-                compact: .text(step, .plain))
+                compact: .text(step, .plain),
+                steps: outcomes, stepUnderWay: true,
+                ring: .fraction(Double(outcomes.count) / Double(Self.outcomeLimit)))
         case .approval, .deciding:
             guard let approval else { return quietFace }
             let question = ActivityWords.brief(approval.question)
@@ -173,14 +189,17 @@ extension PokiState {
                 meta: .countdown(approval.expires),
                 content: question, bottom: .approval(id: approval.id),
                 compact: .countdown(approval.expires),
-                outlined: true)
+                outlined: true,
+                ring: .timer(Countdown.range(approval.expires)))
         case .done:
             let word = String(activity: "Done")
             return ActivityFace(
                 symbol: "checkmark.circle.fill", status: word, shortStatus: word, tone: .done,
                 meta: endedAt.map { .clock($0) } ?? .none,
                 content: runSummary, bottom: .none,
-                compact: .text(word, .done))
+                compact: .text(word, .done),
+                steps: outcomes, finished: true,
+                ring: .fraction(1))
         case .problem:
             let short = label == "Pairing Failed" ? String(activity: "Failed") : String(activity: "Stopped")
             return ActivityFace(

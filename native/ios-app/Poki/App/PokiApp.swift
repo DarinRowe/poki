@@ -14,6 +14,11 @@ struct PokiApp: App {
         // reads them; from here on every change is mirrored there.
         SettingsVault.restore()
         SettingsVault.watch()
+        // Page titles in Geist, the website's typeface (prominent text only).
+        if let large = Prominent.uiFont(.largeTitle, .bold), let inline = Prominent.uiFont(.headline, .semibold) {
+            UINavigationBar.appearance().largeTitleTextAttributes = [.font: large]
+            UINavigationBar.appearance().titleTextAttributes = [.font: inline]
+        }
         #if DEBUG && targetEnvironment(simulator)
         TestCredential.importIfGiven()
         #endif
