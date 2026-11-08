@@ -352,7 +352,13 @@ private struct KeyEntry: View {
             }
             if !key.isEmpty { try ModelKeys.save(key, for: provider) }
             // A new key picks its provider; the model page's picker switches between providers with keys.
-            if provider.wired, !key.isEmpty { ModelKeys.selectedProvider = provider }
+            if provider.wired, !key.isEmpty {
+                // Ready at once: chat on this account's first fast model, live voice on where it can.
+                ModelKeys.selectedProvider = provider
+                if let first = ModelCatalog.available(provider).first { ModelKeys.selectedModel = first.id }
+                if provider == .openai { VoiceDirect.enabled = true }
+                Task { _ = try? await ModelCatalog.refresh(provider) }
+            }
             key = ""
             dismiss()
         } catch {

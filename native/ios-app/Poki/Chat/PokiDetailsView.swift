@@ -239,11 +239,30 @@ struct ProviderTile: View {
     var provider: ModelProvider
     var size: CGFloat = 29
     var body: some View {
-        Text(verbatim: provider.mark)
-            .font(.system(size: provider == .custom ? 11 : 13, weight: .bold))
-            .foregroundStyle(.white)
-            .frame(width: size, height: size)
-            .background(Color(hex: provider.tile), in: .rect(cornerRadius: 7, style: .continuous))
-            .accessibilityHidden(true)
+        Group {
+            if let logo = provider.logo {
+                Image(logo).renderingMode(.template).resizable().scaledToFit().padding(size * 0.2)
+            } else {
+                Image(systemName: "server.rack").font(.system(size: size * 0.45, weight: .semibold))
+            }
+        }
+        .foregroundStyle(.white)
+        .frame(width: size, height: size)
+        .background(Color(hex: provider.tile), in: .rect(cornerRadius: size * 0.225, style: .continuous))
+        .accessibilityHidden(true)
+    }
+}
+
+extension ModelProvider {
+    /// The provider's own logo in the asset catalog (Poki/ProviderIcons).
+    var logo: String? {
+        switch self {
+        case .anthropic: "Provider-anthropic"
+        case .openai, .chatgpt: "Provider-openai"
+        case .gemini: "Provider-googlegemini"
+        case .deepseek: "Provider-deepseek"
+        case .openrouter: "Provider-openrouter"
+        case .custom: nil
+        }
     }
 }

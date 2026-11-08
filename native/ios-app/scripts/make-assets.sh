@@ -25,6 +25,13 @@ echo '{"images":[{"filename":"icon-1024.png","idiom":"universal","platform":"ios
 mkdir -p "$APP/AccentColor.colorset"
 echo '{"colors":[{"idiom":"universal","color":{"color-space":"srgb","components":{"red":"0x20","green":"0x84","blue":"0xFD","alpha":"1.000"}}}],"info":{"version":1,"author":"poki"}}' > "$APP/AccentColor.colorset/Contents.json"
 bear "$APP"
+# Provider logos (Poki/ProviderIcons, see its README) as vector template images.
+for svg in "$HERE"/Poki/ProviderIcons/*.svg; do
+  name="Provider-$(basename "$svg" .svg)"
+  mkdir -p "$APP/$name.imageset"
+  cp "$svg" "$APP/$name.imageset/logo.svg"
+  echo '{"images":[{"filename":"logo.svg","idiom":"universal"}],"info":{"version":1,"author":"poki"},"properties":{"preserves-vector-representation":true,"template-rendering-intent":"template"}}' > "$APP/$name.imageset/Contents.json"
+done
 
 WIDGET="$HERE/PokiWidgets/Assets.xcassets"
 catalog "$WIDGET"
