@@ -99,6 +99,9 @@ enum Cmd {
         #[arg(long, default_value = "SELFTEST01")]
         team: String,
     },
+    /// For support: the team's development certificates as Apple lists them.
+    #[command(hide = true)]
+    DebugCerts,
     /// Sign Poki again and reinstall it on a phone this computer set up.
     Renew {
         #[arg(long)]
@@ -265,6 +268,13 @@ async fn run() -> Result<()> {
             let mut signer = setup::Signer::open()?;
             signer.sign_out()?;
             println!("Signed out.");
+            Ok(())
+        }
+        Cmd::DebugCerts => {
+            let mut signer = setup::Signer::open()?;
+            for line in signer.diagnose_certificates().await? {
+                println!("{line}");
+            }
             Ok(())
         }
         Cmd::Teams { use_team } => {

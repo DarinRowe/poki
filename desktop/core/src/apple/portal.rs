@@ -167,6 +167,31 @@ impl<'a> Portal<'a> {
         Ok(Device { device_id: st(d, "deviceId"), name: st(d, "name"), udid: st(d, "deviceNumber") })
     }
 
+    /// Every field Apple sends for the team's development certificates, certificate bytes left
+    /// out (for support).
+    pub async fn certificates_raw(&mut self, team: &str) -> Result<Vec<String>> {
+        let v = self.call("ios/listAllDevelopmentCerts.action", Self::team_params(team)).await?;
+        let mut out = vec![format!("top-level keys: {:?}", v.keys().collect::<Vec<_>>())];
+        for d in v.get("certRequests").and_then(|d| d.as_array()).into_iter().flatten().filter_map(|d| d.as_dictionary()) {
+            let mut fields = vec![];
+            for (k, val) in d {
+                let shown = match val {
+                    plist::Value::Data(b) => format!("<{} bytes>", b.len()),
+                    plist::Value::String(s) => s.clone(),
+                    plist::Value::Integer(i) => i.to_string(),
+                    plist::Value::Boolean(b) => b.to_string(),
+                    plist::Value::Date(d) => format!("{d:?}"),
+                    plist::Value::Dictionary(d) => format!("{{{}}}", d.keys().cloned().collect::<Vec<_>>().join(",")),
+                    plist::Value::Array(a) => format!("[{} items]", a.len()),
+                    other => format!("{other:?}"),
+                };
+                fields.push(format!("{k}={shown}"));
+            }
+            out.push(fields.join("  "));
+        }
+        Ok(out)
+    }
+
     pub async fn certificates(&mut self, team: &str) -> Result<Vec<Certificate>> {
         let v = self.call("ios/listAllDevelopmentCerts.action", Self::team_params(team)).await?;
         Ok(v.get("certRequests")

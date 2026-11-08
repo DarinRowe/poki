@@ -96,7 +96,11 @@ async fn with_signer<T>(state: &Shared, f: impl AsyncFnOnce(&mut setup::Signer) 
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt().with_writer(std::io::stderr).with_ansi(false).with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "poki_setup_core=info".into())).init();
+    // Log to stderr (the app's Helper Log) and to the log file the Support Bundle collects.
+    let file = poki_setup_core::paths::log_dir().ok().and_then(|d| std::fs::OpenOptions::new().create(true).append(true).open(d.join("poki-setup.log")).ok());
+    use tracing_subscriber::fmt::writer::MakeWriterExt;
+    let writer = std::io::stderr.and(std::sync::Mutex::new(FileOrSink(file)));
+    tracing_subscriber::fmt().with_writer(writer).with_ansi(false).with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "poki_setup_core=info".into())).init();
     let (tx, mut rx) = mpsc::unbounded_channel::<String>();
     let out = Out(tx);
     let writer = tokio::spawn(async move {
@@ -468,4 +472,22 @@ async fn check_update() -> R {
     let p = |s: &str| s.split(['.', '-']).map(|x| x.parse::<u64>().unwrap_or(0)).collect::<Vec<_>>();
     let newer = tag.as_deref().map(|t| p(t) > p(&current)).unwrap_or(false);
     ok(json!({ "current": current, "latest": tag, "url": url, "newer": newer }))
+}
+
+/// The log file, or nowhere when it could not be opened.
+struct FileOrSink(Option<std::fs::File>);
+
+impl std::io::Write for FileOrSink {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        match &mut self.0 {
+            Some(f) => f.write(buf),
+            None => Ok(buf.len()),
+        }
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        match &mut self.0 {
+            Some(f) => f.flush(),
+            None => Ok(()),
+        }
+    }
 }

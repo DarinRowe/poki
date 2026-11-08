@@ -102,6 +102,21 @@ pub fn certificate_matches(key_pkcs8: &[u8], cert_der: &[u8]) -> bool {
     }
 }
 
+/// For support: what Apple lists for the team, and whether each certificate matches this
+/// computer's key.
+pub async fn diagnose(portal: &mut Portal<'_>, team: &str) -> Result<Vec<String>> {
+    let (key, fresh) = key_for(team)?;
+    let mut out = vec![format!("team {team}; this computer's key {}", if fresh { "was just made (none was saved)" } else { "is saved" })];
+    out.extend(portal.certificates_raw(team).await?);
+    for c in portal.certificates(team).await? {
+        out.push(format!(
+            "cert id={} serial={} machine={:?} name={:?} bytes={} parses={} matches_key={} days_left={:?}",
+            c.certificate_id, c.serial_number, c.machine_name, c.name, c.der.len(), spki_of_cert(&c.der).is_some(), certificate_matches(&key, &c.der), days_left(&c.der)
+        ));
+    }
+    Ok(out)
+}
+
 fn same_serial(a: &str, b: &str) -> bool {
     let norm = |s: &str| s.trim().trim_start_matches('0').to_ascii_uppercase();
     !a.trim().is_empty() && norm(a) == norm(b)
@@ -180,6 +195,11 @@ pub async fn ensure(portal: &mut Portal<'_>, team: &str, reporter: &crate::Repor
         tracing::warn!(id = %c.certificate_id, serial = %c.serial_number, machine = %c.machine_name, bytes = c.der.len(), parses = spki_of_cert(&c.der).is_some(), "certificate on the team");
     }
     tracing::warn!(id = %submitted.certificate_id, serial = %submitted.serial_number, "the requested certificate was not found");
+    if let Ok(lines) = portal.certificates_raw(team).await {
+        for l in lines {
+            tracing::warn!("listed: {l}");
+        }
+    }
     Err(Error::msg("Apple accepted the certificate request but has not listed the certificate yet. Try again in a minute; if it keeps happening, save a Support Bundle from Diagnostics."))
 }
 

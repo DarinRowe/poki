@@ -121,6 +121,15 @@ impl Signer {
         Ok(pick)
     }
 
+    /// For support: the chosen team's development certificates as Apple lists them.
+    pub async fn diagnose_certificates(&mut self) -> Result<Vec<String>> {
+        let team = self.team().await?;
+        let token = self.token().await?;
+        let session = self.account.session.clone().unwrap();
+        let mut portal = Portal::new(&session, &token, self.client.anisette())?;
+        identity::diagnose(&mut portal, &team.team_id).await
+    }
+
     pub fn choose_team(&mut self, team_id: &str) -> Result<()> {
         self.account.team_id = Some(team_id.to_string());
         store::save(&self.account)
