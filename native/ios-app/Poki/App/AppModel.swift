@@ -127,6 +127,7 @@ final class AppModel {
             return ["device_address": "10.7.0.1", "pairing_file": path, "host_name": "Poki"]
         }
         signer.isIdle = { [weak self] in self?.signingIdle ?? false }
+        signer.beforeInstall = { [weak self] in self?.windDownForUpdate() }
         signer.start()
     }
 
@@ -594,6 +595,16 @@ final class AppModel {
         standBy(reason: nil)
         if let relay { core.start(relay: relay) }
         idleTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in Task { @MainActor in self?.checkIdle() } }
+    }
+
+    /// The owner tapped Install: Poki winds down for iOS to replace it. The automation session (and
+    /// its banner) closes, the Live Activity ends, the log is written; the loopback stays, since the
+    /// install runs over it. `wantsOn` is kept, so Poki turns on again when it reopens.
+    func windDownForUpdate() {
+        log.add("signing", "installing the update: winding down (Poki closes, then reopens from the notice)")
+        if automationPath == .inProcess { closeInProcess("the update") }
+        activity.end()
+        AttentionNotice.clear()
     }
 
     func stopSession() {

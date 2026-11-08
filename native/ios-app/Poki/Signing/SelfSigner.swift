@@ -81,6 +81,9 @@ final class SelfSigner {
     var phone: () -> [String: Any]? = { nil }
     /// No task is running, so Poki may be ended by an install.
     var isIdle: () -> Bool = { false }
+    /// Before an install the owner asked for: Poki winds down (automation session, Live Activity)
+    /// so it exits cleanly when iOS replaces it, and comes back on after.
+    var beforeInstall: () -> Void = {}
 
     private var started = false
     private var timer: Timer?
@@ -258,6 +261,7 @@ final class SelfSigner {
         request["manifest"] = Self.home.appendingPathComponent("ready/\(p.kind)/manifest.json").path
         let reopen = "nz.zheha.poki.signing.reopen"
         scheduleReopenNotice(id: reopen)
+        beforeInstall()
         steppedAside = false
         installFraction = nil
         // iOS holds the last part of an upgrade until the app it replaces leaves the screen: Poki
