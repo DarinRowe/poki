@@ -1,0 +1,89 @@
+# A pre-alpha: push a tag ios-prealpha-X.Y.Z-N (native/ios-app/scripts/cut-prealpha.sh makes one).
+# X.Y.Z is native/ios-app/VERSION at the tagged commit and N is its commit count, so every commit has
+# one build number and later commits on a branch always get bigger ones. Builds Poki from that commit
+# and publishes a GitHub prerelease with Poki-external-X.Y.Z-N.ipa, Poki-X.Y.Z-N.ipa,
+# Poki-signing.zip and SHA256SUMS: the same files as an ios-v* release, so Poki Setup installs it
+# the same way. Pre-alphas are untested snapshots for people who chose the Pre-alpha channel in
+# Poki Setup. See docs/release-channels.md.
+name: Pre-alpha
+
+on:
+  # Tag-only: never runs on branch pushes. ios-prealpha-* does not match release.yml's ios-v*.*.*.
+  push:
+    tags: ['ios-prealpha-*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prealpha-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      build: ${{ steps.v.outputs.build }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - id: v
+        run: |
+          set -euo pipefail
+          VERSION="$(tr -d ' \n' < native/ios-app/VERSION)"
+          BUILD="$(git rev-list --count HEAD)"
+          echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "::error::native/ios-app/VERSION is not X.Y.Z"; exit 1; }
+          if [ "$GITHUB_REF_NAME" != "ios-prealpha-$VERSION-$BUILD" ]; then
+            echo "::error::this commit is Poki $VERSION ($BUILD), so its tag must be ios-prealpha-$VERSION-$BUILD (native/ios-app/scripts/cut-prealpha.sh names it for you)"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "build=$BUILD" >> "$GITHUB_OUTPUT"
+
+  app:
+    needs: version
+    uses: ./.github/workflows/ios-app.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+      build: ${{ needs.version.outputs.build }}
+
+  publish:
+    needs: [version, app]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/download-artifact@v4
+        with: { name: Poki-unsigned, path: app }
+      - name: Publish the pre-alpha
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+          BUILD: ${{ needs.version.outputs.build }}
+        run: |
+          set -euo pipefail
+          mkdir release
+          cp app/Poki-unsigned.ipa "release/Poki-$VERSION-$BUILD.ipa"
+          cp app/Poki-external-unsigned.ipa "release/Poki-external-$VERSION-$BUILD.ipa"
+          cp app/Poki-signing.zip release/
+          (cd release && sha256sum *.ipa > SHA256SUMS && cat SHA256SUMS)
+          # What changed since the previous pre-alpha (or the last 15 commits for the first one).
+          previous="$(git tag --list 'ios-prealpha-*' --sort=-creatordate | grep -vx "$GITHUB_REF_NAME" | head -1 || true)"
+          if [ -n "$previous" ] && git merge-base --is-ancestor "$previous" HEAD; then
+            range="$previous..HEAD"; since="since $previous"
+          else
+            range="-15"; since="(latest commits)"
+          fi
+          {
+            echo "Pre-alpha: Poki $VERSION ($BUILD), built from $(git rev-parse --short HEAD). An untested snapshot for the Pre-alpha channel in Poki Setup; it can break. Use the Beta or Stable channel for anything you rely on."
+            echo
+            echo "Install Poki-external with Poki Setup, or sign either IPA with your own tool (entitlements in Poki-signing.zip). See native/ios-app/README.md."
+            echo
+            echo "### Changes $since"
+            git log --no-merges --format='- %s (%h)' $range | head -60
+          } > notes.md
+          gh release create "$GITHUB_REF_NAME" release/* \
+            --title "Poki $VERSION ($BUILD) pre-alpha" --notes-file notes.md --prerelease --latest=false
