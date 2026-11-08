@@ -32,6 +32,7 @@ struct DiagnosticsView: View {
             } footer: {
                 Text("Runner starts and stops, agent steps, approvals, and connection changes. Password field entries are never logged.")
             }
+            ApprovalTestingSection()
             // The in-process path's switch and probes (ESP-173, ESP-175).
             InProcessSection()
             Section {
@@ -129,6 +130,27 @@ struct LogView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Clear", role: .destructive) { log.clear() }
             }
+        }
+    }
+}
+
+/// Approvals, for testing only: in the alpha every step goes ahead without asking (both switches off).
+private struct ApprovalTestingSection: View {
+    @Environment(AppModel.self) private var model
+    var body: some View {
+        @Bindable var model = model
+        Section {
+            Toggle("Ask Before Sensitive Steps", isOn: $model.askBeforeSensitiveSteps)
+            Toggle("Auto-Classifier", isOn: $model.approvalClassifier)
+            if model.approvalClassifier {
+                Picker("Permissiveness", selection: $model.classifierLevel) {
+                    ForEach(ApprovalClassifier.Level.allCases) { Text($0.title).tag($0) }
+                }
+            }
+        } header: {
+            Text("Approvals (Testing)")
+        } footer: {
+            Text("Both off in this alpha: agents pay, delete, send messages, call and type passwords without asking. Only connect agents you trust. The auto-classifier asks your chat model, out of sight, whether what you said asks for the step; it allows or refuses, and a yes from you in the chat or a live call lets it through next time. It never asks you to tap anything. Changes take effect the next time Poki opens.")
         }
     }
 }

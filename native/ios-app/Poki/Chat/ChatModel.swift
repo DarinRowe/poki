@@ -40,6 +40,10 @@ enum ChatNote: Equatable, Codable {
     case declined
     case expired
     case problem(String)
+    /// The auto-classifier (testing): the chat model is deciding, or decided, with its reason.
+    case modelChecking
+    case modelApproved(String)
+    case modelDeclined(String)
 }
 
 /// The chat: the owner's messages, Poki's answers and the steps it takes, and the model loop that runs
@@ -178,6 +182,18 @@ final class ChatModel {
     }
 
     private var lastOwnerText: String?
+
+    /// What was said in this chat, oldest first, for the auto-classifier.
+    var ownerContext: [String] {
+        entries.suffix(30).compactMap { entry in
+            switch entry.kind {
+            case .you(let text, _): "Owner: \(text)"
+            case .request(let text, let from): "Request from \(from): \(text)"
+            case .poki(let text): "Assistant: \(String(text.prefix(400)))"
+            default: nil
+            }
+        }
+    }
 
     private func send(_ text: String, again: Bool) {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -447,7 +463,13 @@ final class ChatModel {
                     steps.append(PlanStep(approval.summary, state: .waiting))
                 }
             }
-            setNote(.waiting)
+            setNote(ApprovalClassifier.isOn ? .modelChecking : .waiting)
+        case .approvalEnded(let id, let approved) where ApprovalClassifier.isOn:
+            let why = ApprovalClassifier.verdicts[id]?.reason ?? ""
+            setNote(approved == true ? .modelApproved(why) : .modelDeclined(why))
+            updatePlan { steps in
+                for i in steps.indices where steps[i].state == .waiting { steps[i].state = approved == true ? .current : .failed }
+            }
         case .approvalEnded(_, let approved):
             switch approved {
             case true?: setNote(.approved(Date()))

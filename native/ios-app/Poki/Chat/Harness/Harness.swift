@@ -30,7 +30,16 @@ enum Harness {
     /// until dev/agent-routines adds `PokiCore.memoryBrief(for:)` through `ChatModel.beforeTask`).
     @MainActor static func instructions(for task: String) -> String {
         let brief = ChatModel.beforeTask?(task) ?? ""
-        return brief.isEmpty ? instructions : [instructions, brief].joined(separator: "\n\n")
+        var parts = [instructions]
+        // Poki learns the owner's repeated tasks: a saved routine runs them in one call next time.
+        parts.append("Before starting, check whether a saved routine covers this task (routines {action: \"list\"}) and run it with do {run: name} if so. When a task worked and was not a routine yet, save it with routines {action: \"save\", name, description} before finish_task, with a short name the owner would use, so it can be repeated next time.")
+        // Testing: a model decides approvals from what the owner said. A refused step goes through
+        // once the owner says yes to it, so the agent asks in words and tries again.
+        if ApprovalClassifier.isOn {
+            parts.append("Approvals here are decided automatically from what the owner said in this chat. When a step is refused (declined), do not tell the owner to tap anything: ask them in plain words whether they want that step done, and if they say yes, send the same step again.")
+        }
+        if !brief.isEmpty { parts.append(brief) }
+        return parts.joined(separator: "\n\n")
     }
 
     static let tools: [ToolSpec] = phoneTools + [reportPlan, finishTask]

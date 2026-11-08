@@ -101,6 +101,15 @@ pub fn unpack(ipa: &Path, team: &str, requested: &std::collections::HashMap<Stri
         let old_id = info.get("CFBundleIdentifier").and_then(|s| s.as_string()).unwrap_or("").to_string();
         let new_id = team_bundle_id(&old_id, team);
         info.insert("CFBundleIdentifier".into(), new_id.clone().into());
+        // Background task identifiers must start with the bundle id (iOS 26's continued run).
+        if let Some(plist::Value::Array(ids)) = info.get_mut("BGTaskSchedulerPermittedIdentifiers") {
+            for id in ids.iter_mut() {
+                let renamed = id.as_string().and_then(|s| s.strip_prefix(old_id.as_str()))
+                    .filter(|rest| rest.is_empty() || rest.starts_with('.'))
+                    .map(|rest| format!("{new_id}{rest}"));
+                if let Some(renamed) = renamed { *id = renamed.into(); }
+            }
+        }
         if info.contains_key("PokiAppGroup") {
             info.insert("PokiAppGroup".into(), group.clone().into());
         }

@@ -1,11 +1,13 @@
+import AVFoundation
 import CoreLocation
 import Foundation
 
 /// Keeps Poki running in the background while it is on, so the relay connection and the launcher stay
-/// up: silent audio, plus, with Always Allow, location updates at the coarsest accuracy. With Always
-/// Allow iOS keeps the location indicator out of the status bar and Dynamic Island; with While Using
-/// it would show the pill all the time Poki is on, so Poki uses silent audio alone then. The location
-/// is never read or sent anywhere.
+/// up. Silent audio does it; location is the backup only when it is needed: while a pairing waits in
+/// Settings, and when the silent audio cannot play (it failed to start, or another app's audio
+/// interrupted it), when iOS would otherwise suspend Poki mid-session. Then it is the coarsest
+/// accuracy, with no indicator under Always Allow, and it stops again as soon as the audio is back.
+/// The location is never read or sent anywhere.
 @MainActor
 @Observable
 final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
@@ -39,18 +41,76 @@ final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
     func start() {
         guard !isOn else { return }
         isOn = true
-        if always { startLocation() } else if authorization == .notDetermined { requestPermission() }
-        try? audio.start()
+        // iOS 26 and later: the system's continued processing task keeps Poki up, with no audio and
+        // no location. Silent audio only when iOS refuses it or ends it early.
+        if #available(iOS 26.0, *) {
+            let run = continued as? ContinuedRun ?? ContinuedRun()
+            continued = run
+            run.onExpired = { [weak self] in
+                guard let self, self.isOn else { return }
+                self.startAudio(); self.watchInterruptions()
+            }
+            if run.begin(subtitle: String(localized: "Agents can reach this iPhone")) { return }
+        }
+        startAudio()
+        watchInterruptions()
+    }
+
+    /// The iOS 26 continued run (typed loosely so this class builds for iOS 18).
+    private var continued: AnyObject?
+
+    /// Silent audio could not hold Poki up (it would be suspended): location stands in until it can.
+    private(set) var audioLost = false
+    private var interruption: NSObjectProtocol?
+
+    private func startAudio() {
+        do { try audio.start(); setAudioLost(false) } catch { setAudioLost(true) }
+    }
+
+    private func setAudioLost(_ lost: Bool) {
+        guard lost != audioLost else { return }
+        audioLost = lost
+        AppLog.shared.add("background", lost ? "silent audio stopped: location keeps Poki running until it is back" : "silent audio back: location off")
+        if lost { startLocation() } else if !pairingHold { stopLocation() }
+    }
+
+    private func watchInterruptions() {
+        guard interruption == nil else { return }
+        interruption = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
+            guard let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt, let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
+            Task { @MainActor in
+                guard let self, self.isOn, !self.audioPaused else { return }
+                switch type {
+                case .began: self.setAudioLost(true)
+                case .ended:
+                    // KeepAlive restarts its engine on its own; check a moment later.
+                    try? await Task.sleep(for: .seconds(1))
+                    if self.audio.isOn { self.setAudioLost(false) } else { self.audio.stop(); self.startAudio() }
+                @unknown default: break
+                }
+            }
+        }
     }
 
     /// A voice conversation needs the audio session for the microphone; the voice-chat session keeps
     /// Poki running meanwhile. The silent audio comes back when it ends, if Poki is still on.
-    func pauseAudio() { audio.stop() }
-    func resumeAudio() { if isOn { try? audio.start() } }
+    /// While a voice conversation holds the audio session (it keeps Poki running itself).
+    private var audioPaused = false
+    func pauseAudio() { audioPaused = true; audio.stop() }
+    func resumeAudio() {
+        audioPaused = false
+        guard isOn else { return }
+        if #available(iOS 26.0, *), (continued as? ContinuedRun)?.isRunning == true { return }
+        startAudio()
+    }
 
     func stop() {
         guard isOn else { return }
         isOn = false
+        if #available(iOS 26.0, *) { (continued as? ContinuedRun)?.end() }
+        audioLost = false
+        if let interruption { NotificationCenter.default.removeObserver(interruption) }
+        interruption = nil
         if !pairingHold { stopLocation() }
         audio.stop()
     }
@@ -71,7 +131,7 @@ final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
         guard pairingHold else { return }
         pairingHold = false
         activity?.invalidate(); activity = nil
-        if isOn { startLocation() } else { stopLocation() }
+        if isOn && audioLost { startLocation() } else { stopLocation() }
     }
 
     private func startPairingLocation() {
@@ -84,9 +144,10 @@ final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
 
     private func startLocation() {
         if pairingHold { startPairingLocation(); return }
-        guard always else { stopLocation(); return }
+        guard audioLost, allowed else { stopLocation(); return }
         manager.allowsBackgroundLocationUpdates = true
-        manager.showsBackgroundLocationIndicator = false
+        manager.showsBackgroundLocationIndicator = !always
+        if !always, activity == nil { activity = CLBackgroundActivitySession() }
         manager.startUpdatingLocation()
     }
 
@@ -99,7 +160,7 @@ final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
         let status = manager.authorizationStatus
         Task { @MainActor in
             self.authorization = status
-            if self.isOn || self.pairingHold { self.startLocation() }
+            if self.pairingHold || (self.isOn && self.audioLost) { self.startLocation() }
         }
     }
 

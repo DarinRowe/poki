@@ -70,6 +70,9 @@ targets:
         # the relay connection and the launcher, running; silent audio is the fallback. Poki never reads
         # or sends the location itself.
         UIBackgroundModes: [location, audio]
+        # iOS 26: the continued processing task that keeps Poki up while it is on (ContinuedRun). The
+        # signer rewrites the nz.zheha.poki prefix to the signed bundle id.
+        BGTaskSchedulerPermittedIdentifiers: ["$(POKI_BUNDLE_ID).run.*"]
         # Documents/AgentBackup holds the agent's memory backup, which Poki Setup copies off and puts back.
         UIFileSharingEnabled: true
         NSLocationWhenInUseUsageDescription: Poki keeps running in the background while it is on, so agents can reach this iPhone. Poki does not record or send your location.
