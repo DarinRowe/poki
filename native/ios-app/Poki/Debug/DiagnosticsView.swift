@@ -13,160 +13,86 @@ struct DiagnosticsView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        SitePage {
-            VStack(spacing: 0) {
-                Grabber()
-                SheetHeader(title: Text("Diagnostics"), back: "Settings", onBack: { path.removeLast() })
-                ScrollView {
-                    VStack(spacing: 0) {
-                        logGroup
-                        // The in-process path's switch and probes (ESP-173, ESP-175), as they were in the
-                        // old Debug tab; a Section outside a List lays out as a plain stack.
-                        InProcessSection().padding(.top, 16)
-                        loopbackGroup
-                        checksGroup
-                        holdGroup
-                        addressesGroup
-                    }
-                    .padding(.horizontal, 16).padding(.bottom, 40)
-                }
-            }
-        }
-        .toolbar(.hidden, for: .navigationBar)
-        .task { await run() }
-    }
-
-    @ViewBuilder private var logGroup: some View {
-        GroupLabel(text: "LOG")
-        VStack(spacing: 0) {
-            HStack(spacing: 10) {
-                Button {
+        Form {
+            Section {
+                Button(copied ? "Copied" : "Copy Log", systemImage: copied ? "checkmark" : "doc.on.doc") {
                     UIPasteboard.general.string = log.text
                     copied = true
                     Task { try? await Task.sleep(for: .seconds(2)); copied = false }
-                } label: {
-                    Text(copied ? "Copied" : "Copy Log").site(15, .semibold, line: 18).foregroundStyle(.white)
-                        .frame(maxWidth: .infinity).frame(height: 40).background(Site.blue, in: .capsule)
                 }
-                .buttonStyle(.plain)
-                ShareLink(item: log.text, subject: Text("Poki log")) {
-                    Text("Share").site(15, .semibold, line: 18).foregroundStyle(Site.ink)
-                        .frame(maxWidth: .infinity).frame(height: 40).background(Site.tint, in: .capsule)
+                ShareLink(item: log.text, subject: Text("Poki log")) { Label("Share Log", systemImage: "square.and.arrow.up") }
+                Button { path.append(.log) } label: {
+                    LabeledContent("Log") { Text("\(log.lines.count) lines") }
                 }
-                .buttonStyle(.plain)
+                .foregroundStyle(Color(.label))
+                Button { path.append(.activityPreview) } label: { LabeledContent("Live Activity Preview") { EmptyView() } }
+                    .foregroundStyle(Color(.label))
+            } header: {
+                Text("Log")
+            } footer: {
+                Text("Runner starts and stops, agent steps, approvals, and connection changes. Password field entries are never logged.")
             }
-            .padding(.vertical, 12).padding(.horizontal, 16)
-            .overlay(alignment: .bottom) { Site.hair.frame(height: 1) }
-            Button { path.append(.log) } label: { WhiteRow(title: "Log") { RowValue(text: Text("\(log.lines.count) lines")) } }
-                .buttonStyle(.plain)
-            Button { path.append(.activityPreview) } label: { WhiteRow(title: "Live Activity Preview", divider: false) { RowValue() } }
-                .buttonStyle(.plain)
-        }
-        .whiteCard()
-        GroupFootnote(text: "Runner starts and stops, agent steps, approvals, and connection changes. Password field entries are never logged.")
-    }
-
-    @ViewBuilder private var loopbackGroup: some View {
-        GroupLabel(text: "PROXY LOOPBACK INTERFACE")
-        VStack(alignment: .leading, spacing: 4) {
-            if let loop = loopbackInterface(addresses) {
-                Text(verbatim: "\(loop.interface)  \(loop.address)").mono(16, .semibold).foregroundStyle(Site.text)
-                Text(loop.ipv6.isEmpty ? "No IPv6 on this interface" : "IPv6 present: \(loop.ipv6.joined(separator: ", "))")
-                    .mono(12).foregroundStyle(loop.ipv6.isEmpty ? Site.text3 : Site.danger)
-            } else {
-                Text("No interface has a 10.7.0.x address. Check that your proxy app is on and its loopback module is enabled.")
-                    .site(15, line: 20).foregroundStyle(Site.text2).fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .textSelection(.enabled)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 12).padding(.horizontal, 16)
-        .whiteCard()
-        Text(verbatim: "Network path: \(model.loopback.pathSummary). Wi-Fi \(model.loopback.wifiUp ? "up" : "down"), cellular \(model.loopback.cellularUp ? "up" : "down")\(model.loopback.cellularOnly ? " (cellular only)" : "")")
-            .mono(12).foregroundStyle(Site.text3).textSelection(.enabled)
-            .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16).padding(.top, 8)
-    }
-
-    @ViewBuilder private var checksGroup: some View {
-        GroupLabel(text: "CHECKS")
-        VStack(spacing: 0) {
-            ForEach(results) { r in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(Self.title(r))
-                        .site(15, .semibold, line: 20).foregroundStyle(Site.text)
-                    Text(verbatim: "\(r.target)  \(r.milliseconds) ms").mono(12).foregroundStyle(Site.text3)
-                    if !r.detail.isEmpty { Text(verbatim: r.detail).mono(12).foregroundStyle(Site.text2) }
-                    if !r.firstBytes.isEmpty { Text(verbatim: "first bytes: \(r.firstBytes)").mono(12).foregroundStyle(Site.text2) }
+            // The in-process path's switch and probes (ESP-173, ESP-175).
+            InProcessSection()
+            Section {
+                if let loop = loopbackInterface(addresses) {
+                    Text(verbatim: "\(loop.interface)  \(loop.address)").font(.body.monospaced().weight(.semibold))
+                    Text(loop.ipv6.isEmpty ? "No IPv6 on this interface" : "IPv6 present: \(loop.ipv6.joined(separator: ", "))")
+                        .font(.footnote.monospaced()).foregroundStyle(loop.ipv6.isEmpty ? Color.secondary : Color.red)
+                } else {
+                    Text("No interface has a 10.7.0.x address. Check that your proxy app is on and its loopback module is enabled.")
                 }
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 12).padding(.horizontal, 16)
-                .overlay(alignment: .bottom) { Site.hair.frame(height: 1) }
+            } header: {
+                Text("Proxy Loopback Interface")
+            } footer: {
+                Text(verbatim: "Network path: \(model.loopback.pathSummary). Wi-Fi \(model.loopback.wifiUp ? "up" : "down"), cellular \(model.loopback.cellularUp ? "up" : "down")\(model.loopback.cellularOnly ? " (cellular only)" : "")")
+                    .textSelection(.enabled)
             }
-            Button { Task { await run() } } label: {
-                WhiteRow(title: running ? "Running…" : "Run Checks", titleColor: running ? Site.text3 : Site.ink, divider: false)
-            }
-            .buttonStyle(.plain).disabled(running)
-        }
-        .whiteCard()
-    }
-
-    @ViewBuilder private var holdGroup: some View {
-        GroupLabel(text: "BACKGROUND HOLD")
-        VStack(spacing: 0) {
-            WhiteRow(title: "Port on 10.7.0.1") {
-                TextField(text: $hold.port, prompt: Text(verbatim: "49152").foregroundStyle(Site.text3)) { Text("Port on 10.7.0.1") }
-                    .keyboardType(.numberPad).multilineTextAlignment(.trailing).monospacedDigit()
-                    .site(17, line: 22).foregroundStyle(Site.text).frame(width: 90)
-            }
-            WhiteRow(title: "Experiment") {
-                Menu {
-                    Picker(selection: $hold.experiment) {
-                        ForEach(Hold.Experiment.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
-                    } label: { Text("Experiment") }
-                } label: {
-                    HStack(spacing: 4) {
-                        Text(LocalizedStringKey(hold.experiment.rawValue))
-                        Image(systemName: "chevron.up.chevron.down").font(.system(size: 11, weight: .medium))
+            .textSelection(.enabled)
+            Section("Checks") {
+                ForEach(results) { r in
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(Self.title(r)).font(.subheadline.weight(.semibold))
+                        Text(verbatim: "\(r.target)  \(r.milliseconds) ms").font(.caption.monospaced()).foregroundStyle(.secondary)
+                        if !r.detail.isEmpty { Text(verbatim: r.detail).font(.caption.monospaced()) }
+                        if !r.firstBytes.isEmpty { Text(verbatim: "first bytes: \(r.firstBytes)").font(.caption.monospaced()) }
                     }
-                    .site(17, line: 22).foregroundStyle(Site.text3)
+                    .textSelection(.enabled)
+                }
+                Button(running ? "Running…" : "Run Checks") { Task { await run() } }.disabled(running)
+            }
+            Section {
+                LabeledContent("Port on 10.7.0.1") {
+                    TextField(text: $hold.port, prompt: Text(verbatim: "49152")) { Text("Port on 10.7.0.1") }
+                        .keyboardType(.numberPad).multilineTextAlignment(.trailing).monospacedDigit()
+                }
+                Picker("Experiment", selection: $hold.experiment) {
+                    ForEach(Hold.Experiment.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
                 }
                 .disabled(hold.holding)
-            }
-            HStack {
-                Button { hold.start() } label: { Text("Start Hold").site(17, line: 22).foregroundStyle(hold.holding ? Site.text3 : Site.ink) }
-                    .disabled(hold.holding)
-                Spacer()
-                Button { hold.stop() } label: { Text("Stop").site(17, line: 22).foregroundStyle(hold.holding ? Site.danger : Site.text3) }
-                    .disabled(!hold.holding)
-            }
-            .buttonStyle(.plain)
-            .padding(.vertical, 12).padding(.horizontal, 16)
-            if !hold.log.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(hold.log.indices, id: \.self) { i in Text(verbatim: hold.log[i]).mono(11).foregroundStyle(Site.text2) }
+                Button("Start Hold") { hold.start() }.disabled(hold.holding)
+                Button("Stop", role: .destructive) { hold.stop() }.disabled(!hold.holding)
+                if !hold.log.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(hold.log.indices, id: \.self) { i in Text(verbatim: hold.log[i]).font(.caption2.monospaced()) }
+                    }
+                    .textSelection(.enabled)
                 }
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 12).padding(.horizontal, 16)
-                .overlay(alignment: .top) { Site.hair.frame(height: 1) }
+            } header: {
+                Text("Background Hold")
+            } footer: {
+                Text("Tap Start, leave the app for a while, then return. The log records suspension gaps and connection closures.")
             }
-        }
-        .whiteCard()
-        GroupFootnote(text: "Tap Start, leave the app for a while, then return. The log records suspension gaps and connection closures.")
-    }
-
-    @ViewBuilder private var addressesGroup: some View {
-        GroupLabel(text: "ADDRESSES")
-        VStack(alignment: .leading, spacing: 6) {
-            ForEach(addresses.indices, id: \.self) { i in
-                Text(verbatim: "\(addresses[i].interface)  \(addresses[i].address)").mono(12).foregroundStyle(Site.text2)
+            Section("Addresses") {
+                ForEach(addresses.indices, id: \.self) { i in
+                    Text(verbatim: "\(addresses[i].interface)  \(addresses[i].address)").font(.caption.monospaced())
+                }
             }
+            .textSelection(.enabled)
         }
-        .textSelection(.enabled)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 14).padding(.horizontal, 16)
-        .whiteCard()
+        .navigationTitle("Diagnostics")
+        .navigationBarTitleDisplayMode(.inline)
+        .task { await run() }
     }
 
     /// "Reflected lockdown: Connected", the probe's own words with the address left to the line below.
@@ -190,29 +116,19 @@ struct LogView: View {
     @State private var log = AppLog.shared
     var back: () -> Void
     var body: some View {
-        SitePage {
-            VStack(spacing: 0) {
-                Grabber()
-                HStack {
-                    SheetHeader(title: Text("Log"), back: "Diagnostics", sideWidth: 110, onBack: back)
-                }
-                .overlay(alignment: .trailing) {
-                    Button { log.clear() } label: { Text("Clear").site(17, line: 22).foregroundStyle(Color(hex: 0xFFC9C5)) }
-                        .buttonStyle(.plain).padding(.trailing, 20)
-                }
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 8) {
-                        ForEach(Array(log.lines.reversed().enumerated()), id: \.offset) { _, line in
-                            Text(verbatim: line).mono(12).foregroundStyle(Site.text2).frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                    }
-                    .textSelection(.enabled)
-                    .padding(16)
-                    .whiteCard()
-                    .padding(.horizontal, 16).padding(.bottom, 40)
-                }
+        List {
+            ForEach(Array(log.lines.reversed().enumerated()), id: \.offset) { _, line in
+                Text(verbatim: line).font(.caption.monospaced()).textSelection(.enabled)
             }
         }
-        .toolbar(.hidden, for: .navigationBar)
+        .listStyle(.plain)
+        .overlay { if log.lines.isEmpty { ContentUnavailableView("No Log Yet", systemImage: "doc.text") } }
+        .navigationTitle("Log")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Clear", role: .destructive) { log.clear() }
+            }
+        }
     }
 }
