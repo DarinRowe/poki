@@ -130,6 +130,20 @@ final class SessionStore {
         put(session)
     }
 
+    /// Outside agents' sessions that came through a connector, newest first. The relay does not tell
+    /// the phone which connector a request used, so a session belongs to the connector whose name
+    /// matches its client's ("Claude" and "Claude Code"); with a single connector, every outside
+    /// session is its.
+    func sessions(for connector: ConnectorSecret, among all: [ConnectorSecret]) -> [SavedSession] {
+        let outside = ordered.filter { $0.kind != .poki }
+        if all.count <= 1 { return outside }
+        let name = connector.name.lowercased()
+        return outside.filter { session in
+            let client = (session.client ?? "").lowercased()
+            return !client.isEmpty && (client.contains(name) || name.contains(client))
+        }
+    }
+
     /// The owner's name for a session; empty goes back to the automatic one.
     func rename(_ id: String, to name: String) {
         guard var session = session(id) else { return }

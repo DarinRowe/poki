@@ -10,6 +10,10 @@ struct PokiApp: App {
         // PokiLauncher (Rust) and the relay write to sockets the other side may have closed. In an app,
         // unlike a Rust executable, nothing ignores SIGPIPE, and it would end the whole app.
         signal(SIGPIPE, SIG_IGN)
+        // Settings an update, a reinstall or a re-sign lost come back from the Keychain, before anything
+        // reads them; from here on every change is mirrored there.
+        SettingsVault.restore()
+        SettingsVault.watch()
         #if DEBUG && targetEnvironment(simulator)
         TestCredential.importIfGiven()
         #endif

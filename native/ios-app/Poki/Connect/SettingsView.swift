@@ -236,6 +236,11 @@ struct ConnectorDetail: View {
         // Rows and Add open this only once a relay is set, so the address is there.
         let url = model.connectorURL(for: secret)?.absoluteString ?? ""
         Form {
+            if url.isEmpty {
+                Section {
+                    Text("Set your relay in Agents to get this connector’s address.").foregroundStyle(.secondary)
+                }
+            } else {
             Section {
                 if let qr = QRCode.image(url) {
                     Image(uiImage: qr).interpolation(.none).resizable().scaledToFit()
@@ -252,6 +257,29 @@ struct ConnectorDetail: View {
                 }
             } footer: {
                 Text("Add this URL as a remote MCP server in your client. Anyone with this link can control this iPhone while Poki is running. Keep it private, and revoke it here if compromised.")
+            }
+            }
+            Section {
+                let recent = Array(SessionStore.shared.sessions(for: secret, among: model.identity.secrets).prefix(20))
+                if recent.isEmpty {
+                    Text("No agent has used this connector yet.").foregroundStyle(.secondary)
+                }
+                ForEach(recent) { session in
+                    HStack(spacing: 12) {
+                        AgentBadge(name: session.client ?? "", size: 32)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(verbatim: session.name).font(.body.weight(.semibold)).lineLimit(1)
+                            let line = session.lastLine
+                            if !line.isEmpty { Text(verbatim: line).font(.subheadline).foregroundStyle(.secondary).lineLimit(2) }
+                        }
+                        Spacer(minLength: 8)
+                        Text(session.live ? String(localized: "now") : ChatTime.row(session.updated))
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+            } header: {
+                Text("Recent Use")
             }
             Section {
                 LabeledContent("Added", value: secret.created.formatted(date: .abbreviated, time: .omitted))

@@ -45,14 +45,23 @@ struct AgentsView: View {
 
                 Section {
                     ForEach(model.identity.secrets) { secret in
+                        let last = SessionStore.shared.sessions(for: secret, among: model.identity.secrets).first
                         NavigationLink(value: SettingsRoute.connector(secret)) {
                             LabeledContent {
-                                Text(secret.created.formatted(.dateTime.month(.abbreviated).day()))
+                                Text(last.map { ChatTime.row($0.updated) } ?? String(localized: "Not Used Yet"))
                             } label: {
-                                Label(secret.name, systemImage: "point.3.connected.trianglepath.dotted")
+                                Label {
+                                    Text(verbatim: secret.name)
+                                } icon: {
+                                    // The provider of the agent that used it last.
+                                    if let client = last?.client {
+                                        AgentBadge(name: client, size: 28)
+                                    } else {
+                                        Image(systemName: "point.3.connected.trianglepath.dotted")
+                                    }
+                                }
                             }
                         }
-                        .disabled(model.relayAddress == nil)
                         .swipeActions { Button("Revoke", role: .destructive) { model.revoke(secret) } }
                     }
                     HStack {
