@@ -555,8 +555,13 @@ public final class GymScorecard {
 
         // 15. Safari: a page with links, scroll_to on page text, a link tapped.
         a = await launchApp("Safari", "com.apple.mobilesafari")
-        if ref(in: a, "Address") == nil { a = await call("look (full) for the address bar", "look", ["full": true]) }
-        if let address = ref(in: a, "Address") {
+        // In-process, Safari's start page lists the address capsule as an Other "Search or enter website" for a
+        // moment before it is the TextField "Address"; a tap on either focuses the field, so both serve.
+        for i in 1...3 where ref(in: a, "Address") == nil && (i == 1 || ref(in: a, "Search or enter website") == nil) {
+            if i > 1 { try? await Task.sleep(nanoseconds: 1_000_000_000) }
+            a = await call("look (full) for the address bar (\(i))", "look", ["full": true])
+        }
+        if let address = ref(in: a, "Address") ?? ref(in: a, "Search or enter website") {
             // With the scheme, Safari's first suggestion is the site itself (a bare host's first suggestion
             // is a Google search on this runtime, and Go did not load it on 3 of 4 runs).
             var opened = await call("type a URL and return", "do", ["actions": [["type": "https://example.com/", "ref": .number(Double(address))], ["key": "return"], ["wait_until": ["text": "Example Domain", "ms": 12000]]]], budget: 25)
