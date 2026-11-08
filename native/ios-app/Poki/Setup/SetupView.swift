@@ -743,6 +743,7 @@ private struct BackgroundPage: View {
 /// wrong, and a tap opens its fix. It is on the Chats page (the steps still open) and in the Poki tab.
 struct SetupChecklist: View {
     @Environment(AppModel.self) private var model
+    @State private var guiding = false
 
     var body: some View {
         List {
@@ -753,11 +754,16 @@ struct SetupChecklist: View {
             } footer: {
                 Text(model.setupComplete ? "Everything Poki needs is in place." : "Poki needs every item ticked before an agent or the chat can use this iPhone. Items tick themselves when the phone can check them.")
             }
+            Section {
+                Button { guiding = true } label: { Label("Setup Guide", systemImage: "list.number") }
+            } footer: {
+                Text("Walks through every item in order. You can close it at any time and pick up from this list.")
+            }
         }
         .listStyle(.insetGrouped)
         .navigationTitle("Setup")
-        .navigationBarTitleDisplayMode(.inline)
         .onAppear { model.loopback.resume() }
+        .sheet(isPresented: $guiding) { SetupGuide(start: SetupStep.shown.first { !model.isDone($0) }) }
     }
 }
 
@@ -799,6 +805,77 @@ struct SetupStepPage: View {
     var step: SetupStep
 
     var body: some View {
+        switch step {
+        case .runner, .developerMode, .automation: formPage
+        default: cardPage
+        }
+    }
+
+    /// The steps the phone can't check: a native form with the steps, Open Settings and the switch.
+    private var formPage: some View {
+        Form {
+            Section {
+                LabeledContent {
+                    Text(model.isDone(step) ? "Done" : "Needed").foregroundStyle(model.isDone(step) ? Color.green : Color.orange)
+                } label: {
+                    Label(step.pageTitle, systemImage: step.symbol)
+                }
+            } footer: {
+                Text(step.pageSummary)
+            }
+            Section("How To") {
+                ForEach(Array(lines.enumerated()), id: \.offset) { i, line in
+                    Label { Text(LocalizedStringKey(line)) } icon: { Image(systemName: "\(i + 1).circle") }
+                }
+            }
+            Section {
+                Button("Open Settings", systemImage: "gear") { openSettings(model, for: step) }
+                Toggle(confirmTitle, isOn: confirmBinding)
+            } footer: {
+                Text("iOS doesn’t let Poki check this one, so turn the switch on once it’s done.")
+            }
+        }
+        .navigationTitle(Text(step.pageTitle))
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear { model.loopback.resume() }
+    }
+
+    private var lines: [String] {
+        switch step {
+        case .runner: [
+            "Install **Poki Runner** (poki-runner-unsigned.ipa) with the same tool and Apple ID you used for Poki.",
+            "Open **Settings › General › VPN & Device Management**, tap your Apple ID, then tap **Trust**.",
+            "Don’t open Poki Runner yourself. Poki starts it when an agent needs this iPhone.",
+        ]
+        case .developerMode: [
+            SetupStep.inProcess ? "Open **Settings › Privacy & Security › Developer Mode**." : "Open **Settings › Privacy & Security › Developer Mode**. It appears once Poki Runner is installed.",
+            "Turn on Developer Mode, then tap **Restart**.",
+            "After restarting, unlock this iPhone and tap **Turn On**.",
+        ]
+        default: [
+            "Open **Settings › Developer**. It appears once Developer Mode is on.",
+            "Turn on **Enable UI Automation**.",
+        ]
+        }
+    }
+
+    private var confirmTitle: LocalizedStringKey {
+        switch step {
+        case .runner: "Poki Runner Is Installed and Trusted"
+        case .developerMode: "Developer Mode Is On"
+        default: "UI Automation Is On"
+        }
+    }
+
+    private var confirmBinding: Binding<Bool> {
+        switch step {
+        case .runner: binding(\.runnerInstalled)
+        case .developerMode: binding(\.developerMode)
+        default: binding(\.uiAutomation)
+        }
+    }
+
+    private var cardPage: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 8) {
@@ -863,6 +940,41 @@ struct SetupStepPage: View {
             ])
             ConfirmCard(step: .automation, title: "UI Automation is on", isOn: binding(\.uiAutomation))
         case .background: BackgroundPage()
+        }
+    }
+}
+
+/// The setup guidance as a walk through every item, from the first one still open. Close leaves it at
+/// any time; the checklist keeps what is done.
+struct SetupGuide: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(AppModel.self) private var model
+    @State private var index: Int
+
+    init(start: SetupStep?) {
+        _index = State(initialValue: start.flatMap { SetupStep.shown.firstIndex(of: $0) } ?? 0)
+    }
+
+    private var steps: [SetupStep] { SetupStep.shown }
+
+    var body: some View {
+        NavigationStack {
+            SetupStepPage(step: steps[index])
+                .id(steps[index])
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
+                    ToolbarItemGroup(placement: .bottomBar) {
+                        Button("Back", systemImage: "chevron.left") { index -= 1 }.disabled(index == 0)
+                        Spacer()
+                        Text("\(index + 1) of \(steps.count)").font(.footnote).foregroundStyle(.secondary)
+                        Spacer()
+                        if index + 1 < steps.count {
+                            Button("Next", systemImage: "chevron.right") { index += 1 }
+                        } else {
+                            Button("Done") { dismiss() }.bold()
+                        }
+                    }
+                }
         }
     }
 }
