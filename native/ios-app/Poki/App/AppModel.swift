@@ -1197,6 +1197,9 @@ final class AppModel {
         // The person completes pairing in Settings. Keep the listener and Bonjour publication alive
         // there, before a regular Poki session can be started. Without it (audio can be busy, as in a
         // call) pairing still starts, as it did before the keep-alive.
+        // Location keeps Poki running in Settings as well (While Using is enough, started here in front).
+        background.holdForPairing()
+        log.add("pairing", "staying on with location (\(background.allowed ? "allowed" : "not allowed yet")) and silent audio")
         do { try pairingKeepAlive.start() }
         catch { log.add("pairing", "keep-alive did not start (\(error.localizedDescription)); iOS may stop the pairing while Settings is open") }
         do {
@@ -1210,6 +1213,7 @@ final class AppModel {
         if pairingUnderWay { log.add("pairing", "stopped") }
         pairer.cancel()
         pairingKeepAlive.stop()
+        background.releasePairing()
         pairing = nil
         activity.update { $0.pin = nil }
         if !sessionOn { stopGuide(); activity.end() }
@@ -1251,6 +1255,7 @@ final class AppModel {
         case .paired(let url):
             PairingNotice.clear()
             pairingKeepAlive.stop()
+            background.releasePairing()
             try? (url as NSURL).setResourceValue(URLFileProtection.completeUntilFirstUserAuthentication, forKey: .fileProtectionKey)
             setup.pairingFile = url.path
             if let data = try? Data(contentsOf: url) { SetupVault.storePairing(data) }
@@ -1261,6 +1266,7 @@ final class AppModel {
         case .failed(let why):
             PairingNotice.clear()
             pairingKeepAlive.stop()
+            background.releasePairing()
             activity.update { $0.phase = .problem; $0.pin = nil; $0.label = "Pairing Failed"; $0.headline = Self.firstPart(why) }
             if !sessionOn { Task { try? await Task.sleep(for: .seconds(8)); if !self.sessionOn { self.activity.end() } } }
         case .advertising: break
