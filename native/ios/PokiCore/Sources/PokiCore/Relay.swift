@@ -227,6 +227,9 @@ final class RelayClient: @unchecked Sendable {
                 guard let id = frame["id"]?.string else { continue }
                 var headers: [String: String] = [:]
                 for (k, v) in frame["headers"]?.object ?? [:] { if let s = v.string { headers[k.lowercased()] = s } }
+                // Which connector URL the request came through (the relay's sha256 of its secret). Set
+                // only from the relay's own field, never from a header the caller sent.
+                headers[Core.connectorHeader] = frame["s"]?.string
                 let answerBy = state.value.requestTimeout.map { now() + $0 }
                 let request = RelayRequest(id: id, method: frame["method"]?.string ?? "POST", headers: headers, body: frame["body"]?.string ?? "", answerBy: answerBy)
                 let task = Task { [weak self] in
@@ -238,6 +241,15 @@ final class RelayClient: @unchecked Sendable {
                     try? await socket.send(self.frame(for: response).serialized())
                 }
                 state.update { $0.inflight[id] = task }
+            case "consent":
+                // A sign-in from a client outside the relay's known list waits for the owner's OK.
+                guard let id = frame["id"]?.string else { continue }
+                let client = frame["client"]?.string ?? "An MCP client", callback = frame["callback"]?.string ?? "", connector = frame["s"]?.string ?? ""
+                Task { [weak self] in
+                    guard let self else { return }
+                    let ok = await self.host?.approveConnection(client: client, callback: callback, connector: connector) ?? false
+                    try? await socket.send((["t": "consent_res", "id": .string(id), "ok": .bool(ok)] as JSON).serialized())
+                }
             case "cancel":
                 if let id = frame["id"]?.string { state.update { $0.inflight.removeValue(forKey: id) }?.cancel() }
             case "ready":

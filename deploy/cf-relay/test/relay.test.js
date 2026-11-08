@@ -18,7 +18,7 @@ async function identity() {
 }
 
 // A fake phone: connects, answers the challenge, and answers requests with `answer`.
-async function phone(id, secrets, { answer, sign = id.keys.privateKey, label = id.label } = {}) {
+async function phone(id, secrets, { answer, consent, sign = id.keys.privateKey, label = id.label } = {}) {
   const response = await SELF.fetch(`${HOST}/v1/${label}/connect`, { headers: { Upgrade: 'websocket' } });
   expect(response.status).toBe(101);
   const ws = response.webSocket;
@@ -36,6 +36,8 @@ async function phone(id, secrets, { answer, sign = id.keys.privateKey, label = i
       const sig = await crypto.subtle.sign({ name: 'Ed25519' }, sign, message);
       const access = await Promise.all(secrets.map(async s => hex(await sha256(s))));
       ws.send(JSON.stringify({ t: 'hello', v: 1, key: b64(id.raw), sig: b64(sig), access, app: 'test' }));
+    } else if (frame.t === 'consent' && consent) {
+      ws.send(JSON.stringify({ t: 'consent_res', id: frame.id, ok: await consent(frame) }));
     } else if (frame.t === 'req' && answer) {
       const reply = await answer(frame);
       if (reply) ws.send(JSON.stringify({ t: 'res', id: frame.id, ...reply }));
@@ -52,10 +54,10 @@ async function phone(id, secrets, { answer, sign = id.keys.privateKey, label = i
   return { ws, frames, next, closed };
 }
 
-const echo = async frame => ({ status: 200, headers: { 'content-type': 'application/json', 'mcp-session-id': 's1' }, body: JSON.stringify({ jsonrpc: '2.0', id: JSON.parse(frame.body).id, result: { echoed: frame.method, headers: frame.headers } }) });
+const echo = async frame => ({ status: 200, headers: { 'content-type': 'application/json', 'mcp-session-id': 's1' }, body: JSON.stringify({ jsonrpc: '2.0', id: JSON.parse(frame.body).id, result: { echoed: frame.method, headers: frame.headers, connector: frame.s } }) });
 
 // The OAuth flow a client like claude.ai runs, from the 401 onwards.
-async function signIn(label, secret) {
+async function signIn(label, secret, callback = 'https://claude.ai/api/mcp/auth_callback') {
   const base = `${HOST}/v1/${label}/${secret}`;
   const challenge = await SELF.fetch(`${base}/mcp`, { method: 'POST', body: '{}' });
   expect(challenge.status).toBe(401);
@@ -66,9 +68,9 @@ async function signIn(label, secret) {
   const as = await (await SELF.fetch(`${issuer.origin}/.well-known/oauth-authorization-server${issuer.pathname}`)).json();
   expect(as.issuer).toBe(prm.authorization_servers[0]);
   expect(as.code_challenge_methods_supported).toEqual(['S256']);
-  const client = await (await SELF.fetch(as.registration_endpoint, { method: 'POST', body: JSON.stringify({ client_name: 'Claude', redirect_uris: ['https://claude.ai/api/mcp/auth_callback'] }) })).json();
+  const client = await (await SELF.fetch(as.registration_endpoint, { method: 'POST', body: JSON.stringify({ client_name: 'Claude', redirect_uris: [callback] }) })).json();
   const verifier = b64u(crypto.getRandomValues(new Uint8Array(32)));
-  const params = new URLSearchParams({ response_type: 'code', client_id: client.client_id, redirect_uri: 'https://claude.ai/api/mcp/auth_callback', code_challenge: b64u(await sha256(verifier)), code_challenge_method: 'S256', state: 'xyz', resource: prm.resource, scope: 'poki' });
+  const params = new URLSearchParams({ response_type: 'code', client_id: client.client_id, redirect_uri: callback, code_challenge: b64u(await sha256(verifier)), code_challenge_method: 'S256', state: 'xyz', resource: prm.resource, scope: 'poki' });
   const authorized = await SELF.fetch(`${as.authorization_endpoint}?${params}`, { redirect: 'manual' });
   return { as, client, verifier, prm, authorized };
 }
@@ -125,6 +127,8 @@ describe('OAuth and MCP', () => {
     expect(body.id).toBe(7);
     expect(body.result.echoed).toBe('POST');
     expect(Object.keys(body.result.headers).sort()).toEqual(['accept', 'content-type', 'mcp-protocol-version']);
+    // The phone learns which connector URL the request came through.
+    expect(body.result.connector).toBe(hex(await sha256(c.secret)));
   });
 
   it('refreshes, and refuses a wrong verifier, a foreign redirect and a token for another secret', async () => {
@@ -145,15 +149,38 @@ describe('OAuth and MCP', () => {
   it('registers a callback on any https host or on loopback http, and refuses everything else', async () => {
     const c = await connected();
     const register = redirect => SELF.fetch(c.as.registration_endpoint, { method: 'POST', body: JSON.stringify({ client_name: 'Client', redirect_uris: [redirect] }) });
-    for (const ok of ['https://agent.meta.ai/mcp/oauth/callback', 'https://poke.com/oauth/callback', 'https://www.cursor.com/bot/mcp/oauth/callback', 'http://localhost:3000/cb', 'http://127.0.0.1:8080/cb', 'http://[::1]:8080/cb']) {
+    for (const ok of ['https://agent.meta.ai/mcp/oauth/callback', 'https://poke.com/oauth/callback', 'https://www.cursor.com/bot/mcp/oauth/callback', 'http://localhost:3000/cb', 'http://127.0.0.1:8080/cb', 'http://[::1]:8080/cb',
+      'cursor://anysphere.cursor-mcp/oauth/callback', 'vscode://vscode.github-authentication/did-authenticate', 'windsurf://codeium.windsurf/cb', 'zed://oauth/cb', 'raycast://oauth?package_name=mcp']) {
       expect([ok, (await register(ok)).status]).toEqual([ok, 201]);
     }
-    for (const bad of ['javascript:alert(1)', 'http://evil.example/cb', 'ftp://agent.meta.ai/cb', 'https://agent.meta.ai/cb#frag', 'not a url']) {
+    for (const bad of ['javascript:alert(1)', 'data:text/html,x', 'file:///etc/passwd', 'evilapp://cb', 'http://evil.example/cb', 'ftp://agent.meta.ai/cb', 'https://agent.meta.ai/cb#frag', 'not a url']) {
       expect([bad, (await register(bad)).status]).toEqual([bad, 400]);
     }
     const refused = await (await register('http://evil.example/cb')).json();
     expect(refused.error).toBe('invalid_redirect_uri');
     expect(refused.error_description).toMatch(/callback address/i);
+  });
+
+  it('a sign-in from an unlisted client waits for the owner on the phone; a known one does not', async () => {
+    const id = await identity();
+    const secret = newSecret();
+    const asked = [];
+    let allow = true;
+    const p = await phone(id, [secret], { answer: echo, consent: async frame => { asked.push(frame); return allow; } });
+    await p.next('ready');
+    const known = await signIn(id.label, secret, 'https://poke.com/oauth/callback');
+    expect(new URL(known.authorized.headers.get('Location')).searchParams.get('code')).toBeTruthy();
+    expect(asked.length).toBe(0);
+    const allowed = await signIn(id.label, secret, 'https://agents.example.net/cb');
+    expect(new URL(allowed.authorized.headers.get('Location')).searchParams.get('code')).toBeTruthy();
+    expect(asked.length).toBe(1);
+    expect(asked[0].callback).toBe('agents.example.net');
+    expect(asked[0].client).toBe('Claude');
+    expect(asked[0].s).toBe(hex(await sha256(secret)));
+    allow = false;
+    const denied = await signIn(id.label, secret, 'https://agents.example.net/cb');
+    expect(new URL(denied.authorized.headers.get('Location')).searchParams.get('error')).toBe('access_denied');
+    expect(asked.length).toBe(2);
   });
 
   it('REDIRECT_HOSTS, when set, allows only the listed hosts and their subdomains', async () => {

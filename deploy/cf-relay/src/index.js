@@ -36,7 +36,8 @@ const DEFAULTS = {
   LEASE: 25, // requests a device object takes from the daily budget at a time
   ACCESS_TTL: 3_600,
   REFRESH_TTL: 30 * 86_400,
-  REDIRECT_HOSTS: '', // empty: any https callback; a comma-separated list narrows registration to those hosts
+  REDIRECT_HOSTS: '', // empty: any https callback (an unlisted one needs the owner's OK); a comma-separated list narrows registration to those hosts
+  CONSENT_MS: 90_000, // how long a sign-in from an unlisted client waits for the owner's OK on the phone
 };
 const limit = (env, name) => (env[name] !== undefined && env[name] !== '' ? (typeof DEFAULTS[name] === 'number' ? Number(env[name]) : env[name]) : DEFAULTS[name]);
 
@@ -127,12 +128,41 @@ function serverMetadata(b) {
     scopes_supported: [SCOPE],
   };
 }
+// Callback schemes of known MCP clients that are apps rather than web pages: Cursor, VS Code and its
+// forks (Insiders, VSCodium, Windsurf, Trae, Kiro, Positron), Zed, Raycast, Claude and ChatGPT's
+// desktop apps, Goose, LM Studio, Cherry Studio, Msty, BoltAI, Warp, Jan and Poke. Any https callback
+// (claude.ai, chatgpt.com, poke.com, agent.meta.ai, perplexity.ai, mistral.ai, ...) and http on
+// loopback are allowed already. The connector URL is the credential; the scheme only says where the
+// client wants its code.
+const APP_SCHEMES = new Set([
+  'cursor', 'vscode', 'vscode-insiders', 'vscodium', 'windsurf', 'trae', 'trae-cn', 'kiro', 'positron',
+  'zed', 'raycast', 'claude', 'chatgpt', 'goose', 'lmstudio', 'cherrystudio', 'msty', 'boltai', 'warp', 'jan', 'poke',
+]);
+// Callback hosts of known web clients (and their subdomains). Registration takes any https callback;
+// a sign-in whose callback is elsewhere waits for the owner's OK on the phone (see authorize).
+const KNOWN_HOSTS = [
+  'claude.ai', 'claude.com', 'anthropic.com', 'chatgpt.com', 'openai.com', 'poke.com', 'meta.ai', 'meta.com',
+  'perplexity.ai', 'mistral.ai', 'gemini.google.com', 'google.com', 'microsoft.com', 'copilot.microsoft.com',
+  'github.com', 'vscode.dev', 'cursor.com', 'cursor.sh', 'windsurf.com', 'codeium.com', 'x.ai', 'grok.com',
+  'manus.im', 'manus.ai', 'deepseek.com', 'openrouter.ai', 'kimi.com', 'moonshot.cn', 'qwen.ai', 'aliyun.com',
+  'huggingface.co', 'n8n.cloud', 'n8n.io', 'zapier.com', 'make.com', 'raycast.com', 'zed.dev', 'block.xyz',
+  'lmstudio.ai', 'cherry-ai.com', 'msty.app', 'boltai.com', 'warp.dev', 'jan.ai', 'cline.bot', 'roocode.com',
+];
+function knownCallback(uri) {
+  let url;
+  try { url = new URL(uri); } catch { return false; }
+  if (url.protocol === 'http:') return true; // loopback only (redirectAllowed): a client on the owner's own computer
+  if (APP_SCHEMES.has(url.protocol.slice(0, -1))) return true;
+  return KNOWN_HOSTS.some(h => url.hostname === h || url.hostname.endsWith(`.${h}`));
+}
 function redirectAllowed(env, uri) {
   let url;
   try { url = new URL(uri); } catch { return false; }
   if (url.hash) return false;
   const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
   if (url.protocol === 'http:') return loopback;
+  // Desktop and mobile agents that take their OAuth callback on their own URL scheme.
+  if (APP_SCHEMES.has(url.protocol.slice(0, -1))) return true;
   if (url.protocol !== 'https:') return false;
   const hosts = String(limit(env, 'REDIRECT_HOSTS')).split(',').map(h => h.trim()).filter(Boolean);
   return hosts.length === 0 || hosts.some(h => url.hostname === h || url.hostname.endsWith(`.${h}`));
@@ -151,7 +181,7 @@ async function register(env, request, label, secretHash) {
   try { body = JSON.parse(text); } catch { return oauthError(400, 'invalid_client_metadata', 'not JSON'); }
   const uris = body.redirect_uris;
   if (!Array.isArray(uris) || uris.length === 0 || uris.length > 5 || !uris.every(u => typeof u === 'string' && redirectAllowed(env, u))) {
-    return oauthError(400, 'invalid_redirect_uri', 'callback address not allowed: every redirect_uris entry must be https (on a host in REDIRECT_HOSTS when the relay sets it), or http on localhost, 127.0.0.1 or [::1]');
+    return oauthError(400, 'invalid_redirect_uri', 'callback address not allowed: every redirect_uris entry must be https (on a host in REDIRECT_HOSTS when the relay sets it), http on localhost, 127.0.0.1 or [::1], or a known agent app scheme (cursor:, vscode:, windsurf:, ...)');
   }
   const name = typeof body.client_name === 'string' ? body.client_name.slice(0, 64) : 'MCP client';
   const issued = Math.floor(Date.now() / 1000);
@@ -179,6 +209,12 @@ async function authorize(env, url, label, secretHash, b, device) {
   const known = await device.fetch(new Request('https://do/knows', { method: 'POST', body: JSON.stringify({ secretHash }) }));
   if (known.status === 503) return new Response('The phone is offline: open Poki on the phone, then try again.', { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
   if (known.status !== 200) return back({ error: 'access_denied' });
+  // A client outside the known list (and no REDIRECT_HOSTS narrowing it): the owner says yes on the phone.
+  if (!String(limit(env, 'REDIRECT_HOSTS')).trim() && !knownCallback(redirect)) {
+    const asked = await device.fetch(new Request('https://do/consent', { method: 'POST', body: JSON.stringify({ secretHash, client: client.n ?? 'MCP client', callback: new URL(redirect).host || redirect }) }));
+    if (asked.status === 503) return new Response('The phone is offline: open Poki on the phone, then try again.', { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+    if (asked.status !== 200) return back({ error: 'access_denied', error_description: 'the owner did not allow this client on the phone' });
+  }
   const cid = hex(await sha256(p.get('client_id')));
   const code = await seal(env, { k: 'code', l: label, s: secretHash, c: cid, r: redirect, cc: challenge, exp: Math.floor(Date.now() / 1000) + 60 });
   return back({ code });
@@ -302,6 +338,7 @@ export class DeviceRelay extends DurableObject {
       if (!phone) return new Response(null, { status: 503 });
       return new Response(null, { status: phone.deserializeAttachment().access.includes(secretHash) ? 200 : 404 });
     }
+    if (url.pathname === '/consent') return this.consent(request);
     if (url.pathname === '/mcp') return this.mcp(request);
     return new Response(null, { status: 404 });
   }
@@ -339,7 +376,7 @@ export class DeviceRelay extends DurableObject {
     if (frame.t === 'access' && validAccess(frame.access)) {
       ws.serializeAttachment({ ...state, access: frame.access });
       this.ready(ws);
-    } else if (frame.t === 'res' && typeof frame.id === 'string') {
+    } else if ((frame.t === 'res' || frame.t === 'consent_res') && typeof frame.id === 'string') {
       const waiter = this.pending.get(frame.id);
       if (waiter?.ws === ws) waiter.resolve(frame);
     }
@@ -384,6 +421,23 @@ export class DeviceRelay extends DurableObject {
     return true;
   }
 
+  // Asks the phone's owner whether an unlisted client may connect: 200 when they allow it, 403 when
+  // they do not or do not answer in CONSENT_MS, 503 with the phone offline.
+  async consent(request) {
+    const { secretHash, client, callback } = await request.json();
+    const phone = this.phone();
+    if (!phone) return new Response(null, { status: 503 });
+    if (!phone.deserializeAttachment().access.includes(secretHash)) return new Response(null, { status: 404 });
+    const id = `c${++this.next}`;
+    const ok = await new Promise(resolve => {
+      const timer = setTimeout(() => finish(false), limit(this.env, 'CONSENT_MS'));
+      const finish = value => { clearTimeout(timer); this.pending.delete(id); resolve(value); };
+      this.pending.set(id, { ws: phone, resolve: frame => finish(frame?.ok === true) });
+      try { phone.send(JSON.stringify({ t: 'consent', id, s: secretHash, client: String(client).slice(0, 64), callback: String(callback).slice(0, 200) })); } catch { finish(false); }
+    });
+    return new Response(null, { status: ok ? 200 : 403 });
+  }
+
   async mcp(request) {
     const { method, headers, body, secretHash } = await request.json();
     const phone = this.phone();
@@ -403,7 +457,9 @@ export class DeviceRelay extends DurableObject {
         try { phone.send(JSON.stringify({ t: 'cancel', id })); } catch { /* closed */ }
         finish('cancelled');
       });
-      try { phone.send(JSON.stringify({ t: 'req', id, method, headers, body })); } catch { finish(undefined); }
+      // s: which connector URL this came through (sha256 of its secret, which the phone already holds),
+      // so the phone can show the session under its connector.
+      try { phone.send(JSON.stringify({ t: 'req', id, method, headers, body, s: secretHash })); } catch { finish(undefined); }
     });
     this.lastEnd = Date.now();
     this.spentMs += this.lastEnd - started;

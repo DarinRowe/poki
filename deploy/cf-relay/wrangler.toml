@@ -32,7 +32,7 @@ CONCURRENT = "4"
 LABEL_DAILY = "5000"
 GLOBAL_DAILY = "8000"
 GLOBAL_DAILY_SECONDS = "80000"
-# REDIRECT_HOSTS = "claude.ai,chatgpt.com"  # optional: leave unset to accept any https callback; set it to allow only these hosts
+# REDIRECT_HOSTS = "claude.ai,claude.com,chatgpt.com,openai.com,poke.com,agent.meta.ai,perplexity.ai,mistral.ai,gemini.google.com,copilot.microsoft.com,vscode.dev,cursor.com,manus.im,x.ai,grok.com,n8n.cloud,zapier.com,huggingface.co"  # optional: leave unset (recommended) to accept any https callback; set it to allow only these hosts. Loopback http and known agent app schemes (cursor:, vscode:, windsurf:, zed:, raycast:, ...) are always allowed.
 
 # Secret, not in this file: TOKEN_SECRET (32+ random characters), e.g.
 #   openssl rand -base64 48 | wrangler secret put TOKEN_SECRET

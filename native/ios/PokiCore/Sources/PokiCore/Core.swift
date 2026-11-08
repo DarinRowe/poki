@@ -139,10 +139,15 @@ public protocol CoreHost: AnyObject, Sendable {
     /// simctl on the simulator). Asked for only when the runner gives none (wedged, or restarting),
     /// so a hung app never blinds the model. Nil (the default) means there is no such path.
     func screenshotWithoutRunner() async -> Data?
+    /// The relay asks whether a client outside its known list may sign in through a connector: its
+    /// registered name, the host its sign-in returns to, and the connector's secret hash. Only the
+    /// owner answers (on the phone). The default says no.
+    func approveConnection(client: String, callback: String, connector: String) async -> Bool
 }
 
 extension CoreHost {
     public func screenshotWithoutRunner() async -> Data? { nil }
+    public func approveConnection(client: String, callback: String, connector: String) async -> Bool { false }
 }
 
 public enum RelayState: Sendable, Equatable {
@@ -164,7 +169,8 @@ public struct ToolActivity: Sendable, Equatable {
 /// goes away). The app lists them next to its own chats.
 public enum SessionSignal: Sendable, Equatable {
     /// `client` and `version` are the client's own `clientInfo` from initialize.
-    case started(id: String, client: String, version: String?)
+    /// `connector` is the sha256 of the connector secret the session came through, when the relay says.
+    case started(id: String, client: String, version: String?, connector: String? = nil)
     case ended(id: String)
 }
 
@@ -402,6 +408,9 @@ public final class PokiCore: @unchecked Sendable {
 
     static let protocolVersions = ["2025-06-18", "2025-03-26", "2024-11-05"]
 
+    /// The header Relay sets to the connector's secret hash, from the relay's own frame field.
+    public static let connectorHeader = "x-poki-connector"
+
     public func handle(_ request: RelayRequest) async -> RelayResponse {
         func answer(_ status: Int, _ body: JSON?, session: String? = nil) -> RelayResponse {
             var headers = ["content-type": "application/json"]
@@ -428,10 +437,10 @@ public final class PokiCore: @unchecked Sendable {
         let session = request.headers["mcp-session-id"]
         if let batch = message.array {
             var replies: [JSON] = []
-            for item in batch { if let r = await rpc(item, session: session, answerBy: request.answerBy).reply { replies.append(r) } }
+            for item in batch { if let r = await rpc(item, session: session, answerBy: request.answerBy, connector: request.headers[Self.connectorHeader]).reply { replies.append(r) } }
             return replies.isEmpty ? RelayResponse(id: request.id, status: 202, headers: [:], body: "") : answer(200, .array(replies), session: session)
         }
-        let (reply, newSession) = await rpc(message, session: session, answerBy: request.answerBy)
+        let (reply, newSession) = await rpc(message, session: session, answerBy: request.answerBy, connector: request.headers[Self.connectorHeader])
         guard let reply else { return RelayResponse(id: request.id, status: 202, headers: [:], body: "") }
         return answer(200, reply, session: newSession ?? session)
     }
@@ -440,7 +449,7 @@ public final class PokiCore: @unchecked Sendable {
         ["jsonrpc": "2.0", "id": id ?? .null, "error": ["code": .number(Double(code)), "message": .string(message)]]
     }
 
-    func rpc(_ message: JSON, session: String?, answerBy: Double? = nil) async -> (reply: JSON?, session: String?) {
+    func rpc(_ message: JSON, session: String?, answerBy: Double? = nil, connector: String? = nil) async -> (reply: JSON?, session: String?) {
         let id = message["id"]
         guard let method = message["method"]?.string else { return (id == nil ? nil : rpcError(id, -32600, "Invalid Request"), nil) }
         let isNotification = id == nil
@@ -453,7 +462,7 @@ public final class PokiCore: @unchecked Sendable {
             let newSession = UUID().uuidString.lowercased()
             sessions.update { _ = $0.insert(newSession) }
             let info = message["params"]?["clientInfo"]
-            sessionSignal.value?(.started(id: newSession, client: info?["name"]?.string ?? "An agent", version: info?["version"]?.string))
+            sessionSignal.value?(.started(id: newSession, client: info?["name"]?.string ?? "An agent", version: info?["version"]?.string, connector: connector))
             if let client = message["params"]?["clientInfo"]?["name"]?.string, !client.isEmpty { clientNames.update { $0[newSession] = String(client.prefix(40)) } }
             return (result([
                 "protocolVersion": .string(version),
