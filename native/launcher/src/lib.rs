@@ -30,6 +30,18 @@ pub(crate) fn runtime() -> &'static tokio::runtime::Runtime {
     })
 }
 
+fn pair_runtime() -> &'static tokio::runtime::Runtime {
+    static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+    RUNTIME.get_or_init(|| {
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .thread_name("poki-pairing")
+            .enable_all()
+            .build()
+            .expect("the pairing runtime")
+    })
+}
+
 pub type EventCallback = extern "C" fn(context: *mut c_void, event_json: *const c_char);
 
 /// The app's callback and its context pointer, callable from any thread.
@@ -133,7 +145,9 @@ pub unsafe extern "C" fn poki_pair_start(config_json: *const c_char, cb: EventCa
         identity_path: value["identity_path"].as_str().map(Into::into),
     };
     let callback = Callback { function: cb, context };
-    let task = runtime().spawn(pair::run(config, move |event| callback.call(&event)));
+    // Its own runtime: the signer (downloads, re-signing) and the launcher share the main one, and a
+    // pairing must answer Settings at once, whatever else is running.
+    let task = pair_runtime().spawn(pair::run(config, move |event| callback.call(&event)));
     Box::into_raw(Box::new(PokiPairing { task }))
 }
 

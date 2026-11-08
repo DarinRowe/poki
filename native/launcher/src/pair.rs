@@ -44,7 +44,11 @@ async fn pair(config: &PairConfig, emit: &(impl Fn(Value) + Send + Sync)) -> Res
     }
     let mut file = RpPairingFile::generate(&config.host_name);
     let identifier = file.identifier().to_string();
-    let listener = TcpListener::bind(("0.0.0.0", 0)).await.map_err(|e| format!("cannot listen for the phone: {e}"))?;
+    // Both IPv6 and IPv4 (a dual-stack socket on "::"): Settings may reach Poki over either.
+    let listener = match TcpListener::bind(("::", 0)).await {
+        Ok(l) => l,
+        Err(_) => TcpListener::bind(("0.0.0.0", 0)).await.map_err(|e| format!("cannot listen for the phone: {e}"))?,
+    };
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
     let txt: serde_json::Map<String, Value> = info.mdns_txt_records(&identifier).into_iter().map(|(k, v)| (k, Value::String(v))).collect();
     emit(json!({
@@ -52,6 +56,7 @@ async fn pair(config: &PairConfig, emit: &(impl Fn(Value) + Send + Sync)) -> Res
         "service_type": PAIRABLE_HOST_SERVICE_TYPE.trim_end_matches(".local."),
         "instance": identifier,
         "port": port,
+        "listening": listener.local_addr().map(|a| a.to_string()).unwrap_or_default(),
         "txt": txt,
     }));
     let (stream, peer) = listener.accept().await.map_err(|e| format!("the phone did not connect: {e}"))?;

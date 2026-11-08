@@ -290,7 +290,10 @@ async fn prepare(request: &Value, reporter: &Reporter) -> Out {
     }
     let team = s.team().await?;
     let out = out_dir.join("Poki-signed.ipa");
-    let built = setup::sign_for_team(s, &team, Some((&udid, &name)), &ipa, signing_zip.as_deref(), &out, reporter).await?;
+    // Unpacking, signing and packing run synchronously inside; block_in_place moves the runtime's
+    // other work (the runner's launcher) to another thread meanwhile instead of stalling it.
+    let handle = tokio::runtime::Handle::current();
+    let built = tokio::task::block_in_place(|| handle.block_on(setup::sign_for_team(s, &team, Some((&udid, &name)), &ipa, signing_zip.as_deref(), &out, reporter)))?;
     let _ = std::fs::remove_file(out_dir.join("installed.ipa"));
     let mut profiles = vec![];
     for (i, p) in built.profiles.iter().enumerate() {

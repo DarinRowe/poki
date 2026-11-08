@@ -100,7 +100,8 @@ final class RustPairing: NSObject, DevicePairing, NetServiceDelegate {
         service.delegate = self
         service.publish()
         self.service = service
-        Task { @MainActor in AppLog.shared.add("pairing", "Bonjour publication requested") }
+        let listening = value["listening"] as? String ?? "port \(port)"
+        Task { @MainActor in AppLog.shared.add("pairing", "listening on \(listening); Bonjour publication requested") }
     }
 
     private func unpublish() { service?.stop(); service = nil }
