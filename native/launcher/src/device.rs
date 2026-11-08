@@ -130,7 +130,8 @@ impl Device {
                 let provider = TcpProvider { addr: address, scope_id: None, pairing_file: file.clone(), label: "Poki".into() };
                 let proxy = CoreDeviceProxy::connect(&provider).await.map_err(|e| {
                     let text = e.to_string();
-                    let fix = if text.contains("onnect") || text.contains("refused") || text.contains("timed out") { LOOPBACK_FIX } else { PAIRING_FIX };
+                    // A socket or TLS failure is the path to the phone, not the phone refusing the pairing.
+                    let fix = if text.contains("onnect") || text.contains("refused") || text.contains("timed out") || text.contains("socket") || text.to_lowercase().contains("tls") { LOOPBACK_FIX } else { PAIRING_FIX };
                     Failure::new(format!("lockdown on {address}:62078 failed: {text}")).fix(fix)
                 })?;
                 let port = proxy.tunnel_info().server_rsd_port;
