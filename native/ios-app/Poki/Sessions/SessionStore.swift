@@ -152,15 +152,7 @@ final class SessionStore {
         var session = self.session(id) ?? SavedSession(id: id, kind: .voice, client: nil, title: "", started: started, updated: Date(),
                                                          live: live, outcome: nil, entries: [], calls: [])
         guard session.kind == .voice else { return }
-        var entries = [ChatEntry(.time(started))]
-        for line in lines {
-            switch line.role {
-            case .you: entries.append(ChatEntry(.you(line.text, delivered: true)))
-            case .poki: entries.append(ChatEntry(.poki(line.text)))
-            case .tool: entries.append(ChatEntry(.step(line.text, ok: true)))
-            case .note: entries.append(ChatEntry(.note(.problem(line.text))))
-            }
-        }
+        let entries = Self.entries(voice: lines, started: started)
         // Nothing said yet: no row.
         guard entries.count > 1 || self.session(id) != nil else { return }
         session.entries = entries
@@ -218,6 +210,20 @@ final class SessionStore {
         guard var session = session(id) else { pendingNames[id] = name; return }
         session.autoName = name
         put(session)
+    }
+
+    /// A live voice conversation as chat entries: its start time, your words, Poki's answers, its steps.
+    static func entries(voice lines: [VoiceLine], started: Date) -> [ChatEntry] {
+        var entries = [ChatEntry(.time(started))]
+        for line in lines {
+            switch line.role {
+            case .you: entries.append(ChatEntry(.you(line.text, delivered: true)))
+            case .poki: entries.append(ChatEntry(.poki(line.text)))
+            case .tool: entries.append(ChatEntry(.step(line.text, ok: true)))
+            case .note: entries.append(ChatEntry(.note(.problem(line.text))))
+            }
+        }
+        return entries
     }
 
     func delete(_ id: String) {

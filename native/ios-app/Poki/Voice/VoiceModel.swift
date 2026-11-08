@@ -353,10 +353,21 @@ final class VoiceModel {
         SessionStore.shared.save(voice: transcript.id, started: transcript.started, lines: Array(lines[transcript.from...]), live: link != nil)
     }
 
+    /// The chat the conversation was held in (Poki's chat): when it ends, what was said and done goes
+    /// into that chat's history, where it stays, instead of a separate row that the next conversation
+    /// or a relaunch would take off the screen.
+    var onConversationEnded: (@MainActor (_ lines: [VoiceLine], _ started: Date) -> Void)?
+
     private func endTranscript() {
-        guard transcript != nil else { return }
+        guard let ended = transcript else { return }
         saveTranscript()
         transcript = nil
+        let said = lines.count >= ended.from ? Array(lines[ended.from...]) : []
+        guard let onConversationEnded, !said.isEmpty else { return }
+        onConversationEnded(said, ended.started)
+        // Now in the chat's own session: the voice row (kept while it ran, in case Poki closed) goes.
+        SessionStore.shared.delete(ended.id)
+        lines.removeAll()
     }
 
     /// Ends the conversation. Calls already running keep running; the next session hears how they ended.

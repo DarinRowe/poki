@@ -95,6 +95,8 @@ final class ChatModel {
         self.requester = requester
         app.addShellObserver { [weak self] event in self?.observe(event) }
         if kind == .handoff { return }
+        // A live voice conversation is part of this chat: what was said and done stays in its history.
+        if requester == nil { app.voice.onConversationEnded = { [weak self] lines, started in self?.appendVoice(lines, started: started) } }
         if let scene = UserDefaults.standard.string(forKey: "pokiChat") { loadSample(scene); return }
         // The last in-app conversation comes back at launch, as in Messages.
         if let last = SessionStore.shared.latestPoki(), Date().timeIntervalSince(last.updated) < 12 * 3600 {
@@ -111,6 +113,11 @@ final class ChatModel {
     }
 
     private func greet() { entries = greeting }
+
+    /// A live voice conversation that just ended, into this chat's history (and its saved session).
+    func appendVoice(_ lines: [VoiceLine], started: Date) {
+        entries.append(contentsOf: SessionStore.entries(voice: lines, started: started))
+    }
 
     func newConversation() {
         stop()
