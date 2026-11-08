@@ -11,12 +11,14 @@ const binary = process.argv[2] ?? resolve(import.meta.dirname, '../build/poki-na
 const directory = await mkdtemp('/tmp/poki-lifecycle-');
 const path = join(directory, 'native.sock');
 const child = spawn(binary, ['--local-server', 'protocol-only-no-device', path], { stdio: ['pipe', 'pipe', 'pipe'] });
-const exited = once(child, 'exit');
+const exited = once(child, 'close');
+let stderr = '';
+child.stderr.on('data', chunk => { stderr += chunk; });
 const lines = createInterface({ input: child.stdout });
 const timeout = setTimeout(() => child.kill('SIGKILL'), 30000);
 let socket;
 try {
-  const [ready] = await Promise.race([once(lines, 'line'), exited.then(([code]) => { throw new Error(`Native helper exited before ready (${code})`); })]);
+  const [ready] = await Promise.race([once(lines, 'line'), exited.then(([code, signal]) => { throw new Error(`Native helper exited before ready (${signal ? `signal ${signal}` : `exit code ${code}`}).${stderr.trim() ? `\nHelper stderr:\n${stderr.trim()}` : ''}`); })]);
   assert.equal(ready, '{"ready":true}');
   socket = createConnection(path);
   const replies = createInterface({ input: socket });

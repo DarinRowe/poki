@@ -141,7 +141,7 @@ state/remote/UDID/config.json      pairing_file -> /state/remote/UDID/pairing.pl
 state/remote-devices.json          config_path  -> /state/remote/UDID/config.json
 ```
 
-A host path such as `/mnt/data/poki/state/...` makes the helper exit immediately with `No such file or directory (os error 2)`, which the daemon reports as `Remote helper stopped before becoming ready`.
+A host path such as `/mnt/data/poki/state/...` makes the helper exit immediately with `No such file or directory (os error 2)`, which the daemon reports as `Remote helper stopped before becoming ready (exit code 1)` followed by the helper's stderr.
 
 `pairing.plist` is portable between machines: it holds the host key, not the machine identity, so generating it on a Mac and running it on the router works.
 

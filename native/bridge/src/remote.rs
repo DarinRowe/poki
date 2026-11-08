@@ -12,7 +12,11 @@ use idevice::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-use std::{io::Write, time::Duration};
+use std::{
+    io::Write,
+    net::{IpAddr, SocketAddr},
+    time::Duration,
+};
 use tokio::{
     io::{AsyncBufReadExt, BufReader},
     net::TcpStream,
@@ -26,7 +30,33 @@ struct Config {
     pairing_file: String,
 }
 
-type Control = RemotePairingClient<RpPairingSocket<TcpStream>>;
+impl Config {
+    fn uses_bonjour(&self) -> bool {
+        // A zone identifier may itself end in .local; numeric IPv6 remains numeric.
+        let address = self
+            .host
+            .split_once('%')
+            .map_or(self.host.as_str(), |(address, _)| address);
+        if address.parse::<IpAddr>().is_ok() {
+            return false;
+        }
+        let host = self.host.strip_suffix('.').unwrap_or(&self.host);
+        host.to_ascii_lowercase().ends_with(".local")
+    }
+}
+
+struct Control {
+    client: RemotePairingClient<RpPairingSocket<TcpStream>>,
+    peer: SocketAddr,
+}
+
+impl Control {
+    async fn open_data_socket(&self, port: u16) -> std::io::Result<TcpStream> {
+        let mut endpoint = self.peer;
+        endpoint.set_port(port);
+        TcpStream::connect(endpoint).await
+    }
+}
 
 enum Transport {
     Local(String),
@@ -71,28 +101,34 @@ impl Session {
             Transport::Remote(config) => config,
         };
         if self.control.is_none() {
-            let socket = TcpStream::connect((config.host.as_str(), config.port)).await
-                .map_err(|_| "Remote pairing is unreachable. Keep Tailscale connected; reconnect the iPhone to Wi-Fi to establish a new session.")?;
+            let socket = dial(&config.host, config.port).await
+                .map_err(|attempts| format!("Remote pairing is unreachable ({attempts}). Keep the iPhone unlocked and check its configured address or Bonjour name; for Tailscale, keep both devices connected."))?;
             socket.set_nodelay(true)?;
+            let peer = socket.peer_addr()?;
             let mut control = RemotePairingClient::new(RpPairingSocket::new(socket), "poki-mcp");
             let mut record = RpPairingFile::read_from_file(&config.pairing_file).await?;
             control.attempt_pair_verify().await?;
             // Never fall back to pairing or request consent during an ordinary operation.
             control.validate_pairing(&mut record).await?;
-            self.control = Some(control);
+            self.control = Some(Control {
+                client: control,
+                peer,
+            });
         }
         let control = self.control.as_mut().unwrap();
-        let port = match control.create_tcp_listener().await {
+        let port = match control.client.create_tcp_listener().await {
             Ok(port) => port,
             Err(error) => {
                 self.control = None;
                 return Err(format!("The remote pairing control connection closed: {error}. Reconnect the iPhone to Wi-Fi, then reconnect the device.").into());
             }
         };
-        let socket = TcpStream::connect((config.host.as_str(), port)).await
+        // Use the authenticated control peer, including its IPv6 scope. A
+        // second hostname lookup could select a different address mid-session.
+        let socket = control.open_data_socket(port).await
             .map_err(|_| "The iPhone refused a new tunnel. Reconnect it to Wi-Fi, then reconnect the device.")?;
         socket.set_nodelay(true)?;
-        let tunnel = connect_tls_psk_tunnel_native(socket, control.encryption_key()).await?;
+        let tunnel = connect_tls_psk_tunnel_native(socket, control.client.encryption_key()).await?;
         let info = tunnel.info.clone();
         let mut adapter = idevice::tcp::adapter::Adapter::new(
             Box::new(tunnel.into_inner()),
@@ -134,8 +170,12 @@ impl Session {
         let action = if request["op"] == "connect" || request["op"] == "reconnect" {
             None
         } else {
-            let action: Request = serde_json::from_value(request.clone())?;
-            action.validate()?;
+            let parsed: Result<Request> =
+                serde_json::from_value(request.clone()).map_err(Into::into);
+            let action = match parsed.and_then(|action| action.validate().map(|()| action)) {
+                Ok(action) => action,
+                Err(error) => return refused_reply(&request, error),
+            };
             if matches!(
                 action,
                 Request::InstallApp { .. } | Request::UninstallApp { .. }
@@ -153,6 +193,11 @@ impl Session {
             // Keep the working tunnel until its replacement has actually connected.
             // A failed reconnect must not destroy the only usable cellular session.
             if self.connection.is_none() || request["op"] == "reconnect" {
+                if request["op"] == "reconnect"
+                    && matches!(&self.transport, Transport::Remote(config) if config.uses_bonjour())
+                {
+                    self.control = None;
+                }
                 self.open().await?;
             }
             return Ok(
@@ -206,6 +251,11 @@ impl Session {
             // Only a dead tunnel is replaced. A live one stays, since a cellular replacement may be refused.
             if closed {
                 self.connection = None;
+                // Hostname mode must resolve again rather than dial the old
+                // control peer. Preserve legacy IP/Tailscale control reuse.
+                if matches!(&self.transport, Transport::Remote(config) if config.uses_bonjour()) {
+                    self.control = None;
+                }
                 if (not_sent || action.read_only()) && !fresh {
                     continue;
                 }
@@ -234,6 +284,40 @@ impl Session {
         }
         connected
     }
+}
+
+// Tries every resolved address in order, as a host-and-port connect does, but keeps
+// each address's OS error: the last error alone cannot tell routing from policy.
+async fn dial(host: &str, port: u16) -> std::result::Result<TcpStream, String> {
+    let addresses = tokio::net::lookup_host((host, port))
+        .await
+        .map_err(|error| format!("{host} did not resolve: {error}"))?;
+    let mut attempts = Vec::new();
+    for address in addresses {
+        match TcpStream::connect(address).await {
+            Ok(socket) => return Ok(socket),
+            Err(error) => attempts.push(format!("{}: {error}", endpoint(address))),
+        }
+    }
+    if attempts.is_empty() {
+        return Err(format!("{host} resolved to no address"));
+    }
+    Err(attempts.join("; "))
+}
+
+// Names an IPv6 scope by its interface, so a link-local attempt shows which network it used.
+fn endpoint(address: SocketAddr) -> String {
+    let SocketAddr::V6(v6) = address else {
+        return address.to_string();
+    };
+    let mut name = [0 as libc::c_char; libc::IF_NAMESIZE];
+    if v6.scope_id() == 0
+        || unsafe { libc::if_indextoname(v6.scope_id(), name.as_mut_ptr()) }.is_null()
+    {
+        return address.to_string();
+    }
+    let interface = unsafe { std::ffi::CStr::from_ptr(name.as_ptr()) }.to_string_lossy();
+    format!("[{}%{interface}]:{}", v6.ip(), v6.port())
 }
 
 fn socket_failure(error: &(dyn std::error::Error + Send + Sync + 'static)) -> bool {
@@ -268,6 +352,24 @@ fn unsent_reply(
             }
             Ok(reply)
         }
+    }
+}
+
+// The reply for a request refused before connecting, so before anything could reach the phone.
+fn refused_reply(
+    request: &Value,
+    error: Box<dyn std::error::Error + Send + Sync>,
+) -> Result<Value> {
+    match request["op"].as_str() {
+        Some("launch_app") => Ok(super::apps::not_sent(error)),
+        // Reads, settings and app installs report a refusal as an error, as they report any other failure.
+        Some(
+            "ax_tree" | "screenshot" | "device_info" | "display_info" | "list_apps"
+            | "configuration" | "install_app" | "uninstall_app",
+        ) => Err(error),
+        _ => Ok(
+            json!({"isError":true,"outcome":"not_sent","stop_reason":"error","sent":false,"screen_change_verified":false,"error":error.to_string(),"instruction":"Nothing was sent to the iPhone: the helper refused this request before any input. Correct the request before retrying."}),
+        ),
     }
 }
 
@@ -558,6 +660,228 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn data_socket_uses_control_peer_address_and_listener_port() {
+        use tokio::net::TcpListener;
+        let control_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let client = TcpStream::connect(control_listener.local_addr().unwrap())
+            .await
+            .unwrap();
+        let (_phone, _) = control_listener.accept().await.unwrap();
+        let data_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let control = Control {
+            client: RemotePairingClient::new(RpPairingSocket::new(client), "poki-mcp"),
+            peer: control_listener.local_addr().unwrap(),
+        };
+        let mut socket = control
+            .open_data_socket(data_listener.local_addr().unwrap().port())
+            .await
+            .unwrap();
+        let (mut data, _) = data_listener.accept().await.unwrap();
+        socket.write_all(b"data").await.unwrap();
+        let mut bytes = [0; 4];
+        data.read_exact(&mut bytes).await.unwrap();
+        assert_eq!(&bytes, b"data");
+        assert_eq!(
+            socket.peer_addr().unwrap(),
+            data_listener.local_addr().unwrap()
+        );
+    }
+
+    #[test]
+    fn only_bonjour_hosts_opt_into_control_refresh() {
+        for (host, expected) in [
+            ("phone.local", true),
+            ("Phone.LOCAL.", true),
+            ("phone.tailnet.ts.net", false),
+            ("localhost", false),
+            ("127.0.0.1", false),
+            ("fe80::1%en0", false),
+            ("fe80::1%en0.local", false),
+        ] {
+            let config = Config {
+                id: "fixture".into(),
+                host: host.into(),
+                port: 1,
+                pairing_file: "missing".into(),
+            };
+            assert_eq!(config.uses_bonjour(), expected, "{host}");
+        }
+    }
+
+    #[tokio::test]
+    async fn bonjour_explicit_reconnect_refreshes_control_and_preserves_live_tunnel() {
+        use tokio::net::TcpListener;
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let client = TcpStream::connect(listener.local_addr().unwrap())
+            .await
+            .unwrap();
+        let (mut phone, _) = listener.accept().await.unwrap();
+        let (live, _wire) = tunnel();
+        let mut session = Session {
+            transport: Transport::Remote(Config {
+                id: "fixture".into(),
+                host: "poki-test-missing.local".into(),
+                port: 1,
+                pairing_file: "/not-real".into(),
+            }),
+            control: Some(Control {
+                client: RemotePairingClient::new(RpPairingSocket::new(client), "poki-mcp"),
+                peer: listener.local_addr().unwrap(),
+            }),
+            connection: Some(live),
+        };
+        let received = tokio::spawn(async move { phone.read(&mut [0u8; 4096]).await.unwrap_or(0) });
+        assert!(session.request(json!({"op":"reconnect"})).await.is_err());
+        assert_eq!(
+            received.await.unwrap(),
+            0,
+            "explicit Bonjour reconnect reused stale control"
+        );
+        assert!(
+            session
+                .connection
+                .as_ref()
+                .expect("working tunnel discarded")
+                .adapter
+                .bind_udp(0)
+                .await
+                .is_ok()
+        );
+    }
+
+    #[tokio::test]
+    async fn dead_bonjour_tunnel_drops_stale_control() {
+        use tokio::net::TcpListener;
+        // The old control socket still looks alive, while the underlying tunnel died.
+        let old = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let client = TcpStream::connect(old.local_addr().unwrap()).await.unwrap();
+        let (mut old_phone, _) = old.accept().await.unwrap();
+        let stale = RemotePairingClient::new(RpPairingSocket::new(client), "poki-mcp");
+        let mut session = Session {
+            transport: Transport::Remote(Config {
+                id: "synthetic-phone".into(),
+                host: "poki-test-missing.local".into(),
+                port: 1,
+                pairing_file: "/not-a-real-pairing-file".into(),
+            }),
+            control: Some(Control {
+                client: stale,
+                peer: old.local_addr().unwrap(),
+            }),
+            connection: Some(unplugged().await),
+        };
+        let received =
+            tokio::spawn(async move { old_phone.read(&mut [0u8; 4096]).await.unwrap_or(0) });
+        assert!(session.request(json!({"op":"ax_tree"})).await.is_err());
+        assert_eq!(
+            received.await.unwrap(),
+            0,
+            "dead Bonjour tunnel reused its stale control"
+        );
+    }
+
+    #[tokio::test]
+    async fn non_bonjour_recovery_keeps_using_its_existing_control() {
+        use tokio::net::TcpListener;
+        // A nonexistent interface makes an accidental scoped-IP redial fail
+        // locally, without probing any real LAN endpoint in this regression.
+        for host in [
+            "127.0.0.1",
+            "fd00::1",
+            "fe80::1%poki-no-such-interface",
+            "phone.tailnet.ts.net",
+            "localhost",
+        ] {
+            let old = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let client = TcpStream::connect(old.local_addr().unwrap()).await.unwrap();
+            let (mut phone, _) = old.accept().await.unwrap();
+            let current = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let mut session = Session {
+                transport: Transport::Remote(Config {
+                    id: "synthetic-phone".into(),
+                    host: host.into(),
+                    port: current.local_addr().unwrap().port(),
+                    pairing_file: "/not-a-real-pairing-file".into(),
+                }),
+                control: Some(Control {
+                    client: RemotePairingClient::new(RpPairingSocket::new(client), "poki-mcp"),
+                    peer: old.local_addr().unwrap(),
+                }),
+                connection: Some(unplugged().await),
+            };
+            let received =
+                tokio::spawn(async move { phone.read(&mut [0u8; 4096]).await.unwrap_or(0) });
+            assert!(session.request(json!({"op":"ax_tree"})).await.is_err());
+            assert!(
+                received.await.unwrap() > 0,
+                "fixed-IP recovery dropped its established control"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn unreachable_control_reports_each_address_and_its_os_error() {
+        use tokio::net::TcpListener;
+        for (host, address) in [("127.0.0.1", "127.0.0.1"), ("fe80::1%lo0", "[fe80::1%lo0]")] {
+            let listener = TcpListener::bind((host, 0)).await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            drop(listener);
+            let mut session = Session {
+                transport: Transport::Remote(Config {
+                    id: "synthetic-phone".into(),
+                    host: host.into(),
+                    port,
+                    pairing_file: "/not-a-real-pairing-file".into(),
+                }),
+                control: None,
+                connection: None,
+            };
+            let error = session
+                .request(json!({"op":"connect"}))
+                .await
+                .unwrap_err()
+                .to_string();
+            assert!(
+                error.starts_with("Remote pairing is unreachable"),
+                "{error}"
+            );
+            assert!(
+                error.contains(&format!(
+                    "{address}:{port}: Connection refused (os error 61)"
+                )),
+                "{error}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn failed_remote_replacement_keeps_the_working_tunnel() {
+        use tokio::net::TcpListener;
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        let (mut live, _phone) = tunnel();
+        live.rsd.uuid = "working tunnel".into();
+        let mut session = Session {
+            transport: Transport::Remote(Config {
+                id: "synthetic-phone".into(),
+                host: "localhost".into(),
+                port,
+                pairing_file: "/not-a-real-pairing-file".into(),
+            }),
+            control: None,
+            connection: Some(live),
+        };
+        assert!(session.request(json!({"op":"reconnect"})).await.is_err());
+        let kept = session
+            .connection
+            .as_ref()
+            .expect("working tunnel was discarded");
+        assert_eq!(kept.rsd.uuid, "working tunnel");
+        assert!(kept.adapter.bind_udp(0).await.is_ok());
+    }
+
+    #[tokio::test]
     async fn first_request_after_replug_rebuilds_the_tunnel_and_never_claims_delivery() {
         let mut failures = Vec::new();
         for request in [
@@ -597,6 +921,46 @@ mod tests {
                 _ => false,
             };
             if !reported {
+                failures.push(format!(
+                    "{request}: nothing was sent, but the reply is {reply:?}"
+                ));
+            }
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
+    #[tokio::test]
+    async fn a_request_refused_before_any_input_says_nothing_was_sent() {
+        let mut failures = Vec::new();
+        let stroke = |time_ms: Value| json!({"op":"draw_strokes","strokes":[[{"x":100,"y":100,"time_ms":0},{"x":200,"y":200,"time_ms":time_ms}]]});
+        for request in [
+            // Refused by validation, and refused while parsing.
+            stroke(json!(0)),
+            stroke(json!("12")),
+            json!({"op":"tap","x":-1,"y":200}),
+            json!({"op":"ax_tree","include_offscreen":"yes"}),
+        ] {
+            // No tunnel is open, so a refusal must come before any connection attempt.
+            let mut session = Session {
+                transport: Transport::Local("fixture-phone".into()),
+                control: None,
+                connection: None,
+            };
+            let reply = session.request(request.clone()).await;
+            let reported = match (request["op"].as_str().unwrap(), &reply) {
+                ("ax_tree", Err(error)) => !error.to_string().contains("delivered"),
+                (_, Ok(reply)) => {
+                    reply["outcome"] == "not_sent"
+                        && reply["sent"] == false
+                        && reply["isError"] == true
+                        && !reply["instruction"]
+                            .as_str()
+                            .unwrap_or("")
+                            .contains("delivered")
+                }
+                _ => false,
+            };
+            if !reported || session.connection.is_some() {
                 failures.push(format!(
                     "{request}: nothing was sent, but the reply is {reply:?}"
                 ));
