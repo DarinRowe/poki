@@ -13,6 +13,14 @@ import SwiftUI
 enum AgentsRoute: Hashable { case accounts, voice, activityLog }
 
 struct AgentsView: View {
+    /// The line under MCP Relay: the address to set, Poki being off, or the relay's live state.
+    private var relayLine: String {
+        if model.relayAddress == nil { return String(localized: "Set an address first") }
+        if !model.relayEnabled { return String(localized: "Off: agents can’t reach this iPhone") }
+        if !model.sessionOn { return String(localized: "Waiting for Poki: turn Poki on and agents can connect") }
+        return Health.relay(model).word
+    }
+
     @Environment(AppModel.self) private var model
     @Binding var path: NavigationPath
     var openSession: (String) -> Void
@@ -87,14 +95,16 @@ struct AgentsView: View {
                         Label {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("MCP Relay")
-                                Text(model.relayAddress == nil ? String(localized: "Set an address first") : model.relayEnabled ? Health.relay(model).word : String(localized: "Off"))
+                                Text(relayLine)
                                     .font(.footnote).foregroundStyle(Color(.secondaryLabel))
                             }
                         } icon: {
                             Image(systemName: "antenna.radiowaves.left.and.right")
                         }
                     }
-                    .disabled(model.relayAddress == nil)
+                    // Poki stopped: the switch keeps the owner's choice but is greyed, since nothing
+                    // connects until Poki is on; the line under it says so.
+                    .disabled(model.relayAddress == nil || !model.sessionOn)
                     NavigationLink(value: SettingsRoute.relay) {
                         LabeledContent {
                             Text(model.relayAddress.map { $0.origin.host() ?? $0.origin.absoluteString } ?? String(localized: "Not Set"))
