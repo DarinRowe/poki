@@ -511,6 +511,13 @@ final class AppModel {
     /// the same handshake the runner makes, a second or two, so a refused pairing shows on Setup and
     /// the home page before an agent or a chat needs the phone. true when it was accepted (or could
     /// not be checked now: the loopback is down, or the simulator).
+    /// A lockdown pairing record (from a computer: HostID, certificates), not an RPPairing file.
+    static func isLockdownRecord(_ path: String) -> Bool {
+        guard let data = FileManager.default.contents(atPath: path),
+              let dict = (try? PropertyListSerialization.propertyList(from: data, format: nil)) as? [String: Any] else { return false }
+        return dict["HostID"] != nil
+    }
+
     @discardableResult
     func verifyPairing(force: Bool = false) async -> Bool {
         if Self.onSimulator { return true }
@@ -532,6 +539,13 @@ final class AppModel {
                 if text.contains("Pair again") {
                     if self.pairingTrouble == nil { self.log.add("pairing", "check: refused: \(text)") }
                     self.pairingTrouble = text.replacingOccurrences(of: " Pair again in Poki's setup.", with: "")
+                    return false
+                }
+                // iOS 27 and later take only a pairing made on the phone over the loopback: a lockdown
+                // record from a computer (Poki Setup) fails its TLS session here every time.
+                if SetupStep.onDevicePairing, text.contains("device socket io failed"), Self.isLockdownRecord(path) {
+                    if self.pairingTrouble == nil { self.log.add("pairing", "check: the computer's pairing file does not open the loopback on this iOS; pair on this iPhone") }
+                    self.pairingTrouble = String(localized: "the pairing file from a computer does not work over the loopback on this iOS version. Pair this iPhone here once; the pairing stays.")
                     return false
                 }
                 self.log.add("pairing", "check could not finish: \(text)")
