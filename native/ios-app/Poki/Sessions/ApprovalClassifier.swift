@@ -8,10 +8,10 @@ import PiSwiftAI
 /// next try is read with that answer in it. A tap anywhere is not taken as the owner's intent.
 @MainActor
 enum ApprovalClassifier {
-    static let onKey = "approvals.classifier"
-    static let levelKey = "approvals.classifier.level"
+    nonisolated static let onKey = "approvals.classifier"
+    nonisolated static let levelKey = "approvals.classifier.level"
     /// Read once: PokiCore's rules are set up from it when Poki starts.
-    static let isOn = UserDefaults.standard.bool(forKey: onKey)
+    nonisolated static let isOn = UserDefaults.standard.bool(forKey: onKey)
     static let deadline: Double = 12
 
     enum Level: String, CaseIterable, Identifiable {
