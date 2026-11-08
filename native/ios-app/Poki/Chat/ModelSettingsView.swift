@@ -31,6 +31,18 @@ struct ModelSettingsView: View {
                     ModelKeys.selectedProvider = provider
                     ModelKeys.selectedModel = parts[1]
                 }
+            } footer: {
+                Text("The model Poki’s text chat uses.")
+            }
+
+            Section {
+                LabeledContent("Text Chat", value: ModelKeys.hasUsableKey ? ModelKeys.selectedModelName : String(localized: "Not Set Up"))
+                LabeledContent("Live Voice", value: VoiceDirect.apiKey != nil ? String(localized: "OpenAI API key") : String(localized: "Needs an OpenAI API key"))
+                LabeledContent("Dictation", value: String(localized: "On this iPhone"))
+            } header: {
+                Text("What Each Uses")
+            } footer: {
+                Text("A ChatGPT sign-in or any key runs the text chat. Live voice needs OpenAI’s Realtime API, so it needs an OpenAI API key (or the Mac voice bridge). Dictation needs no key.")
             }
 
             Section {

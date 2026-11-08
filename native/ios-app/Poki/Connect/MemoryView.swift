@@ -20,94 +20,54 @@ struct MemoryView: View {
     private let store = RoutineStore.shared
 
     var body: some View {
-        SitePage {
-            VStack(spacing: 0) {
-                Grabber()
-                SheetHeader(title: Text("Memory"), back: "Settings", onBack: back)
-                ScrollView {
-                    VStack(spacing: 0) {
-                        GroupLabel(text: "ROUTINES")
-                        VStack(spacing: 0) {
-                            if routines.isEmpty {
-                                WhiteRow(title: "None yet", titleColor: Site.text3, divider: false)
-                            }
-                            ForEach(routines, id: \.name) { r in
-                                RoutineRow(routine: r, divider: r.name != routines.last?.name)
-                                    .contextMenu {
-                                        Button("Forget", systemImage: "trash", role: .destructive) { _ = store.forget(r.name); reload() }
-                                    }
-                            }
-                        }
-                        .whiteCard()
-                        GroupFootnote(text: "An agent saves a routine after a task that worked; the next time it repeats the task in one step and stops where the screen differs. Touch and hold a routine to forget it.")
-
-                        GroupLabel(text: "NOTES")
-                        VStack(spacing: 0) {
-                            ForEach(notes, id: \.id) { n in
-                                WhiteRow(title: LocalizedStringKey(n.text)) {
-                                    Text(verbatim: n.by).site(13, line: 16).foregroundStyle(Site.text3)
-                                }
-                                .contextMenu {
-                                    Button("Forget", systemImage: "trash", role: .destructive) { _ = store.forgetNote(n.id); reload() }
-                                }
-                            }
-                            HStack {
-                                TextField(text: $newNote, prompt: Text("e.g., Mom is “Mama” in Contacts").foregroundStyle(Site.text3)) { Text("Note") }
-                                    .site(17, line: 22).foregroundStyle(Site.text)
-                                    .submitLabel(.done).onSubmit(addNote)
-                                Button(action: addNote) { Text("Add").site(17, line: 20).foregroundStyle(canAdd ? Site.ink : Site.text3) }
-                                    .buttonStyle(.plain).disabled(!canAdd)
-                            }
-                            .padding(.vertical, 8).padding(.horizontal, 16)
-                        }
-                        .whiteCard()
-                        GroupFootnote(text: "Every agent sees these notes before a task. They stay on this iPhone.")
-
-                        GroupLabel(text: "MOVE OR BACK UP")
-                        VStack(spacing: 0) {
-                            if let exportURL {
-                                ShareLink(item: exportURL) { WhiteRow(title: "Export Memory", titleColor: Site.ink) }
-                                    .buttonStyle(.plain)
-                            }
-                            Button { importing = true } label: { WhiteRow(title: "Import Memory", titleColor: Site.ink, divider: false) }
-                                .buttonStyle(.plain)
-                        }
-                        .whiteCard()
-                        if let message {
-                            GroupFootnote(text: LocalizedStringKey(message))
-                        } else {
-                            GroupFootnote(text: "One file with every routine and note. Importing merges it in; the newer copy of a routine wins. Poki Setup on your computer can back it up and put it back.")
-                        }
-
-                        Button { withAnimation { advanced.toggle() } } label: {
-                            HStack(spacing: 4) {
-                                Text("Advanced").site(13, line: 16)
-                                Image(systemName: advanced ? "chevron.up" : "chevron.down").font(.system(size: 10, weight: .medium))
-                            }
-                            .foregroundStyle(Site.c4)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.top, 28).padding(.horizontal, 16)
-                        }
-                        .buttonStyle(.plain)
-                        if advanced {
-                            VStack(spacing: 0) {
-                                if let bundleURL {
-                                    ShareLink(item: bundleURL) { WhiteRow(title: "Share Run Log for Maintainers", titleColor: Site.ink) }
-                                        .buttonStyle(.plain)
-                                }
-                                Button { confirmClear = true } label: { WhiteRow(title: "Clear Memory", titleColor: Site.danger, divider: false) }
-                                    .buttonStyle(.plain)
-                            }
-                            .whiteCard()
-                            .padding(.top, 8)
-                            GroupFootnote(text: "The run log lists each routine run, where it stopped and how long it took, with no typed text. It helps the Poki maintainers make routines more reliable.")
-                        }
-                    }
-                    .padding(.horizontal, 16).padding(.bottom, 40)
+        Form {
+            Section {
+                if routines.isEmpty { Text("None yet").foregroundStyle(.secondary) }
+                ForEach(routines, id: \.name) { r in
+                    RoutineRow(routine: r)
+                        .swipeActions { Button("Forget", role: .destructive) { _ = store.forget(r.name); reload() } }
                 }
+            } header: {
+                Text("Routines")
+            } footer: {
+                Text("An agent saves a routine after a task that worked; the next time it repeats the task in one step and stops where the screen differs. Swipe a routine to forget it.")
+            }
+
+            Section {
+                ForEach(notes, id: \.id) { n in
+                    LabeledContent(n.text, value: n.by)
+                        .swipeActions { Button("Forget", role: .destructive) { _ = store.forgetNote(n.id); reload() } }
+                }
+                HStack {
+                    TextField("e.g., Mom is “Mama” in Contacts", text: $newNote).submitLabel(.done).onSubmit(addNote)
+                    Button("Add", action: addNote).disabled(!canAdd)
+                }
+            } header: {
+                Text("Notes")
+            } footer: {
+                Text("Every agent sees these notes before a task. They stay on this iPhone.")
+            }
+
+            Section {
+                if let exportURL { ShareLink("Export Memory", item: exportURL) }
+                Button("Import Memory") { importing = true }
+            } header: {
+                Text("Move or Back Up")
+            } footer: {
+                Text(message ?? String(localized: "One file with every routine and note. Importing merges it in; the newer copy of a routine wins. Poki Setup on your computer can back it up and put it back."))
+            }
+
+            Section {
+                DisclosureGroup("Advanced", isExpanded: $advanced) {
+                    if let bundleURL { ShareLink("Share Run Log for Maintainers", item: bundleURL) }
+                    Button("Clear Memory", role: .destructive) { confirmClear = true }
+                }
+            } footer: {
+                if advanced { Text("The run log lists each routine run, where it stopped and how long it took, with no typed text. It helps the Poki maintainers make routines more reliable.") }
             }
         }
-        .toolbar(.hidden, for: .navigationBar)
+        .navigationTitle("Memory")
+        .navigationBarTitleDisplayMode(.inline)
         .onAppear(perform: reload)
         .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in
             switch result {
@@ -154,20 +114,17 @@ struct MemoryView: View {
 /// A routine: its name, how many steps, how often it worked, and a flag when it stopped twice in a row.
 private struct RoutineRow: View {
     var routine: Routine
-    var divider: Bool
     var body: some View {
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(verbatim: routine.name).site(17, line: 22).foregroundStyle(Site.text)
-                Text(detail).site(13, line: 16).foregroundStyle(routine.stale ? Site.danger : Site.text3)
+                Text(verbatim: routine.name)
+                Text(detail).font(.footnote).foregroundStyle(routine.stale ? Color.red : Color.secondary)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            Spacer()
             if let ms = routine.lastMs {
-                Text(verbatim: String(format: "%.1f s", Double(ms) / 1000)).site(15, line: 18).foregroundStyle(Site.text3)
+                Text(verbatim: String(format: "%.1f s", Double(ms) / 1000)).font(.subheadline).foregroundStyle(.secondary)
             }
         }
-        .padding(.vertical, 10).padding(.horizontal, 16)
-        .overlay(alignment: .bottom) { if divider { Site.hair.frame(height: 1) } }
     }
 
     private var detail: String {
