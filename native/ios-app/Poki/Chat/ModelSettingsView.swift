@@ -40,7 +40,9 @@ struct ModelSettingsView: View {
             }
 
         }
-        .id(version)
+        // Reads the version so the page redraws with the new keys and models, without rebuilding it
+        // (a rebuild dropped taps and the sheets it was presenting).
+        .background { Color.clear.accessibilityHidden(true).id(version) }
         .listStyle(.insetGrouped)
         .navigationTitle("Accounts")
         .navigationBarTitleDisplayMode(.inline)
@@ -147,7 +149,9 @@ private struct AccountDetail: View {
                 }
             }
         }
-        .id(version)
+        // Reads the version so the page redraws with the new keys and models, without rebuilding it
+        // (a rebuild dropped taps and the sheets it was presenting).
+        .background { Color.clear.accessibilityHidden(true).id(version) }
         .navigationTitle(Text(verbatim: provider.name))
         .navigationBarTitleDisplayMode(.inline)
         .onReceive(NotificationCenter.default.publisher(for: ModelKeys.changed)) { _ in version = ModelKeys.saved }
@@ -199,7 +203,9 @@ private struct TextChatFeature: View {
                 Text(problem ?? String(localized: "Fast models without long thinking answer quickest on the phone. Models from \(provider.name)’s list start switched off."))
             }
         }
-        .id(version)
+        // Reads the version so the page redraws with the new keys and models, without rebuilding it
+        // (a rebuild dropped taps and the sheets it was presenting).
+        .background { Color.clear.accessibilityHidden(true).id(version) }
         .navigationTitle("Text Chat")
         .navigationBarTitleDisplayMode(.inline)
         .onReceive(NotificationCenter.default.publisher(for: ModelKeys.changed)) { _ in version = ModelKeys.saved }
@@ -242,7 +248,9 @@ private struct LiveVoiceFeature: View {
                 Text("Refresh the model list under Text Chat to add the other Realtime models your key can use.")
             }
         }
-        .id(version)
+        // Reads the version so the page redraws with the new keys and models, without rebuilding it
+        // (a rebuild dropped taps and the sheets it was presenting).
+        .background { Color.clear.accessibilityHidden(true).id(version) }
         .navigationTitle("Live Voice")
         .navigationBarTitleDisplayMode(.inline)
         .onReceive(NotificationCenter.default.publisher(for: ModelKeys.changed)) { _ in version = ModelKeys.saved }

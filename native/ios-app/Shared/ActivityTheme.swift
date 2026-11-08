@@ -122,13 +122,14 @@ struct ActivityTheme {
     var primaryIcon = Color.white
 
     // Text styles, medium weight or heavier (HIG): the content line large, everything else one size.
-    var status = Font.system(.subheadline, weight: .semibold)
+    // Geist (Prominent) for the status word and the content line, as in the app's titles.
+    var status = Prominent.font(.subheadline, .semibold)
     var meta = Font.system(.subheadline, weight: .medium).monospacedDigit()
     var button = Font.system(.subheadline, weight: .semibold)
     var compact = Font.system(.subheadline, weight: .semibold).monospacedDigit()
     var compactCode = Font.system(.subheadline, weight: .bold).monospacedDigit()
     var countdown = Font.system(.subheadline, weight: .semibold).monospacedDigit()
-    var content = Font.system(.title3, weight: .semibold)
+    var content = Prominent.font(.title3, .semibold)
     var contentTracking: CGFloat = 0
 
     func palette(_ surface: ActivitySurface) -> ActivityPalette { surface == .lockScreen ? lock : island }

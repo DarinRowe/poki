@@ -25,26 +25,37 @@ struct SessionsView: View {
         List {
             // What matters before any conversation: whether Poki is on, whether agents can reach it,
             // and what setup still needs.
-            Section {
-                // Whether Poki is on: the power button at the top right turns it on (tap) and off (hold).
-                Label {
-                    Text(runLine)
-                } icon: {
-                    Image(systemName: model.sessionOn ? "power.circle.fill" : "power.circle")
-                        .foregroundStyle(model.sessionOn ? Color.green : Color.secondary)
-                }
-                if model.sessionOn, chat.running || !model.runnerPaused {
-                    Button("Pause", systemImage: "pause.fill") { chat.stop(); model.pauseRunner() }
-                } else if model.sessionOn {
-                    Button("Resume", systemImage: "play.fill") { model.wakeRunner() }
-                }
-                // Every setup item still open, each straight to its fix.
-                ForEach(SetupStep.shown.filter { !model.isDone($0) && $0 != .loopback }) { step in
-                    NavigationLink(value: step) { SetupStepRow(step: step) }
-                }
-                if !ModelKeys.hasUsableKey {
-                    Button(action: openModel) {
-                        Label("Add a Model Key to Chat", systemImage: "key.fill")
+            // One warning while Poki can't work fully, naming where to fix it (the tab bar dots match).
+            if setupLeft > 0 || agentsIssue != nil {
+                Section {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Poki can’t work fully yet").font(Prominent.font(.headline, .semibold))
+                            Text("Fix the items below. Each one has a dot on its tab.")
+                                .font(.subheadline).foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                    }
+                    if setupLeft > 0 {
+                        Button(action: openSetup) {
+                            LabeledContent {
+                                Text(setupLeft == 1 ? String(localized: "1 item") : String(localized: "\(setupLeft) items"))
+                            } label: {
+                                Label("Setup", systemImage: "checklist")
+                            }
+                        }
+                        .foregroundStyle(Color(.label))
+                    }
+                    if let issue = agentsIssue {
+                        Button(action: ModelKeys.hasUsableKey ? openConnectors : openModel) {
+                            LabeledContent {
+                                Text(issue)
+                            } label: {
+                                Label("Agents", systemImage: "point.3.connected.trianglepath.dotted")
+                            }
+                        }
+                        .foregroundStyle(Color(.label))
                     }
                 }
             }
@@ -83,26 +94,26 @@ struct SessionsView: View {
             }
         }
         .listStyle(.insetGrouped)
+        // Home's own header: a soft translucent blue that fades into the list, the bear and "Poki" in
+        // Geist at the top left. The other pages keep the system's plain bars.
+        .scrollContentBackground(.hidden)
+        .background {
+            ZStack(alignment: .top) {
+                Color(.systemGroupedBackground)
+                LinearGradient(colors: [Color.blue.opacity(0.30), Color.blue.opacity(0.10), Color.blue.opacity(0)],
+                               startPoint: .top, endPoint: .bottom)
+                    .frame(height: 320)
+            }
+            .ignoresSafeArea()
+        }
+        .toolbarBackground(.hidden, for: .navigationBar)
         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: Text("Search Sessions"))
         .navigationTitle(Text(verbatim: "Poki"))
-        .toolbarTitleDisplayMode(.inlineLarge)
+        .navigationBarTitleDisplayMode(.inline)
+        // The system title gives way to HomeBrand; "Poki" stays the back button's title.
+        .toolbar(removing: .title)
         .toolbar {
-            // Indicators left of the power button: the local connection and the agents' relay, each
-            // green when working and grey (or orange) with a slashed icon when not; a tap opens its page.
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                NavigationLink(value: SetupStep.loopback) {
-                    Image(systemName: model.loopback.isWorking ? "network" : "network.slash")
-                        .foregroundStyle(model.loopback.isWorking ? Color.green : Color.orange)
-                        .contentTransition(.symbolEffect(.replace))
-                }
-                .accessibilityLabel(Text(model.loopback.isWorking ? "Local connection on" : "Local connection off"))
-                Button(action: openConnectors) {
-                    Image(systemName: agentsIcon.0)
-                        .foregroundStyle(agentsIcon.1)
-                        .contentTransition(.symbolEffect(.replace))
-                }
-                .accessibilityLabel(Text("Agents: \(agentsLine)"))
-            }
+            HomeBrand()
             ToolbarItem(placement: .topBarTrailing) {
                 PowerButton(on: model.sessionOn, turnOn: { model.startSession() }, turnOff: { chat.stop(); model.stopSession() })
             }
@@ -118,10 +129,12 @@ struct SessionsView: View {
         // A new chat with Poki's own agent, at the bottom left.
         .safeAreaInset(edge: .bottom, alignment: .leading, spacing: 0) {
             Button { chat.newConversation(); openChat() } label: {
-                Label("New Chat", systemImage: "square.and.pencil").fontWeight(.semibold)
+                Image(systemName: "square.and.pencil").font(.title3.weight(.semibold))
+                    .frame(width: 28, height: 28)
             }
             .newChatStyle()
             .controlSize(.large)
+            .fixedSize()
             .disabled(chat.running)
             .padding(.leading, 16).padding(.bottom, 8)
             .accessibilityLabel(Text("New Chat with Poki"))
@@ -136,16 +149,6 @@ struct SessionsView: View {
         return String(localized: "On, ready for a task")
     }
 
-    /// The agents indicator: online green, connecting yellow, otherwise grey and slashed.
-    private var agentsIcon: (String, Color) {
-        switch model.relayStatus {
-        case .ready: ("person.2.wave.2.fill", .green)
-        case .connecting: ("person.2.wave.2", .yellow)
-        case .offline: ("person.2.slash", .orange)
-        case .off: ("person.2.slash", .secondary)
-        }
-    }
-
     private var agentsLine: String {
         let live = SessionStore.shared.liveAgentCount
         switch model.relayStatus {
@@ -157,6 +160,15 @@ struct SessionsView: View {
     }
 
     private var needsSetup: Bool { model.pairingPath == nil || model.setupStepsLeft }
+
+    private var setupLeft: Int { model.setupComplete ? 0 : SetupStep.shown.filter { !model.isDone($0) }.count }
+
+    /// What the Agents tab needs, if anything (the same test as its tab bar dot).
+    private var agentsIssue: String? {
+        if !ModelKeys.hasUsableKey { return String(localized: "No chat account") }
+        if case .offline = model.relayStatus { return String(localized: "Relay offline") }
+        return nil
+    }
 
     /// The sessions matching the search field: name, first message or last line.
     private var shown: [SavedSession] {
@@ -184,63 +196,67 @@ struct SessionsView: View {
 private extension View {
     /// Blue-tinted Liquid Glass on iOS 26 and later; a blue prominent capsule before it.
     @ViewBuilder func newChatStyle() -> some View {
-        if #available(iOS 26.0, *) { buttonStyle(.glassProminent).buttonBorderShape(.capsule).tint(.blue) }
-        else { buttonStyle(.borderedProminent).buttonBorderShape(.capsule).tint(.blue) }
+        if #available(iOS 26.0, *) { buttonStyle(.glassProminent).buttonBorderShape(.circle).tint(.blue) }
+        else { buttonStyle(.borderedProminent).buttonBorderShape(.circle).tint(.blue) }
     }
 }
 
-/// Poki's power, at the top right: a round button, green and filled while Poki is on. A tap turns it
-/// on; turning it off takes a long press, so a stray tap never cuts off an agent mid-task. Each change
-/// has its own haptic; a tap while on gives a light warning tap and says to hold.
+/// The home page's title: the bear and "Poki" in Geist, at the top left in place of the system title,
+/// without the toolbar's glass behind it on iOS 26.
+struct HomeBrand: ToolbarContent {
+    var body: some ToolbarContent {
+        if #available(iOS 26.0, *) {
+            ToolbarItem(placement: .topBarLeading) { label }
+                .sharedBackgroundVisibility(.hidden)
+        } else {
+            ToolbarItem(placement: .topBarLeading) { label }
+        }
+    }
+
+    private var label: some View {
+        HStack(spacing: 10) {
+            Image("Bear").resizable().scaledToFill()
+                .frame(width: 34, height: 34)
+                .clipShape(.rect(cornerRadius: 9, style: .continuous))
+                .shadow(color: .blue.opacity(0.35), radius: 6, y: 2)
+            Text(verbatim: "Poki")
+                .font(Prominent.font(.title, .bold))
+                .foregroundStyle(.primary)
+        }
+        .fixedSize()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: "Poki"))
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// Poki's power, at the top right of the Poki tab: a plain toolbar button (the bar draws the glass),
+/// a blue filled bolt while on, the grey power symbol while off. A tap turns it on or off, with
+/// a haptic for each.
 struct PowerButton: View {
     var on: Bool
     var turnOn: () -> Void
     var turnOff: () -> Void
-    @State private var hint = false
 
     var body: some View {
         Button {
             if on {
                 UINotificationFeedbackGenerator().notificationOccurred(.warning)
-                hint = true
+                turnOff()
             } else {
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
                 turnOn()
             }
         } label: {
-            Image(systemName: "power")
-                .font(.system(size: 17, weight: .bold))
-                .foregroundStyle(on ? Color.white : Color.secondary)
-                .contentTransition(.symbolEffect(.replace))
+            // Different shapes as well as colours, so on and off read without colour: a filled bolt
+            // while on, the plain power symbol while off.
+            Image(systemName: on ? "bolt.circle.fill" : "power")
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(on ? Color.blue : Color.secondary)
+                .contentTransition(.symbolEffect(.replace.downUp))
         }
-        .powerStyle(on: on)
-        .simultaneousGesture(LongPressGesture(minimumDuration: 0.6).onEnded { _ in
-            guard on else { return }
-            UINotificationFeedbackGenerator().notificationOccurred(.success)
-            turnOff()
-        })
-        .popover(isPresented: $hint) {
-            Text("Touch and hold to turn Poki off.")
-                .font(.subheadline).padding()
-                .presentationCompactAdaptation(.popover)
-        }
-        .accessibilityLabel(Text(on ? "Poki is on" : "Poki is off"))
-        .accessibilityHint(Text(on ? "Touch and hold to turn off." : "Double-tap to turn on."))
-        .accessibilityAction(named: Text("Turn Off")) { if on { turnOff() } }
-        .animation(.snappy, value: on)
-    }
-}
-
-private extension View {
-    /// Round Liquid Glass on iOS 26 (tinted green while on); a round bordered button before it.
-    @ViewBuilder func powerStyle(on: Bool) -> some View {
-        if #available(iOS 26.0, *) {
-            if on { buttonStyle(.glassProminent).buttonBorderShape(.circle).tint(.green) }
-            else { buttonStyle(.glass).buttonBorderShape(.circle) }
-        } else {
-            if on { buttonStyle(.borderedProminent).buttonBorderShape(.circle).tint(.green) }
-            else { buttonStyle(.bordered).buttonBorderShape(.circle).tint(.secondary) }
-        }
+        .accessibilityLabel(Text(on ? "Turn Poki Off" : "Turn Poki On"))
+        .accessibilityValue(Text(on ? "On" : "Off"))
     }
 }
 
@@ -261,7 +277,7 @@ struct SessionRow: View {
                 }
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text(verbatim: session.name).font(.system(size: 17, weight: .semibold)).foregroundStyle(Color(.label)).lineLimit(1)
+                    Text(verbatim: session.name).font(Prominent.font(.body, .semibold)).foregroundStyle(Color(.label)).lineLimit(1)
                     Spacer(minLength: 6)
                     Text(session.live ? String(localized: "now") : ChatTime.row(session.updated)).font(.system(size: 15)).foregroundStyle(ChatColor.secondary)
                     Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(Color(.tertiaryLabel))
@@ -312,48 +328,11 @@ struct SessionAvatar: View {
     }
 }
 
+/// An outside agent's badge: its provider's logo, or its initials (see `CallerBadge`).
 struct AgentBadge: View {
     var name: String
     var size: CGFloat
-    var body: some View {
-        Group {
-            if let logo {
-                Image(logo).resizable().renderingMode(.template).scaledToFit()
-                    .frame(width: size * 0.52, height: size * 0.52)
-            } else {
-                Text(verbatim: initials)
-                    .font(.system(size: size * 0.38, weight: .semibold, design: .rounded))
-            }
-        }
-        .foregroundStyle(.white)
-        .frame(width: size, height: size)
-        .background(Color(hex: tint), in: .circle)
-        .accessibilityHidden(true)
-    }
-    /// The provider's own logo (Poki/ProviderIcons) for agents that run on it.
-    private var logo: String? {
-        let n = name.lowercased()
-        if n.contains("claude") || n.contains("anthropic") { return "Provider-anthropic" }
-        if n.contains("codex") || n.contains("chatgpt") || n.contains("openai") { return "Provider-openai" }
-        if n.contains("gemini") { return "Provider-googlegemini" }
-        if n.contains("deepseek") { return "Provider-deepseek" }
-        if n.contains("openrouter") { return "Provider-openrouter" }
-        return nil
-    }
-    private var initials: String {
-        let words = name.split(separator: " ")
-        if words.count >= 2 { return String(words[0].prefix(1) + words[1].prefix(1)).uppercased() }
-        return String(name.prefix(1)).uppercased()
-    }
-    /// The provider tiles' colours where they match, a calm grey otherwise.
-    private var tint: UInt32 {
-        let n = name.lowercased()
-        if n.contains("claude") { return 0xD97757 }
-        if n.contains("codex") || n.contains("chatgpt") { return 0x10A37F }
-        if n.contains("gemini") { return 0x4285F4 }
-        if n.contains("cursor") { return 0x111111 }
-        return 0x8E8E93
-    }
+    var body: some View { CallerBadge(name: name, size: size).accessibilityHidden(true) }
 }
 
 /// An outside agent's session or hand-off as a conversation: the agent's own steps as grey lines, its

@@ -44,6 +44,7 @@ struct LockScreenCard: View {
         VStack(alignment: .leading, spacing: 6) {
             StatusRow(face: face, surface: .lockScreen)
             ContentRow(face: face)
+            StepBar(face: face, surface: .lockScreen)
             ActionRow(face: face, surface: .lockScreen)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -69,6 +70,7 @@ private struct StatusRow: View {
                 .contentTransition(.interpolate)
             Spacer(minLength: 8)
             MetaView(meta: face.meta, surface: surface)
+            if let caller = face.caller { CallerBadge(name: caller, size: 20) }
         }
     }
 }
@@ -152,7 +154,10 @@ struct IslandLeading: View {
 struct IslandTrailing: View {
     var face: ActivityFace
     var body: some View {
-        MetaView(meta: face.meta, surface: .island)
+        HStack(spacing: 6) {
+            MetaView(meta: face.meta, surface: .island)
+            if let caller = face.caller { CallerBadge(name: caller, size: 20) }
+        }
             .padding(.trailing, ActivityMetrics.islandRowInset)
             .frame(maxHeight: .infinity, alignment: .center)
             .environment(\.colorScheme, .dark)
@@ -166,6 +171,7 @@ struct IslandBottom: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             ContentRow(face: face)
+            StepBar(face: face, surface: .island)
             ActionRow(face: face, surface: .island)
         }
         .padding(.bottom, face.hasAction ? 0 : 4)
@@ -182,7 +188,7 @@ struct IslandBottom: View {
 struct CompactLeading: View {
     var face: ActivityFace
     var body: some View {
-        StateGlyph(face: face).padding(.leading, 2).environment(\.colorScheme, .dark)
+        RingGlyph(face: face).padding(.leading, 2).environment(\.colorScheme, .dark)
     }
 }
 
@@ -217,7 +223,70 @@ struct CompactTrailing: View {
 struct MinimalView: View {
     var face: ActivityFace
     var body: some View {
-        StateGlyph(face: face).environment(\.colorScheme, .dark)
+        RingGlyph(face: face).environment(\.colorScheme, .dark)
+    }
+}
+
+/// The state glyph inside a round status ring: the run's steps filling it while working, full when
+/// done, the approval's time running down (counted by the system). Without a ring, the glyph alone.
+struct RingGlyph: View {
+    var face: ActivityFace
+    static let size: CGFloat = 24
+    private let theme = ActivityTheme.current
+    var body: some View {
+        let color = theme.island.color(face.tone)
+        ZStack {
+            switch face.ring {
+            case .none:
+                EmptyView()
+            case .fraction(let value):
+                Circle().stroke(color.opacity(0.25), lineWidth: 2.5)
+                Circle().trim(from: 0, to: max(0.04, min(1, value)))
+                    .stroke(color, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+            case .timer(let range):
+                ProgressView(timerInterval: range, countsDown: true, label: { EmptyView() }, currentValueLabel: { EmptyView() })
+                    .progressViewStyle(.circular)
+                    .tint(color)
+            }
+            Image(systemName: face.symbol)
+                .font(.system(size: face.ring == .none ? ActivityMetrics.glyph : 11, weight: .bold))
+                .foregroundStyle(color)
+                .contentTransition(.symbolEffect(.replace))
+        }
+        .frame(width: Self.size, height: Self.size)
+        .accessibilityHidden(true)
+    }
+}
+
+/// The run's latest steps as one bar of segments: each step that went through in the state's colour,
+/// one that did not in red, the step under way pulsing faintly. A finished run turns green.
+private struct StepBar: View {
+    var face: ActivityFace
+    var surface: ActivitySurface
+    @Environment(\.isLuminanceReduced) private var dimmed
+    private let theme = ActivityTheme.current
+    var body: some View {
+        if !face.steps.isEmpty || face.stepUnderWay {
+            let palette = theme.palette(surface)
+            let shown = Array(face.steps.suffix(PokiState.outcomeLimit - (face.stepUnderWay ? 1 : 0)))
+            let ok = face.finished ? palette.done : palette.accent
+            HStack(spacing: 3) {
+                ForEach(Array(shown.enumerated()), id: \.offset) { _, went in
+                    Capsule().fill(went ? ok : palette.problem).frame(height: 5)
+                }
+                if face.stepUnderWay {
+                    Capsule().fill(ok.opacity(dimmed ? 0.5 : 0.35)).frame(height: 5)
+                }
+                // The rest of the bar's twelve places, empty.
+                ForEach(0..<max(0, PokiState.outcomeLimit - shown.count - (face.stepUnderWay ? 1 : 0)), id: \.self) { _ in
+                    Capsule().fill(palette.track).frame(height: 5)
+                }
+            }
+            .padding(.top, 2)
+            .accessibilityElement()
+            .accessibilityLabel(Text(verbatim: "\(face.steps.filter { $0 }.count) of \(face.steps.count)"))
+        }
     }
 }
 
