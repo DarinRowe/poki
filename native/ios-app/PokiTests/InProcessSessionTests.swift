@@ -20,6 +20,20 @@ final class InProcessSessionTests: XCTestCase {
         XCTAssertNotNil(fix)
         XCTAssertEqual(tries.count, 1, "the call asks Poki to open the session again")
     }
+
+    /// Seen on the phone: the banner up and the session open, while every look answered "still
+    /// starting", because nothing asked for another open. A call that finds it opening asks too.
+    func testACallThatFindsTheSessionStillOpeningAsksForAnOpen() {
+        let host = AppCoreHost()
+        let tries = Tries()
+        host.onRetry { tries.add() }
+        host.update(runner: InProcessSession.opening.agentState)
+
+        let state = host.runnerState()
+
+        guard case .starting = state else { return XCTFail("the agent reads \(state.describe)") }
+        XCTAssertEqual(tries.count, 1, "the call asks Poki to open the session")
+    }
 }
 
 private final class Tries: @unchecked Sendable {

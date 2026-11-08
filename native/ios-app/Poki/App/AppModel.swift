@@ -185,8 +185,9 @@ final class AppModel {
                 Task { @MainActor in
                     guard let self else { return }
                     self.log.add("runner", "PokiCore asked for a restart: closing the in-process session and opening a new one")
-                    self.closeInProcess("a restart PokiCore asked for")
-                    self.warmInProcess("PokiCore's restart")
+                    // Opened again once the close is through, so the open does not find the old
+                    // session still there and answer "reused" for it.
+                    self.closeInProcess("a restart PokiCore asked for") { [weak self] in self?.warmInProcess("PokiCore's restart") }
                 }
                 return
             }
@@ -199,7 +200,7 @@ final class AppModel {
         host.onWake { [weak self] in Task { @MainActor in self?.wakeRunner() } }
         host.onWarmUp { [weak self] in Task { @MainActor in self?.warmInProcess("an agent connected") } }
         if automationPath == .inProcess {
-            host.onRetry { [weak self] in Task { @MainActor in self?.warmInProcess("an agent's call after a failed open") } }
+            host.onRetry { [weak self] in Task { @MainActor in self?.warmInProcess("an agent's call while the session was not open") } }
         }
         // Allow and Deny on the Live Activity run in this process and come straight here.
         ApprovalIntentBridge.install { [weak self] decision in
@@ -245,17 +246,30 @@ final class AppModel {
     /// The in-process session as prepare last answered it in this process (ESP-152).
     private var inProcessSession = InProcessSession.opening
     private var inProcessWarming = false
+    /// When the open under way began: one that has not answered in `staleOpen` seconds no longer
+    /// holds the next one back (seen on the phone: the banner up, the session open, and every look
+    /// answered "still starting" because an open that never answered blocked all the others).
+    private var inProcessWarmStarted = Date.distantPast
+    private static let staleOpen: TimeInterval = 15
+    /// Counts closes, so an open that began before one is not taken as the state after it.
+    private var inProcessEpoch = 0
+    private var inProcessWarmToken = 0
 
     /// Ends the in-process session (Automation Mode and the banner go with it) off the main thread.
     /// PokiCore's next request finds its session gone and opens a new one through prepare.
-    func closeInProcess(_ why: String) {
+    func closeInProcess(_ why: String, then: (@MainActor () -> Void)? = nil) {
         guard automationPath == .inProcess else { return }
         inProcessSession = .opening
+        // An open that was still under way when this close came answers for a session that is gone:
+        // its answer is not taken (it would show .open, or keep .opening for good).
+        inProcessEpoch += 1
+        inProcessWarming = false
         DispatchQueue.global(qos: .userInitiated).async {
             let result = PKInProcess.shared().close()
             Task { @MainActor [weak self] in
                 let closed = (result["closed"] as? Bool) == true
                 self?.log.add("runner", closed ? "in-process session closed for \(why) (generation \(result["generation"] ?? 0)); the banner goes with it" : "in-process session was not open (\(why))")
+                then?()
             }
         }
     }
@@ -265,8 +279,15 @@ final class AppModel {
     /// connects, and when an agent's call finds the last try failed. prepare is idempotent: a session
     /// already open answers "reused" in milliseconds.
     func warmInProcess(_ why: String) {
-        guard automationPath == .inProcess, sessionOn, runner.isRunning, !inProcessWarming else { return }
+        guard automationPath == .inProcess, sessionOn, runner.isRunning else { return }
+        if inProcessWarming {
+            guard Date().timeIntervalSince(inProcessWarmStarted) > Self.staleOpen else { return }
+            log.add("runner", "the in-process open under way has not answered in \(Int(Self.staleOpen)) s: asking again for \(why)")
+        }
         inProcessWarming = true
+        inProcessWarmStarted = Date()
+        inProcessWarmToken += 1
+        let epoch = inProcessEpoch, token = inProcessWarmToken
         if case .failed = inProcessSession {
             inProcessSession = .opening
             host.update(runner: coreState(of: runner))
@@ -275,8 +296,15 @@ final class AppModel {
             let result = PKInProcess.shared().prepare()
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                self.inProcessWarming = false
+                guard epoch == self.inProcessEpoch else {
+                    self.log.add("runner", "an in-process open for \(why) answered after the session was closed: not taken")
+                    return
+                }
+                // Only the latest open's answer clears the flag (a stale one was asked again meanwhile).
                 let ok = (result["ok"] as? Bool) == true
+                // A stale open's failure does not undo what a newer one is doing.
+                guard token == self.inProcessWarmToken || ok else { return }
+                if token == self.inProcessWarmToken { self.inProcessWarming = false }
                 let seconds = String(format: "%.2f", result["seconds"] as? Double ?? 0)
                 let warm = (result["warm_seconds"] as? Double).map { $0 > 0 ? String(format: ", first snapshot and screenshot %.2f s", $0) : "" } ?? ""
                 self.log.add("runner", ok ? "in-process session ready for \(why) (generation \(result["generation"] ?? 0), \((result["reused"] as? Bool) == true ? "already open" : "opened"), \(seconds) s\(warm))"

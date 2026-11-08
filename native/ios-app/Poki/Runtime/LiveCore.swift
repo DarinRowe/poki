@@ -93,7 +93,7 @@ final class AppCoreHost: CoreHost, @unchecked Sendable {
     func onRestart(_ action: @escaping @Sendable () -> Void) { lock.withLock { restart = action } }
     func onWake(_ action: @escaping @Sendable () -> Void) { lock.withLock { wake = action } }
     func onWarmUp(_ action: @escaping @Sendable () -> Void) { lock.withLock { warm = action } }
-    /// A tool call found automation failed: the app may try again (the in-process session, ESP-152).
+    /// A tool call found automation failed or not open yet: the app may try again (the in-process session, ESP-152).
     func onRetry(_ action: @escaping @Sendable () -> Void) { lock.withLock { retry = action } }
     /// MCP initialize: a paused runner starts now, and the app gets the session ready.
     func warmUp() {
@@ -121,7 +121,11 @@ final class AppCoreHost: CoreHost, @unchecked Sendable {
     func runnerState() -> RunnerState {
         let (state, then) = lock.withLock { () -> (RunnerState, (@Sendable () -> Void)?) in
             guard paused else {
+                // Failed, or still starting: the app is asked to (re)open its session. Opening is
+                // idempotent and the app ignores the ask while an open is under way, so a call that
+                // waits on "starting" can never wait on an open nobody started.
                 if case .failed = runner { return (runner, retry) }
+                if case .starting = runner { return (runner, retry) }
                 return (runner, nil)
             }
             paused = false
