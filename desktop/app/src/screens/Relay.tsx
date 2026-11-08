@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, failureText, onProgress, type CfAccount, type Deployed } from "../api";
+import { api, failureText, onProgress, type CfAccount, type Deployed, type WorkerStatus } from "../api";
 import { t } from "../i18n";
 import { Capsule, Card, Copy, ErrorBox, Field, Pill, Qr, Steps, useSteps } from "../ui";
 
@@ -12,9 +12,12 @@ export default function Relay() {
   const [error, setError] = useState<string | null>(null);
   const [up, setUp] = useState<boolean | null>(null);
   const [qr, setQr] = useState<string | null>(null);
+  const [worker, setWorker] = useState<WorkerStatus | null>(null);
+  const open = async (url: string) => { const { openUrl } = await import("@tauri-apps/plugin-opener"); openUrl(url); };
   const { steps, apply, fail, reset } = useSteps([{ id: "relay", title: "Deploy" }]);
   useEffect(() => {
     api.relayState().then(setRelay);
+    api.relayWorker().then(setWorker).catch(() => {});
     const un = onProgress("relay", apply);
     return () => { un.then((f) => f()); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -25,7 +28,7 @@ export default function Relay() {
   };
   const deploy = async () => {
     setBusy(true); setError(null); reset(); apply({ job: "relay", kind: "step", id: "relay", title: "Deploy" });
-    try { const d = await api.relayDeploy(token, accountId); setRelay(d); setToken(""); setAccounts([]); apply({ job: "relay", kind: "done", id: "relay", detail: d.address }); }
+    try { const d = await api.relayDeploy(token, accountId); setRelay(d); api.relayWorker().then(setWorker).catch(() => {}); setToken(""); setAccounts([]); apply({ job: "relay", kind: "done", id: "relay", detail: d.address }); }
     catch (e) { fail(failureText(e)); setError(failureText(e)); }
     setBusy(false);
   };
@@ -44,6 +47,17 @@ export default function Relay() {
             <Capsule kind="ghost" sm onClick={() => api.qrSvg(relay.phone_link).then(setQr)}>{t("Show QR for the phone")}</Capsule>
           </div>
           {qr && <div className="row" style={{ marginTop: 14, alignItems: "flex-start" }}><Qr svg={qr} /><div className="grow"><p style={{ marginTop: 0 }}>In Poki on the iPhone, open Connect and scan this, or type the address under Relay address.</p><code className="small" style={{ userSelect: "text" }}>{relay.phone_link}</code></div></div>}
+        </Card>
+      )}
+      {worker && (
+        <Card>
+          <h2>{t("Relay code")}</h2>
+          <p className="muted small">{worker.source === "built in" ? t("Built into Poki Setup") : `${t("From release")} ${worker.source}`}. {t("Poki Setup deploys the relay from the same release as the Poki on your iPhone.")}</p>
+          {worker.update_available && <p><Pill tone="warn">{t("Relay update available")}</Pill></p>}
+          <div className="row">
+            <Capsule kind="ghost" sm onClick={() => open(worker.download_url)}>{t("Download worker.js")}</Capsule>
+            <Capsule kind="ghost" sm onClick={() => open(worker.guide_url)}>{t("Deploy it yourself")}</Capsule>
+          </div>
         </Card>
       )}
       <Card>

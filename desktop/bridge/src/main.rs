@@ -352,6 +352,7 @@ async fn dispatch(state: &Shared, out: &Out, cmd: &str, a: &Value) -> R {
             ok(release::channels().await?)
         }
         "relay_state" => ok(relay::remembered()?),
+        "relay_worker" => ok(relay::worker_status().await?),
         "relay_accounts" => {
             let token: String = arg(a, "token")?;
             ok(relay::Cloudflare::new(&token)?.accounts().await?)

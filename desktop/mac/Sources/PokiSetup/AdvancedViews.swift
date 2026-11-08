@@ -11,6 +11,7 @@ struct RelayView: View {
     @State private var working = false
     @State private var error: String?
     @State private var relayUp: Bool?
+    @State private var worker: WorkerStatus?
 
     var body: some View {
         Form {
@@ -43,6 +44,25 @@ struct RelayView: View {
                     .padding(.vertical, 4)
                 }
             }
+            if let w = worker {
+                Section {
+                    LabeledContent("Relay Code") {
+                        Text(w.source == "built in" ? "Built into Poki Setup" : "From release \(w.source)").foregroundStyle(.secondary)
+                    }
+                    if w.updateAvailable {
+                        Label("Relay update available. Update Relay below to match your Poki.", systemImage: "arrow.triangle.2.circlepath")
+                            .foregroundStyle(Color.pokiBlue)
+                    }
+                    HStack {
+                        if let u = URL(string: w.downloadUrl) { Link("Download worker.js", destination: u) }
+                        Spacer()
+                        if let u = URL(string: w.guideUrl) { Link("Deploy It Yourself…", destination: u) }
+                    }
+                } footer: {
+                    Text("Poki Setup deploys the relay from the same release as the Poki on your iPhone, checked against that release's SHA256SUMS.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+            }
             Section {
                 SecureField("Cloudflare API Token", text: $token, prompt: Text("Paste the token"))
                 if !accounts.isEmpty {
@@ -72,7 +92,10 @@ struct RelayView: View {
             }
         }
         .pokiPage()
-        .task { if let d = model.relay, !model.demo { await check(d.address) } else if model.demo { relayUp = true } }
+        .task {
+            if let d = model.relay, !model.demo { await check(d.address) } else if model.demo { relayUp = true }
+            if !model.demo { worker = try? await model.bridge.call("relay_worker") }
+        }
     }
 
     private func loadAccounts() async {
@@ -93,6 +116,7 @@ struct RelayView: View {
         do {
             let d: Deployed = try await model.job("relay") { try await model.bridge.call("relay_deploy", ["token": token, "account_id": accountID]) }
             model.relay = d
+            worker = try? await model.bridge.call("relay_worker")
             token = ""
             accounts = []
             await check(d.address)
