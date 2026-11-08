@@ -70,22 +70,26 @@ struct SessionsView: View {
         .overlay(alignment: .bottom) {
             if store.ordered.isEmpty {
                 ContentUnavailableView {
-                    Label("No Conversations", systemImage: "bubble.left.and.bubble.right")
+                    Label("No Sessions Yet", systemImage: "bubble.left.and.bubble.right")
                 } description: {
-                    Text("Message Poki, or connect an agent such as Claude or Codex in Settings. Every conversation shows up here.")
+                    Text("Start a chat with Poki, or connect an agent such as Claude or Codex in Agents. Every session shows up here.")
                 } actions: {
                     Button("Message Poki") { openChat() }.buttonStyle(.borderedProminent)
                 }
             }
         }
-        .navigationTitle(Text("Chats"))
+        .navigationTitle(Text(verbatim: "Poki"))
         .navigationBarTitleDisplayMode(.large)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { chat.newConversation(); openChat() } label: { Image(systemName: "square.and.pencil") }
-                    .accessibilityLabel(Text("New Chat with Poki"))
-                    .disabled(chat.running)
+        // A new chat with Poki's own agent, at the bottom left.
+        .safeAreaInset(edge: .bottom, alignment: .leading, spacing: 0) {
+            Button { chat.newConversation(); openChat() } label: {
+                Label("New Chat", systemImage: "square.and.pencil").font(.body.weight(.semibold))
+                    .padding(.horizontal, 16).padding(.vertical, 12)
             }
+            .newChatStyle()
+            .disabled(chat.running)
+            .padding(.leading, 16).padding(.bottom, 8)
+            .accessibilityLabel(Text("New Chat with Poki"))
         }
     }
 
@@ -118,6 +122,14 @@ struct SessionsView: View {
         }
     }
 
+}
+
+private extension View {
+    /// Blue-tinted Liquid Glass on iOS 26 and later; a blue prominent capsule before it.
+    @ViewBuilder func newChatStyle() -> some View {
+        if #available(iOS 26.0, *) { buttonStyle(.glassProminent).buttonBorderShape(.capsule).tint(Site.blue) }
+        else { buttonStyle(.borderedProminent).buttonBorderShape(.capsule).tint(Site.blue) }
+    }
 }
 
 private struct StripCard<Content: View>: View {

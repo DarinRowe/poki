@@ -1,0 +1,169 @@
+import SwiftUI
+
+// The app's three tabs (the owner's layout, Nov 7 2026):
+// - Poki: every session, with Poki's state and controls on top; the button at the bottom left starts a
+//   new chat with Poki's own agent.
+// - Agents: the agents that drive this iPhone (their MCP addresses and the relay), Poki's own agent
+//   (accounts, models, voice, memory) and the Activity Log.
+// - Setup: everything Poki needs, read live, each item fixed on its own page; advanced preferences and
+//   debugging tools behind the button at the top right.
+
+/// Agents › a page.
+enum AgentsRoute: Hashable { case accounts, voice, activityLog }
+
+struct AgentsView: View {
+    @Environment(AppModel.self) private var model
+    @Binding var path: NavigationPath
+    var openSession: (String) -> Void
+    @State private var newName = ""
+
+    var body: some View {
+        NavigationStack(path: $path) {
+            List {
+                Section {
+                    ForEach(model.identity.secrets) { secret in
+                        NavigationLink(value: SettingsRoute.connector(secret)) {
+                            LabeledContent {
+                                Text(secret.created.formatted(.dateTime.month(.abbreviated).day()))
+                            } label: {
+                                Label(secret.name, systemImage: "point.3.connected.trianglepath.dotted")
+                            }
+                        }
+                        .disabled(model.relayAddress == nil)
+                        .swipeActions { Button("Revoke", role: .destructive) { model.revoke(secret) } }
+                    }
+                    HStack {
+                        TextField("New agent, e.g., Claude", text: $newName).submitLabel(.done).onSubmit(add)
+                        Button("Add", action: add).disabled(model.relayAddress == nil || newName.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                } header: {
+                    Text("Agents on Other Devices")
+                } footer: {
+                    Text(model.relayAddress == nil
+                         ? "Set your relay first: each agent gets its own MCP address on it."
+                         : "Each agent gets its own MCP address; add it as a remote MCP server in Claude, Codex or any MCP client. Swipe to revoke.")
+                }
+
+                Section {
+                    NavigationLink(value: SettingsRoute.relay) {
+                        LabeledContent("Relay") {
+                            Text(model.relayAddress.map { $0.origin.host() ?? $0.origin.absoluteString } ?? String(localized: "Not Set"))
+                                .foregroundStyle(model.relayAddress == nil ? Color.orange : Color.secondary)
+                        }
+                    }
+                    LabeledContent("Status", value: Health.relay(model).word)
+                } header: {
+                    Text("MCP Relay")
+                } footer: {
+                    Text("The relay forwards agents’ requests to this iPhone while Poki is open or in the background. It stores nothing.")
+                }
+
+                Section {
+                    NavigationLink(value: AgentsRoute.accounts) {
+                        LabeledContent {
+                            Text(ModelKeys.hasUsableKey ? ModelKeys.selectedModelName : String(localized: "Add an Account")).foregroundStyle(ModelKeys.hasUsableKey ? Color.secondary : Color.orange)
+                        } label: { Label("Accounts and Models", systemImage: "person.crop.circle") }
+                    }
+                    NavigationLink(value: AgentsRoute.voice) {
+                        LabeledContent {
+                            Text(VoiceDirect.apiKey != nil ? VoiceDirect.model : String(localized: "Dictation Only"))
+                        } label: { Label("Voice", systemImage: "waveform") }
+                    }
+                    NavigationLink(value: SettingsRoute.memory) {
+                        LabeledContent {
+                            Text("\(RoutineStore.shared.routines.count) routines")
+                        } label: { Label("Memory", systemImage: "brain") }
+                    }
+                } header: {
+                    Text("Poki’s Own Agent")
+                } footer: {
+                    Text("The model Poki’s chat and voice use on this iPhone. Memory holds the routines and notes every agent shares.")
+                }
+
+                Section {
+                    NavigationLink(value: AgentsRoute.activityLog) { Label("Activity Log", systemImage: "list.bullet.rectangle") }
+                } footer: {
+                    Text("Every action any agent ran on this iPhone. It can’t be deleted.")
+                }
+            }
+            .listStyle(.insetGrouped)
+            .navigationTitle("Agents")
+            .navigationDestination(for: AgentsRoute.self) { route in
+                switch route {
+                case .accounts: ModelSettingsView()
+                case .voice: VoiceView(embedded: true)
+                case .activityLog: ActionLogView(openSession: openSession)
+                }
+            }
+            .navigationDestination(for: SettingsRoute.self) { route in
+                SettingsDestination(route: route, push: { path.append($0) }, pop: { if !path.isEmpty { path.removeLast() } })
+            }
+        }
+    }
+
+    private func add() {
+        let name = newName.trimmingCharacters(in: .whitespaces)
+        guard model.relayAddress != nil, !name.isEmpty else { return }
+        let secret = model.addConnector(name: name)
+        newName = ""
+        path.append(SettingsRoute.connector(secret))
+    }
+}
+
+/// Setup: the live checklist, with Advanced behind the top-right button.
+struct SetupTab: View {
+    @Binding var path: NavigationPath
+
+    var body: some View {
+        NavigationStack(path: $path) {
+            SetupChecklist()
+                .navigationTitle("Setup")
+                .navigationBarTitleDisplayMode(.large)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        NavigationLink(value: SetupRoute.advanced) { Image(systemName: "slider.horizontal.3") }
+                            .accessibilityLabel(Text("Advanced"))
+                    }
+                }
+                .navigationDestination(for: SetupStep.self) { SetupStepPage(step: $0) }
+                .navigationDestination(for: SetupRoute.self) { _ in AdvancedView(push: { path.append($0) }) }
+                .navigationDestination(for: SettingsRoute.self) { route in
+                    SettingsDestination(route: route, push: { path.append($0) }, pop: { if !path.isEmpty { path.removeLast() } })
+                }
+        }
+    }
+}
+
+enum SetupRoute: Hashable { case advanced }
+
+/// Setup › Advanced: preferences and debugging tools.
+struct AdvancedView: View {
+    @Environment(AppModel.self) private var model
+    var push: (SettingsRoute) -> Void
+
+    var body: some View {
+        @Bindable var model = model
+        Form {
+            if model.automationPath == .runner {
+                Section {
+                    LabeledContent("Runner", value: Health.runner(model).word)
+                    Picker("Stop When Idle For", selection: $model.idleStopSeconds) {
+                        ForEach(SettingsHome.idleChoices, id: \.0) { Text($0.1).tag($0.0) }
+                    }
+                } header: { Text("Poki Runner") }
+            }
+            Section {
+                Button("Notifications") {
+                    if let url = URL(string: UIApplication.openNotificationSettingsURLString) { UIApplication.shared.open(url) }
+                }
+                NavigationLink("Diagnostics", value: SettingsRoute.diagnostics)
+                NavigationLink("Log", value: SettingsRoute.log)
+                NavigationLink("Live Activity Preview", value: SettingsRoute.activityPreview)
+            } footer: {
+                Text("Diagnostics: connection checks, the background hold, this iPhone’s addresses and the in-process automation switch.")
+            }
+        }
+        .navigationTitle("Advanced")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}

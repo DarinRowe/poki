@@ -38,27 +38,28 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var tab = RootTab.chats
     @State private var home = NavigationPath()
-    /// The Poki tab's pages, pushed (Accounts, Voice, Agents and Relay, Setup…); nothing is an overlay.
-    @State private var poki = NavigationPath()
+    /// The Agents and Setup tabs' pages, pushed; nothing is an overlay.
+    @State private var agents = NavigationPath()
+    @State private var setup = NavigationPath()
 
     /// Sessions is the first page; Poki's chat and an agent's session open over it, like a conversation
     /// in Messages; setup's checklist and its items are pushed there too.
     enum HomeRoute: Hashable { case chat, session(String), setup }
-    enum RootTab: Hashable { case chats, status }
+    enum RootTab: Hashable { case chats, agents, setup }
 
     var body: some View {
         TabView(selection: $tab) {
             NavigationStack(path: $home) {
                 SessionsView(openChat: { home = NavigationPath([HomeRoute.chat]) }, openSession: { home = NavigationPath([HomeRoute.session($0)]) },
-                             openModel: { openPoki(DetailsRoute.model) },
-                             openConnectors: { openPoki(DetailsRoute.settings) },
-                             openDetails: { tab = .status }, openVoice: openLiveVoice,
+                             openModel: { openAgents(AgentsRoute.accounts) },
+                             openConnectors: { tab = .agents; agents = NavigationPath() },
+                             openDetails: { tab = .agents }, openVoice: openLiveVoice,
                              openSetup: openSetup)
                     .navigationDestination(for: HomeRoute.self) { route in
                         switch route {
                         case .chat:
-                            ChatView(openDetails: { tab = .status }, openVoice: openLiveVoice,
-                                     openSetup: openSetup, openModel: { openPoki(DetailsRoute.model) },
+                            ChatView(openDetails: { tab = .agents }, openVoice: openLiveVoice,
+                                     openSetup: openSetup, openModel: { openAgents(AgentsRoute.accounts) },
                                      back: { home = NavigationPath() })
                         case .session(let id):
                             SessionView(id: id, back: { home = NavigationPath() })
@@ -68,12 +69,17 @@ struct RootView: View {
                     }
                     .navigationDestination(for: SetupStep.self) { SetupStepPage(step: $0) }
             }
-            .tabItem { Label("Chats", systemImage: "bubble.left.and.bubble.right.fill") }
+            .tabItem { Label(String(localized: "Poki"), systemImage: "bubble.left.and.bubble.right.fill") }
             .tag(RootTab.chats)
 
-            PokiDetailsView(openVoice: openLiveVoice, openSetup: { openPoki(DetailsRoute.setup) }, openSession: openRun, path: $poki)
-                .tabItem { Label("Poki", systemImage: "gearshape.fill") }
-                .tag(RootTab.status)
+            AgentsView(path: $agents, openSession: openRun)
+                .tabItem { Label("Agents", systemImage: "point.3.connected.trianglepath.dotted") }
+                .tag(RootTab.agents)
+
+            SetupTab(path: $setup)
+                .tabItem { Label("Setup", systemImage: "checklist") }
+                .badge(model.setupComplete ? 0 : SetupStep.shown.filter { !model.isDone($0) }.count)
+                .tag(RootTab.setup)
         }
         .tint(Site.blue)
         .task { InProcessProbe.shared.startFromLaunchArguments(model: model) }
@@ -89,11 +95,8 @@ struct RootView: View {
             // A pairing file or a setup link (from Poki Setup on a computer, AirDrop or Files) opens
             // setup at that step, where the result is shown.
             if let step = model.open(link: url) {
-                tab = .chats
-                var path = NavigationPath()
-                path.append(HomeRoute.setup)
-                path.append(step)
-                home = path
+                tab = .setup
+                setup = NavigationPath([step])
             } else {
                 if url.host() == "voice" { model.voice.open(url) }
                 tab = .chats; home = NavigationPath([HomeRoute.chat])
@@ -139,11 +142,6 @@ struct RootView: View {
         }
     }
 
-    /// A page of the Poki tab.
-    private func openPoki(_ route: DetailsRoute) {
-        tab = .status
-        poki = NavigationPath([route])
-    }
 
     /// `-pokiScreen setup` (connect, debug, activity, details, model, voice…) opens that screen at launch,
     /// for the build's screenshots; `-pokiSetupStep 3` opens setup at that step.
@@ -159,18 +157,17 @@ struct RootView: View {
         case "session": if let first = SessionStore.shared.ordered.first(where: { $0.kind != .poki }) { home = NavigationPath([HomeRoute.session(first.id)]) }
         case "setup":
             let step = defaults.integer(forKey: "pokiSetupStep")
-            var path = NavigationPath([HomeRoute.setup])
-            if step > 0 { path.append(SetupStep.shown[min(step, SetupStep.shown.count) - 1]) }
-            home = path
-        case "connect", "settings": openPoki(.settings)
-        case "debug": tab = .status; poki = NavigationPath([SettingsRoute.diagnostics])
-        case "activity": tab = .status; poki = NavigationPath([SettingsRoute.diagnostics, SettingsRoute.activityPreview])
+            tab = .setup
+            setup = step > 0 ? NavigationPath([SetupStep.shown[min(step, SetupStep.shown.count) - 1]]) : NavigationPath()
+        case "connect", "settings": tab = .agents
+        case "debug": tab = .setup; setup = NavigationPath([SettingsRoute.diagnostics])
+        case "activity": tab = .setup; setup = NavigationPath([SettingsRoute.diagnostics, SettingsRoute.activityPreview])
         case "connector":
-            openPoki(.settings)
-            if let first = model.identity.secrets.first { poki.append(SettingsRoute.connector(first)) }
-        case "details", "status": tab = .status
-        case "model": openPoki(.model)
-        case "steps": openPoki(.history)
+            tab = .agents
+            if let first = model.identity.secrets.first { agents = NavigationPath([SettingsRoute.connector(first)]) }
+        case "details", "status": tab = .agents
+        case "model": openAgents(.accounts)
+        case "steps": openAgents(.activityLog)
         case "voice": home = NavigationPath([HomeRoute.chat])
         default: break
         }
