@@ -16,6 +16,7 @@ const answers: Record<string, unknown> = {
   channels: [
     { id: "stable", title: "Stable", selected: false, latest: null },
     { id: "beta", title: "Beta", selected: true, latest: { tag: "ios-v0.2.7", version: "0.2.7", build: "70", published_at: "", ipa_name: "Poki-external-0.2.7-70.ipa", channel: "beta" } },
+    { id: "alpha", title: "Alpha", selected: false, latest: { tag: "ios-alpha-0.2.7-110", version: "0.2.7", build: "110", published_at: "", ipa_name: "Poki-external-0.2.7-110.ipa", channel: "alpha" } },
     { id: "pre-alpha", title: "Pre-alpha", selected: false, latest: { tag: "ios-prealpha-0.2.7-252", version: "0.2.7", build: "252", published_at: "", ipa_name: "Poki-external-0.2.7-252.ipa", channel: "pre-alpha" } },
   ],
   qr_svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#fff"/><rect x="1" y="1" width="3" height="3"/><rect x="6" y="1" width="3" height="3"/><rect x="1" y="6" width="3" height="3"/></svg>',

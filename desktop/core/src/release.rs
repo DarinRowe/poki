@@ -1,4 +1,4 @@
-//! Poki's releases on GitHub: `ios-v*` (Stable, Beta) and `ios-prealpha-*` (Pre-alpha) tags with `Poki-external-<v>-<b>.ipa`, `Poki-<v>-<b>.ipa`,
+//! Poki's releases on GitHub: `ios-v*` (Stable, Beta) and `ios-alpha-*` (Alpha), `ios-prealpha-*` (Pre-alpha) tags with `Poki-external-<v>-<b>.ipa`, `Poki-<v>-<b>.ipa`,
 //! `Poki-signing.zip` and `SHA256SUMS`. Poki Setup installs the external edition: its loopback
 //! comes from the person's proxy app, which a team profile can sign; the built-in tunnel cannot.
 use crate::{Error, Result, Reporter, paths};
@@ -44,7 +44,7 @@ struct GhAsset {
 pub fn repo() -> String { std::env::var("POKI_RELEASE_REPO").unwrap_or_else(|_| DEFAULT_REPO.into()) }
 
 /// Which releases Poki Setup installs, renews with and offers as its own updates. Each channel
-/// includes the ones above it: Beta takes the newest Stable or Beta, Pre-alpha the newest of all.
+/// includes the ones above it: Beta takes the newest Stable or Beta, Alpha adds alpha builds, Pre-alpha the newest of all.
 /// See docs/release-channels.md upstream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -53,6 +53,8 @@ pub enum Channel {
     Stable,
     /// The same tags published as prereleases. The default: every `ios-v*` release so far is one.
     Beta,
+    /// `ios-alpha-X.Y.Z-N` / `desktop-alpha-*` early test builds, picked by hand.
+    Alpha,
     /// `ios-prealpha-X.Y.Z-N` / `desktop-prealpha-*` snapshots.
     PreAlpha,
 }
@@ -62,12 +64,13 @@ impl Default for Channel {
 }
 
 impl Channel {
-    pub const ALL: [Channel; 3] = [Channel::Stable, Channel::Beta, Channel::PreAlpha];
+    pub const ALL: [Channel; 4] = [Channel::Stable, Channel::Beta, Channel::Alpha, Channel::PreAlpha];
 
     pub fn id(self) -> &'static str {
         match self {
             Channel::Stable => "stable",
             Channel::Beta => "beta",
+            Channel::Alpha => "alpha",
             Channel::PreAlpha => "pre-alpha",
         }
     }
@@ -76,6 +79,7 @@ impl Channel {
         match self {
             Channel::Stable => "Stable",
             Channel::Beta => "Beta",
+            Channel::Alpha => "Alpha",
             Channel::PreAlpha => "Pre-alpha",
         }
     }
@@ -84,7 +88,8 @@ impl Channel {
         match s.trim().to_ascii_lowercase().replace(['_', ' '], "-").as_str() {
             "stable" => Some(Channel::Stable),
             "beta" => Some(Channel::Beta),
-            "pre-alpha" | "prealpha" | "alpha" => Some(Channel::PreAlpha),
+            "alpha" => Some(Channel::Alpha),
+            "pre-alpha" | "prealpha" => Some(Channel::PreAlpha),
             _ => None,
         }
     }
@@ -98,6 +103,8 @@ impl Channel {
         let rest = tag.strip_prefix(product)?.strip_prefix('-')?;
         if rest.starts_with("prealpha-") {
             Some(Channel::PreAlpha)
+        } else if rest.starts_with("alpha-") {
+            Some(Channel::Alpha)
         } else if rest.starts_with('v') {
             Some(if prerelease { Channel::Beta } else { Channel::Stable })
         } else {
@@ -108,7 +115,7 @@ impl Channel {
 
 impl std::str::FromStr for Channel {
     type Err = Error;
-    fn from_str(s: &str) -> Result<Self> { Channel::parse(s).ok_or_else(|| Error::msg(format!("Unknown channel “{s}”. Use stable, beta or pre-alpha."))) }
+    fn from_str(s: &str) -> Result<Self> { Channel::parse(s).ok_or_else(|| Error::msg(format!("Unknown channel “{s}”. Use stable, beta, alpha or pre-alpha."))) }
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -168,7 +175,7 @@ fn installable(r: &GhRelease) -> Option<(Channel, Release)> {
     let stem = ipa.name.trim_start_matches("Poki-external-").trim_end_matches(".ipa");
     let (version, build) = match stem.rsplit_once('-') {
         Some((v, b)) if !v.is_empty() => (v.to_string(), b.to_string()),
-        _ => (r.tag_name.trim_start_matches("ios-v").trim_start_matches("ios-prealpha-").to_string(), String::new()),
+        _ => (r.tag_name.trim_start_matches("ios-v").trim_start_matches("ios-prealpha-").trim_start_matches("ios-alpha-").to_string(), String::new()),
     };
     Some((
         channel,
@@ -221,7 +228,7 @@ pub async fn channels() -> Result<Vec<ChannelInfo>> {
         .collect())
 }
 
-/// Poki Setup's own update on the chosen channel (`desktop-v*`, `desktop-prealpha-*` tags).
+/// Poki Setup's own update on the chosen channel (`desktop-v*`, `desktop-alpha-*`, `desktop-prealpha-*` tags).
 #[derive(Debug, Clone, Serialize)]
 pub struct UpdateInfo {
     pub current: String,
@@ -236,7 +243,7 @@ pub async fn desktop_update() -> Result<UpdateInfo> {
     let current = crate::VERSION.to_string();
     let found = list().await?.into_iter().find(|r| Channel::of_tag("desktop", &r.tag_name, r.prerelease).map(|c| channel.includes(c)).unwrap_or(false));
     let (latest, url) = match found {
-        Some(r) => (Some(r.tag_name.trim_start_matches("desktop-v").trim_start_matches("desktop-prealpha-").to_string()), r.html_url),
+        Some(r) => (Some(r.tag_name.trim_start_matches("desktop-v").trim_start_matches("desktop-prealpha-").trim_start_matches("desktop-alpha-").to_string()), r.html_url),
         None => (None, None),
     };
     let newer = latest.as_deref().map(|t| version_key(t) > version_key(&current)).unwrap_or(false);
@@ -329,6 +336,10 @@ mod tests {
         assert_eq!(Channel::of_tag("ios", "ios-v0.2.7", false), Some(Channel::Stable));
         assert_eq!(Channel::of_tag("ios", "ios-v0.2.7", true), Some(Channel::Beta));
         assert_eq!(Channel::of_tag("ios", "ios-prealpha-0.2.7-252", true), Some(Channel::PreAlpha));
+        assert_eq!(Channel::of_tag("ios", "ios-alpha-0.2.8-110", true), Some(Channel::Alpha));
+        assert_eq!(Channel::of_tag("desktop", "desktop-alpha-0.2.1-3", true), Some(Channel::Alpha));
+        assert!(Channel::PreAlpha.includes(Channel::Alpha) && Channel::Alpha.includes(Channel::Beta) && !Channel::Beta.includes(Channel::Alpha));
+        assert_eq!(Channel::parse("alpha"), Some(Channel::Alpha));
         assert_eq!(Channel::of_tag("ios", "v0.1.1", false), None);
         assert_eq!(Channel::of_tag("ios", "desktop-v0.2.0", false), None);
         assert_eq!(Channel::of_tag("desktop", "desktop-prealpha-0.2.1-9", true), Some(Channel::PreAlpha));

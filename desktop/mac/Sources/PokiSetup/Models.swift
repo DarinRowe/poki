@@ -163,7 +163,7 @@ struct Release: Decodable {
     var version: String
     var build: String
     var ipaName: String
-    /// "stable", "beta" or "pre-alpha".
+    /// "stable", "beta", "alpha" or "pre-alpha".
     var channel: String? = nil
 }
 
