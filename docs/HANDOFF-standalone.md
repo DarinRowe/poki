@@ -12,8 +12,8 @@ does, what was checked and what was not, and what is still open. Read `HANDOFF.m
 full history and no squashes. It is the native SwiftUI revamp of the iPhone app (`native/ios-app`),
 plus on-device self-signing (Poki re-signs and updates itself, free Apple accounts included), plus
 Poki Setup for Mac and Windows (`desktop/`), plus a release-channel system (Stable, Beta, Alpha,
-Pre-alpha) on this repository's GitHub Releases. The first pre-alpha is tag `ios-prealpha-0.2.8-490`
-on this file's commit (the head of `standalone` when it was cut): Poki 0.2.8 (490) with Poki Setup 0.2.1 (304). Nothing on `main` was touched and no
+Pre-alpha) on this repository's GitHub Releases. The first pre-alpha is tag `ios-prealpha-0.2.8-499`
+on this file's commit (the head of `standalone` when it was cut): Poki 0.2.8 (499) with Poki Setup 0.2.1 (307). Nothing on `main` was touched and no
 PR is open.
 
 ## Ground rules (unchanged, please keep them)
@@ -41,11 +41,11 @@ The first-parent history of `standalone` is a series of merges. From oldest to n
 | `ea68952`, `9ebaf1e`, `8905942` | Merges of fork `dev/desktop-setup` (Poki Setup 0.2.1 builds 297 to 299). `8905942` resolved conflicts in `desktop/core/src/relay.rs` and `desktop/core/src/apple/store.rs`; see "Rust core features" below. |
 | `1a0e05c` | CI split: `ios-app.yml` is the full workflow again (tests, simulator, screenshots, restored from before `dc2cb40`), and `ios-ipa.yml` is the fast unsigned IPA build that `channel-release.yml` calls. |
 | `3ad8e56`, `c48e15f`, `bff458e` | Merges of `dev/ios-native-revamp` up to `b8c243a`: pairing fixes (`422788e`, `7ca2b55`), aws-lc pinned as the TLS provider (`f5fb69c`), the voice restart fix, the separate on-device pairing file, and chat scrolling. |
-| `5c42d82`, `297ba04`, `71e16b7`, `13656d7` | Merges of `dev/desktop-setup` up to `a121d41` (Poki Setup 0.2.1 build 304: 302's code plus Windows CI fixes). |
-| `02fd595`, `2afe565`, then the `8519c32` merge | Merges of `dev/ios-native-revamp` up to `8519c32` (Approvals (Testing) with the auto-classifier, background keep-alive, ask_poki for repetitive tasks); before that `2b9ec5b` (approvals off by default for this alpha; Settings › Approvals › Ask Before Sensitive Steps turns them back on). Before that, `d7e91b2`: Install button fix, Stop ignored right after Allow, the session stays open while idle, screen reader recovery after a reopen, Hide Banner When Idle. |
+| `5c42d82`, `297ba04`, `71e16b7`, `13656d7`, then the `c465a5a` merge | Merges of `dev/desktop-setup` up to `c465a5a` (Poki Setup 0.2.1 build 307: the signer renames `BGTaskSchedulerPermittedIdentifiers` to the signed bundle id, and the Mac sidebar fix). Before that `a121d41` (build 304). |
+| `02fd595`, `2afe565`, the `8519c32` merge, then the `41509e8` merge | Merges of `dev/ios-native-revamp` up to `41509e8` (one in-process automation session per launch, so turning Poki back on after Off relaunches it from a notice; stand-by drops the banner but keeps the session; ask_poki off by default under Settings › Diagnostics › Testing). Before that `8519c32` (approval switches with the auto-classifier, background keep-alive, ask_poki for repetitive tasks); before that `2b9ec5b` (approvals off by default for this alpha; Settings › Approvals › Ask Before Sensitive Steps turns them back on). Before that, `d7e91b2`: Install button fix, Stop ignored right after Allow, the session stays open while idle, screen reader recovery after a reopen, Hide Banner When Idle. |
 
-Fork sources, all on ZhehanZhang/poki-remote: `dev/ios-native-revamp` at `8519c32` and
-`dev/desktop-setup` at `a121d41`. The prepared branch was `dev/standalone-cand`.
+Fork sources, all on ZhehanZhang/poki-remote: `dev/ios-native-revamp` at `41509e8` and
+`dev/desktop-setup` at `c465a5a`. The prepared branch was `dev/standalone-cand`.
 
 ### Not in `standalone`
 
@@ -103,7 +103,7 @@ merged. Nobody has done that merge yet.
   Liquid Glass on 26). `desktop/app`: Tauri 2 Windows app with the same layout.
 - Version 0.2.1 in `desktop/Cargo.toml`, `tauri.conf.json` and `package.json`. The build number is
   **not stored**: CI computes it as the commit count of the commit it builds (`POKI_SETUP_BUILD`).
-  304 is `a121d41` on `dev/desktop-setup`. An installer built from `standalone` would say 490
+  307 is `c465a5a` on `dev/desktop-setup`. An installer built from `standalone` would say 499
   instead, so the release attaches installers built from the desktop branch.
 - Release channels (`desktop/core/src/release.rs`): `Channel` = Stable, Beta, Alpha, PreAlpha,
   saved in `state/channel.json`, overridable with env `POKI_RELEASE_CHANNEL`. Each channel includes
@@ -146,7 +146,7 @@ merged. Nobody has done that merge yet.
 
 Zhehan's call (Nov 8, 5:14 am ET): this alpha approves everything by default (payments, deleting, sending, calls,
 passwords, Wallet input), because the prompts slowed tasks down and the in-app prompt could not be answered while an
-agent drove the phone. Since `8519c32` both switches live in Settings › Diagnostics › Approvals (Testing), off by default: Ask Before
+agent drove the phone. Since `41509e8` Settings › Diagnostics › Testing has three switches, all off by default: ask_poki Tool (outside agents drive with look and do unless it is on), Ask Before
 Sensitive Steps (the manual prompts; testers are told not to turn it on, it does not fully work yet) and
 Auto-Classifier (Permissiveness Strict, Balanced or Permissive; the chat model decides each sensitive step out of
 sight from what the owner said, shows "Approved by model" or "Not approved by model", and a refused step goes
@@ -154,13 +154,13 @@ through after the owner says yes in the chat). The release notes warn about all 
 
 Also from `8519c32`: on iOS 26 and later Poki keeps running with a BGContinuedProcessingTask instead of silent audio
 and location. `desktop/core` `sign/mod.rs` now rewrites `BGTaskSchedulerPermittedIdentifiers` to the signed bundle
-id, but Poki Setup 304 was built before that, so with 304 iOS refuses the task and Poki falls back to silent audio
-(safe). A Poki Setup built from a commit with that change gets the new keep-alive.
+id. Poki Setup 307 has that change; with an older Setup (304) iOS refuses the task and Poki falls back to silent audio
+(safe).
 
 ## Tag ruleset
 
-This repository's "Protect tags" ruleset (rules/26676466) blocks tag creation for everyone without admin, so
-Zhehan cannot push release tags. Joseph pushes them, or excludes `ios-prealpha-*` and `ios-alpha-*` from the ruleset.
+This repository's "Protect tags" ruleset (rules/26676466) blocks tag creation for everyone without admin, except
+`ios-prealpha-*`, `ios-alpha-*` and `ios-beta-*`, which are excluded (since Nov 8). Any other tag name needs Joseph.
 
 ## Releases and channels (`docs/release-channels.md`)
 
@@ -201,10 +201,11 @@ Zhehan cannot push release tags. Joseph pushes them, or excludes `ios-prealpha-*
 | `ios-prealpha-0.2.8-472` | `13656d7` | iOS `b8c243a`; replaced by iOS `d7e91b2` |
 | `ios-prealpha-0.2.8-478` | `02fd595` | iOS `d7e91b2`; replaced by `2b9ec5b` (approvals off by default) |
 | `ios-prealpha-0.2.8-482` | `ecd655d` | iOS `2b9ec5b`; replaced by `8519c32` (Approvals (Testing), auto-classifier, keep-alive) |
-| **`ios-prealpha-0.2.8-490`** | **this file's commit** | **The release.** iOS `8519c32` and Poki Setup 304 (`a121d41`) |
+| `ios-prealpha-0.2.8-490` | `6c73cff` | iOS `8519c32` and Poki Setup 304; replaced by `41509e8` and Setup 307 |
+| **`ios-prealpha-0.2.8-499`** | **this file's commit** | **The release.** iOS `41509e8` and Poki Setup 307 (`c465a5a`) |
 
 `6e46a8e` (the 478 candidate plus this file) was pushed to `standalone` before the approvals change, so the
-release is a fast-forward on top of it: the merges `2afe565` (`2b9ec5b`) and the `8519c32` merge, with this file's updates; the last one carries the tag.
+release is a fast-forward on top of it: the merges `2afe565` (`2b9ec5b`), `8519c32`, `41509e8` and desktop `c465a5a`, with this file's updates; the last one carries the tag.
 
 ## The relay (`deploy/cf-relay`)
 
@@ -225,7 +226,7 @@ release is a fast-forward on top of it: the merges `2afe565` (`2b9ec5b`) and the
   checks are in the full `ios-app.yml`.
 - `cargo check -p poki-setup-core --no-default-features` passes at `02fd595`, and the core's 19
   tests passed at the `8905942` merge.
-- `cut-release.sh` dry run at `02fd595` gives `ios-prealpha-0.2.8-490`.
+- `git rev-list --count` of this file's commit is 499, so the tag is `ios-prealpha-0.2.8-499`.
 
 ## What was not checked
 
@@ -249,10 +250,13 @@ release is a fast-forward on top of it: the merges `2afe565` (`2b9ec5b`) and the
 4. Five stray "Poki Setup on this computer" certificates on team Q64ZL36CJN from early testing
    should be revoked.
 5. Poki Runner is still built and documented. Decide whether it stays an option or goes.
+6. Known limitations in 499, listed in the release notes as fixes pending: the iOS automation banner stays on
+   screen for the whole time an agent works and whenever Poki is awake, and restarting Poki (Off, then on) quits the app and relaunches it, coming back from
+   the Tap to Open Poki notice when iOS does not reopen it, because there is one automation session per launch.
 
 ## Where things are
 
-- Release notes for this pre-alpha: the GitHub release `ios-prealpha-0.2.8-490`.
+- Release notes for this pre-alpha: the GitHub release `ios-prealpha-0.2.8-499`. Testers are told to switch to Alpha after installing; Zhehan tests on Pre-alpha and proven fixes ship as Alpha versions.
 - Fork with all `dev/` branches: https://github.com/ZhehanZhang/poki-remote
 - Release channels: `docs/release-channels.md`. Poki Setup: `desktop/README.md`,
   `desktop/mac/README.md`. App: `native/ios-app/README.md`. Relay: `deploy/cf-relay/DEPLOY.md`,
