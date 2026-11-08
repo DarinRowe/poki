@@ -30,8 +30,7 @@ struct SettingsView: View {
                     }
                 }
         }
-        .presentationDragIndicator(.hidden)
-        .presentationBackground(Site.page(scheme))
+        .presentationDragIndicator(.visible)
     }
 }
 
@@ -47,125 +46,108 @@ private struct SettingsHome: View {
     @State private var newName = ""
 
     var body: some View {
-        SitePage {
-            VStack(spacing: 0) {
-                Grabber()
-                SheetHeader(title: Text("Settings"), sideWidth: 60, done: done)
-                ScrollView {
-                    VStack(spacing: 0) {
-                        thisIPhone.padding(.top, 4)
-                        GroupFootnote(text: "The relay forwards requests to this iPhone while Poki is open or in the background. It stores nothing; when offline, clients receive an error.")
-                        agents
-                        // The in-process path has no Poki Runner to start or stop (ESP-152).
-                        if model.automationPath == .runner { runner }
-                        phone
+        @Bindable var model = model
+        Form {
+            Section {
+                HStack(spacing: 12) {
+                    BearAvatar(size: 44)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("This iPhone").font(.headline)
+                        Text(verbatim: model.identity.label.isEmpty ? "—" : "\(model.identity.label.prefix(12))…")
+                            .font(.footnote.monospaced()).foregroundStyle(.secondary)
                     }
-                    .padding(.horizontal, 16).padding(.bottom, 40)
+                    Spacer()
+                    let relay = Health.relay(model)
+                    Label(relay.word, systemImage: "circle.fill")
+                        .labelStyle(.titleAndIcon).font(.subheadline)
+                        .foregroundStyle(relay.color == Site.ok ? Color.green : relay.color == Site.bad ? Color.red : Color.secondary)
                 }
-                .scrollBounceBehavior(.basedOnSize)
+                .padding(.vertical, 4)
+            } footer: {
+                Text("The relay forwards requests to this iPhone while Poki is open or in the background. It stores nothing; when offline, clients receive an error.")
             }
-        }
-        .toolbar(.hidden, for: .navigationBar)
-    }
 
-    private var thisIPhone: some View {
-        HStack(spacing: 12) {
-            BearAvatar(size: 44)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("This iPhone").site(17, .semibold, line: 22).foregroundStyle(Site.text)
-                Text(verbatim: model.identity.label.isEmpty ? "—" : "\(model.identity.label.prefix(12))…").mono(13).foregroundStyle(Site.text2)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            let relay = Health.relay(model)
-            HStack(spacing: 6) {
-                StatusDot(color: relay.color == Site.ok ? Site.okInk : relay.color == Site.bad ? Site.danger : Site.text3)
-                Text(relay.word).site(15, line: 18)
-            }
-            .foregroundStyle(relay.color == Site.ok ? Site.okInk : relay.color == Site.bad ? Site.danger : Site.text3)
-        }
-        .padding(.vertical, 14).padding(.horizontal, 16)
-        .whiteCard()
-    }
-
-    @ViewBuilder private var agents: some View {
-        GroupLabel(text: "AGENTS")
-        VStack(spacing: 0) {
-            ForEach(model.identity.secrets) { secret in
-                Button { path.append(.connector(secret)) } label: {
-                    WhiteRow(title: LocalizedStringKey(secret.name)) {
-                        RowValue(text: Text(secret.created.formatted(.dateTime.month(.abbreviated).day())))
+            Section {
+                ForEach(model.identity.secrets) { secret in
+                    NavigationLink(value: SettingsRoute.connector(secret)) {
+                        LabeledContent(secret.name, value: secret.created.formatted(.dateTime.month(.abbreviated).day()))
                     }
-                }
-                .buttonStyle(.plain)
-                .disabled(model.relayAddress == nil)
-                .contextMenu { Button("Revoke Access", systemImage: "xmark.circle", role: .destructive) { model.revoke(secret) } }
-            }
-            HStack {
-                TextField(text: $newName, prompt: Text("Name, e.g., Claude").foregroundStyle(Site.text3)) { Text("Name") }
-                    .site(17, line: 22).foregroundStyle(Site.text)
-                    .submitLabel(.done).onSubmit(add)
-                Button(action: add) { Text("Add").site(17, line: 20).foregroundStyle(model.relayAddress == nil ? Site.text3 : Site.ink) }
-                    .buttonStyle(.plain).frame(height: 32)
                     .disabled(model.relayAddress == nil)
+                    .swipeActions { Button("Revoke", role: .destructive) { model.revoke(secret) } }
+                    .contextMenu { Button("Revoke Access", systemImage: "xmark.circle", role: .destructive) { model.revoke(secret) } }
+                }
+                HStack {
+                    TextField("Name, e.g., Claude", text: $newName).submitLabel(.done).onSubmit(add)
+                    Button("Add", action: add).disabled(model.relayAddress == nil || newName.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+                if let error = model.identity.error {
+                    Label(Self.friendly(error), systemImage: "exclamationmark.triangle").foregroundStyle(.red)
+                }
+            } header: {
+                Text("Agents")
+            } footer: {
+                if model.relayAddress == nil { Text("Set your relay address first: each agent’s address is on your relay.") }
             }
-            .padding(.vertical, 8).padding(.horizontal, 16)
-        }
-        .whiteCard()
-        if model.relayAddress == nil {
-            GroupFootnote(text: "Set your relay address first: each agent’s address is on your relay.")
-        }
-        if let error = model.identity.error {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Image(systemName: "exclamationmark.triangle").font(.system(size: 15)).foregroundStyle(Site.danger)
-                Text(Self.friendly(error)).site(15, line: 20).foregroundStyle(Site.text).fixedSize(horizontal: false, vertical: true)
+
+            // The in-process path has no Poki Runner to start or stop (ESP-152).
+            if model.automationPath == .runner {
+                Section {
+                    LabeledContent("Runner", value: Health.runner(model).word)
+                    Picker("Stop When Idle For", selection: $model.idleStopSeconds) {
+                        ForEach(Self.idleChoices, id: \.0) { Text($0.1).tag($0.0) }
+                    }
+                    if model.runnerPaused {
+                        Button("Start Now") { model.wakeRunner() }
+                    } else {
+                        Button("Stop Runner", role: .destructive) { model.pauseRunner() }.disabled(!model.approvals.isEmpty)
+                    }
+                } header: {
+                    Text("Runner")
+                } footer: {
+                    Text("iOS shows the automation banner only while the runner is active. Poki starts it when needed and stops it when idle. Don’t close Poki Runner while an agent is working.")
+                }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 14).padding(.horizontal, 16)
-            .whiteCard()
-            .padding(.top, 12)
+
+            Section {
+                let done = SetupStep.shown.filter(model.isDone).count
+                let total = SetupStep.shown.count
+                NavigationLink(value: SettingsRoute.relay) {
+                    LabeledContent("Relay") {
+                        Text(model.relayAddress.map { $0.origin.host() ?? $0.origin.absoluteString } ?? String(localized: "Not Set"))
+                            .foregroundStyle(model.relayAddress == nil ? Color.red : Color.secondary)
+                    }
+                }
+                NavigationLink(value: SettingsRoute.memory) {
+                    LabeledContent("Memory", value: String(localized: "\(RoutineStore.shared.routines.count) routines"))
+                }
+                Button(action: openSetup) {
+                    LabeledContent("Setup") {
+                        Text("\(done) of \(total)").foregroundStyle(done == total ? Color.green : Color.secondary)
+                    }
+                }
+                .foregroundStyle(Color(.label))
+                NavigationLink("Diagnostics", value: SettingsRoute.diagnostics)
+            } header: {
+                Text("This iPhone")
+            } footer: {
+                Text(model.automationPath == .inProcess
+                     ? "iOS shows the automation banner only while Poki’s automation session is open. Poki opens it when an agent asks and closes it when idle. Memory holds the routines and notes every agent shares."
+                     : "Memory holds the routines and notes every agent shares. Diagnostics: logs, checks, background hold, addresses, and Live Activity preview.")
+            }
+        }
+        .navigationTitle("Settings")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) { Button("Done", action: done) }
         }
     }
 
     private func add() {
-        guard model.relayAddress != nil else { return }
-        let secret = model.addConnector(name: newName.trimmingCharacters(in: .whitespaces))
+        let name = newName.trimmingCharacters(in: .whitespaces)
+        guard model.relayAddress != nil, !name.isEmpty else { return }
+        let secret = model.addConnector(name: name)
         newName = ""
         path.append(.connector(secret))
-    }
-
-    @ViewBuilder private var runner: some View {
-        @Bindable var model = model
-        GroupLabel(text: "RUNNER")
-        VStack(spacing: 0) {
-            WhiteRow(title: "Runner") { RowValue(text: Text(Health.runner(model).word), chevron: false) }
-            WhiteRow(title: "Stop When Idle For") {
-                Menu {
-                    Picker(selection: $model.idleStopSeconds) {
-                        ForEach(Self.idleChoices, id: \.0) { Text($0.1).tag($0.0) }
-                    } label: { Text("Stop When Idle For") }
-                } label: {
-                    HStack(spacing: 4) {
-                        Text(Self.idleChoices.first { $0.0 == model.idleStopSeconds }?.1 ?? "\(model.idleStopSeconds) s")
-                        Image(systemName: "chevron.up.chevron.down").font(.system(size: 11, weight: .medium))
-                    }
-                    .site(15, line: 18).foregroundStyle(Site.text3)
-                }
-            }
-            if model.runnerPaused {
-                Button { model.wakeRunner() } label: { WhiteRow(title: "Start Now", titleColor: Site.ink, divider: false) }
-                    .buttonStyle(.plain)
-            } else {
-                Button { model.pauseRunner() } label: { WhiteRow(title: "Stop Runner", titleColor: model.approvals.isEmpty ? Site.danger : Site.text3, divider: false) }
-                    .buttonStyle(.plain)
-                    .disabled(!model.approvals.isEmpty)
-            }
-        }
-        .whiteCard()
-        if model.automationPath == .inProcess {
-            GroupFootnote(text: "iOS shows the automation banner only while Poki’s automation session is open. Poki opens it when an agent asks and closes it when idle.")
-        } else {
-            GroupFootnote(text: "iOS shows the automation banner only while the runner is active. Poki starts it when needed and stops it when idle. Don’t close Poki Runner while an agent is working.")
-        }
     }
 
     static let idleChoices: [(Int, LocalizedStringKey)] = [
@@ -219,37 +201,27 @@ private struct RelayView: View {
     @FocusState private var focused: Bool
 
     var body: some View {
-        SitePage {
-            VStack(spacing: 0) {
-                Grabber()
-                SheetHeader(title: Text("Relay"), back: "Settings", onBack: back)
-                ScrollView {
-                    VStack(spacing: 0) {
-                        GroupLabel(text: "RELAY ADDRESS")
-                        HStack {
-                            TextField(text: $text, prompt: Text(verbatim: "https://poki-relay.you.workers.dev").foregroundStyle(Site.text3)) { Text("Relay Address") }
-                                .mono(15).foregroundStyle(Site.text)
-                                .keyboardType(.URL).textContentType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
-                                .focused($focused)
-                                .submitLabel(.done).onSubmit(save)
-                            Button(action: save) { Text("Save").site(17, line: 20).foregroundStyle(canSave ? Site.ink : Site.text3) }
-                                .buttonStyle(.plain).disabled(!canSave)
-                        }
-                        .padding(.vertical, 12).padding(.horizontal, 16)
-                        .whiteCard()
-                        if rejected {
-                            GroupFootnote(text: "That is not a relay address. Enter the address deploy.sh printed, such as https://poki-relay.you.workers.dev.")
-                                .foregroundStyle(Color(hex: 0xFFC9C5))
-                        }
-                        GroupFootnote(text: "Poki has no default relay. Deploy your own to your Cloudflare account with deploy/cf-relay/deploy.sh from the Poki repository, then enter the address it prints. Screenshots and taps pass only through that relay.")
-                        GroupLabel(text: "STATUS")
-                        WhiteRow(title: "Relay", divider: false) { RowValue(text: Text(statusText), chevron: false) }.whiteCard()
-                    }
-                    .padding(.horizontal, 16).padding(.bottom, 40)
+        Form {
+            Section {
+                TextField("https://poki-relay.you.workers.dev", text: $text)
+                    .font(.body.monospaced())
+                    .keyboardType(.URL).textContentType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    .focused($focused)
+                    .submitLabel(.done).onSubmit(save)
+            } header: {
+                Text("Relay Address")
+            } footer: {
+                if rejected {
+                    Text("That is not a relay address. Enter the address deploy.sh printed, such as https://poki-relay.you.workers.dev.").foregroundStyle(.red)
+                } else {
+                    Text("Poki has no default relay. Deploy your own to your Cloudflare account with deploy/cf-relay/deploy.sh from the Poki repository, then enter the address it prints. Screenshots and taps pass only through that relay.")
                 }
             }
+            Section("Status") { LabeledContent("Relay", value: statusText) }
         }
-        .toolbar(.hidden, for: .navigationBar)
+        .navigationTitle("Relay")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Save", action: save).disabled(!canSave) } }
         .onAppear { text = model.relayAddress?.origin.absoluteString ?? ""; if model.relayAddress == nil { focused = true } }
     }
 
@@ -280,44 +252,31 @@ private struct ConnectorDetail: View {
     var body: some View {
         // Rows and Add open this only once a relay is set, so the address is there.
         let url = model.connectorURL(for: secret)?.absoluteString ?? ""
-        SitePage {
-            VStack(spacing: 0) {
-                Grabber()
-                SheetHeader(title: Text(verbatim: secret.name), back: "Settings", onBack: back)
-                ScrollView {
-                    VStack(spacing: 0) {
-                        if let qr = QRCode.image(url) {
-                            Image(uiImage: qr).interpolation(.none).resizable().scaledToFit()
-                                .frame(width: 180, height: 180).padding(20)
-                                .background(.white, in: .rect(cornerRadius: 24, style: .continuous))
-                                .accessibilityLabel(Text("QR code of the address"))
-                                .padding(.top, 12)
-                        }
-                        Text(verbatim: url.replacingOccurrences(of: secret.secret, with: "••••••"))
-                            .mono(13).foregroundStyle(Site.c3).multilineTextAlignment(.center).lineSpacing(3)
-                            .padding(.horizontal, 24).padding(.top, 20)
-                        CapsuleButton(title: copied ? "Copied" : "Copy Address", height: 50) {
-                            UIPasteboard.general.string = url
-                            copied = true
-                        }
-                        .padding(.horizontal, 4).padding(.top, 20)
-                        Text("Add this URL as a remote MCP server in your client. Anyone with this link can control this iPhone while Poki is running. Keep it private, and revoke it here if compromised.")
-                            .site(13, line: 18).foregroundStyle(Site.c4).multilineTextAlignment(.center)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(.horizontal, 20).padding(.top, 20)
-                        VStack(spacing: 0) {
-                            WhiteRow(title: "Added") { RowValue(text: Text(secret.created.formatted(date: .abbreviated, time: .omitted)), chevron: false) }
-                            Button { model.revoke(secret); back() } label: { WhiteRow(title: "Revoke Access", titleColor: Site.danger, divider: false) }
-                                .buttonStyle(.plain)
-                        }
-                        .whiteCard()
-                        .padding(.top, 28)
-                    }
-                    .padding(.horizontal, 16).padding(.bottom, 40)
+        Form {
+            Section {
+                if let qr = QRCode.image(url) {
+                    Image(uiImage: qr).interpolation(.none).resizable().scaledToFit()
+                        .frame(width: 180, height: 180).padding(16)
+                        .background(.white, in: .rect(cornerRadius: 16, style: .continuous))
+                        .frame(maxWidth: .infinity)
+                        .accessibilityLabel(Text("QR code of the address"))
                 }
+                Text(verbatim: url.replacingOccurrences(of: secret.secret, with: "••••••"))
+                    .font(.footnote.monospaced()).foregroundStyle(.secondary).textSelection(.disabled)
+                Button(copied ? "Copied" : "Copy Address", systemImage: copied ? "checkmark" : "doc.on.doc") {
+                    UIPasteboard.general.string = url
+                    copied = true
+                }
+            } footer: {
+                Text("Add this URL as a remote MCP server in your client. Anyone with this link can control this iPhone while Poki is running. Keep it private, and revoke it here if compromised.")
+            }
+            Section {
+                LabeledContent("Added", value: secret.created.formatted(date: .abbreviated, time: .omitted))
+                Button("Revoke Access", role: .destructive) { model.revoke(secret); back() }
             }
         }
-        .toolbar(.hidden, for: .navigationBar)
+        .navigationTitle(Text(verbatim: secret.name))
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 

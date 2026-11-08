@@ -19,45 +19,103 @@ struct SessionsView: View {
     private var store: SessionStore { SessionStore.shared }
 
     var body: some View {
-        VStack(spacing: 0) {
-            List {
-                Section {
-                    strip.listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 8, trailing: 16)).listRowSeparator(.hidden)
-                    if needsSetup { setupRow.listRowSeparator(.hidden) }
+        List {
+            // What matters before any conversation: whether Poki is on, whether agents can reach it,
+            // and what setup still needs.
+            Section {
+                Toggle(isOn: Binding(get: { model.sessionOn }, set: { $0 ? model.startSession() : model.stopSession() })) {
+                    Label {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(verbatim: "Poki")
+                            Text(runLine).font(.footnote).foregroundStyle(.secondary)
+                        }
+                    } icon: { Image(systemName: model.sessionOn ? "power.circle.fill" : "power.circle").foregroundStyle(model.sessionOn ? Color.green : Color.secondary) }
                 }
-                Section {
-                    if store.ordered.isEmpty {
-                        empty.listRowSeparator(.hidden)
+                if model.sessionOn, chat.running || !model.runnerPaused {
+                    Button("Pause", systemImage: "pause.fill") { chat.stop(); model.pauseRunner() }
+                } else if model.sessionOn {
+                    Button("Resume", systemImage: "play.fill") { model.wakeRunner() }
+                }
+                Button(action: openConnectors) {
+                    LabeledContent {
+                        Text(agentsLine)
+                    } label: {
+                        Label("Agents", systemImage: "point.3.connected.trianglepath.dotted")
                     }
-                    ForEach(store.ordered) { session in
-                        Button { open(session) } label: { SessionRow(session: session) }
-                            .buttonStyle(.plain)
-                            .swipeActions {
-                                if !session.live {
-                                    Button(role: .destructive) { store.delete(session.id) } label: { Label("Delete", systemImage: "trash") }
-                                }
+                }
+                .foregroundStyle(Color(.label))
+                if needsSetup {
+                    Button(action: openSetup) {
+                        Label {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(model.pairingPath != nil ? "Finish Setting Up" : "Set Up This iPhone")
+                                Text(model.pairingPath != nil ? "One step is left before Poki can use this iPhone." : "About 5 minutes, once.")
+                                    .font(.footnote).foregroundStyle(.secondary)
                             }
+                        } icon: { Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.orange) }
+                    }
+                    .foregroundStyle(Color(.label))
+                }
+                if !ModelKeys.hasUsableKey {
+                    Button(action: openModel) {
+                        Label("Add a Model Key to Chat", systemImage: "key.fill")
                     }
                 }
             }
-            .listStyle(.plain)
-            .navigationTitle(Text("Sessions"))
-            .navigationBarTitleDisplayMode(.large)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button(action: openDetails) { PokiAvatar(size: 30) }.accessibilityLabel(Text("Poki, details"))
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { chat.newConversation(); openChat() } label: { Image(systemName: "square.and.pencil") }
-                        .accessibilityLabel(Text("New chat with Poki"))
-                        .disabled(chat.running)
+            Section {
+                ForEach(store.ordered) { session in
+                    Button { open(session) } label: { SessionRow(session: session) }
+                        .buttonStyle(.plain)
+                        .swipeActions {
+                            if !session.live {
+                                Button(role: .destructive) { store.delete(session.id) } label: { Label("Delete", systemImage: "trash") }
+                            }
+                        }
                 }
             }
         }
-        .background(Color(.systemBackground))
+        .listStyle(.insetGrouped)
+        .overlay(alignment: .bottom) {
+            if store.ordered.isEmpty {
+                ContentUnavailableView {
+                    Label("No Conversations", systemImage: "bubble.left.and.bubble.right")
+                } description: {
+                    Text("Message Poki, or connect an agent such as Claude or Codex in Settings. Every conversation shows up here.")
+                } actions: {
+                    Button("Message Poki") { openChat() }.buttonStyle(.borderedProminent)
+                }
+            }
+        }
+        .navigationTitle(Text("Chats"))
+        .navigationBarTitleDisplayMode(.large)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { chat.newConversation(); openChat() } label: { Image(systemName: "square.and.pencil") }
+                    .accessibilityLabel(Text("New Chat with Poki"))
+                    .disabled(chat.running)
+            }
+        }
     }
 
-    private var needsSetup: Bool { (model.pairingPath == nil || model.setupStepsLeft) && !model.sessionOn && SessionStore.shared.sessions.isEmpty }
+    /// "Working in Messages", "Ready", "Off".
+    private var runLine: String {
+        if chat.running { return model.currentApp.map { String(localized: "Working in \($0)") } ?? String(localized: "Working") }
+        if !model.sessionOn { return String(localized: "Off. Agents and chats can’t use this iPhone.") }
+        if model.runnerPaused { return String(localized: "Paused") }
+        return String(localized: "On, ready for a task")
+    }
+
+    private var agentsLine: String {
+        let live = SessionStore.shared.liveAgentCount
+        switch model.relayStatus {
+        case .ready: return live > 0 ? String(localized: "Online · \(live) live") : String(localized: "Online")
+        case .connecting: return String(localized: "Connecting")
+        case .offline: return String(localized: "Offline")
+        case .off: return model.identity.secrets.isEmpty ? String(localized: "None yet") : String(localized: "Off")
+        }
+    }
+
+    private var needsSetup: Bool { model.pairingPath == nil || model.setupStepsLeft }
 
     private func open(_ session: SavedSession) {
         if session.kind == .poki {
@@ -68,74 +126,6 @@ struct SessionsView: View {
         }
     }
 
-    // MARK: Strip
-
-    /// Two cards side by side: for people whose agents drive Poki, and for people who talk to Poki.
-    private var strip: some View {
-        HStack(alignment: .top, spacing: 10) {
-            StripCard(title: "For your agents", symbol: "point.3.connected.trianglepath.dotted") {
-                Text(agentsLine).foregroundStyle(ChatColor.secondary)
-                if let url = connectorURL {
-                    Button(copied ? "Copied" : "Copy MCP Address") {
-                        UIPasteboard.general.string = url
-                        copied = true
-                        Task { try? await Task.sleep(for: .seconds(1.5)); copied = false }
-                    }
-                    .fontWeight(.semibold)
-                } else {
-                    Button("Connect an Agent", action: openConnectors).fontWeight(.semibold)
-                }
-            }
-            StripCard(title: "Poki’s own agent", symbol: "bubble.left.and.text.bubble.right") {
-                Text(modelLine).foregroundStyle(ChatColor.secondary).lineLimit(1)
-                Button(ModelKeys.hasUsableKey ? "Change Model" : "Add a Key", action: openModel).fontWeight(.semibold)
-            }
-        }
-        .font(.system(size: 13))
-    }
-
-    private var connectorURL: String? {
-        model.identity.secrets.first.flatMap { model.connectorURL(for: $0)?.absoluteString }
-    }
-
-    private var agentsLine: String {
-        let live = SessionStore.shared.liveAgentCount
-        switch model.relayStatus {
-        case .ready: return live > 0 ? String(localized: "Online · \(live) live") : String(localized: "Online")
-        case .connecting: return String(localized: "Connecting")
-        case .offline: return String(localized: "Offline")
-        case .off: return model.identity.secrets.isEmpty ? String(localized: "No agent yet") : String(localized: "Off")
-        }
-    }
-
-    private var modelLine: String {
-        ModelKeys.hasUsableKey ? ModelKeys.selectedModelName : String(localized: "Not set up")
-    }
-
-    private var setupRow: some View {
-        Button(action: openSetup) {
-            HStack {
-                Image(systemName: "sparkles").foregroundStyle(Site.blue)
-                Text(model.pairingPath != nil ? "Finish setting up this iPhone." : "First, set up this iPhone. About 5 minutes.").foregroundStyle(Color(.label))
-                Spacer()
-                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(ChatColor.secondary)
-            }
-            .font(.system(size: 15))
-            .padding(.vertical, 4)
-        }
-        .buttonStyle(.plain)
-    }
-
-    private var empty: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "bubble.left.and.bubble.right").font(.system(size: 28)).foregroundStyle(ChatColor.secondary)
-            Text("No sessions yet").font(.system(size: 17, weight: .semibold))
-            Text("Chat with Poki, or connect an agent such as Claude or Codex. Every session shows up here.")
-                .font(.system(size: 15)).foregroundStyle(ChatColor.secondary).multilineTextAlignment(.center)
-            Button("Message Poki") { openChat() }.buttonStyle(.borderedProminent).tint(Site.blue).padding(.top, 6)
-        }
-        .frame(maxWidth: .infinity).padding(.vertical, 36).padding(.horizontal, 16)
-    }
 }
 
 private struct StripCard<Content: View>: View {
@@ -260,20 +250,6 @@ struct SessionView: View {
     var body: some View {
         let session = SessionStore.shared.session(id)
         VStack(spacing: 0) {
-            VStack(spacing: 4) {
-                if let session { SessionAvatar(session: session, size: 56) }
-                Text(verbatim: session?.name ?? "").font(.system(size: 12)).foregroundStyle(Color(.label))
-                Text(verbatim: caption(session)).font(.system(size: 11)).foregroundStyle(ChatColor.secondary)
-            }
-            .padding(.top, 2).padding(.bottom, 8)
-            .frame(maxWidth: .infinity)
-            .overlay(alignment: .topLeading) {
-                Button(action: back) {
-                    Image(systemName: "chevron.left").font(.system(size: 20, weight: .semibold)).foregroundStyle(Site.blue).frame(width: 44, height: 44)
-                }
-                .buttonStyle(.plain).padding(.leading, 6).accessibilityLabel(Text("Sessions"))
-            }
-            .background { Rectangle().fill(.bar).ignoresSafeArea(edges: .top).overlay(alignment: .bottom) { ChatColor.separator.frame(height: 0.5) } }
             ChatTranscript(entries: (AskPoki.live(id)?.entries ?? session?.entries) ?? [], typing: AskPoki.live(id)?.awaitingModel ?? false, canRetry: false, retry: {}) {
                 if session?.live == true, let approval = model.approvals.first {
                     ApprovalCard(approval: approval) { approved in model.resolve(approval, approved: approved) }
@@ -284,7 +260,16 @@ struct SessionView: View {
             }
         }
         .background(Color(.systemBackground))
-        .toolbar(.hidden, for: .navigationBar)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                VStack(spacing: 0) {
+                    Text(verbatim: session?.name ?? "").font(.headline)
+                    Text(verbatim: caption(session)).font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .toolbar(.hidden, for: .tabBar)
     }
 
     private func caption(_ session: SavedSession?) -> String {
@@ -307,7 +292,7 @@ private struct ApprovalCard: View {
             Text(verbatim: approval.summary).font(.system(size: 15)).foregroundStyle(Color(.label))
             HStack {
                 Button("Don’t Allow") { answer(false) }.buttonStyle(.bordered)
-                Button("Allow") { answer(true) }.buttonStyle(.borderedProminent).tint(Site.blue)
+                Button("Allow") { answer(true) }.buttonStyle(.borderedProminent)
             }
         }
         .padding(14)

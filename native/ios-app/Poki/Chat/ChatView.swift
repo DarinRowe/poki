@@ -24,18 +24,31 @@ struct ChatView: View {
         // The header and the message field are insets of the conversation, so the field sits right on
         // the keyboard (or the home indicator) and the bubbles scroll under both, as in Messages.
         .safeAreaInset(edge: .top, spacing: 0) {
-            VStack(spacing: 0) {
-                MessageListHeader(dark: false, subtitle: ModelKeys.selectedModelName, back: back, openDetails: openDetails)
-                if voice.isLive || voice.isOn { LiveVoiceBar(voice: voice).transition(.move(edge: .top).combined(with: .opacity)) }
-            }
-            .animation(.snappy, value: voice.isOn)
+            if voice.isOn { LiveVoiceBar(voice: voice).transition(.move(edge: .top).combined(with: .opacity)) }
         }
+        .animation(.snappy, value: voice.isOn)
         .safeAreaInset(edge: .bottom, spacing: 0) {
             ComposerInputView(running: chat.running, send: chat.send, stop: chat.stop, openVoice: openVoice, openModel: openModel,
                               newConversation: chat.newConversation)
         }
         .background(Color(.systemBackground))
-        .toolbar(.hidden, for: .navigationBar)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                VStack(spacing: 0) {
+                    Text(verbatim: "Poki").font(.headline)
+                    Text(verbatim: ModelKeys.selectedModelName).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button("New Conversation", systemImage: "square.and.pencil", action: chat.newConversation).disabled(chat.running)
+                    Button("Model: \(ModelKeys.selectedModelName)", systemImage: "cpu", action: openModel)
+                    Button("Status and Settings", systemImage: "gearshape", action: openDetails)
+                } label: { Image(systemName: "ellipsis.circle") }
+                .accessibilityLabel(Text("More"))
+            }
+        }
         .toolbar(.hidden, for: .tabBar)
     }
 
@@ -491,16 +504,6 @@ struct ComposerInputView: View {
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20)
             }
             HStack(alignment: .bottom, spacing: 8) {
-                Menu {
-                    Button("New Conversation", systemImage: "square.and.pencil", action: newConversation)
-                    Button("Model", systemImage: "cpu", action: openModel)
-                } label: {
-                    Image(systemName: "plus").font(.system(size: 17, weight: .semibold)).foregroundStyle(Color(.label))
-                        .frame(width: 40, height: 40)
-                        .composerGlass(in: Circle())
-                }
-                .accessibilityLabel(Text("More"))
-
                 HStack(alignment: .bottom, spacing: 4) {
                     TextField(text: $input, prompt: Text(dictation.on ? "Listening…" : "Message Poki").foregroundStyle(ChatColor.placeholder), axis: .vertical) { Text("Message Poki") }
                         .font(.system(size: 17))

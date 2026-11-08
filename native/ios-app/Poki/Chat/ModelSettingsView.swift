@@ -9,7 +9,6 @@
 import SwiftUI
 
 struct ModelSettingsView: View {
-    @Environment(\.dismiss) private var dismiss
     var openAgents: () -> Void
     @State private var model = "\(ModelKeys.selectedProvider.rawValue)/\(ModelKeys.selectedModel)"
     @State private var editing: ModelProvider?
@@ -17,96 +16,77 @@ struct ModelSettingsView: View {
     @State private var version = ModelKeys.saved
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 0) {
-                HStack {
-                    Button { dismiss() } label: { Text(verbatim: "‹ Poki").font(.system(size: 17)).foregroundStyle(Site.blue) }
-                        .buttonStyle(.plain).frame(width: 90, alignment: .leading)
-                    Text("Model").font(.system(size: 17, weight: .semibold)).frame(maxWidth: .infinity)
-                    Color.clear.frame(width: 90, height: 1)
-                }
-                .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 14)
-
-                // DialogueSettingsView's Model row.
-                HStack {
-                    Text("Model").font(.system(size: 17)).fixedSize()
-                    Spacer()
-                    Picker("Model", selection: $model) {
-                        ForEach(ModelProvider.allCases.filter(\.wired)) { provider in
-                            ForEach(provider.models) { choice in
-                                Text(choice.name).tag("\(provider.rawValue)/\(choice.id)")
-                            }
+        Form {
+            Section {
+                Picker("Model", selection: $model) {
+                    ForEach(ModelProvider.allCases.filter(\.wired)) { provider in
+                        ForEach(provider.models) { choice in
+                            Text(choice.name).tag("\(provider.rawValue)/\(choice.id)")
                         }
                     }
-                    .labelsHidden()
-                    .tint(ChatColor.secondary)
                 }
-                .padding(.vertical, 4).padding(.leading, 16).padding(.trailing, 4)
-                .groupCard().padding(.horizontal, 16).padding(.bottom, 18)
                 .onChange(of: model) { _, new in
                     let parts = new.split(separator: "/", maxSplits: 1).map(String.init)
                     guard parts.count == 2, let provider = ModelProvider(rawValue: parts[0]) else { return }
                     ModelKeys.selectedProvider = provider
                     ModelKeys.selectedModel = parts[1]
                 }
-
-                GroupedSection(title: "YOUR API KEY", footer: "Keys stay in this iPhone’s Keychain. Poki sends each key only to its own provider.") {
-                    ForEach(Array(ModelProvider.allCases.enumerated()), id: \.element) { i, provider in
-                        providerRow(provider).rowDivider(i < ModelProvider.allCases.count - 1)
-                    }
-                }
-                .padding(.horizontal, 16).padding(.bottom, 18)
-
-                GroupedSection(title: "OR USE AN AGENT YOU ALREADY RUN", footer: "Your computer does the thinking. Poki only taps and types.") {
-                    agentRow("Claude Code", tile: 0xD97757).rowDivider()
-                    agentRow("Codex", tile: 0x111111)
-                }
-                .padding(.horizontal, 16).padding(.bottom, 32)
             }
-            .id(version)
+
+            Section {
+                ForEach(ModelProvider.allCases) { provider in providerRow(provider) }
+            } header: {
+                Text("Your API Key")
+            } footer: {
+                Text("Keys stay in this iPhone’s Keychain. Poki sends each key only to its own provider.")
+            }
+
+            Section {
+                agentRow("Claude Code", tile: 0xD97757)
+                agentRow("Codex", tile: 0x111111)
+            } header: {
+                Text("Or Use an Agent You Already Run")
+            } footer: {
+                Text("Your computer does the thinking. Poki only taps and types.")
+            }
         }
-        .background(Color(.systemGroupedBackground))
-        .toolbar(.hidden, for: .navigationBar)
+        .id(version)
+        .navigationTitle("Model")
+        .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $editing, onDismiss: { version = ModelKeys.saved }) { provider in KeyEntry(provider: provider) }
         .sheet(isPresented: $signingIn, onDismiss: { version = ModelKeys.saved; model = "\(ModelKeys.selectedProvider.rawValue)/\(ModelKeys.selectedModel)" }) { ChatGPTSignIn() }
     }
 
-    // OllamaModelSelectionView's row: icon, name, the whole row tappable.
     private func providerRow(_ provider: ModelProvider) -> some View {
         let hasKey = provider == .custom ? !ModelKeys.customURL.isEmpty : provider == .chatgpt ? ChatGPTAccount.signedIn : ModelKeys.hasKey(provider)
-        return HStack(spacing: 12) {
-            ProviderTile(provider: provider)
-            VStack(alignment: .leading, spacing: 0) {
-                Text(verbatim: provider.name).font(.system(size: 17)).foregroundStyle(Color(.label))
-                if provider == .custom {
-                    Text(hasKey ? ModelKeys.customURL : String(localized: "Any OpenAI-compatible URL")).font(.system(size: 13)).foregroundStyle(ChatColor.secondary).lineLimit(1)
+        return Button { if provider.signsIn { signingIn = true } else { editing = provider } } label: {
+            HStack(spacing: 12) {
+                ProviderTile(provider: provider)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(verbatim: provider.name).foregroundStyle(Color(.label))
+                    if provider == .custom {
+                        Text(hasKey ? ModelKeys.customURL : String(localized: "Any OpenAI-compatible URL")).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                }
+                Spacer()
+                if hasKey {
+                    Image(systemName: "checkmark").fontWeight(.semibold).foregroundStyle(.tint)
+                        .accessibilityLabel(provider.signsIn ? Text("Signed in") : Text("Key added"))
+                } else {
+                    Text(provider == .custom ? "Add URL" : provider.signsIn ? "Sign In" : "Add Key").foregroundStyle(.tint)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            if hasKey {
-                Text(verbatim: "✓").font(.system(size: 17, weight: .semibold)).foregroundStyle(Site.blue)
-                    .accessibilityLabel(provider.signsIn ? Text("Signed in") : Text("Key added"))
-            } else {
-                Text(provider == .custom ? "Add URL" : provider.signsIn ? "Sign In" : "Add Key").font(.system(size: 17)).foregroundStyle(Site.blue)
-            }
         }
-        .padding(.vertical, 9).padding(.horizontal, 16)
-        .contentShape(.rect)
-        .onTapGesture { if provider.signsIn { signingIn = true } else { editing = provider } }
-        .accessibilityAddTraits(.isButton)
     }
 
     private func agentRow(_ name: String, tile: UInt32) -> some View {
         Button(action: openAgents) {
             HStack(spacing: 12) {
-                Text(verbatim: ">_").font(.system(size: 11, weight: .bold, design: .monospaced)).foregroundStyle(.white)
+                Image(systemName: "terminal.fill").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
                     .frame(width: 29, height: 29).background(Color(hex: tile), in: .rect(cornerRadius: 7, style: .continuous))
-                Text(verbatim: name).font(.system(size: 17)).foregroundStyle(Color(.label)).frame(maxWidth: .infinity, alignment: .leading)
-                Text("Via Relay ›").font(.system(size: 17)).foregroundStyle(ChatColor.secondary)
+                LabeledContent(name, value: String(localized: "Via Relay")).foregroundStyle(Color(.label))
             }
-            .padding(.vertical, 9).padding(.horizontal, 16).contentShape(.rect)
         }
-        .buttonStyle(.plain)
     }
 }
 

@@ -73,7 +73,7 @@ struct RootView: View {
             .tag(RootTab.chats)
 
             PokiDetailsView(openVoice: openLiveVoice, openSetup: openSetup, inTab: true)
-                .tabItem { Label("Status", systemImage: model.sessionOn ? "bolt.circle.fill" : "circle.dashed") }
+                .tabItem { Label("Poki", systemImage: "gearshape.fill") }
                 .tag(RootTab.status)
         }
         .tint(Site.blue)
