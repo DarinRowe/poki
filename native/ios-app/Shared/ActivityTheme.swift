@@ -7,7 +7,12 @@ import SwiftUI
 /// The website's colours (poki-site, ESP-139's token table and its final boards 01 to 05): the one
 /// table the app's screens and the Live Activity both draw with.
 enum Site {
+    #if POKI_APP
+    /// The system's blue in the app's screens.
+    static let blue = Color(.systemBlue)
+    #else
     static let blue = Color(hex: 0x0077FD)
+    #endif
     static let sky = Color(hex: 0x5AA7FF)
     /// The page in dark mode (the docs site's blue); the boards draw light mode only.
     static let night = Color(hex: 0x0A2F6B)

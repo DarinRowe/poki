@@ -274,139 +274,96 @@ private struct NoteLine: View {
 
 // MARK: 3, loopback
 
-/// The loopback, checked live, and the proxy apps that can provide it.
+/// The loopback, checked live, and the proxy apps that can provide it. Sections of the step's Form.
 private struct LoopbackPage: View {
     @Environment(AppModel.self) private var model
-    @State private var open: String?
-    @State private var otherOpen = false
-    @State private var copied = false
+    @State private var copied: String?
 
     var body: some View {
         let monitor = model.loopback
-        HStack(spacing: 12) {
-            Circle().fill(monitor.isWorking ? Site.ok : monitor.state == .checking || monitor.state == .off ? Site.text3 : Site.bad)
-                .frame(width: 10, height: 10)
-                .background(Circle().fill(Site.tint).padding(-5))
-                .padding(5)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(headline(monitor)).site(15, .semibold, line: 18)
-                Text(monitor.isWorking ? LocalizedStringKey(monitor.detail) : monitor.state == .noAnswer ? LocalizedStringKey(monitor.detail) : "Checking 10.7.0.1 every few seconds…")
-                    .site(13, line: 16).foregroundStyle(Site.c3).fixedSize(horizontal: false, vertical: true)
+        Section {
+            LabeledContent {
+                if monitor.state == .checking { ProgressView() }
+            } label: {
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(headline(monitor))
+                        Text(monitor.isWorking || monitor.state == .noAnswer ? LocalizedStringKey(monitor.detail) : "Checking 10.7.0.1 every few seconds…")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                } icon: {
+                    Image(systemName: monitor.isWorking ? "checkmark.circle.fill" : monitor.state == .noAnswer ? "exclamationmark.triangle.fill" : "circle.dashed")
+                        .foregroundStyle(monitor.isWorking ? Color.green : monitor.state == .noAnswer ? Color.orange : Color.secondary)
+                }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+        } header: {
+            Text("Status")
         }
-        .padding(.vertical, 14).padding(.horizontal, 11)
-        .glassCard(fill: Site.glass2)
-        .padding(.horizontal, 20).padding(.top, 20)
-        .accessibilityElement(children: .combine)
 
-        // The external app is the way (ESP-168): its list is always shown and always open to read.
-        // The built-in connection is kept, folded under Other Ways at the bottom.
-        SectionCaption(text: "USE YOUR PROXY APP")
-        VStack(spacing: 0) {
-            ForEach(ProxyApps.all) { app in proxyRow(app) }
-            localDevVPN
+        // The external app is the way (ESP-168): every app's steps can be read at any time.
+        Section {
+            ForEach(ProxyApps.all) { app in
+                NavigationLink { ProxyAppPage(app: app) } label: { proxyLabel(app.name, id: app.id, installed: app.isInstalled) }
+            }
+            NavigationLink { LocalDevVPNPage() } label: { proxyLabel("LocalDevVPN", id: "localdevvpn", installed: false, sub: "Free on the App Store") }
+        } header: {
+            Text("Use Your Proxy App")
+        } footer: {
+            if let chosen = model.setup.proxyApp, !monitor.isWorking, model.setup.loopback == .proxy {
+                let name = ProxyApps.all.first { $0.id == chosen }?.name ?? "LocalDevVPN"
+                Text("\(name) is chosen, but nothing answers at 10.7.0.1 right now. Open \(name), make sure it is connected with the loopback on, then come back; this page updates by itself.")
+            }
         }
-        .whiteCard()
-        .padding(.horizontal, 20)
         .disabled(externalLocked)
-        if let chosen = model.setup.proxyApp, !model.loopback.isWorking, model.setup.loopback == .proxy {
-            let name = ProxyApps.all.first { $0.id == chosen }?.name ?? "LocalDevVPN"
-            SetupFootnote(text: "\(name) is chosen, but nothing answers at 10.7.0.1 right now. Open \(name), make sure it is connected with the loopback on, then come back; this page updates by itself.")
-        }
-        otherWays
-        Color.clear.frame(height: 0).onAppear {
-            if open == nil { open = model.setup.proxyApp }
-            if model.setup.loopback == .builtIn { otherOpen = true }
+
+        if model.tunnel.available {
+            Section {
+                switch model.tunnel.state {
+                case .connecting:
+                    LabeledContent("Built-in Connection") { ProgressView() }
+                    Button("Cancel Connection", role: .destructive) { model.tunnel.disconnect() }.disabled(connectionLocked)
+                case .connected:
+                    LabeledContent("Built-in Connection", value: String(localized: "Connected"))
+                    Button("Disconnect Local Connection") { model.tunnel.disconnect() }.disabled(connectionLocked)
+                case .disconnecting:
+                    LabeledContent("Built-in Connection") { ProgressView() }
+                case .failed(let message):
+                    Label(Bundle.main.localizedString(forKey: message, value: message, table: nil), systemImage: "exclamationmark.triangle").foregroundStyle(.red)
+                    enableButton
+                case .off, .unavailable:
+                    enableButton
+                }
+                if model.setup.loopback == .builtIn {
+                    Button("Use the Current VPN") { model.chooseConnection(.proxy) }.disabled(connectionLocked)
+                }
+            } header: {
+                Text("Other Ways")
+            } footer: {
+                Text(model.connectionInUse ? "Stop Poki and finish pairing before changing the local connection." : "No extra app needed. Poki connects only to this iPhone; your normal traffic and DNS stay on their usual routes. iOS shows it as a VPN, so it may disconnect another VPN app.")
+            }
         }
     }
 
-    /// The connection cannot change while Poki is on or pairing, or while the tunnel is changing.
+    private func proxyLabel(_ name: String, id: String, installed: Bool, sub: LocalizedStringKey? = nil) -> some View {
+        let chosen = model.setup.proxyApp == id
+        let working = chosen && model.loopback.isWorking
+        return LabeledContent {
+            if working { Text("Working").foregroundStyle(.green) }
+            else if chosen { Text("Not Answering").foregroundStyle(.orange) }
+            else if installed { Text("Installed") }
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: name)
+                if let sub { Text(sub).font(.footnote).foregroundStyle(.secondary) }
+            }
+        }
+    }
+
     private var connectionLocked: Bool { model.connectionInUse || model.tunnel.busy }
-    /// Reading and following an app's steps is always fine; only moving off a built-in connection that
-    /// Poki is using waits.
     private var externalLocked: Bool { model.setup.loopback == .builtIn && connectionLocked }
 
-    /// Other Ways: the built-in connection, folded.
-    @ViewBuilder private var otherWays: some View {
-        SectionCaption(text: "OTHER WAYS")
-        VStack(spacing: 0) {
-            Button { withAnimation(.snappy) { otherOpen.toggle() } } label: {
-                HStack(spacing: 10) {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Built-in").site(17, line: 22)
-                        Text("No extra app").site(13, line: 16).foregroundStyle(Site.c3)
-                    }
-                    Spacer(minLength: 0)
-                    if model.setup.loopback == .builtIn {
-                        Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold))
-                    }
-                    Text(verbatim: otherOpen ? "⌄" : "›").site(17, line: 22).foregroundStyle(Site.c4)
-                }
-                .padding(.vertical, 11).padding(.horizontal, 16).contentShape(.rect)
-            }
-            .buttonStyle(.plain)
-            .accessibilityValue(otherOpen ? Text("Expanded") : Text("Collapsed"))
-            if otherOpen {
-                Site.edge.frame(height: 1)
-                if model.tunnel.available {
-                    builtIn
-                    if model.setup.loopback == .builtIn {
-                        GlassActionRow(title: "Use the Current VPN", chevron: false, divider: false) { model.chooseConnection(.proxy) }
-                            .disabled(connectionLocked)
-                    }
-                } else {
-                    #if targetEnvironment(simulator)
-                    NoteLine(symbol: "info.circle", text: String(localized: "The built-in connection runs on a physical iPhone. Use your proxy app above."))
-                        .padding(.horizontal, 16).padding(.vertical, 13)
-                    #else
-                    NoteLine(symbol: "info.circle", text: String(localized: "This build uses an external connection. For the built-in connection, install the local-VPN build with signing that supports Network Extensions."))
-                        .padding(.horizontal, 16).padding(.vertical, 13)
-                    #endif
-                }
-            }
-        }
-        .glassCard()
-        .padding(.horizontal, 20)
-        if otherOpen, model.connectionInUse, model.tunnel.available {
-            SetupFootnote(text: "Stop Poki and finish pairing before changing the local connection.")
-        }
-    }
-
-    @ViewBuilder private var builtIn: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("No extra app needed. Poki connects only to this iPhone; your normal internet traffic and DNS stay on their usual routes.")
-                    .site(15, line: 20).fixedSize(horizontal: false, vertical: true)
-                Text("iOS shows this as a VPN. Enabling it may disconnect another VPN app. To keep a compatible VPN, use your proxy app above instead.")
-                    .site(13, line: 18).foregroundStyle(Site.c3).fixedSize(horizontal: false, vertical: true)
-                switch model.tunnel.state {
-                case .connecting: NoteLine(symbol: "hourglass", text: String(localized: "Connecting to this iPhone…"))
-                case .disconnecting: NoteLine(symbol: "hourglass", text: String(localized: "Disconnecting…"))
-                case .connected: NoteLine(symbol: "network", color: Site.ok, text: String(localized: "Local VPN connected. The check above confirms developer access."))
-                case .failed(let message): NoteLine(symbol: "exclamationmark.triangle", color: Site.bad, text: Bundle.main.localizedString(forKey: message, value: message, table: nil))
-                case .off, .unavailable: EmptyView()
-                }
-            }
-            .padding(.horizontal, 16).padding(.vertical, 13)
-            .overlay(alignment: .bottom) { Site.edge.frame(height: 1) }
-            switch model.tunnel.state {
-            case .connecting:
-                GlassActionRow(title: "Cancel Connection", color: Site.danger, divider: false) { model.tunnel.disconnect() }
-                    .disabled(connectionLocked)
-            case .connected:
-                GlassActionRow(title: "Disconnect Local Connection", divider: false) { model.tunnel.disconnect() }
-                    .disabled(connectionLocked)
-            case .failed, .off: enableButton
-            case .disconnecting, .unavailable: EmptyView()
-            }
-        }
-    }
-
-    /// Also while Poki is on with the built-in connection: reconnecting it is how the owner recovers
-    /// when it drops mid-session (the agent is told to tap this), and it changes no choice.
     private var enableButton: some View {
-        GlassActionRow(title: "Enable Local Connection", divider: false) {
+        Button("Enable Local Connection") {
             model.chooseConnection(.builtIn)
             Task { try? await model.tunnel.connect(); model.loopback.check() }
         }
@@ -415,99 +372,94 @@ private struct LoopbackPage: View {
 
     private func headline(_ monitor: LoopbackMonitor) -> LocalizedStringKey {
         switch monitor.state {
-        case .working: "Loopback is on"
-        case .noAnswer: "Tunnel on, no answer"
-        default: "Not on yet"
+        case .working: "Loopback Is On"
+        case .noAnswer: "Tunnel On, No Answer"
+        default: "Not On Yet"
         }
     }
+}
 
-    private func rowHeader(_ name: String, tag: Text?, tagInUse: Bool, tagBad: Bool = false, sub: Text?, id: String) -> some View {
-        Button { withAnimation(.snappy) { open = open == id ? nil : id } } label: {
-            HStack(spacing: 10) {
-                Text(verbatim: name).site(17, line: 22).foregroundStyle(Site.text)
-                if let tag {
-                    tag.site(11, .semibold, line: 14).foregroundStyle(tagInUse ? Site.okInk : tagBad ? Color(hex: 0xB42318) : Site.ink)
-                        .padding(.vertical, 2).padding(.horizontal, 7)
-                        .background(tagInUse ? Color(hex: 0x3CCF7A).opacity(0.16) : tagBad ? Color(hex: 0xF04438).opacity(0.14) : Site.tint, in: .rect(cornerRadius: 6))
+/// One proxy app's steps and its install action.
+private struct ProxyAppPage: View {
+    @Environment(AppModel.self) private var model
+    var app: ProxyApp
+    @State private var copied = false
+
+    var body: some View {
+        Form {
+            Section {
+                ForEach(Array(app.steps.enumerated()), id: \.offset) { i, line in
+                    Label { Text(LocalizedStringKey(line)) } icon: { Image(systemName: "\(i + 1).circle") }
                 }
-                if let sub { sub.site(13, line: 16).foregroundStyle(Site.text3) }
-                Spacer(minLength: 0)
-                Text(verbatim: open == id ? "⌄" : "›").site(17, line: 22).foregroundStyle(Site.text3)
-            }
-            .padding(.vertical, 13).padding(.horizontal, 16).contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-    }
-
-    @ViewBuilder private func proxyRow(_ app: ProxyApp) -> some View {
-        let chosen = model.setup.proxyApp == app.id
-        let expanded = open == app.id
-        // The tag says what is true now: the chosen app is "Working" only while 10.7.0.1 answers;
-        // chosen and silent reads "Not Answering" (the card above says what to do).
-        let working = chosen && model.loopback.isWorking
-        rowHeader(app.name, tag: working ? Text("Working") : chosen ? Text("Not Answering") : app.isInstalled ? Text("Installed") : nil, tagInUse: working, tagBad: chosen && !working,
-                  sub: expanded && !app.minimumVersion.isEmpty ? Text("\(app.minimumVersion) or later") : nil, id: app.id)
-        if expanded {
-            VStack(alignment: .leading, spacing: 10) {
-                NumberedLines(lines: app.steps, onWhite: true)
+            } header: {
+                Text("How To")
+            } footer: {
                 if !app.documented {
-                    Text("As reported by users of \(app.name); not checked against its documentation. The check at the top tells whether it works.")
-                        .site(12, line: 16).foregroundStyle(Site.text3).fixedSize(horizontal: false, vertical: true)
+                    Text("As reported by users of \(app.name); not checked against its documentation. The status on the Loopback page tells whether it works.")
+                } else if !app.minimumVersion.isEmpty {
+                    Text("\(app.name) \(app.minimumVersion) or later.")
                 }
-                if chosen, !working, case .snippet = app.install {
-                    inkLink("Open \(app.name)") { if let url = URL(string: "\(app.scheme)://") { UIApplication.shared.open(url) } }
-                }
+            }
+            Section {
                 switch app.install {
                 case .url(let url):
-                    inkLink(app.id == "surge" ? "Install Poki Module" : "Install Poki Plugin") { choose(app); UIApplication.shared.open(url) }
+                    Button(app.id == "surge" ? "Install Poki Module" : "Install Poki Plugin") { choose(); UIApplication.shared.open(url) }
                 case .toggle:
-                    inkLink("Open \(app.name)") { choose(app); if let url = URL(string: "\(app.scheme)://") { UIApplication.shared.open(url) } }
+                    Button("Open \(app.name)") { choose(); openApp() }
                 case .snippet(let line):
-                    HStack(spacing: 8) {
-                        Text(verbatim: line).mono(12).foregroundStyle(Site.text).textSelection(.enabled)
-                        Spacer(minLength: 0)
-                        Button { choose(app); UIPasteboard.general.string = line; copied = true } label: {
-                            Text(copied ? "Copied" : "Copy").site(14, .semibold, line: 18).foregroundStyle(Site.ink)
-                        }
-                        .buttonStyle(.plain)
+                    Text(verbatim: line).font(.system(.footnote, design: .monospaced)).textSelection(.enabled)
+                    Button(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc") {
+                        choose(); UIPasteboard.general.string = line; copied = true
                     }
-                    .padding(.vertical, 9).padding(.leading, 12).padding(.trailing, 10)
-                    .background(Color(hex: 0xF2F3F5), in: .rect(cornerRadius: 10))
+                    Button("Open \(app.name)") { openApp() }
                 }
             }
-            .padding(.horizontal, 16).padding(.bottom, 14)
+            Section { LoopbackStatusRow() }
         }
-        Site.hair.frame(height: 1)
+        .navigationTitle(Text(verbatim: app.name))
+        .navigationBarTitleDisplayMode(.inline)
     }
 
-    @ViewBuilder private var localDevVPN: some View {
-        let id = "localdevvpn"
-        let chosen = model.setup.proxyApp == id
-        let working = chosen && model.loopback.isWorking
-        rowHeader("LocalDevVPN", tag: working ? Text("Working") : chosen ? Text("Not Answering") : nil, tagInUse: working, tagBad: chosen && !working, sub: Text("Free on the App Store"), id: id)
-        if open == id {
-            VStack(alignment: .leading, spacing: 10) {
-                NumberedLines(lines: [
-                    "No proxy app? Install LocalDevVPN, a free loopback app built for this.",
-                    "Open it and tap Connect, then return to Poki. It may disconnect another VPN app.",
-                ], onWhite: true)
-                inkLink("Get LocalDevVPN on the App Store") {
-                    model.chooseConnection(.proxy); model.setup.proxyApp = id; model.guide(.loopback)
-                    UIApplication.shared.open(URL(string: "https://apps.apple.com/app/id6755608044")!)
-                }
-            }
-            .padding(.horizontal, 16).padding(.bottom, 14)
-        }
-    }
+    private func openApp() { if let url = URL(string: "\(app.scheme)://") { UIApplication.shared.open(url) } }
 
-    private func inkLink(_ title: LocalizedStringKey, action: @escaping () -> Void) -> some View {
-        Button(action: action) { Text(title).site(15, .semibold, line: 20).foregroundStyle(Site.ink) }.buttonStyle(.plain)
-    }
-
-    private func choose(_ app: ProxyApp) {
+    private func choose() {
         model.chooseConnection(.proxy)
         model.setup.proxyApp = app.id
         model.guide(.loopback)
+    }
+}
+
+private struct LocalDevVPNPage: View {
+    @Environment(AppModel.self) private var model
+    var body: some View {
+        Form {
+            Section("How To") {
+                Label("No proxy app? Install LocalDevVPN, a free loopback app built for this.", systemImage: "1.circle")
+                Label("Open it and tap Connect, then return to Poki. It may disconnect another VPN app.", systemImage: "2.circle")
+            }
+            Section {
+                Button("Get LocalDevVPN on the App Store") {
+                    model.chooseConnection(.proxy); model.setup.proxyApp = "localdevvpn"; model.guide(.loopback)
+                    UIApplication.shared.open(URL(string: "https://apps.apple.com/app/id6755608044")!)
+                }
+            }
+            Section { LoopbackStatusRow() }
+        }
+        .navigationTitle(Text(verbatim: "LocalDevVPN"))
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+/// The live loopback check, one row.
+private struct LoopbackStatusRow: View {
+    @Environment(AppModel.self) private var model
+    var body: some View {
+        let working = model.loopback.isWorking
+        LabeledContent("Loopback") {
+            Text(working ? "Working" : model.loopback.state == .noAnswer ? "No Answer" : "Checking…")
+                .foregroundStyle(working ? Color.green : Color.secondary)
+        }
+        .onAppear { model.loopback.resume() }
     }
 }
 
@@ -523,7 +475,7 @@ private struct PairingPage: View {
         var run: @MainActor (AppModel) -> Void
     }
 
-    /// The pairing page's own main button; nil leaves Continue.
+    /// The pairing page's own main button.
     @MainActor static func mainAction(_ model: AppModel) -> MainAction? {
         switch model.pairing {
         case .pin?: return MainAction(title: "Open Settings") { openSettings($0, for: .pairing) }
@@ -543,144 +495,100 @@ private struct PairingPage: View {
     }
 
     var body: some View {
-        Group {
-            switch model.pairing {
-            case .pin(let pin)?: code(pin)
-            case .advertising?:
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "dot.radiowaves.left.and.right").font(.system(size: 14, weight: .semibold))
-                            .symbolEffect(.pulse, options: .repeating)
-                        Text("Waiting for Settings. Tap Pair with Poki there.").site(15, .semibold, line: 20)
-                    }
-                    NumberedLines(lines: [
-                        "Open **Settings › Privacy & Security › Developer Mode**.",
-                        "Tap **Pair with Poki** and enter the code shown here and on the Lock Screen.",
-                    ])
+        switch model.pairing {
+        case .pin(let pin)?:
+            Section {
+                Text(verbatim: pin.count == 6 ? "\(pin.prefix(3)) \(pin.suffix(3))" : pin)
+                    .font(.system(.largeTitle, design: .rounded).weight(.bold)).monospacedDigit()
+                    .frame(maxWidth: .infinity).padding(.vertical, 8)
+                    .accessibilityLabel(Text(verbatim: pin.map(String.init).joined(separator: " ")))
+            } header: {
+                Text("Pairing Code")
+            } footer: {
+                Text("Enter this code in Settings. It also appears on the Lock Screen.")
+            }
+            Section { Button("Cancel Pairing", role: .destructive) { model.cancelPairing() } }
+        case .advertising?:
+            Section {
+                Label("Waiting for Settings. Tap Pair with Poki there.", systemImage: "dot.radiowaves.left.and.right")
+                    .symbolEffect(.pulse, options: .repeating)
+                Label("Open **Settings › Privacy & Security › Developer Mode**.", systemImage: "1.circle")
+                Label("Tap **Pair with Poki** and enter the code shown here and on the Lock Screen.", systemImage: "2.circle")
+            }
+            Section {
+                Button("Open Settings", systemImage: "gear") { openSettings(model, for: .pairing) }
+                Button("Cancel Pairing", role: .destructive) { model.cancelPairing() }
+            }
+        case .failed(let why)?:
+            Section { Label(why, systemImage: "exclamationmark.triangle").foregroundStyle(.red) }
+        default:
+            if let trouble = model.pairingTrouble {
+                Section {
+                    Label(String(localized: "The phone no longer accepts this pairing: \(trouble)"), systemImage: "exclamationmark.triangle")
+                } footer: {
+                    Text(SetupStep.onDevicePairing ? "This happens after a restore, a reset of Location & Privacy, or when the phone forgot Poki. Pair again; the old key is replaced." : "This happens after a restore, a reset of Location & Privacy, or when the phone forgot Poki. Pair again from Poki Setup on your computer and send the new file here; the old key is replaced.")
                 }
-                .padding(16).frame(maxWidth: .infinity, alignment: .leading).glassCard()
-                .padding(.horizontal, 20).padding(.top, 24)
-                VStack(spacing: 0) {
-                    OpenSettingsRow(step: .pairing)
-                    GlassActionRow(title: "Cancel Pairing", color: Site.danger, divider: false) { model.cancelPairing() }
+            } else if model.pairingPath != nil {
+                Section {
+                    Label(model.pairingVerifiedAt.map { String(localized: "Paired. The phone accepted it at \($0.formatted(date: .omitted, time: .shortened)).") }
+                            ?? String(localized: "Paired. Checked the next time the runner starts."), systemImage: "checkmark.seal.fill")
                 }
-                .glassCard().padding(.horizontal, 20).padding(.top, 16)
-            case .failed(let why)?:
-                NoteLine(symbol: "exclamationmark.triangle", text: why).padding(16).frame(maxWidth: .infinity, alignment: .leading)
-                    .glassCard().padding(.horizontal, 20).padding(.top, 24)
-            default:
-                if let trouble = model.pairingTrouble {
-                    VStack(alignment: .leading, spacing: 8) {
-                        NoteLine(symbol: "exclamationmark.triangle", text: String(localized: "The phone no longer accepts this pairing: \(trouble)"))
-                        Text(SetupStep.onDevicePairing ? "This happens after a restore, a reset of Location & Privacy, or when the phone forgot Poki. Pair again; the old key is replaced." : "This happens after a restore, a reset of Location & Privacy, or when the phone forgot Poki. Pair again from Poki Setup on your computer and send the new file here; the old key is replaced.")
-                            .site(13, line: 18).foregroundStyle(Site.c3).fixedSize(horizontal: false, vertical: true)
-                    }
-                    .padding(16).frame(maxWidth: .infinity, alignment: .leading).glassCard()
-                    .padding(.horizontal, 20).padding(.top, 24)
-                } else if model.pairingPath != nil {
-                    NoteLine(symbol: "checkmark.seal.fill", color: Site.ok,
-                             text: model.pairingVerifiedAt.map { String(localized: "Paired. The phone accepted it at \($0.formatted(date: .omitted, time: .shortened)).") }
-                                ?? String(localized: "Paired. Checked the next time the runner starts."))
-                        .padding(16).frame(maxWidth: .infinity, alignment: .leading).glassCard()
-                        .padding(.horizontal, 20).padding(.top, 24)
-                } else if SetupStep.onDevicePairing {
-                    InstructionsCard(lines: [
-                        "Connect to Wi‑Fi and tap **Start Pairing**. Allow local network access when prompted.",
-                        "Poki will open Settings. Go to **Privacy & Security › Developer Mode** and tap **Pair with Poki**.",
-                        "Enter the code shown here and on the Lock Screen.",
-                    ])
-                } else {
-                    fromComputer
+            } else if SetupStep.onDevicePairing {
+                Section("How To") {
+                    Label("Connect to Wi‑Fi and tap **Start Pairing**. Allow local network access when prompted.", systemImage: "1.circle")
+                    Label("Poki will open Settings. Go to **Privacy & Security › Developer Mode** and tap **Pair with Poki**.", systemImage: "2.circle")
+                    Label("Enter the code shown here and on the Lock Screen.", systemImage: "3.circle")
+                }
+            } else {
+                Section {
+                    Label("Pairing on the phone itself needs iOS 27; this iPhone runs iOS \(UIDevice.current.systemVersion). Pair it from a computer instead.", systemImage: "1.circle")
+                    Label("Open **Poki Setup** on your Mac or PC, connect this iPhone by cable, and tap **Pair**. Tap **Trust** on the iPhone when asked.", systemImage: "2.circle")
+                    Label("Send the pairing file here: scan the code Poki Setup shows with the Camera, AirDrop the file to this iPhone and open it with Poki, or tap **Import Pairing File** below.", systemImage: "3.circle")
+                } header: {
+                    Text("How To")
+                } footer: {
+                    Text("No Poki Setup yet? Any lockdown pairing file works: pymobiledevice3, jitterbugpair or StikPair make one.")
                 }
             }
+        }
+        if let action = Self.mainAction(model) {
+            Section { Button(action.title) { action.run(model) }.bold() }
         }
         if let note = model.pairingNote {
-            NoteLine(symbol: note.hasPrefix(String(localized: "Pairing file received.")) ? "checkmark.circle.fill" : "info.circle",
-                     color: note.hasPrefix(String(localized: "Pairing file received.")) ? Site.ok : Site.text, text: note)
-                .padding(.horizontal, 36).padding(.top, 10)
+            Section { Text(note).font(.footnote) }
         }
-        diskImage.padding(.horizontal, 20).padding(.top, 14)
-        SectionCaption(text: "OTHER WAYS")
-        VStack(spacing: 0) {
-            GlassActionRow(title: "Import Pairing File", chevron: true, divider: cancelShown || pairAgainShown) { importing = true }
-            if pairAgainShown {
-                GlassActionRow(title: "Pair Again", divider: cancelShown) { Self.pair(model) }
-            }
-            if cancelShown {
-                GlassActionRow(title: "Cancel Pairing", color: Site.danger, divider: false) { model.cancelPairing() }
-            }
+        Section {
+            diskImage
+        } header: {
+            Text("Developer Disk Image")
         }
-        .glassCard().padding(.horizontal, 20)
+        Section {
+            Button("Import Pairing File") { importing = true }
+            if SetupStep.onDevicePairing && model.pairing == nil && model.pairingTrouble == nil && model.pairingPath != nil {
+                Button("Pair Again") { Self.pair(model) }
+            }
+        } header: {
+            Text("Other Ways")
+        } footer: {
+            if let importError { Text(importError).foregroundStyle(.red) }
+        }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.propertyList, .xml, .data]) { result in
             do { try model.importPairingFile(from: result.get()); importError = nil }
             catch { importError = String(localized: "Invalid Pairing File: \(error.localizedDescription)") }
         }
-        if let importError {
-            Text(importError).site(13, line: 18).foregroundStyle(Site.danger)
-                .padding(.horizontal, 36).padding(.top, 8)
-        }
-    }
-
-    private var cancelShown: Bool { if case .pin? = model.pairing { true } else { false } }
-    /// Paired and fine: pairing again is the other way (on the phone itself, iOS 27 and later).
-    private var pairAgainShown: Bool { SetupStep.onDevicePairing && model.pairing == nil && model.pairingTrouble == nil && model.pairingPath != nil }
-
-    /// Before iOS 27 the phone cannot pair with itself: the pairing file is made on a computer with
-    /// Poki Setup (or any tool that writes a lockdown pairing file) and sent here.
-    @ViewBuilder private var fromComputer: some View {
-        InstructionsCard(lines: [
-            "Pairing on the phone itself needs iOS 27; this iPhone runs iOS \(UIDevice.current.systemVersion). Pair it from a computer instead.",
-            "Open **Poki Setup** on your Mac or PC, connect this iPhone by cable, and tap **Pair**. Tap **Trust** on the iPhone when asked.",
-            "Send the pairing file here: scan the code Poki Setup shows with the Camera, AirDrop the file to this iPhone and open it with Poki, or tap **Import Pairing File** below.",
-        ])
-        SetupFootnote(text: "No Poki Setup yet? Any lockdown pairing file works: pymobiledevice3, jitterbugpair or StikPair make one. Import it below.")
-    }
-
-    private func code(_ pin: String) -> some View {
-        VStack(spacing: 14) {
-            HStack(spacing: 8) {
-                ForEach(Array(pin.enumerated()), id: \.offset) { i, digit in
-                    if i == 3 && pin.count == 6 { Color.clear.frame(width: 4, height: 1) }
-                    Text(verbatim: String(digit)).site(34, .heavy, line: 42).monospacedDigit()
-                        .frame(width: 44, height: 58)
-                        .background(Site.glass2, in: .rect(cornerRadius: 12, style: .continuous))
-                        .contentTransition(.numericText())
-                }
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(Text(verbatim: pin.map(String.init).joined(separator: " ")))
-            Text("Enter this code in Settings. It also appears on the Lock Screen.").site(15, line: 21).foregroundStyle(Site.c3)
-                .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 24).padding(.horizontal, 16).padding(.bottom, 20)
-        .glassCard(20)
-        .padding(.horizontal, 20).padding(.top, 24)
     }
 
     @ViewBuilder private var diskImage: some View {
         switch model.diskImage.state {
         case .ready:
-            HStack(spacing: 8) { StatusDot(color: Site.ok, size: 8); Text("Developer Disk Image Ready").site(13, line: 16).foregroundStyle(Site.c4) }
+            LabeledContent("Status", value: String(localized: "Ready"))
         case .downloading(let step):
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.mini).tint(Site.c4)
-                Text("Downloading Developer Disk Image: \(step)").site(13, line: 16).foregroundStyle(Site.c4)
-            }
+            LabeledContent("Downloading") { HStack { Text(verbatim: "\(step)"); ProgressView() } }
         case .missing:
-            Button { Task { await model.diskImage.download() } } label: {
-                Text("Download Developer Disk Image").site(15, .semibold, line: 20)
-            }
-            .buttonStyle(.plain)
+            Button("Download Developer Disk Image") { Task { await model.diskImage.download() } }
         case .failed(let why):
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Image(systemName: "exclamationmark.triangle").font(.system(size: 13, weight: .semibold))
-                    Text(why).site(14, line: 19).foregroundStyle(Site.c3).fixedSize(horizontal: false, vertical: true)
-                }
-                Button { Task { await model.diskImage.download() } } label: { Text("Download Again").site(15, .semibold, line: 20) }
-                    .buttonStyle(.plain).padding(.leading, 21)
-            }
+            Label(why, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+            Button("Download Again") { Task { await model.diskImage.download() } }
         }
     }
 }
@@ -691,49 +599,38 @@ private struct BackgroundPage: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        VStack(spacing: 12) {
-            card(symbol: model.background.allowed ? "checkmark.circle.fill" : model.background.denied ? "exclamationmark.triangle" : "location",
-                 color: model.background.allowed ? Site.ok : Site.text,
-                 title: "Location",
-                 text: model.background.allowed ? "Location allowed. Poki stays active in the background and never records your location."
-                     : model.background.denied ? "Location Services is off for Poki, so iOS will suspend it shortly after you leave the app."
-                     : "iOS requires a background mode to keep apps running. Poki uses lowest-accuracy location and shows the location indicator while active.",
-                 action: model.background.allowed ? nil : model.background.denied ? ("Open Settings", { openSettings(model, for: .background) })
-                     : ("Allow Location Access", { model.background.requestPermission() }))
-            card(symbol: model.activitiesEnabled ? "checkmark.circle.fill" : "exclamationmark.triangle",
-                 color: model.activitiesEnabled ? Site.ok : Site.text,
-                 title: model.activitiesEnabled ? "Live Activities are on" : "Live Activities are off",
-                 text: model.activitiesEnabled ? "Poki shows steps, pairing codes, and approvals on the Lock Screen."
-                     : "Live Activities are off for Poki. Turn them on to view agent steps and approve sensitive actions.",
-                 action: model.activitiesEnabled ? nil : ("Open Settings", { openSettings(model, for: .background) }))
-        }
-        .padding(.horizontal, 20).padding(.top, 24)
-        SetupFootnote(text: SetupStep.inProcess ? "The first time Poki turns on after a restart, iOS asks for your passcode to allow automation. Enter it once; Poki never sees it." : "The first time Poki Runner starts after a restart, iOS asks for your passcode to allow automation. Enter it once; Poki never sees it.")
-            .padding(.top, 8)
-    }
-
-    private func card(symbol: String, color: Color, title: LocalizedStringKey, text: LocalizedStringKey,
-                      action: (LocalizedStringKey, () -> Void)?) -> some View {
-        VStack(spacing: 0) {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: symbol).font(.system(size: 18)).foregroundStyle(color).frame(width: 20, height: 22)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title).site(17, line: 22)
-                    Text(text).site(14, line: 19).foregroundStyle(Site.c3).fixedSize(horizontal: false, vertical: true)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+        Section {
+            LabeledContent {
+                if model.background.allowed { Image(systemName: "checkmark.circle.fill").foregroundStyle(.green) }
+            } label: {
+                Label("Location", systemImage: "location")
             }
-            .padding(.vertical, 13).padding(.horizontal, 16)
-            if let action {
-                Site.edge.frame(height: 1)
-                Button(action: action.1) {
-                    Text(action.0).site(17, line: 22).frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 13).padding(.leading, 48).padding(.trailing, 16).contentShape(.rect)
-                }
-                .buttonStyle(.plain)
+            if model.background.denied {
+                Button("Open Settings", systemImage: "gear") { openSettings(model, for: .background) }
+            } else if !model.background.allowed {
+                Button("Allow Location Access") { model.background.requestPermission() }
             }
+        } footer: {
+            Text(model.background.allowed ? "Poki stays active in the background and never records your location."
+                 : model.background.denied ? "Location Services is off for Poki, so iOS will suspend it shortly after you leave the app."
+                 : "iOS needs a background mode to keep apps running. Poki uses lowest-accuracy location and shows the location indicator while active.")
         }
-        .glassCard()
+        Section {
+            LabeledContent {
+                if model.activitiesEnabled { Image(systemName: "checkmark.circle.fill").foregroundStyle(.green) }
+                else { Text("Off").foregroundStyle(.orange) }
+            } label: {
+                Label("Live Activities", systemImage: "platter.filled.bottom.iphone")
+            }
+            if !model.activitiesEnabled {
+                Button("Open Settings", systemImage: "gear") { openSettings(model, for: .background) }
+            }
+        } footer: {
+            Text(model.activitiesEnabled ? "Poki shows steps, pairing codes and approvals on the Lock Screen." : "Turn them on to see the agent’s steps and approve sensitive actions.")
+        }
+        Section { EmptyView() } footer: {
+            Text(SetupStep.inProcess ? "The first time Poki turns on after a restart, iOS asks for your passcode to allow automation. Enter it once; Poki never sees it." : "The first time Poki Runner starts after a restart, iOS asks for your passcode to allow automation. Enter it once; Poki never sees it.")
+        }
     }
 }
 
@@ -875,33 +772,22 @@ struct SetupStepPage: View {
         }
     }
 
+    /// Loopback, pairing and background: the same native form, with their live sections.
     private var cardPage: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 8) {
-                    Image(systemName: model.isDone(step) ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                        .foregroundStyle(model.isDone(step) ? Color.green : Color.orange)
-                    Text(model.isDone(step) ? "Done" : "Needed").font(.subheadline.weight(.semibold))
+        Form {
+            Section {
+                LabeledContent {
+                    Text(model.isDone(step) ? "Done" : "Needed").foregroundStyle(model.isDone(step) ? Color.green : Color.orange)
+                } label: {
+                    Label(step.pageTitle, systemImage: step.symbol)
                 }
-                .padding(.horizontal, 20).padding(.top, 12)
-                Text(step.pageSummary).font(.subheadline).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 20).padding(.top, 6)
-                content
+            } footer: {
+                Text(step.pageSummary)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.bottom, 24)
+            content
         }
-        .background(Color(.systemGroupedBackground))
         .navigationTitle(Text(step.pageTitle))
         .navigationBarTitleDisplayMode(.inline)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if step == .pairing, let action = PairingPage.mainAction(model) {
-                CapsuleButton(title: action.title) { action.run(model) }
-                    .padding(.horizontal, 20).padding(.vertical, 8)
-                    .background(.bar)
-            }
-        }
         .onAppear {
             model.loopback.resume()
             if step == .loopback, model.setup.loopback == .builtIn, model.tunnel.available, !model.tunnel.connected, !model.tunnel.busy, !model.connectionInUse {

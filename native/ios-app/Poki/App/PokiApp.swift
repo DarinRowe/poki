@@ -81,7 +81,8 @@ struct RootView: View {
                 .badge(model.setupComplete ? 0 : SetupStep.shown.filter { !model.isDone($0) }.count)
                 .tag(RootTab.setup)
         }
-        .tint(Site.blue)
+        // A sidebar on iPad (and beside another app in Split View), the tab bar on iPhone.
+        .tabViewStyle(.sidebarAdaptable)
         .task { InProcessProbe.shared.startFromLaunchArguments(model: model) }
         .onChange(of: scenePhase, initial: true) { _, phase in
             if phase == .active { model.becameActive(); AskPoki.refresh() } else if phase == .background { model.wentToBackground() }

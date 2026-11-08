@@ -127,8 +127,8 @@ struct SessionsView: View {
 private extension View {
     /// Blue-tinted Liquid Glass on iOS 26 and later; a blue prominent capsule before it.
     @ViewBuilder func newChatStyle() -> some View {
-        if #available(iOS 26.0, *) { buttonStyle(.glassProminent).buttonBorderShape(.capsule).tint(Site.blue) }
-        else { buttonStyle(.borderedProminent).buttonBorderShape(.capsule).tint(Site.blue) }
+        if #available(iOS 26.0, *) { buttonStyle(.glassProminent).buttonBorderShape(.capsule).tint(.blue) }
+        else { buttonStyle(.borderedProminent).buttonBorderShape(.capsule).tint(.blue) }
     }
 }
 
