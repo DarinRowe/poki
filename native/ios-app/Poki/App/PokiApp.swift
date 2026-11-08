@@ -74,7 +74,8 @@ struct RootView: View {
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
         // The pages keep the safe area for their content and draw their own colour behind the status bar.
-        .ignoresSafeArea()
+        // Only the container's edges: the keyboard's stays, so the chat's input box rises above it.
+        .ignoresSafeArea(.container)
         .background((page == .voice ? Site.blue : Color(.systemBackground)).ignoresSafeArea())
         .fullScreenCover(item: $details) { start in
             PokiDetailsView(openVoice: { withAnimation { page = .voice } }, openSetup: openSetup, start: start.path)
