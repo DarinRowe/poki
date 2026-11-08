@@ -150,7 +150,7 @@ struct SigningOptionsPage: View {
     var body: some View {
         Form {
             Section {
-                Picker("Release Channel", selection: Binding(get: { signer.status?.channel ?? "beta" }, set: { id in Task { await signer.setChannel(id) } })) {
+                Picker("Release Channel", selection: Binding(get: { signer.status?.channel ?? "stable" }, set: { id in Task { await signer.setChannel(id) } })) {
                     ForEach(channels) { Text($0.title).tag($0.id) }
                 }
                 .pickerStyle(.inline)
