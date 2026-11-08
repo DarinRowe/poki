@@ -5,10 +5,15 @@ use crate::{Error, Reporter, Result};
 use idevice::{IdeviceService, amfi::AmfiClient};
 use std::time::Duration;
 
-pub async fn status(phone: &Phone) -> Result<bool> {
+/// amfid answers one request per connection and then closes it, so every request gets its own
+/// connection; a second request on the same one fails with "device socket io failed".
+async fn amfi(phone: &Phone) -> Result<AmfiClient> {
     let provider = phone.provider()?;
-    let mut amfi = AmfiClient::connect(&*provider).await?;
-    Ok(amfi.get_developer_mode_status().await?)
+    Ok(AmfiClient::connect(&*provider).await?)
+}
+
+pub async fn status(phone: &Phone) -> Result<bool> {
+    Ok(amfi(phone).await?.get_developer_mode_status().await?)
 }
 
 /// Turns Developer Mode on. Returns `Ok(true)` when it was already on, `Ok(false)` when the phone
@@ -16,22 +21,24 @@ pub async fn status(phone: &Phone) -> Result<bool> {
 /// screen for the second step; iOS asks for the passcode itself.
 pub async fn enable(phone: &Phone, reporter: &Reporter) -> Result<bool> {
     reporter.step("devmode", "Turning on Developer Mode");
-    let provider = phone.provider()?;
-    let mut amfi = AmfiClient::connect(&*provider).await?;
-    if amfi.get_developer_mode_status().await? {
+    if status(phone).await? {
         reporter.done("devmode", Some("Developer Mode is already on.".into()));
         return Ok(true);
     }
     // Shows the switch in Settings > Privacy & Security first, so the person can also do it by hand.
-    let _ = amfi.reveal_developer_mode_option_in_ui().await;
-    match amfi.enable_developer_mode().await {
+    if let Ok(mut c) = amfi(phone).await {
+        let _ = c.reveal_developer_mode_option_in_ui().await;
+    }
+    match amfi(phone).await?.enable_developer_mode().await {
         Ok(()) => {}
+        // The phone restarts at once and can drop the connection before it answers.
+        Err(idevice::IdeviceError::Socket(_)) => {}
         Err(idevice::IdeviceError::PasswordProtected) | Err(idevice::IdeviceError::DeviceLocked) => {
-            return Err(Error::NeedsPerson("Unlock the iPhone, then try Developer Mode again. iOS only turns it on from an unlocked phone.".into()));
+            return Err(Error::NeedsPerson("Unlock the iPhone or iPad, then try Developer Mode again. iOS only turns it on from an unlocked phone.".into()));
         }
         Err(e) => return Err(e.into()),
     }
-    reporter.waiting("devmode", "The iPhone restarts. When it is back, tap Turn On and enter the passcode.");
+    reporter.waiting("devmode", "The iPhone or iPad restarts. When it is back, tap Turn On and enter the passcode.");
     Ok(false)
 }
 
@@ -40,19 +47,17 @@ pub async fn wait_until_on(udid: &str, reporter: &Reporter, wait: Duration) -> R
     let deadline = tokio::time::Instant::now() + wait;
     loop {
         if tokio::time::Instant::now() > deadline {
-            return Err(Error::NeedsPerson("Developer Mode is still off. On the iPhone, open Settings > Privacy & Security > Developer Mode and turn it on.".into()));
+            return Err(Error::NeedsPerson("Developer Mode is still off. On the iPhone or iPad, open Settings > Privacy & Security > Developer Mode and turn it on.".into()));
         }
         if let Ok(phones) = Phone::list().await {
             if let Some(phone) = phones.into_iter().find(|p| p.udid == udid) {
-                if let Ok(provider) = phone.provider() {
-                    if let Ok(mut amfi) = AmfiClient::connect(&*provider).await {
-                        if let Ok(true) = amfi.get_developer_mode_status().await {
-                            // Settings may still show the "Turn on Developer Mode?" sheet; accept it when asked.
-                            let _ = amfi.accept_developer_mode().await;
-                            reporter.done("devmode", Some("Developer Mode is on.".into()));
-                            return Ok(());
-                        }
+                if let Ok(true) = status(&phone).await {
+                    // Settings may still show the "Turn on Developer Mode?" sheet; accept it when asked.
+                    if let Ok(mut c) = amfi(&phone).await {
+                        let _ = c.accept_developer_mode().await;
                     }
+                    reporter.done("devmode", Some("Developer Mode is on.".into()));
+                    return Ok(());
                 }
             }
         }
