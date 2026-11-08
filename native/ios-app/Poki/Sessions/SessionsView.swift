@@ -27,7 +27,7 @@ struct SessionsView: View {
             // and what setup still needs.
             Section {
                 // Every setup item still open, each straight to its fix.
-                ForEach(SetupStep.shown.filter { !model.isDone($0) && $0 != .loopback }) { step in
+                ForEach(SetupStep.shown.filter { !model.isDone($0) }) { step in
                     NavigationLink(value: step) { SetupStepRow(step: step) }
                 }
                 if !ModelKeys.hasUsableKey {
@@ -75,22 +75,6 @@ struct SessionsView: View {
         .navigationTitle(Text(verbatim: "Poki"))
         .toolbarTitleDisplayMode(.inlineLarge)
         .toolbar {
-            // Indicators left of the power button: the local connection and the agents' relay, each
-            // blue when working and grey (or orange) with a slashed icon when not; a tap opens its page.
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                NavigationLink(value: SetupStep.loopback) {
-                    Image(systemName: model.loopback.isWorking ? "network" : "network.slash")
-                        .foregroundStyle(model.loopback.isWorking ? Color.blue : Color.orange)
-                        .contentTransition(.symbolEffect(.replace))
-                }
-                .accessibilityLabel(Text(model.loopback.isWorking ? "Local connection on" : "Local connection off"))
-                Button(action: openConnectors) {
-                    Image(systemName: agentsIcon.0)
-                        .foregroundStyle(agentsIcon.1)
-                        .contentTransition(.symbolEffect(.replace))
-                }
-                .accessibilityLabel(Text("Agents: \(agentsLine)"))
-            }
             ToolbarItem(placement: .topBarTrailing) {
                 PowerButton(on: model.sessionOn, turnOn: { model.startSession() }, turnOff: { chat.stop(); model.stopSession() })
             }
@@ -124,16 +108,6 @@ struct SessionsView: View {
         if !model.sessionOn { return String(localized: "Off. Agents and chats can’t use this iPhone.") }
         if model.runnerPaused { return String(localized: "Paused") }
         return String(localized: "On, ready for a task")
-    }
-
-    /// The agents indicator: online blue, connecting yellow, otherwise grey and slashed.
-    private var agentsIcon: (String, Color) {
-        switch model.relayStatus {
-        case .ready: ("person.2.wave.2.fill", .blue)
-        case .connecting: ("person.2.wave.2", .yellow)
-        case .offline: ("person.2.slash", .orange)
-        case .off: ("person.2.slash", .secondary)
-        }
     }
 
     private var agentsLine: String {
