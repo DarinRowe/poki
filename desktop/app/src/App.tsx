@@ -38,12 +38,15 @@ export default function App() {
     <div className="app">
       <div className="drag" />
       <aside className={`sidebar ${win ? "win" : ""}`}>
-        <div className="brand"><img src="/icon.png" alt="" /><b>Poki Setup</b></div>
+        <div className="brand"><img src="/icon.png" alt="" /><div><b>Poki Setup</b><small>{t("for iPhone")}</small></div></div>
         <nav className="nav">
           {pages.map((p) => (
-            <button key={p.id} className={page === p.id ? "on" : ""} onClick={() => setPage(p.id)}>
-              <svg viewBox="0 0 24 24" fill="currentColor"><path d={p.icon} /></svg>{t(p.label)}
-            </button>
+            <div key={p.id}>
+              {p.id === "relay" && <div className="group">{t("Advanced")}</div>}
+              <button className={page === p.id ? "on" : ""} onClick={() => setPage(p.id)}>
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d={p.icon} /></svg>{t(p.label)}
+              </button>
+            </div>
           ))}
         </nav>
         <div className="foot">v{info?.version ?? "…"}</div>

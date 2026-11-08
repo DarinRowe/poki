@@ -5,6 +5,8 @@ export type Lang = "en" | "zh-Hans";
 const zh: Record<string, string> = {
   "Set up": "安装",
   "Phones": "手机",
+  "Advanced": "高级",
+  "for iPhone": "iPhone 版",
   "Apple ID": "Apple ID",
   "Relay": "中继",
   "Connectors": "连接器",
