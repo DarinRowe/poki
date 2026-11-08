@@ -44,7 +44,7 @@ final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
         // iOS 26 and later: the system's continued processing task keeps Poki up, with no audio and
         // no location. Silent audio only when iOS refuses it or ends it early.
         if #available(iOS 26.0, *) {
-            let run = continued as? ContinuedRun ?? ContinuedRun()
+            let run = ContinuedRun.shared
             continued = run
             run.onExpired = { [weak self] in
                 guard let self, self.isOn else { return }
