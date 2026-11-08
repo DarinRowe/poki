@@ -1,6 +1,6 @@
 //! Deploys Poki's relay Worker (`deploy/cf-relay/worker.js`, bundled into this binary) to the
 //! person's own Cloudflare account through the API, the same upload DEPLOY.md documents.
-//! The API token is used for the deploy and not kept unless the person asks.
+//! The API token is kept in the system keychain, so the relay can be updated without pasting it.
 use crate::{Error, Result, Reporter};
 use serde::{Deserialize, Serialize};
 
@@ -241,6 +241,18 @@ impl Cloudflare {
         }
         Ok(Deployed { account_id: account.id.clone(), account_name: account.name.clone(), address: address.clone(), first_deploy, deployed_at: crate::keeper::now(), phone_link: phone_link(&address), worker_sha256: Some(sha256_hex(&code)), worker_source: Some(source) })
     }
+}
+
+const TOKEN_NAME: &str = "cloudflare-relay-token";
+
+/// The Cloudflare API token saved in the keychain, if any.
+pub fn saved_token() -> Option<String> { crate::apple::store::secret_get(TOKEN_NAME) }
+pub fn save_token(token: &str) -> Result<()> { crate::apple::store::secret_set(TOKEN_NAME, token.trim()) }
+pub fn forget_token() -> Result<()> { crate::apple::store::secret_delete(TOKEN_NAME) }
+
+/// The token to use: the one given, else the saved one.
+pub fn token_or_saved(given: Option<String>) -> Result<String> {
+    given.filter(|t| !t.trim().is_empty()).or_else(saved_token).ok_or_else(|| Error::msg("Paste a Cloudflare API token first."))
 }
 
 pub fn phone_link(address: &str) -> String { format!("poki://setup?relay={}", crate::pairshare::urlencode(address)) }

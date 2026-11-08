@@ -13,11 +13,13 @@ export default function Relay() {
   const [up, setUp] = useState<boolean | null>(null);
   const [qr, setQr] = useState<string | null>(null);
   const [worker, setWorker] = useState<WorkerStatus | null>(null);
+  const [saved, setSaved] = useState(false);
   const open = async (url: string) => { const { openUrl } = await import("@tauri-apps/plugin-opener"); openUrl(url); };
   const { steps, apply, fail, reset } = useSteps([{ id: "relay", title: "Deploy" }]);
   useEffect(() => {
     api.relayState().then(setRelay);
     api.relayWorker().then(setWorker).catch(() => {});
+    api.relayTokenSaved().then(setSaved).catch(() => {});
     const un = onProgress("relay", apply);
     return () => { un.then((f) => f()); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -28,7 +30,7 @@ export default function Relay() {
   };
   const deploy = async () => {
     setBusy(true); setError(null); reset(); apply({ job: "relay", kind: "step", id: "relay", title: "Deploy" });
-    try { const d = await api.relayDeploy(token, accountId); setRelay(d); api.relayWorker().then(setWorker).catch(() => {}); setToken(""); setAccounts([]); apply({ job: "relay", kind: "done", id: "relay", detail: d.address }); }
+    try { const d = await api.relayDeploy(token, accountId); setRelay(d); setSaved(true); api.relayWorker().then(setWorker).catch(() => {}); setToken(""); setAccounts([]); apply({ job: "relay", kind: "done", id: "relay", detail: d.address }); }
     catch (e) { fail(failureText(e)); setError(failureText(e)); }
     setBusy(false);
   };
@@ -62,9 +64,9 @@ export default function Relay() {
       )}
       <Card>
         <h2>{t("Deploy to my Cloudflare account")}</h2>
-        <p className="muted small">Make a token at dash.cloudflare.com/profile/api-tokens with the "Edit Cloudflare Workers" template. It is used for this deploy and not kept. The Worker runs inside Workers Paid's included amounts; see deploy/cf-relay/DEPLOY.md.</p>
+        <p className="muted small">Make a token at dash.cloudflare.com/profile/api-tokens with the "Edit Cloudflare Workers" template. Poki Setup keeps it in Credential Manager so you can update the relay later. The Worker runs inside Workers Paid's included amounts; see deploy/cf-relay/DEPLOY.md.</p>
         <div className="stack">
-          <Field label={t("Cloudflare API token")}><div className="row"><input className="input mono grow" type="password" value={token} onChange={(e) => setToken(e.target.value)} /><Capsule kind="ghost" onClick={lookup} disabled={token.length < 20}>{t("Continue")}</Capsule></div></Field>
+          <Field label={t("Cloudflare API token")}><div className="row">{saved ? <span className="muted grow">{t("Saved in Credential Manager")} <Capsule kind="ghost" sm onClick={() => api.relayForgetToken().then(() => { setSaved(false); setAccounts([]); })}>{t("Forget")}</Capsule></span> : <input className="input mono grow" type="password" value={token} onChange={(e) => setToken(e.target.value)} />}<Capsule kind="ghost" onClick={lookup} disabled={!saved && token.length < 20}>{t("Continue")}</Capsule></div></Field>
           {accounts.length > 0 && (
             <Field label="Account"><select className="input" value={accountId} onChange={(e) => setAccountId(e.target.value)}>{accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></Field>
           )}

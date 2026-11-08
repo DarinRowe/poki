@@ -75,6 +75,8 @@ pub fn run() {
             commands::latest_release,
             commands::relay_state,
             commands::relay_worker,
+            commands::relay_token_saved,
+            commands::relay_forget_token,
             commands::relay_accounts,
             commands::relay_deploy,
             commands::relay_check,

@@ -178,15 +178,6 @@ struct SetupView: View {
         )
     }
 
-    /// What the last check found: the newest Poki on the channel and whether Poki Setup is current.
-    private var updateLine: String? {
-        guard let update else { return model.info.map { "Poki Setup \($0.version)" } }
-        var poki = "No Poki release published yet"
-        if let r = model.latest { poki = "Newest Poki \(r.version) (\(r.build))" }
-        let setup = update.newer ? "Poki Setup \(update.latest ?? "") is available" : "Poki Setup \(update.current) is up to date"
-        return "\(poki). \(setup)."
-    }
-
     /// Downloads the newer Poki Setup and opens its disk image; drag it over this one.
     private func installUpdate() async {
         installingUpdate = true
@@ -212,43 +203,40 @@ struct SetupView: View {
 
     @ViewBuilder private var appSection: some View {
         Section {
-            LabeledContent("Poki Build") {
-                HStack {
-                    if let ipa {
-                        Text(ipa.lastPathComponent).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                        Button { self.ipa = nil } label: { Image(systemName: "xmark.circle.fill") }
-                            .buttonStyle(.borderless).foregroundStyle(.secondary)
-                            .accessibilityLabel("Use the latest release instead")
-                    } else if let latest = model.latest {
-                        Text(buildLine(latest)).foregroundStyle(.secondary)
-                    } else {
-                        Text("Choose a Poki IPA").foregroundStyle(.secondary)
-                    }
-                    Button("Choose…") { choosingIPA = true }
-                }
-            }
-            Picker("Channel", selection: channelChoice) {
+            // What gets installed: the channel, with the release under it (or the IPA file picked).
+            Picker(selection: channelChoice) {
                 ForEach(model.channels) { c in Text(c.title).tag(c.id) }
-            }
-            LabeledContent {
-                Button(checking ? "Checking…" : "Check for Updates") { Task { await checkForUpdates() } }
-                    .disabled(checking)
             } label: {
-                Text("Updates")
-                if let line = updateLine { Text(line) }
+                Text("Poki")
+                Text(installLine)
             }
-            if let u = update, u.newer {
-                LabeledContent("Poki Setup \(u.latest ?? "") is available") {
-                    Button(installingUpdate ? "Downloading…" : "Install Update") { Task { await installUpdate() } }
-                        .pokiProminentButton()
+            .disabled(ipa != nil)
+            // Poki Setup itself.
+            LabeledContent {
+                if let u = update, u.newer {
+                    Button(installingUpdate ? "Downloading…" : "Update to \(u.latest ?? "")") { Task { await installUpdate() } }
                         .disabled(installingUpdate)
+                } else {
+                    Button(checking ? "Checking…" : "Check for Updates") { Task { await checkForUpdates() } }
+                        .disabled(checking)
                 }
+            } label: {
+                Text("Poki Setup")
+                Text(setupLine)
             }
-            if let channelError {
-                Text(channelError).font(.callout).foregroundStyle(.red).textSelection(.enabled)
-            }
-            Toggle("Also show a QR code to send the pairing file over Wi-Fi", isOn: $handOff)
             HStack {
+                Menu {
+                    Button(ipa == nil ? "Install from an IPA File…" : "Choose Another IPA File…") { choosingIPA = true }
+                    if ipa != nil { Button("Use the Release Instead") { ipa = nil } }
+                    Divider()
+                    Toggle("Also Show a QR Code for Wi-Fi Pairing", isOn: $handOff)
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("More install options")
                 Spacer()
                 Button {
                     Task { await install() }
@@ -260,14 +248,28 @@ struct SetupView: View {
                 .keyboardShortcut(.defaultAction)
                 .disabled(!canInstall)
             }
-            if let failed {
-                Text(failed).font(.callout).foregroundStyle(.red).textSelection(.enabled)
+            if let message = failed ?? channelError {
+                Text(message).font(.callout).foregroundStyle(.red).textSelection(.enabled)
             }
         } header: {
             Text("Poki")
         } footer: {
-            Text(footer).font(.footnote).foregroundStyle(.secondary)
+            if let f = footer { Text(f).font(.footnote).foregroundStyle(.secondary) }
         }
+    }
+
+    /// The line under "Poki": what Install will put on the iPhone.
+    private var installLine: String {
+        if let ipa { return "From \(ipa.lastPathComponent)" }
+        if let latest = model.latest { return buildLine(latest) }
+        return "No release published yet"
+    }
+
+    /// The line under "Poki Setup": its version, or what the last check found.
+    private var setupLine: String {
+        let version = model.info?.version ?? ""
+        guard let update else { return version }
+        return update.newer ? "\(version), \(update.latest ?? "") is available" : "\(version), up to date"
     }
 
     /// The release Install will use; says so when the chosen channel has none and a less stable one stands in.
@@ -275,15 +277,16 @@ struct SetupView: View {
         let id = r.channel ?? model.channel?.id ?? ""
         let title = model.channels.first(where: { $0.id == id })?.title ?? id.capitalized
         if let chosen = model.channel, !id.isEmpty, chosen.id != id {
-            return "No \(chosen.title) release yet. Using \(title) \(r.version) (\(r.build))"
+            return "\(title) \(r.version) (\(r.build)), no \(chosen.title) release yet"
         }
-        return "\(title) release, \(r.version) (\(r.build))"
+        return "\(r.version) (\(r.build))"
     }
 
-    private var footer: String {
+    /// Why Install is not available yet, if it is not.
+    private var footer: String? {
         if model.account?.signedIn != true { return "Sign in first. Your Apple Account password goes to Apple only." }
-        if ipa == nil && model.latest == nil { return "No Poki release is published on any channel yet. Choose the Poki IPA you downloaded (the “external” one)." }
-        return "Poki Setup signs Poki for your team, installs it, and gives Poki its pairing file, so it can work on its own."
+        if ipa == nil && model.latest == nil { return "No Poki release is published yet. Use ⋯ to install from the Poki IPA you downloaded (the “external” one)." }
+        return nil
     }
 
     private var canInstall: Bool {
