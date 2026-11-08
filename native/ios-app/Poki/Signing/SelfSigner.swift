@@ -258,11 +258,29 @@ final class SelfSigner {
         request["manifest"] = Self.home.appendingPathComponent("ready/\(p.kind)/manifest.json").path
         let reopen = "nz.zheha.poki.signing.reopen"
         scheduleReopenNotice(id: reopen)
+        steppedAside = false
+        installFraction = nil
+        // iOS holds the last part of an upgrade until the app it replaces leaves the screen: Poki
+        // steps aside to the Home Screen by itself once the new copy is almost in (or has stalled
+        // there), keeping a background task so the request can finish; iOS then ends Poki, and the
+        // notice above reopens it.
+        let background = UIApplication.shared.beginBackgroundTask(withName: "Poki update")
+        let watch = Task { @MainActor [weak self] in
+            var last: (fraction: Double, since: Date)?
+            while !Task.isCancelled, let self, self.working != nil {
+                try? await Task.sleep(for: .seconds(1))
+                guard let f = self.installFraction else { continue }
+                if last?.fraction != f { last = (f, Date()) }
+                if f >= 0.9 || (f >= 0.4 && Date().timeIntervalSince(last!.since) > 5) { self.stepAside(); break }
+            }
+        }
         await run("Installing") {
             _ = try await SignerBridge.call(request) { [weak self] progress in
                 Task { @MainActor in self?.show(progress) }
             }
         }
+        watch.cancel()
+        UIApplication.shared.endBackgroundTask(background)
         // Still here: iOS did not end Poki (or the install failed).
         if lastError != nil { UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [reopen]) }
     }
@@ -280,11 +298,27 @@ final class SelfSigner {
         }
     }
 
+    /// The upgrade's progress while it installs, for `install`'s watch.
+    private var installFraction: Double?
+    private var steppedAside = false
+
+    /// Poki to the Home Screen, as the person swiping up would: iOS finishes the upgrade only once the
+    /// app it replaces is no longer in front. Once per install.
+    private func stepAside() {
+        guard !steppedAside, UIApplication.shared.applicationState == .active else { return }
+        steppedAside = true
+        working = String(localized: "Finishing the update: Poki closes and the notice reopens it")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+            UIApplication.shared.perform(NSSelectorFromString("suspend"))
+        }
+    }
+
     private func show(_ progress: [String: Any]) {
         switch progress["kind"] as? String {
         case "step": working = progress["title"] as? String ?? working; fraction = nil
         case "part":
             fraction = progress["fraction"] as? Double
+            if progress["id"] as? String == "install" { installFraction = fraction }
             if let d = progress["detail"] as? String { working = d }
         case "note", "waiting": if let t = progress["text"] as? String { working = t }
         default: break
