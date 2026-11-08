@@ -133,10 +133,12 @@ public final class GymScorecard {
         // An element whose whole label is the text comes before one that only contains it (a tap on
         // "Open" must not land on the alert "Open in Poki Gym?").
         let exact = candidates.filter { $0.contains(" \"\(text)\" ") || $0.contains(" \"\(text) = ") }
-        let lines = exact.isEmpty ? candidates : exact
-        guard let line = last ? lines.last : lines.first else { return nil }
-        let head = line.split(separator: " ").first.map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "+~ ")) } ?? ""
-        return Int(head)
+        // Only element lines count: a "did: wait_until: "text" appeared" line also quotes the text.
+        func number(_ line: Substring) -> Int? {
+            Int(line.split(separator: " ").first.map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "+~ ")) } ?? "")
+        }
+        let numbered = (exact.isEmpty ? candidates : exact).compactMap(number)
+        return last ? numbered.last : numbered.first
     }
 
     /// A system permission alert ("X Would Like to Send You Notifications") sits over every app until
@@ -594,8 +596,10 @@ public final class GymScorecard {
             let backToGrid = await call("back to the grid", "do", ["actions": [["back": true], ["wait_until": ["settled": true, "ms": 2500]]]])
             var grid = (ref(in: backToGrid, "Photo,", type: "Image") ?? ref(in: backToGrid, "Library", type: "Button")) != nil ? backToGrid : await call("look (full) at the grid", "look", ["full": true])
             // The What's New sheet can slide up late, over the grid.
-            for _ in 1...2 where (ref(in: grid, "Photo,", type: "Image") ?? ref(in: grid, "Library", type: "Button")) == nil && ref(in: grid, "Continue", type: "Button") != nil {
-                _ = await dismissTip(grid)
+            // The What's New sheet can slide up late, over the grid, and the notifications alert after it.
+            for _ in 1...3 where (ref(in: grid, "Photo,", type: "Image") ?? ref(in: grid, "Library", type: "Button")) == nil
+                && (ref(in: grid, "Continue", type: "Button") != nil || grid.contains("Would Like")) {
+                _ = await dismissSystemAlert(await dismissTip(grid))
                 grid = await call("look (full) at the grid (after the sheet)", "look", ["full": true])
             }
             check((ref(in: grid, "Photo,", type: "Image") ?? ref(in: grid, "Library", type: "Button")) != nil, "back returns to the photo grid")
