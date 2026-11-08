@@ -12,6 +12,7 @@ struct RelayView: View {
     @State private var error: String?
     @State private var relayUp: Bool?
     @State private var worker: WorkerStatus?
+    @State private var tokenSaved = false
 
     var body: some View {
         Form {
@@ -64,7 +65,16 @@ struct RelayView: View {
                 }
             }
             Section {
-                SecureField("Cloudflare API Token", text: $token, prompt: Text("Paste the token"))
+                if tokenSaved {
+                    LabeledContent("Cloudflare API Token") {
+                        HStack {
+                            Text("Saved in Keychain").foregroundStyle(.secondary)
+                            Button("Forget") { Task { _ = try? await model.bridge.call("relay_forget_token", as: Bool?.self); tokenSaved = false; accounts = [] } }
+                        }
+                    }
+                } else {
+                    SecureField("Cloudflare API Token", text: $token, prompt: Text("Paste the token"))
+                }
                 if !accounts.isEmpty {
                     Picker("Account", selection: $accountID) {
                         ForEach(accounts) { Text($0.name).tag($0.id) }
@@ -76,7 +86,7 @@ struct RelayView: View {
                     Spacer()
                     if working { ProgressView().controlSize(.small) }
                     if accounts.isEmpty {
-                        Button("Continue") { Task { await loadAccounts() } }.disabled(token.isEmpty || working)
+                        Button("Continue") { Task { await loadAccounts() } }.disabled((token.isEmpty && !tokenSaved) || working)
                     } else {
                         Button(model.relay == nil ? "Deploy Relay" : "Update Relay") { Task { await deploy() } }
                             .pokiProminentButton()
@@ -87,14 +97,17 @@ struct RelayView: View {
             } header: {
                 Text(model.relay == nil ? "Deploy" : "Redeploy")
             } footer: {
-                Text("Use the “Edit Cloudflare Workers” template. Poki Setup uses the token once and doesn't keep it.")
+                Text("Use the “Edit Cloudflare Workers” template. Poki Setup keeps the token in your Keychain, so you can update the relay later without pasting it again.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }
         .pokiPage()
         .task {
             if let d = model.relay, !model.demo { await check(d.address) } else if model.demo { relayUp = true }
-            if !model.demo { worker = try? await model.bridge.call("relay_worker") }
+            if !model.demo {
+                tokenSaved = (try? await model.bridge.call("relay_token_saved")) ?? false
+                worker = try? await model.bridge.call("relay_worker")
+            }
         }
     }
 
@@ -103,10 +116,18 @@ struct RelayView: View {
         error = nil
         defer { working = false }
         do {
-            accounts = try await model.bridge.call("relay_accounts", ["token": token])
+            var args: [String: Any?] = [:]
+            if !token.isEmpty { args["token"] = token }
+            accounts = try await model.bridge.call("relay_accounts", args)
             accountID = accounts.first?.id ?? ""
             if accounts.isEmpty { error = "This token can't see any Cloudflare account." }
         } catch { self.error = error.localizedDescription }
+    }
+
+    private var deployArgs: [String: Any?] {
+        var args: [String: Any?] = ["account_id": accountID]
+        if !token.isEmpty { args["token"] = token }
+        return args
     }
 
     private func deploy() async {
@@ -114,9 +135,10 @@ struct RelayView: View {
         error = nil
         defer { working = false }
         do {
-            let d: Deployed = try await model.job("relay") { try await model.bridge.call("relay_deploy", ["token": token, "account_id": accountID]) }
+            let d: Deployed = try await model.job("relay") { try await model.bridge.call("relay_deploy", deployArgs) }
             model.relay = d
             worker = try? await model.bridge.call("relay_worker")
+            tokenSaved = (try? await model.bridge.call("relay_token_saved")) ?? false
             token = ""
             accounts = []
             await check(d.address)

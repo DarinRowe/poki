@@ -32,6 +32,58 @@ impl Account {
 /// The host's vault (Poki on the iPhone) holds the account under this name.
 const VAULT_NAME: &str = "apple-account";
 
+/// A secret of Poki Setup's own: the host's vault when one is installed, else the system keychain
+/// (macOS Keychain, Windows Credential Manager), or a 0600 file in file mode.
+pub fn secret_get(name: &str) -> Option<String> {
+    if let Some(v) = crate::vault::installed() {
+        return v.get(name).ok().flatten().and_then(|b| String::from_utf8(b).ok()).filter(|s| !s.is_empty());
+    }
+    if file_mode() {
+        return std::fs::read_to_string(paths::state_dir().ok()?.join(format!("{name}.secret"))).ok().filter(|s| !s.is_empty());
+    }
+    #[cfg(not(feature = "os-keychain"))]
+    unreachable!("file_mode is always on without the OS keychain");
+    #[cfg(feature = "os-keychain")]
+    keyring::Entry::new(SERVICE, name).ok()?.get_password().ok().filter(|s| !s.is_empty())
+}
+
+pub fn secret_set(name: &str, value: &str) -> Result<()> {
+    if let Some(v) = crate::vault::installed() {
+        return v.set(name, value.as_bytes());
+    }
+    if file_mode() {
+        let p = paths::state_dir()?.join(format!("{name}.secret"));
+        std::fs::write(&p, value)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600))?;
+        }
+        return Ok(());
+    }
+    #[cfg(not(feature = "os-keychain"))]
+    unreachable!("file_mode is always on without the OS keychain");
+    #[cfg(feature = "os-keychain")]
+    keyring::Entry::new(SERVICE, name).and_then(|e| e.set_password(value)).map_err(|e| Error::msg(format!("keychain: {e}")))
+}
+
+pub fn secret_delete(name: &str) -> Result<()> {
+    if let Some(v) = crate::vault::installed() {
+        return v.delete(name);
+    }
+    if file_mode() {
+        let _ = std::fs::remove_file(paths::state_dir()?.join(format!("{name}.secret")));
+        return Ok(());
+    }
+    #[cfg(not(feature = "os-keychain"))]
+    unreachable!("file_mode is always on without the OS keychain");
+    #[cfg(feature = "os-keychain")]
+    match keyring::Entry::new(SERVICE, name).and_then(|e| e.delete_credential()) {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(Error::msg(format!("keychain: {e}"))),
+    }
+}
+
 #[cfg(feature = "os-keychain")]
 fn entry() -> Result<keyring::Entry> {
     keyring::Entry::new(SERVICE, "apple-account").map_err(|e| Error::msg(format!("keychain: {e}")))

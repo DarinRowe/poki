@@ -175,6 +175,7 @@ pub fn signing_identity_json(ident: &identity::Identity, apple_id: &str) -> Resu
 
 /// Writes the signing identity into Poki's container. Failing is not fatal: Poki then needs the
 /// computer for renewals, as before.
+#[cfg(feature = "device")]
 async fn hand_signing_identity(phone: &device::Phone, built: &SignedBuild, apple_id: &str, reporter: &Reporter) {
     let res = async {
         let bytes = signing_identity_json(&built.identity, apple_id)?;
