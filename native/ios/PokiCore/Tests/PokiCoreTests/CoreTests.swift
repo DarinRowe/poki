@@ -504,7 +504,7 @@ final class MCPTests: XCTestCase {
         let session = try XCTUnwrap(initialized.headers["mcp-session-id"])
         XCTAssertEqual(signals.value, [.started(id: session, client: "claude-ai", version: "1.2")])
         let list = try JSON.parse(await post(core, ["jsonrpc": "2.0", "id": 2, "method": "tools/list"], session: session).body)
-        XCTAssertEqual(list["result"]?["tools"]?.array?.compactMap { $0["name"]?.string }, ["look", "do", "status", "ask_poki"])
+        XCTAssertEqual(list["result"]?["tools"]?.array?.compactMap { $0["name"]?.string }, ["look", "do", "routines", "status", "ask_poki"])
         XCTAssertEqual(list["result"]?["tools"]?[3]?["inputSchema"]?["required"]?[0], "task")
         let call = try JSON.parse(await post(core, ["jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": ["name": "ask_poki", "arguments": ["task": "read the time"]]], session: session).body)
         let text = call["result"]?["content"]?[0]?["text"]?.string ?? ""
