@@ -4624,6 +4624,16 @@
         }
       }
     },
+    "iOS asks for the passcode to allow UI Automation after Poki restarts, or 8 hours after it was last entered. Enter it once; Poki carries on by itself." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 重启后，或距上次输入密码超过 8 小时，iOS 会要求输入密码以允许 UI 自动化。输入一次即可，Poki 会自己继续。"
+          }
+        }
+      }
+    },
     "iOS requires a background mode to keep apps running. Poki uses lowest-accuracy location and shows the location indicator while active." : {
       "localizations" : {
         "zh-Hans" : {

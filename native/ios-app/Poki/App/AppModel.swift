@@ -235,8 +235,9 @@ final class AppModel {
         return ChatModel.delegatedBusy
     }
 
-    init(launcher: RunnerLauncher = RustLauncher(), pairer: DevicePairing = RustPairing()) {
+    init(launcher: RunnerLauncher = RustLauncher(), pairer: DevicePairing = RustPairing(), automation: InProcessAutomation = PKInProcess.shared()) {
         ActivityController.endAll()
+        self.automation = automation
         // A reinstall emptied the container: the pairing file comes back from the Keychain (and the
         // setup state did the same in `SetupState.load`), so the owner is not sent through setup again.
         if SetupVault.restorePairingIfMissing() { AppLog.shared.add("pairing", "pairing file restored from the Keychain after a reinstall") }
@@ -329,7 +330,13 @@ final class AppModel {
 
     /// The in-process session as prepare last answered it in this process (ESP-152).
     private var inProcessSession = InProcessSession.opening
+    /// Poki's own automation session (ESP-152); a fake in tests.
+    private let automation: InProcessAutomation
     private var inProcessWarming = false
+    /// iOS is asking the owner for the passcode to allow automation (in-process): an open has not
+    /// answered in 5 s. The Live Activity and Poki's home ask the owner, and the agent reads that the
+    /// owner has to enter it.
+    private var inProcessPasscode = false
     /// When the open under way began: one that has not answered in `staleOpen` seconds no longer
     /// holds the next one back (seen on the phone: the banner up, the session open, and every look
     /// answered "still starting" because an open that never answered blocked all the others).
@@ -352,8 +359,9 @@ final class AppModel {
         // its answer is not taken (it would show .open, or keep .opening for good).
         inProcessEpoch += 1
         inProcessWarming = false
-        DispatchQueue.global(qos: .userInitiated).async {
-            let result = PKInProcess.shared().close()
+        endPasscodeWait(opened: false)
+        DispatchQueue.global(qos: .userInitiated).async { [automation] in
+            let result = automation.close()
             Task { @MainActor [weak self] in
                 let closed = (result["closed"] as? Bool) == true
                 if closed { self?.inProcessUsedUp = true }
@@ -367,8 +375,8 @@ final class AppModel {
     /// main thread. The log says how, or what the session offers when it found no way.
     private func pauseAutomationMode() {
         guard automationPath == .inProcess, !Self.onSimulator else { return }
-        DispatchQueue.global(qos: .userInitiated).async {
-            let result = PKInProcess.shared().pauseAutomation()
+        DispatchQueue.global(qos: .userInitiated).async { [automation] in
+            let result = automation.pauseAutomation()
             Task { @MainActor [weak self] in
                 let paused = (result["paused"] as? Bool) == true
                 self?.log.add("runner", paused ? "Automation Mode turned off while standing by (\(result["how"] ?? "?")): the banner goes until an agent asks"
@@ -391,12 +399,12 @@ final class AppModel {
         inProcessWarmStarted = Date()
         inProcessWarmToken += 1
         let epoch = inProcessEpoch, token = inProcessWarmToken
-        if case .failed = inProcessSession {
+        if inProcessSession != .open, inProcessSession != .opening, inProcessSession != .waitingForPasscode {
             inProcessSession = .opening
             host.update(runner: coreState(of: runner))
         }
-        DispatchQueue.global(qos: .userInitiated).async {
-            let result = PKInProcess.shared().prepare()
+        DispatchQueue.global(qos: .userInitiated).async { [automation] in
+            let result = automation.prepare()
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 guard epoch == self.inProcessEpoch else {
@@ -408,14 +416,40 @@ final class AppModel {
                 // A stale open's failure does not undo what a newer one is doing.
                 guard token == self.inProcessWarmToken || ok else { return }
                 if token == self.inProcessWarmToken { self.inProcessWarming = false }
+                let waitedForPasscode = self.inProcessPasscode
+                self.endPasscodeWait(opened: ok)
                 let seconds = String(format: "%.2f", result["seconds"] as? Double ?? 0)
                 let warm = (result["warm_seconds"] as? Double).map { $0 > 0 ? String(format: ", first snapshot and screenshot %.2f s", $0) : "" } ?? ""
                 self.log.add("runner", ok ? "in-process session ready for \(why) (generation \(result["generation"] ?? 0), \((result["reused"] as? Bool) == true ? "already open" : "opened"), \(seconds) s\(warm))"
                                           : "in-process session not ready for \(why): \(result["code"] ?? "unknown") after \(seconds) s")
                 if ok { self.automationStarted() }
-                self.inProcessSession = ok ? .open : .failed(code: "\(result["code"] ?? "unknown")", detail: result["detail"] as? String ?? "")
+                let detail = result["detail"] as? String ?? ""
+                // iOS gives up on the passcode after a minute and says only that enabling timed out.
+                let passcodeMissed = waitedForPasscode || detail.localizedCaseInsensitiveContains("enabling automation mode")
+                self.inProcessSession = ok ? .open : passcodeMissed ? .passcodeMissed : .failed(code: "\(result["code"] ?? "unknown")", detail: detail)
                 if self.sessionOn { self.host.update(runner: self.coreState(of: self.runner)) }
             }
+        }
+    }
+
+    /// An open has taken over 5 s: iOS is asking for the passcode before it allows automation (after
+    /// Poki restarts, and 8 hours after the last time). Asked as the runner path's launcher asks.
+    private func beginPasscodeWait() {
+        inProcessPasscode = true
+        passcodeHint = true
+        log.add("runner", "the in-process session has not opened for 5 s: asking the owner for the passcode on the Live Activity")
+        inProcessSession = .waitingForPasscode
+        host.update(runner: coreState(of: runner))
+        activity.update { $0.phase = .handoff; $0.handoff = .init(id: Self.runnerPasscodeHandoff, kind: .automationPasscode, text: nil, app: nil, since: Date()) }
+    }
+
+    private func endPasscodeWait(opened: Bool) {
+        guard inProcessPasscode else { return }
+        inProcessPasscode = false
+        passcodeHint = false
+        log.add("runner", opened ? "the passcode was entered: the in-process session is open" : "the in-process session did not open while iOS asked for the passcode")
+        if activity.state.handoff?.id == Self.runnerPasscodeHandoff {
+            activity.update { $0.handoff = nil; $0.phase = .idle; if opened { $0.headline = "Ready for the agent" } }
         }
     }
 
@@ -469,7 +503,7 @@ final class AppModel {
         ActivityController.endAll()
         guard sessionOn else { Thread.sleep(forTimeInterval: 0.5); return }
         log.add("app", "Poki is closing: ending the runner")
-        if automationPath == .inProcess { _ = PKInProcess.shared().close() }
+        if automationPath == .inProcess { _ = automation.close() }
         launcher.stop()
         Thread.sleep(forTimeInterval: 2.5)
     }
@@ -893,12 +927,15 @@ final class AppModel {
         launchRunner()
     }
 
-    private func checkIdle() {
-        passcodeHint = runner.state == "launching" && launchingSince.map { Date().timeIntervalSince($0) > 10 } == true
+    func checkIdle(now: Date = Date()) {
+        if automationPath == .inProcess, inProcessWarming, !inProcessPasscode, now.timeIntervalSince(inProcessWarmStarted) > 5 {
+            beginPasscodeWait()
+        }
+        passcodeHint = inProcessPasscode || runner.state == "launching" && launchingSince.map { now.timeIntervalSince($0) > 10 } == true
         // On both paths the automation (the runner, or the in-process session) ends after the idle
         // time, so iOS's banner shows only while an agent works; the next request starts it again.
         guard sessionOn, !runnerPaused, idleStopSeconds > 0, approvals.isEmpty, activityText == "Idle" else { return }
-        if Date().timeIntervalSince(lastAgentActivity) >= Double(idleStopSeconds) {
+        if now.timeIntervalSince(lastAgentActivity) >= Double(idleStopSeconds) {
             let reason = "Stopped after \(idleStopSeconds / 60 > 0 ? "\(idleStopSeconds / 60) min" : "\(idleStopSeconds) s") without agent activity"
             // The task is over: the phone goes back to the app it began in while the runner can still
             // switch apps, then the runner stops unless an agent came back meanwhile.
@@ -982,7 +1019,7 @@ final class AppModel {
             pairingTrouble = status.detail ?? "The phone refused the pairing."
         default: break
         }
-        if status.state != "launching" { launchingSince = nil; passcodeHint = false }
+        if status.state != "launching" { launchingSince = nil; passcodeHint = inProcessPasscode }
         if status.code == "passcode", runner.code != "passcode" {
             // iOS is asking for the passcode before the first UI automation after a restart. The
             // launcher waits minutes for it; the person is asked on the Live Activity, and the agent
@@ -1187,6 +1224,7 @@ final class AppModel {
     static func handoffWording(_ kind: PokiActivityAttributes.Handoff.Kind) -> String {
         switch kind {
         case .runnerPasscode: "The phone asks for your passcode so the runner can start"
+        case .automationPasscode: "The phone asks for your passcode to allow automation"
         case .passcode: "The screen asks for your passcode"
         case .password: "The screen asks for a password"
         case .verification: "The screen asks for a verification step"

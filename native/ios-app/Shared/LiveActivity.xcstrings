@@ -309,6 +309,17 @@
         }
       }
     },
+    "Enter your passcode to allow automation" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "输入密码以允许自动化"
+          }
+        }
+      }
+    },
     "Enter your passcode to start the runner" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -580,6 +591,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "请自己完成验证"
+          }
+        }
+      }
+    },
+    "Passcode for automation" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "为自动化输入密码"
           }
         }
       }
@@ -1174,6 +1196,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "缩小"
+          }
+        }
+      }
+    },
+    "iOS asks after Poki restarts or 8 hours later. The agent waits." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 重启后或超过 8 小时，iOS 会要一次密码，Agent 会等你。"
           }
         }
       }

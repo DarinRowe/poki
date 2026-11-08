@@ -90,7 +90,9 @@ struct Issue: Identifiable {
             }
             if model.passcodeHint {
                 out.append(Issue(id: "passcode", title: String(localized: "Enter the passcode if the iPhone asks"),
-                                 text: String(localized: "iOS asks for the passcode before UI Automation after Poki Runner was force-closed or the iPhone restarted. Enter it once; Poki carries on by itself."), fix: .none))
+                                 text: model.automationPath == .inProcess
+                                    ? String(localized: "iOS asks for the passcode to allow UI Automation after Poki restarts, or 8 hours after it was last entered. Enter it once; Poki carries on by itself.")
+                                    : String(localized: "iOS asks for the passcode before UI Automation after Poki Runner was force-closed or the iPhone restarted. Enter it once; Poki carries on by itself."), fix: .none))
             }
             if let text = model.handoffText {
                 out.append(Issue(id: "handoff", title: String(localized: "Your turn"),

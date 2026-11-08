@@ -11,6 +11,32 @@ final class FakeLauncher: RunnerLauncher, @unchecked Sendable {
     func stop() { stops += 1 }
 }
 
+/// Poki's own automation session as iOS keeps it. An open can be held, as one is while iOS asks for
+/// the passcode, until `answer(_:)`.
+final class FakeAutomation: InProcessAutomation, @unchecked Sendable {
+    private let lock = NSLock()
+    private var open = false
+    private var gate: DispatchSemaphore?
+    private var answer: [String: Any]?
+    /// The next open waits until `answer(_:)`.
+    func holdNextOpen() { lock.withLock { gate = DispatchSemaphore(value: 0) } }
+    /// Lets a held open go on, with this answer instead of opening (nil opens).
+    func answer(_ result: [String: Any]?) { lock.withLock { answer = result; gate?.signal(); gate = nil } }
+    func prepare() -> [String: Any] {
+        if let held = lock.withLock({ gate }) {
+            held.wait()
+            if let given = lock.withLock({ () -> [String: Any]? in defer { answer = nil }; return answer }) { return given }
+        }
+        return lock.withLock {
+            let reused = open
+            open = true
+            return ["ok": true, "generation": 1, "reused": reused, "seconds": 0.0]
+        }
+    }
+    func close() -> [String: Any] { lock.withLock { defer { open = false }; return ["closed": open, "generation": 1, "seconds": 0.0] } }
+    func pauseAutomation() -> [String: Any] { ["paused": true, "how": "fake"] }
+}
+
 final class FakePairing: DevicePairing {
     func start(hostName: String, saveTo: URL, onEvent: @escaping @Sendable (PairingEvent) -> Void) throws {}
     func cancel() {}
@@ -140,5 +166,58 @@ final class PasscodeTests: XCTestCase {
         model.runnerChanged(RunnerStatus(state: "running"))
         XCTAssertFalse(model.passcodeHint)
         XCTAssertTrue(model.host.currentRunner.isRunning)
+    }
+}
+
+/// iOS asks the owner for the passcode before it allows automation, after Poki restarts and 8 hours
+/// after the last time. An in-process open that waits on it is named: Poki's home asks the owner, and
+/// the agent reads that only the owner can enter it, also after iOS gives up.
+@MainActor
+final class InProcessPasscodeTests: XCTestCase {
+    private var saved: (relay: String?, relayEnabled: Any?, setup: SetupState)!
+    private var model: AppModel!
+    private var session: FakeAutomation!
+
+    override func setUp() async throws {
+        try XCTSkipUnless(AutomationPath.current == .inProcess, "Poki Runner path")
+        saved = (UserDefaults.standard.string(forKey: "relayAddress"), UserDefaults.standard.object(forKey: "relayEnabled"), SetupState.load())
+        session = FakeAutomation()
+        model = AppModel(launcher: FakeLauncher(), pairer: FakePairing(), automation: session)
+        model.loopback.simulate(.working(ms: 9))
+        model.setup.loopback = .proxy
+        XCTAssertTrue(model.setRelay("https://relay.invalid"))
+        model.startSession()
+        XCTAssertTrue(model.sessionOn)
+    }
+
+    override func tearDown() async throws {
+        session?.answer(nil)
+        guard let saved, let model else { return }
+        model.stopSession()
+        UserDefaults.standard.set(saved.relay, forKey: "relayAddress")
+        UserDefaults.standard.set(saved.relayEnabled, forKey: "relayEnabled")
+        saved.setup.save()
+    }
+
+    private func waitFor(_ what: String, _ condition: @escaping () -> Bool) async {
+        let done = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in condition() }, object: nil)
+        done.expectationDescription = what
+        await fulfillment(of: [done], timeout: 5)
+    }
+
+    func testAPasscodeWaitAsksTheOwnerAndTellsTheAgentWhoMustEnterIt() async {
+        session.holdNextOpen()
+        model.wakeRunner()
+        // On the simulator the launcher is WebDriverAgent on the Mac; its answer comes first.
+        await waitFor("the simulator's runner check answered") { ["failed", "running"].contains(self.model.runner.state) }
+        model.runnerChanged(RunnerStatus(state: "running"))
+        model.checkIdle(now: Date().addingTimeInterval(6))
+        XCTAssertTrue(model.passcodeHint, "Poki's home asks the owner for the passcode")
+        let waiting = model.host.currentRunner.describe
+        XCTAssertTrue(waiting.contains("owner to enter the iPhone passcode"), waiting)
+        session.answer(["ok": false, "code": "com.apple.dt.XCTest.XCTFuture 1000", "detail": "Timed out while enabling automation mode.", "seconds": 60.0])
+        await waitFor("iOS gave up on the passcode") { !self.model.passcodeHint && !self.model.host.currentRunner.describe.hasPrefix("starting") }
+        let failed = model.host.currentRunner.describe
+        XCTAssertTrue(failed.contains("owner needs to enter the iPhone passcode"), failed)
     }
 }

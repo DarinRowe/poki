@@ -12,18 +12,41 @@ enum AutomationPath: String, CaseIterable, Identifiable {
     static let current: AutomationPath = UserDefaults.standard.string(forKey: "automationPath").flatMap(AutomationPath.init(rawValue:)) ?? .inProcess
 }
 
+/// Poki's own automation session as AppModel drives it: `PKInProcess`, or a fake in tests.
+protocol InProcessAutomation: AnyObject, Sendable {
+    /// Opens the session and Automation Mode, or reuses an open one. Keys: ok, code, detail,
+    /// generation, reused, seconds. Blocks: call it off the main thread.
+    func prepare() -> [String: Any]
+    /// Ends the session. Keys: closed, generation, seconds.
+    func close() -> [String: Any]
+    /// Automation Mode off with the session kept. Keys: paused, how, selectors.
+    func pauseAutomation() -> [String: Any]
+}
+
+/// Thread-safe: its session state is behind locks, and every call blocks on its own.
+extension PKInProcess: InProcessAutomation, @unchecked Sendable {}
+
 /// Poki's own automation session, once the launcher has mounted the disk image (ESP-152).
 enum InProcessSession: Equatable {
     case opening
     case open
     /// prepare answered no: its code and detail.
     case failed(code: String, detail: String)
+    /// iOS is asking the owner for the passcode before it allows automation.
+    case waitingForPasscode
+    /// iOS asked for the passcode and nobody entered it before it gave up (about a minute).
+    case passcodeMissed
 
     /// What PokiCore reads while the launcher runs. A failure is answered at once, with its fix.
     var agentState: RunnerState {
         switch self {
         case .open: return .running
         case .opening: return .starting("opening the in-process session; it takes a few seconds the first time")
+        case .waitingForPasscode:
+            return .starting("waiting for the owner to enter the iPhone passcode on the phone: iOS asks for it before it allows automation, after Poki restarts and 8 hours after the last time. Only the owner can do this; the Live Activity asks them. Call again in about 10 s")
+        case .passcodeMissed:
+            return .failed("the owner needs to enter the iPhone passcode on the phone: iOS asked for it to allow automation and nobody entered it within a minute. Nothing was sent; the next call asks again",
+                           fix: "Enter the iPhone passcode on the phone when iOS asks for it to allow automation")
         case .failed(let code, let detail):
             return .failed("the in-process session could not be opened (\(code)\(detail.isEmpty ? "" : ": \(detail)")); Poki tries again on the next call",
                            fix: "Open Poki and, if iOS asks, enter the passcode to allow automation")

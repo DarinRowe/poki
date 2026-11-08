@@ -265,6 +265,7 @@ extension PokiActivityAttributes.Handoff {
     var title: String {
         switch kind {
         case .runnerPasscode: String(activity: "Enter your passcode to start the runner")
+        case .automationPasscode: String(activity: "Enter your passcode to allow automation")
         case .passcode: String(activity: "Enter your passcode")
         case .password: String(activity: "Fill in your password")
         case .verification: String(activity: "Pass the verification yourself")
@@ -276,20 +277,25 @@ extension PokiActivityAttributes.Handoff {
     /// characters in Chinese) whole. The agent's own note is the alert's second line (`detail`) and
     /// the app's issue row, where it has room.
     var line: String {
-        kind == .runnerPasscode ? String(activity: "Passcode for the runner") : title
+        switch kind {
+        case .runnerPasscode: String(activity: "Passcode for the runner")
+        case .automationPasscode: String(activity: "Passcode for automation")
+        default: title
+        }
     }
     /// The agent's own note, or what happens next (the alert's second line).
     var detail: String {
         if let text, !text.isEmpty { return text }
         switch kind {
         case .runnerPasscode: return String(activity: "iOS asks for it once after a restart. The agent waits.")
+        case .automationPasscode: return String(activity: "iOS asks after Poki restarts or 8 hours later. The agent waits.")
         case .payment: return String(activity: "The agent does not pay for you. It waits, then carries on.")
         default: return String(activity: "The agent can't act on this screen. It waits for you.")
         }
     }
     var symbol: String {
         switch kind {
-        case .runnerPasscode, .passcode: "lock.fill"
+        case .runnerPasscode, .automationPasscode, .passcode: "lock.fill"
         case .password: "key.fill"
         case .verification: "checkmark.shield.fill"
         case .payment: "creditcard.fill"

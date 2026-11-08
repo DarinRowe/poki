@@ -55,7 +55,11 @@ Poki is in English and Simplified Chinese and follows the iPhone's language. The
   the idle time (default 60 s), from Stop on the Live Activity or in Poki, and when Poki is turned off;
   the next agent request opens a new one (a few seconds; iOS asks for the passcode only once per
   boot). If it cannot be opened, an agent's call answers at once with the reason, and the next call,
-  Poki coming to the front, or an agent connecting tries again.
+  Poki coming to the front, or an agent connecting tries again. An open that has not answered in 5 s
+  is waiting on iOS's passcode prompt (after Poki restarts, and 8 hours after the passcode was last
+  entered): the Live Activity shows Passcode for automation, Poki's home asks the owner, and the agent
+  reads that only the owner can enter it. When iOS gives up, after about a minute, the call fails with
+  that reason.
 - Nothing listens on a port: PokiCore's requests are answered inside Poki.
 - The built-in local connection dials itself again when it fails or drops while Poki is on: 1, 2, 4, 8,
   16, 30, 30, 30 s, then it stops until the owner taps Enable Local Connection in Setup. Opening Poki
@@ -113,6 +117,17 @@ the bridge runs the tools that move the phone (`open_settings`, `read_screen`, `
 - A dropped connection sends nothing again. A call outlives the session that asked for it; the next
   session is told how it ended instead of asking for it again.
 - Stop talking (or speaking over Poki) cancels the reply, never the step running on the phone.
+- Once an answer has played and no step it asked for is running, the conversation waits 8 s for the
+  person to go on in the same session. After 8 s of silence it ends and lets go of the microphone, so
+  iOS's orange dot goes off; a conversation opened with nothing said ends the same way. A
+  conversation opened within 5 minutes of the last end is told up to 6 lines said in that last
+  conversation with something said in it (a conversation nobody spoke in changes nothing), from
+  memory (the chat keeps its own copy as before). In the background Poki stops listening at once, also
+  while connecting, unless a step is running or its answer is still to be said (the step brings another
+  app to the front); that conversation ends as soon as that is said.
+  A conversation never waits for the server for ever: when it owes something (the end of the person's
+  speech, an answer, the end of the audio) and the server says nothing for 60 s, or 30 s after Poki went
+  to the background, it ends. A step that is running is not counted; its result starts a new wait.
 - A `poki://voice` link, from a web page or another app, only opens Voice: a link never
   changes the bridge and never turns on the microphone. The person enters the address and taps Talk
   to Poki.

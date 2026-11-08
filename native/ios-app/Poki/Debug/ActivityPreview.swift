@@ -105,7 +105,7 @@ struct ActivityPreview: View {
         yourTurn.stepCount = 9
         yourTurn.handoff = .init(id: "h1", kind: .payment, text: "Confirm the $42.10 order with Face ID", app: "Amazon", since: now.addingTimeInterval(-20))
         var passcode = PokiState(phase: .handoff, headline: "Your turn", thumbnailVersion: 0)
-        passcode.handoff = .init(id: "h2", kind: .runnerPasscode, text: nil, app: nil, since: now.addingTimeInterval(-6))
+        passcode.handoff = .init(id: "h2", kind: AutomationPath.current == .inProcess ? .automationPasscode : .runnerPasscode, text: nil, app: nil, since: now.addingTimeInterval(-6))
 
         var done = PokiState(phase: .done, headline: "Finished", thumbnailVersion: 1)
         done.app = "Messages"

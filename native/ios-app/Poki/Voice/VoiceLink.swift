@@ -2,10 +2,19 @@ import AVFoundation
 import Foundation
 import WebRTC
 
+/// What VoiceModel talks through: a VoiceLink in the app, a recorded conversation in tests.
+protocol VoiceConnection: AnyObject, Sendable {
+    func connect(secret: String, microphone: Bool, direct: Bool) async throws
+    @discardableResult func send(_ event: [String: Any]) -> Bool
+    func setRemoteVolume(_ value: Double)
+    func diagnose(_ write: @escaping @MainActor (String) -> Void)
+    func close()
+}
+
 /// One WebRTC connection to the OpenAI Realtime API: the microphone as the audio track, the model's
 /// voice on the speaker, and the `oai-events` data channel for events. Opened with a short-lived client
 /// secret; it never sees an API key. Callbacks arrive on the main actor.
-final class VoiceLink: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelegate, @unchecked Sendable {
+final class VoiceLink: NSObject, VoiceConnection, RTCPeerConnectionDelegate, RTCDataChannelDelegate, @unchecked Sendable {
     private static let factory: RTCPeerConnectionFactory = {
         // Voice chat: echo cancellation on, so Poki's own voice from the speaker doesn't interrupt it.
         let audio = RTCAudioSessionConfiguration.webRTC()
@@ -139,11 +148,16 @@ final class VoiceLink: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelega
         }
     }
 
+    /// The shared audio session: category, mode, routes, and whether WebRTC counts it active.
+    static func audioSession() -> String {
+        let av = AVAudioSession.sharedInstance()
+        return "audio session \(av.category.rawValue) \(av.mode.rawValue), input available \(av.isInputAvailable), input channels \(av.inputNumberOfChannels), input \(av.currentRoute.inputs.map { "\($0.portType.rawValue) \($0.portName)" }.joined(separator: ", ")), output \(av.currentRoute.outputs.map { $0.portType.rawValue }.joined(separator: ", ")), webrtc active \(RTCAudioSession.sharedInstance().isActive), record permission \(AVAudioApplication.shared.recordPermission == .granted)"
+    }
+
     /// One log line about the audio session now, and one ~3 s later about what the microphone sent:
     /// media-source totalSamplesDuration stays 0 when nothing is captured, whatever the room sounds like.
     func diagnose(_ write: @escaping @MainActor (String) -> Void) {
-        let av = AVAudioSession.sharedInstance()
-        let now = "audio session \(av.category.rawValue) \(av.mode.rawValue), input available \(av.isInputAvailable), input channels \(av.inputNumberOfChannels), input \(av.currentRoute.inputs.map { "\($0.portType.rawValue) \($0.portName)" }.joined(separator: ", ")), output \(av.currentRoute.outputs.map { $0.portType.rawValue }.joined(separator: ", ")), webrtc active \(RTCAudioSession.sharedInstance().isActive), record permission \(AVAudioApplication.shared.recordPermission == .granted)"
+        let now = Self.audioSession()
         Task { @MainActor in write(now) }
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
             guard let peer = self?.peer else { return }
