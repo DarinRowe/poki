@@ -205,7 +205,7 @@ async fn dispatch(state: &Shared, out: &Out, cmd: &str, a: &Value) -> R {
             let phone = setup::pick_phone(Some(&udid)).await?;
             let r = out.reporter("devmode");
             if !device::devmode::enable(&phone, &r).await? {
-                device::devmode::wait_until_on(&udid, &r, std::time::Duration::from_secs(180)).await?;
+                device::devmode::wait_until_on(&udid, &r, std::time::Duration::from_secs(600)).await?;
             }
             ok(true)
         }

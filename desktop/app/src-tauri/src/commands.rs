@@ -118,7 +118,7 @@ pub async fn devmode(app: AppHandle, udid: String) -> R<bool> {
     if device::devmode::enable(&phone, &r).await? {
         return Ok(true);
     }
-    device::devmode::wait_until_on(&udid, &r, std::time::Duration::from_secs(180)).await?;
+    device::devmode::wait_until_on(&udid, &r, std::time::Duration::from_secs(600)).await?;
     Ok(true)
 }
 
