@@ -1,5 +1,7 @@
 # Install Poki for your client
 
+To install the Poki app on the user's iPhone (the standalone app with Poki Setup), follow [INSTALL-IPHONE.md](INSTALL-IPHONE.md) instead. This file installs Poki MCP for an MCP client.
+
 Choose the installation path first:
 
 - **MCP only.** If the user already uses Claude Code, Codex, or another MCP client and only asks to install this repository, connect Poki MCP to that client. Use the user's existing subscription and model. No extra model account or Poki login is needed. Follow steps 1–5 and the MCP checks in step 7, then end the installation. Skip step 6, including model login and the optional unlock question.

@@ -1,0 +1,351 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { spawn, execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { createInterface } from 'node:readline';
+import { mkdtemp, mkdir, readFile, rm, writeFile, chmod } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { root } from '../src/config.mjs';
+
+const exec = promisify(execFile);
+const cli = join(root, 'bin/install-iphone.mjs');
+const fakeBridge = join(root, 'src/install/fake-bridge.mjs');
+const fastEnv = { POKI_INSTALL_WAIT_MS: '20000', POKI_INSTALL_POLL_MS: '20', POKI_INSTALL_RETRY_MS: '20', POKI_FAKE_DELAY_MS: '30' };
+
+async function stateDir(t) {
+  const dir = await mkdtemp(join(tmpdir(), 'poki-install-test-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  return dir;
+}
+
+// Runs the installer the way an agent does: reads its JSON lines and answers each person stop
+// with the same subcommands the guide tells the agent to use.
+function runInstaller(state, { scenario = 'happy', env = {}, answer = {}, stateArgs = ['--state', state] } = {}) {
+  const child = spawn(process.execPath, [cli, 'run', '--json', '--bridge', fakeBridge, ...stateArgs], {
+    env: { ...process.env, ...fastEnv, POKI_FAKE_SCENARIO: scenario, POKI_APPLE_ID: 'tester@example.com', POKI_SETUP_PASSWORD: 'correct horse', ...env },
+  });
+  const events = [];
+  let stderr = '';
+  child.stderr.on('data', chunk => { stderr += chunk; });
+  createInterface({ input: child.stdout }).on('line', async line => {
+    const event = JSON.parse(line);
+    events.push(event);
+    if (event.event === 'wait' && answer[event.wait]) await answer[event.wait](event);
+  });
+  return new Promise(resolve => child.on('close', code => resolve({ code, events, stderr })));
+}
+
+const sub = (state, ...args) => exec(process.execPath, [cli, ...args, '--state', state]);
+
+// The person types the Apple code into their own Terminal: it reaches the command on stdin.
+function typeCode(state, input, ...args) {
+  const child = spawn(process.execPath, [cli, 'code', ...args, '--state', state], { stdio: ['pipe', 'pipe', 'pipe'] });
+  let output = '';
+  child.stdout.on('data', c => { output += c; });
+  child.stderr.on('data', c => { output += c; });
+  child.stdin.end(input);
+  return new Promise(resolve => child.on('close', code => resolve({ code, output })));
+}
+const personAnswers = state => ({
+  apple_code: () => typeCode(state, '123456\n'),
+  open_poki: () => sub(state, 'done', 'open_poki'),
+});
+
+test('runs every step in order, stops at each person step with one sentence, and continues once it is done', async t => {
+  const state = await stateDir(t);
+  const { code, events, stderr } = await runInstaller(state, { answer: personAnswers(state) });
+  assert.equal(code, 0, stderr);
+  const stepOrder = events.filter(e => e.event === 'step').map(e => e.step);
+  assert.deepEqual(stepOrder, ['setup_app', 'bridge', 'channel', 'apple_account', 'phone', 'install', 'open_poki', 'relay', 'check']);
+  const waits = events.filter(e => e.event === 'wait').map(e => [e.wait, e.who]);
+  assert.deepEqual(waits, [['apple_code', 'input'], ['phone_plug', 'phone'], ['pair', 'phone'], ['devmode', 'phone'], ['open_poki', 'phone']]);
+  for (const wait of events.filter(e => e.event === 'wait')) assert.match(wait.say, /^[A-Z].{10,}[.:]$/s, `wait ${wait.wait} has a sentence for the person`);
+  assert.ok(events.findIndex(e => e.event === 'wait' && e.wait === 'pair') < events.findIndex(e => e.event === 'done' && e.step === 'install'), 'install finishes after the Trust tap');
+  const result = events.at(-1);
+  assert.equal(result.event, 'result');
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.check, { poki: '0.2.8 (501)', developer_mode: true, paired: true, ddi_mounted: true, days_left: 7, relay: 'skipped' });
+  const saved = JSON.parse(await readFile(join(state, 'run.json'), 'utf8'));
+  assert.equal(saved.steps.check.status, 'ok');
+  assert.doesNotMatch(JSON.stringify(events) + stderr + JSON.stringify(saved), /correct horse/, 'the Apple Account password never reaches output or state');
+});
+
+test('a step that fails gives a machine-readable code, its reason and what to do, and retries only what can heal', async t => {
+  for (const [scenario, expectCode, expectExit] of [
+    ['trust-timeout', null, 0],
+    ['sign-fails', 'sign_failed', 2],
+    ['usbmuxd', 'usbmuxd_unreachable', 2],
+  ]) await t.test(scenario, async t => {
+    const state = await stateDir(t);
+    const { code, events, stderr } = await runInstaller(state, { scenario, answer: personAnswers(state) });
+    assert.equal(code, expectExit, stderr);
+    const errors = events.filter(e => e.event === 'error');
+    if (expectCode === null) {
+      assert.equal(errors.length, 1, 'the missed Trust tap is reported once');
+      assert.equal(errors[0].code, 'trust_not_answered');
+      assert.equal(errors[0].retrying, true);
+      assert.equal(events.at(-1).ok, true);
+      return;
+    }
+    const last = errors.at(-1);
+    assert.equal(last.code, expectCode);
+    assert.equal(last.retrying, false);
+    assert.ok(last.reason.length > 10 && last.agent_fix.length > 10, 'reason and fix are filled in');
+    assert.equal(events.at(-1).event, 'result');
+    assert.equal(events.at(-1).ok, false);
+    assert.equal(events.at(-1).code, expectCode);
+    const saved = JSON.parse(await readFile(join(state, 'run.json'), 'utf8'));
+    assert.equal(Object.values(saved.steps).find(s => s.status === 'failed').code, expectCode);
+  });
+});
+
+test('a person stop that nobody answers ends with exit 3 and a rerun resumes from that step', async t => {
+  const state = await stateDir(t);
+  const first = await runInstaller(state, { env: { POKI_INSTALL_WAIT_MS: '150' } });
+  assert.equal(first.code, 3, first.stderr);
+  assert.deepEqual(first.events.at(-1), { event: 'result', ok: false, waiting: 'apple_code', step: 'apple_account', rerun: 'node bin/install-iphone.mjs run' });
+  const saved = JSON.parse(await readFile(join(state, 'run.json'), 'utf8'));
+  assert.deepEqual(saved.steps.apple_account, { ...saved.steps.apple_account, status: 'waiting', wait: 'apple_code' });
+  const second = await runInstaller(state, { answer: personAnswers(state) });
+  assert.equal(second.code, 0, second.stderr);
+  assert.equal(second.events.find(e => e.event === 'wait').wait, 'apple_code', 'the rerun picks up at the open sign-in');
+});
+
+const secrets = {
+  udid: '00008999-000A11B22C33D44E',
+  oldUdid: 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678',
+  serial: '000081500002349C2188401C',
+  name: "Jamie's iPhone",
+  anthropic: ['sk', 'ant', 'api03', 'FAKEFAKEFAKEFAKEFAKEFAKEFAKE0123456789'].join('-'),
+  cloudflare: 'Zx9fakeCloudflareToken0123456789abcdefGHIJ',
+  relay: 'https://poki-relay.jamie-fake.workers.dev',
+  relayLink: 'poki://setup?relay=https%3A%2F%2Fpoki-relay.jamie-fake.workers.dev&secret=s3cr3tvalue',
+  email: 'jamie.fake@example.com',
+  wifi: '192.168.1.44',
+  pairing: '<key>HostPrivateKey</key>\n<data>\nLS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQpNSUlFb3dJQkFBS0NBUUVB\n</data>',
+};
+
+async function seedFailedRun(state) {
+  await mkdir(join(state, 'setup-home/logs'), { recursive: true });
+  await writeFile(join(state, 'run.json'), JSON.stringify({
+    started_at: '2026-11-08T22:00:00Z', channel: 'alpha', poki_setup: '0.2.1-319',
+    steps: {
+      setup_app: { status: 'ok', detail: 'Poki Setup 0.2.1-319' },
+      phone: { status: 'ok', detail: `${secrets.udid} ${secrets.name}` },
+      install: { status: 'failed', code: 'trust_not_answered', reason: `Pairing ${secrets.udid} (${secrets.name}) timed out`, agent_fix: 'Ask the person to tap Trust and run again.' },
+    },
+    phones: [{ udid: secrets.udid, name: secrets.name, ios: '27.1', link: 'usb', wifi_address: secrets.wifi }],
+  }));
+  await writeFile(join(state, 'setup-home/logs/poki-setup.log'), [
+    `INFO pairing ${secrets.udid} name="${secrets.name}" serial ${secrets.serial}`,
+    `INFO old style udid ${secrets.oldUdid}`,
+    `DEBUG anthropic key ${secrets.anthropic}`,
+    `DEBUG Authorization: Bearer ${secrets.cloudflare}`,
+    `INFO cloudflare token=${secrets.cloudflare}`,
+    `INFO relay ${secrets.relay}/v1/frames link ${secrets.relayLink}`,
+    `INFO signed in as ${secrets.email} from ${secrets.wifi}`,
+    secrets.pairing,
+    // Built from parts so secret scanners do not take the fixture for a real key.
+    [`-----BEGIN ${'PRIVATE'} KEY-----`, 'MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7', `-----END ${'PRIVATE'} KEY-----`].join('\n'),
+    'INFO install step failed: The iPhone did not answer the Trust dialog in time.',
+  ].join('\n'));
+}
+
+test('the diagnostics bundle and the issue draft keep the failure but drop identifiers, tokens, keys, pairing records and relay addresses', async t => {
+  const state = await stateDir(t);
+  await seedFailedRun(state);
+  const { stdout: bundle } = await sub(state, 'diagnose', '--no-device');
+  const { stdout: issue } = await sub(state, 'issue');
+  for (const [label, output] of [['diagnose', bundle], ['issue', issue]]) {
+    for (const [kind, value] of Object.entries(secrets)) {
+      for (const piece of value.split('\n').filter(p => p.length > 12 && !p.startsWith('<'))) assert.ok(!output.includes(piece), `${label} leaks the ${kind}`);
+    }
+    assert.doesNotMatch(output, /s3cr3tvalue|jamie/i, `${label} leaks a relay secret or the owner's name`);
+    assert.match(output, /trust_not_answered/, `${label} keeps the failing code`);
+    assert.match(output, /did not answer the Trust dialog in time/, `${label} keeps the last log lines`);
+  }
+  const parsed = JSON.parse(bundle);
+  assert.equal(parsed.steps.install.code, 'trust_not_answered');
+  assert.equal(parsed.phones[0].ios, '27.1');
+  assert.ok(parsed.system.macos, 'the bundle names the macOS version');
+});
+
+test('the issue draft is only printed: it never runs gh, and it says the person must approve it first', async t => {
+  const state = await stateDir(t);
+  await seedFailedRun(state);
+  const bin = join(state, 'fake-bin');
+  await mkdir(bin);
+  await writeFile(join(bin, 'gh'), `#!/bin/sh\necho "$@" >> ${JSON.stringify(join(state, 'gh-called'))}\n`);
+  await chmod(join(bin, 'gh'), 0o755);
+  const { stdout } = await exec(process.execPath, [cli, 'issue', '--state', state], { env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } });
+  await assert.rejects(readFile(join(state, 'gh-called')), { code: 'ENOENT' }, 'gh was not run');
+  assert.match(stdout, /Show this draft to the person and submit it only after they say yes/);
+  assert.match(stdout, /gh issue create --repo JosssphZhou\/poki --template install-failure.yml|gh issue create --repo JosssphZhou\/poki --title/);
+  const draft = await readFile(join(state, 'issue-draft.md'), 'utf8');
+  const template = await readFile(join(root, '.github/ISSUE_TEMPLATE/install-failure.yml'), 'utf8');
+  const labels = [...template.matchAll(/^\s+label: (.+)$/gm)].map(m => m[1]);
+  assert.deepEqual([...draft.matchAll(/^### (.+)$/gm)].map(m => m[1]), labels, 'the draft follows the install-failure template field by field');
+  assert.match(draft, /### Step it stopped at\n\nPair \(Trust This Computer\)\n/, 'the step is one of the template options');
+});
+
+test('the agent guide documents every error code the installer can print', async () => {
+  const { errors } = JSON.parse(await readFile(join(root, 'src/install/steps.json'), 'utf8'));
+  const guide = await readFile(join(root, 'INSTALL-IPHONE.md'), 'utf8');
+  for (const code of Object.keys(errors)) assert.ok(guide.includes(`\`${code}\``), `INSTALL-IPHONE.md explains ${code}`);
+});
+
+// A Poki Setup.app laid out as the installer puts it, whose helper is the fake bridge.
+async function fakeSetupApp(dir) {
+  const helper = join(dir, 'Poki Setup.app/Contents/MacOS/poki-setup-bridge');
+  await mkdir(join(dir, 'Poki Setup.app/Contents/MacOS'), { recursive: true });
+  await writeFile(helper, `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(fakeBridge)}\n`);
+  await chmod(helper, 0o755);
+  return helper;
+}
+
+async function fakeHome(t) {
+  const home = await mkdtemp(join(tmpdir(), 'poki-install-home-'));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  await fakeSetupApp(join(home, 'Applications'));
+  return home;
+}
+
+test('phones and diagnose find the Poki Setup that run installs into ~/Applications, and a missing one is an error code, not a stack', async t => {
+  const state = await stateDir(t);
+  const home = await fakeHome(t);
+  const empty = await mkdtemp(join(tmpdir(), 'poki-install-nopath-'));
+  t.after(() => rm(empty, { recursive: true, force: true }));
+  const env = { ...process.env, HOME: home, PATH: empty, POKI_FAKE_UNPLUGGED_CALLS: '0' };
+  const { stdout: phones } = await exec(process.execPath, [cli, 'phones', '--state', state], { env });
+  assert.match(phones, /00008999-000A11B22C33D44E/, 'phones lists the phone through ~/Applications/Poki Setup.app');
+  const { stdout: bundle } = await exec(process.execPath, [cli, 'diagnose', '--state', state], { env });
+  const devices = JSON.parse(bundle).devices;
+  assert.equal(devices.usbmuxd_error, undefined);
+  assert.equal(devices.usbmuxd.length, 1, 'the bundle holds what usbmuxd sees');
+
+  const missing = await exec(process.execPath, [cli, 'phones', '--bridge', join(home, 'nowhere/poki-setup-bridge'), '--state', state], { env }).catch(error => error);
+  assert.equal(missing.code, 2);
+  assert.match(missing.stderr, /setup_app_missing/);
+  assert.doesNotMatch(missing.stderr, /\n\s+at /, 'no stack trace');
+});
+
+test('phones and diagnose use the helper the last run started, wherever it was', async t => {
+  const state = await stateDir(t);
+  const home = await mkdtemp(join(tmpdir(), 'poki-install-home-'));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  const elsewhere = await mkdtemp(join(tmpdir(), 'poki-install-app-'));
+  t.after(() => rm(elsewhere, { recursive: true, force: true }));
+  const helper = await fakeSetupApp(elsewhere);
+  await writeFile(join(state, 'run.json'), JSON.stringify({ steps: {}, setup_bridge: helper }));
+  const { stdout } = await exec(process.execPath, [cli, 'phones', '--state', state], { env: { ...process.env, HOME: home, POKI_FAKE_UNPLUGGED_CALLS: '0' } });
+  assert.match(stdout, /00008999-000A11B22C33D44E/);
+});
+
+test('findSetupBridge names setup_app_missing and lists where it looked', async () => {
+  const { findSetupBridge } = await import('../src/install/setup-app.mjs');
+  assert.throws(() => findSetupBridge({ roots: ['/nonexistent-a', '/nonexistent-b'] }), error => error.code === 'setup_app_missing' && /nonexistent-a/.test(error.message) && /--app-dir/.test(error.message));
+});
+
+test('the Apple code never goes on a command line: it is typed to stdin, and a code in the arguments is refused', async t => {
+  const state = await stateDir(t);
+  const refused = await typeCode(state, '', '123456');
+  assert.equal(refused.code, 1);
+  assert.doesNotMatch(refused.output, /123456/, 'the refusal does not echo the code');
+  await assert.rejects(readFile(join(state, 'inbox/apple-code')), { code: 'ENOENT' }, 'nothing was handed over');
+  const bad = await typeCode(state, '12ab\n');
+  assert.equal(bad.code, 1);
+  const ok = await typeCode(state, '654321\n');
+  assert.equal(ok.code, 0);
+  assert.equal((await readFile(join(state, 'inbox/apple-code'), 'utf8')).trim(), '654321');
+  const manifest = await readFile(join(root, 'src/install/steps.json'), 'utf8');
+  assert.doesNotMatch(manifest, /code 123456|Tell me the code/, 'the person stop does not ask for the code in chat or in arguments');
+  const guide = await readFile(join(root, 'INSTALL-IPHONE.md'), 'utf8');
+  assert.doesNotMatch(guide, /code <digits>|pass through chat/);
+});
+
+// The person opens a fresh Terminal (it starts in their home folder, not in the checkout) and pastes
+// the command exactly as the installer printed it.
+function pasteIntoNewTerminal(say, { cwd, env = {} }) {
+  const command = say.match(/run: (.+?) \(it asks/s)?.[1];
+  assert.ok(command, `the prompt carries a command: ${say}`);
+  const child = spawn('/bin/sh', ['-c', command], { cwd, env: { ...process.env, ...env }, stdio: ['pipe', 'pipe', 'pipe'] });
+  child.stdin.end('123456\n');
+  return new Promise(resolve => child.on('close', code => resolve(code)));
+}
+
+test('the Apple code command in the prompt works pasted into a new Terminal outside the checkout, and reaches the install that is waiting, with or without --state', async t => {
+  const home = await stateDir(t);
+  const elsewhere = await stateDir(t);
+  // A non-default --state, with a space in the path: the command has to carry it, quoted.
+  const state = join(await stateDir(t), 'agent state');
+  await mkdir(state);
+  const withState = await runInstaller(state, { answer: { ...personAnswers(state), apple_code: async event => assert.equal(await pasteIntoNewTerminal(event.say, { cwd: elsewhere, env: { HOME: home } }), 0) } });
+  assert.equal(withState.code, 0, withState.stderr);
+  // The default state: no --state was given, so the command needs none, and finds the same folder from HOME.
+  const defaultState = join(home, 'Library/Application Support/PokiInstall');
+  const withDefault = await runInstaller(defaultState, { stateArgs: [], env: { HOME: home }, answer: { ...personAnswers(defaultState), apple_code: async event => {
+    assert.doesNotMatch(event.say, /--state/);
+    assert.equal(await pasteIntoNewTerminal(event.say, { cwd: elsewhere, env: { HOME: home } }), 0);
+  } } });
+  assert.equal(withDefault.code, 0, withDefault.stderr);
+});
+
+test('the installer shows its own version and build, and diagnose and the issue draft carry the versions of the installer, Poki Setup and the installed Poki', async t => {
+  const pkg = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
+  const noGit = await mkdtemp(join(tmpdir(), 'poki-install-nogit-'));
+  t.after(() => rm(noGit, { recursive: true, force: true }));
+  const { stdout: version } = await exec(process.execPath, [cli, '--version'], { env: { ...process.env, PATH: noGit, POKI_BUILD_COMMIT: 'abc1234' } });
+  assert.equal(version.trim(), `Poki installer ${pkg.version} (abc1234)`, 'without git the recorded build commit is shown');
+  const { stdout: withGit } = await exec(process.execPath, [cli, '--version']);
+  assert.match(withGit.trim(), new RegExp(`^Poki installer ${pkg.version.replaceAll('.', '\\.')} \\([0-9a-f]{7,}\\)$`));
+
+  const state = await stateDir(t);
+  const { code, events, stderr } = await runInstaller(state, { env: { POKI_BUILD_COMMIT: 'abc1234', PATH: `${noGit}:${dirname(process.execPath)}` }, answer: personAnswers(state) });
+  assert.equal(code, 0, stderr);
+  assert.deepEqual(events[0], { event: 'installer', version: pkg.version, commit: 'abc1234' }, 'run starts by saying which installer it is');
+
+  const env = { ...process.env, PATH: noGit, POKI_BUILD_COMMIT: 'abc1234' };
+  const bundle = JSON.parse((await exec(process.execPath, [cli, 'diagnose', '--no-device', '--state', state], { env })).stdout);
+  assert.deepEqual(bundle.installer, { version: pkg.version, commit: 'abc1234' });
+  assert.equal(bundle.poki_setup, '0.2.1 (319)');
+  assert.equal(bundle.poki, '0.2.8 (501)');
+  const draft = (await exec(process.execPath, [cli, 'issue', '--state', state], { env })).stdout;
+  assert.match(draft, new RegExp(`Poki Setup 0\\.2\\.1 \\(319\\)`));
+  assert.match(draft, /Poki 0\.2\.8 \(501\)/);
+  assert.match(draft, new RegExp(`installer ${pkg.version.replaceAll('.', '\\.')} \\(abc1234\\)`));
+});
+
+test('the bundle and the draft drop the Apple Account holder, the Mac name and phone names in other languages', async t => {
+  const state = await stateDir(t);
+  await seedFailedRun(state);
+  const bin = await mkdtemp(join(tmpdir(), 'poki-install-fakebin-'));
+  t.after(() => rm(bin, { recursive: true, force: true }));
+  for (const [tool, answer] of [['scutil', "Quinn Fakeperson's MacBook Pro"], ['id', 'Quinn Fakeperson']]) {
+    await writeFile(join(bin, tool), `#!/bin/sh\necho ${JSON.stringify(answer)}\n`);
+    await chmod(join(bin, tool), 0o755);
+  }
+  const log = join(state, 'setup-home/logs/poki-setup.log');
+  // Lines in the shape of Poki Setup's own log (desktop/core setup.rs, progress.rs, identity.rs).
+  await writeFile(log, [
+    ...(await readFile(log, 'utf8')).split('\n'),
+    'INFO Signing Poki for Remy Testperson',
+    'INFO Remy Testperson (free, 7-day signing)',
+    'INFO signed for Remy Testperson',
+    'INFO development certificates machine=Quinn Fakeperson\'s MacBook Pro',
+    'INFO host Quinn Fakeperson MacBook Pro ready',
+    'INFO done pair: iPhone von Anna Beispiel · iOS 27.1',
+    'INFO done pair: 李雷的iPhone · iOS 27.1',
+    'INFO done pair: Studio Phone · iOS 26.0',
+    'INFO Poki 0.2.8 is on Hanako Nameless',
+    'INFO install step failed: The iPhone did not answer the Trust dialog in time.',
+  ].join('\n'));
+  const env = { ...process.env, PATH: `${bin}:${process.env.PATH}` };
+  const bundle = (await exec(process.execPath, [cli, 'diagnose', '--no-device', '--state', state], { env })).stdout;
+  const issue = (await exec(process.execPath, [cli, 'issue', '--state', state], { env })).stdout;
+  for (const [label, output] of [['diagnose', bundle], ['issue', issue]]) {
+    assert.doesNotMatch(output, /Remy|Testperson|Quinn|Fakeperson|Anna|Beispiel|李雷|Studio Phone|Hanako|Nameless/, `${label} leaks a team, Mac or phone name`);
+    assert.match(output, /did not answer the Trust dialog in time/, `${label} keeps the failure`);
+    assert.match(output, /free, 7-day signing/, `${label} keeps the kind of team`);
+  }
+});
