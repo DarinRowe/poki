@@ -64,7 +64,25 @@ final class AppModel {
     private(set) var guiding: SetupStep?
     /// The pairing file, if it is really there. The path is never stored: the app's container moves
     /// when Poki is installed again, and a stored path then points at nothing.
-    var pairingPath: String? { FileManager.default.fileExists(atPath: AppFiles.pairingFile.path) ? AppFiles.pairingFile.path : nil }
+    var pairingPath: String? { _ = pairingFileSeen; return FileManager.default.fileExists(atPath: AppFiles.pairingFile.path) ? AppFiles.pairingFile.path : nil }
+    /// Whether the pairing file was there at the last look. Poki Setup on a computer writes it into
+    /// Poki's container after an install, while Poki may be running: setting this redraws what depends
+    /// on `pairingPath` (the file itself is not observed).
+    private var pairingFileSeen = FileManager.default.fileExists(atPath: AppFiles.pairingFile.path)
+    /// Looks for a pairing file Poki Setup put in the container (at launch, on coming to the front,
+    /// and every few seconds on the pairing step).
+    func lookForHandedPairing() {
+        let there = FileManager.default.fileExists(atPath: AppFiles.pairingFile.path)
+        guard there != pairingFileSeen else { return }
+        pairingFileSeen = there
+        // A pairing made here writes the same file just before it reports `paired`, which handles it.
+        guard there, !pairingUnderWay else { return }
+        try? (AppFiles.pairingFile as NSURL).setResourceValue(URLFileProtection.completeUntilFirstUserAuthentication, forKey: .fileProtectionKey)
+        setup.pairingFile = AppFiles.pairingFile.path
+        SetupVault.mirrorPairingFromContainer()
+        pairingTrouble = nil; pairingVerifiedAt = nil
+        log.add("pairing", "pairing file from Poki Setup found")
+    }
     /// Why the phone refused the pairing the last time the runner started, until it is accepted again.
     private(set) var pairingTrouble: String?
     /// When the phone last accepted the pairing (the runner got past the pairing step).
@@ -341,10 +359,12 @@ final class AppModel {
     /// setup step the person just did in Settings.
     func becameActive() {
         inFront = true
+        cameToFront = Date()
         // A pairing file and disk image Poki Setup put in the container while Poki was running (or
         // since it last came to the front) count at once: mirrored to the Keychain, the disk image
         // checked again, and the pairing checked as soon as the loopback answers.
         SetupVault.mirrorPairingFromContainer()
+        lookForHandedPairing()
         diskImage.notice()
         warmInProcess("Poki came to the front")
         loopback.resume()
@@ -370,8 +390,13 @@ final class AppModel {
 
     /// In the background the loopback is still watched while Poki is on (the agent's runner depends on
     /// it): every 6 s, light enough for the location-kept background time.
-    func wentToBackground() { inFront = false; sessionOn ? loopback.resume(every: 6) : loopback.pause() }
+    func wentToBackground() {
+        inFront = false
+        sessionOn ? loopback.resume(every: 6) : loopback.pause()
+        if pairingUnderWay { log.add("pairing", "Poki in the background while pairing; keep-alive \(pairingKeepAlive.isOn ? "playing" : "off")") }
+    }
     private var inFront = true
+    private var cameToFront = Date()
 
     /// Poki is being closed: end the runner now (the launcher kills its process) instead of leaving
     /// iOS's automation banner up for half a minute. iOS gives a few seconds for this.
@@ -1172,6 +1197,9 @@ final class AppModel {
         // The person completes pairing in Settings. Keep the listener and Bonjour publication alive
         // there, before a regular Poki session can be started. Without it (audio can be busy, as in a
         // call) pairing still starts, as it did before the keep-alive.
+        // Location keeps Poki running in Settings as well (While Using is enough, started here in front).
+        background.holdForPairing()
+        log.add("pairing", "staying on with location (\(background.allowed ? "allowed" : "not allowed yet")) and silent audio")
         do { try pairingKeepAlive.start() }
         catch { log.add("pairing", "keep-alive did not start (\(error.localizedDescription)); iOS may stop the pairing while Settings is open") }
         do {
@@ -1182,8 +1210,10 @@ final class AppModel {
     }
 
     func cancelPairing() {
+        if pairingUnderWay { log.add("pairing", "stopped") }
         pairer.cancel()
         pairingKeepAlive.stop()
+        background.releasePairing()
         pairing = nil
         activity.update { $0.pin = nil }
         if !sessionOn { stopGuide(); activity.end() }
@@ -1201,6 +1231,12 @@ final class AppModel {
     /// once, and with it the background keep-alive. Going to Settings is not leaving.
     func leftPairing() {
         guard pairingUnderWay else { return }
+        // Only a move inside Poki counts. iOS can take pages down while Poki is in the background
+        // (the person is in Settings typing the code) or while it comes back; that is not leaving.
+        guard inFront, UIApplication.shared.applicationState == .active, Date().timeIntervalSince(cameToFront) > 2 else {
+            log.add("pairing", "pairing page went away while Poki was not in front; the pairing goes on")
+            return
+        }
         log.add("pairing", "cancelled: the pairing step was left")
         cancelPairing()
     }
@@ -1219,6 +1255,7 @@ final class AppModel {
         case .paired(let url):
             PairingNotice.clear()
             pairingKeepAlive.stop()
+            background.releasePairing()
             try? (url as NSURL).setResourceValue(URLFileProtection.completeUntilFirstUserAuthentication, forKey: .fileProtectionKey)
             setup.pairingFile = url.path
             if let data = try? Data(contentsOf: url) { SetupVault.storePairing(data) }
@@ -1229,6 +1266,7 @@ final class AppModel {
         case .failed(let why):
             PairingNotice.clear()
             pairingKeepAlive.stop()
+            background.releasePairing()
             activity.update { $0.phase = .problem; $0.pin = nil; $0.label = "Pairing Failed"; $0.headline = Self.firstPart(why) }
             if !sessionOn { Task { try? await Task.sleep(for: .seconds(8)); if !self.sessionOn { self.activity.end() } } }
         case .advertising: break
@@ -1265,7 +1303,8 @@ final class AppModel {
         // A loopback that answers is the step done, whichever app provides it: one set up before Poki
         // (or by Poki Setup on a computer) has no row tapped here, and `loopbackChanged` records it.
         case .loopback: loopback.isWorking
-        case .pairing: pairingPath != nil && pairingTrouble == nil && diskImage.isReady
+        // The disk image downloads by itself (and is checked again when Poki turns on): it does not hold the step open.
+        case .pairing: pairingPath != nil && pairingTrouble == nil
         case .account: signer.signedIn
         case .automation: setup.uiAutomation
         case .background: background.allowed && activity.enabled

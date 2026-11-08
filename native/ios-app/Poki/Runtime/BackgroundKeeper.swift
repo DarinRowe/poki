@@ -51,11 +51,39 @@ final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
     func stop() {
         guard isOn else { return }
         isOn = false
-        stopLocation()
+        if !pairingHold { stopLocation() }
         audio.stop()
     }
 
+    /// While a pairing waits in Settings, location keeps Poki running (with the silent audio), so the
+    /// pairing listener answers when Settings connects. While Using is enough here: the updates start
+    /// in front, and a CLBackgroundActivitySession carries them into the background (iOS shows its
+    /// location indicator meanwhile). Ended when the pairing ends.
+    private(set) var pairingHold = false
+    func holdForPairing() {
+        guard !pairingHold else { return }
+        pairingHold = true
+        if authorization == .notDetermined { manager.requestWhenInUseAuthorization() }
+        startPairingLocation()
+    }
+
+    func releasePairing() {
+        guard pairingHold else { return }
+        pairingHold = false
+        activity?.invalidate(); activity = nil
+        if isOn { startLocation() } else { stopLocation() }
+    }
+
+    private func startPairingLocation() {
+        guard pairingHold, allowed else { return }
+        if activity == nil { activity = CLBackgroundActivitySession() }
+        manager.allowsBackgroundLocationUpdates = true
+        manager.showsBackgroundLocationIndicator = !always
+        manager.startUpdatingLocation()
+    }
+
     private func startLocation() {
+        if pairingHold { startPairingLocation(); return }
         guard always else { stopLocation(); return }
         manager.allowsBackgroundLocationUpdates = true
         manager.showsBackgroundLocationIndicator = false
@@ -71,7 +99,7 @@ final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
         let status = manager.authorizationStatus
         Task { @MainActor in
             self.authorization = status
-            if self.isOn { self.startLocation() }
+            if self.isOn || self.pairingHold { self.startLocation() }
         }
     }
 

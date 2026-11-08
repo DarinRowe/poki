@@ -54,7 +54,8 @@ async fn pair(config: &PairConfig, emit: &(impl Fn(Value) + Send + Sync)) -> Res
         "port": port,
         "txt": txt,
     }));
-    let (stream, _) = listener.accept().await.map_err(|e| format!("the phone did not connect: {e}"))?;
+    let (stream, peer) = listener.accept().await.map_err(|e| format!("the phone did not connect: {e}"))?;
+    emit(json!({"event": "connected", "peer": peer.to_string()}));
     let mut host = PairableHost::new(RpPairingSocket::new_device(stream), info);
     host.accept(&mut file, |pin| {
         emit(json!({"event": "pin", "pin": pin}));

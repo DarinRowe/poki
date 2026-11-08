@@ -472,6 +472,7 @@ private struct PairingPage: View {
     @Environment(AppModel.self) private var model
     @State private var importing = false
     @State private var importError: String?
+    @State private var scanning = false
 
     struct MainAction {
         var title: LocalizedStringKey
@@ -546,7 +547,7 @@ private struct PairingPage: View {
                 Section {
                     Label("Pairing on the phone itself needs iOS 27; this iPhone runs iOS \(UIDevice.current.systemVersion). Pair it from a computer instead.", systemImage: "1.circle")
                     Label("Open **Poki Setup** on your Mac or PC, connect this iPhone by cable, and tap **Pair**. Tap **Trust** on the iPhone when asked.", systemImage: "2.circle")
-                    Label("Send the pairing file here: scan the code Poki Setup shows with the Camera, AirDrop the file to this iPhone and open it with Poki, or tap **Import Pairing File** below.", systemImage: "3.circle")
+                    Label("Send the pairing file here: tap **Scan Pairing Code** below (or scan Poki Setup's code with the Camera), AirDrop the file to this iPhone and open it with Poki, or tap **Import Pairing File** below.", systemImage: "3.circle")
                 } header: {
                     Text("How To")
                 } footer: {
@@ -566,6 +567,9 @@ private struct PairingPage: View {
             Text("Developer Disk Image")
         }
         Section {
+            if PairingScanner.available {
+                Button("Scan Pairing Code", systemImage: "qrcode.viewfinder") { scanning = true }
+            }
             Button("Import Pairing File") { importing = true }
             if SetupStep.onDevicePairing && model.pairing == nil && model.pairingTrouble == nil && model.pairingPath != nil {
                 Button("Pair Again") { Self.pair(model) }
@@ -575,6 +579,9 @@ private struct PairingPage: View {
         } footer: {
             if let importError { Text(importError).foregroundStyle(.red) }
         }
+        .sheet(isPresented: $scanning) { PairingScannerSheet() }
+        // Poki Setup on a computer may be writing the file into Poki right now.
+        .task { while !Task.isCancelled { model.lookForHandedPairing(); try? await Task.sleep(for: .seconds(3)) } }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.propertyList, .xml, .data]) { result in
             do { try model.importPairingFile(from: result.get()); importError = nil }
             catch { importError = String(localized: "Invalid Pairing File: \(error.localizedDescription)") }
