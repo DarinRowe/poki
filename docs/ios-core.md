@@ -628,6 +628,22 @@ on the phone; the next first `look` of a task in that app names the saved routin
   run was killed), as a wedged WebDriverAgent holds its thread: now the POST /session that opens
   the new session gets a new queue when the request in flight is older than 8 s, and the held
   request is left to end on its own, as a restarted runner leaves its old process.
+- **In-process, every accessibility request has a deadline, and an app that does not answer is
+  left alone until it does.** The gym's finding 36: Settings bringing up its keyboard on the CI
+  simulator stopped answering accessibility requests, and the synchronous snapshot request to it
+  never returned (not in 12 minutes). Every read, picture (its viewport frame) and launch (its
+  front-app poll) queued behind it, and so did each new session the watchdog opened: 42 restarts,
+  101 calls with no tree and no picture. XCTest asks an app to confirm its run loop is responsive
+  within 2 s before a snapshot; `InProcess.m` now runs each request (snapshot, active
+  applications, hit test, loadAccessibility) on its own thread and gives it up after a deadline
+  (6 s for a tree, 3 s for a one-element frame, 4 s for the server): the caller gets
+  `app_unresponsive: the app in front (pid N) has not answered ... the picture still shows the
+  screen and a tap on a point of it works`, and nothing more is asked of that pid until the
+  abandoned request returns (one hung thread per app at most). The picture no longer depends on
+  the snapshot (the viewport keeps its last value), and `frontApp` reports the bundle id and pid
+  from the active applications even when the app's snapshot does not come, so a launch sees its
+  app arrive. PokiCore treats the refusal as it treats WebDriverAgent's "did not confirm its main
+  run loop is responsive": one more try within the read, then the note with the picture.
 - **A type waits for a busy runner as long as its action allows.** A type gave up after 3 s with
   "the runner is still finishing an earlier GET /source" while 7 s of its 9 s were left; the
   runner was serving this side's own leftover read from the look before, and the model paid a
