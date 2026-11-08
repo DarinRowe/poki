@@ -5,6 +5,7 @@ import { mkdir, writeFile, readFile, unlink, rename, chmod } from 'node:fs/promi
 import { once } from 'node:events';
 import { NodeStreamableHTTPServerTransport, localhostHostValidation, localhostOriginValidation, hostHeaderValidation } from '@modelcontextprotocol/node';
 import { createServer, definitions } from './tools.mjs';
+import { withCallLog } from './call-log.mjs';
 import { Coordination } from './coordination.mjs';
 import { Devices } from './device.mjs';
 import { stateDir, endpointFile } from './config.mjs';
@@ -63,6 +64,7 @@ async function handle(req, res) {
   if (!sessions.has(session)) sessions.set(session, new Devices(coordinator));
   const devices = sessions.get(session);
   devices.peers = () => sessions.values();
+  devices.label ??= session;
   if (req.url === '/session/close') {
     if (req.method !== 'POST') { res.writeHead(405); res.end(); return; }
     await devices.close(); sessions.delete(session); res.end('{}'); return;
@@ -79,7 +81,7 @@ async function handle(req, res) {
   }
   const server = createServer((name, args, extra) => {
     if (devices.cancelledRequests?.delete(extra?.requestId)) throw new DOMException('Request cancelled', 'AbortError');
-    return devices.call(name, args, extra?.signal, extra?.requestId);
+    return withCallLog(session, name, () => devices.call(name, args, extra?.signal, extra?.requestId));
   });
   const transport = new NodeStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   active.add(server);

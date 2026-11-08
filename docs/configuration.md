@@ -1,6 +1,6 @@
 # Configuration and sessions
 
-All device operations are serialized inside the daemon. Every setting below is optional:
+All device operations are serialized inside the daemon, unless `POKI_INPUT_LOCK=1` gives each session its own queue. Every setting below is optional:
 
 | Setting | Purpose |
 | --- | --- |
@@ -12,6 +12,10 @@ All device operations are serialized inside the daemon. Every setting below is o
 | `POKI_HOST_ALLOW` | Comma-separated `Host` header allowlist, for example `127.0.0.1,192.168.1.20`. When set, `hostHeaderValidation(list)` replaces `localhostHostValidation()`, which otherwise rejects every non-loopback `Host` with `403` and makes a LAN bind unusable. It must contain `127.0.0.1` itself: an entry for `localhost` or `[::1]` does not match the `Host` header local clients send. |
 | `POKI_MCP_TOKEN` | Fixed bearer token for the local HTTP bridge. Defaults to a random token generated at each start, which invalidates every client's configuration on restart. |
 | `IDEVICE_TOOLS` | Optional path override for the pinned upstream CLI. |
+| `POKI_INPUT_LOCK=1` | For a daemon shared by several MCP clients: each session keeps its own order, read-only tools run beside other sessions' work, and input takes a lock on its device. See [One daemon, several clients](tools.md#one-daemon-several-clients). |
+| `POKI_INPUT_LOCK_WAIT_MS` | How long a call waits for a device another session is driving before it fails and names the holder. Default 30000. |
+| `POKI_MAX_CONCURRENT_READS` | How many read-only calls run at once with `POKI_INPUT_LOCK=1`. Default 4. |
+| `POKI_MCP_CALL_LOG` | Path of a log with one JSON line per tool call: tool, duration, verdict and whether it failed, never arguments, text or images. |
 
 The authenticated local HTTP bridge passes the session via the `x-poki-mcp-session` header. Standard MCP clients should always connect through `src/stdio.mjs`.
 

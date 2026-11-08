@@ -65,8 +65,11 @@ async function socketFor(target) {
       } catch (error) { if (error.code !== 'ENOENT') throw error; }
       if (!target.remote && closing) throw new Error('Local native helpers are shutting down.');
       const args = target.remote ? ['--remote-server', target.remote, path] : ['--local-server', target.id, path];
-      const child = spawn(join(root, 'build/poki-native'), args, { detached: Boolean(target.remote), stdio: [target.remote ? 'ignore' : 'pipe', 'pipe', process.env.POKI_MCP_NATIVE_TRACE ? 'inherit' : 'ignore'] });
+      const child = spawn(join(root, 'build/poki-native'), args, { detached: Boolean(target.remote), stdio: [target.remote ? 'ignore' : 'pipe', 'pipe', process.env.POKI_MCP_NATIVE_TRACE ? 'inherit' : 'pipe'] });
       if (process.env.POKI_MCP_NATIVE_TRACE) console.error(JSON.stringify({ event: 'native_helper_started', pid: child.pid, transport: target.remote ? 'remote' : 'local' }));
+      // Keep draining stderr for the helper's lifetime: a closed pipe would turn its later writes into a panic.
+      let stderr = '';
+      child.stderr?.on('data', chunk => { stderr = (stderr + chunk).slice(-4000); }).unref();
       if (!target.remote) {
         const exited = once(child, 'exit').catch(() => {}).then(async () => {
           await unlink(path).catch(() => {});
@@ -81,7 +84,12 @@ async function socketFor(target) {
           const timer = setTimeout(() => { child.kill(); reject(new Error('Remote helper did not start.')); }, 5000);
           const done = (error) => { clearTimeout(timer); error ? reject(error) : resolve(); };
           child.once('error', () => done(new Error('Cannot start remote helper. Run bin/setup.')));
-          child.once('exit', () => done(new Error('Remote helper stopped before becoming ready.')));
+          child.once('close', (code, signal) => {
+            const status = signal ? `signal ${signal}` : `exit code ${code}`;
+            const tail = stderr.trim().split('\n').slice(-5).join('\n');
+            const hint = signal === 'SIGKILL' ? ' This can happen when build/poki-native is overwritten while an older helper still runs. Run ./bin/build-native again, then restart Poki.' : '';
+            done(new Error(`${target.remote ? 'Remote' : 'Native'} helper stopped before becoming ready (${status}).${hint}${tail ? `\nHelper stderr:\n${tail}` : ''}`));
+          });
           lines.once('line', line => { if (line === '{"ready":true}') done(); else done(new Error('Invalid remote helper greeting.')); });
         });
       } finally { lines.close(); child.stdout.destroy(); child.unref(); }

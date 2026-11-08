@@ -57,3 +57,19 @@ if (process.argv[2] === '--udid') {
   await f.daemon.stop();
   assert.throws(() => process.kill(value(recovered).pid, 0), { code: 'ESRCH' });
 });
+
+test('a local native helper that exits before ready reports its exit status and stderr', async t => {
+  const f = await fixture(t, { beforeStart: async dir => {
+    await writeFile(join(dir, 'build/poki-native'), `#!/usr/bin/env node
+console.error('earlier setup line');
+console.error('fixture helper cannot bind its socket');
+process.exit(3);
+`, { mode: 0o755 });
+  }});
+  const result = await f.call('get_foreground_app', { device: 'fixture-phone' });
+  const message = result.content.find(c => c.type === 'text').text;
+  assert.equal(result.isError, true, message);
+  assert.match(message, /stopped before becoming ready/);
+  assert.match(message, /exit code 3/);
+  assert.match(message, /fixture helper cannot bind its socket/);
+});

@@ -13,7 +13,7 @@ import { idevice, stateDir, root } from './config.mjs';
 import { startRecording, stopRecording, closeRecordings } from './recording.mjs';
 import { openInput, selectKeyboard } from './simulator-input.mjs';
 
-const launchReadyMs = 10000;
+const launchReadyMs = 10000, foregroundGraceMs = 2000, foregroundPollMs = 150;
 
 const states = new WeakMap();
 function state(ctx) {
@@ -221,6 +221,7 @@ async function launch(ctx, target, args) {
   if (args.language) argv.push('-AppleLanguages', `(${args.language})`);
   if (args.locale) argv.push('-AppleLocale', args.locale);
   const testLaunch = argv.length || Object.keys(args.environment ?? {}).length;
+  const terminate = Boolean(testLaunch || args.fresh);
   let result;
   if (target.kind === 'physical') {
     const query = args.bundle_id ?? args.name ?? args.app;
@@ -238,9 +239,12 @@ async function launch(ctx, target, args) {
     }
     const metadata = lookup ? { _meta: { app_lookup: { cache_hit: lookup.cache_hit } } } : {};
     let launched = {};
+    // The launch service answers with the running process when there is one, so a pid seen before means
+    // the app resumed where it was, open drafts and all.
+    const known = [ctx.launchedPids?.get(`${target.id} ${bundle}`), ctx.lastForeground?.device === target.id ? ctx.lastForeground.pid : undefined];
     try {
       launched = await phase('app_launch', () => ctx.bridge({ op: 'launch_app', bundle_id: bundle,
-        arguments: argv, environment: args.environment ?? {}, terminate_existing: Boolean(testLaunch) }));
+        arguments: argv, environment: args.environment ?? {}, terminate_existing: terminate }));
       if (launched.isError) return { ...launched, ...metadata, foreground_verified: false, ...(launched.outcome === 'unknown' ? { stop_reason: 'unknown' } : {}) };
       if (!Number.isSafeInteger(launched.pid) || launched.pid <= 0) throw new Error('Launch service returned no valid PID.');
       ctx.frame = undefined; ctx.elements = [];
@@ -248,9 +252,12 @@ async function launch(ctx, target, args) {
       // and a tap takes 6 s. 8 s and 2.5 s are right for the cable and too tight for the tunnel, so
       // the allowance follows the transport instead of being raised for everybody.
       const tunneled = target.kind === 'physical' && target.connection === 'RemotePairing';
+      // The app can take a moment to come to the front, and a warm bridge reads in milliseconds, so the
+      // foreground is polled for a grace period rather than a fixed number of reads.
+      const launchedAt = performance.now();
       await phase('foreground_verification', () => deadline(tunneled ? 20000 : 8000, async () => {
         let lastError = new Error('The launched app did not become the observed foreground.');
-        for (let attempt = 0; attempt < 3; attempt++) {
+        for (let attempt = 0; attempt < 3 || performance.now() - launchedAt < foregroundGraceMs; attempt++) {
           try {
             const tree = await deadline(tunneled ? 6000 : 2500, () => phase('foreground_query', () => ctx.bridge({ op: 'ax', include_offscreen: false })));
             if (tree.foreground?.pid === launched.pid) return;
@@ -259,11 +266,17 @@ async function launch(ctx, target, args) {
             if (error.name !== 'TimeoutError') throw error;
             lastError = error;
           }
-          if (attempt < 2) await pause(100);
+          await pause(foregroundPollMs);
         }
         throw lastError;
       }));
-      return { ...launched, ...(lookup ? { name: lookup.app.name } : {}), ...metadata, foreground_verified: true };
+      const foregroundAfterMs = Math.round(performance.now() - launchedAt);
+      (ctx.launchedPids ??= new Map()).set(`${target.id} ${bundle}`, launched.pid);
+      const resumed = !terminate && known.includes(launched.pid);
+      // A physical launch has no readiness wait, so the screen it shows (a first-run sheet, say) is read back here.
+      const screen = ctx.inBatch ? {} : { screen: (await ctx.readback()).screen };
+      return { ...launched, ...(lookup ? { name: lookup.app.name } : {}), ...metadata, foreground_verified: true, foreground_after_ms: foregroundAfterMs, resumed,
+        ...(resumed ? { notice: 'The app was already running and resumed where it was left. Use fresh=true to start it anew, for example to check that something was saved.' } : {}), ...screen };
     } catch (error) {
       return { ...launched, ...metadata, isError: true, outcome: 'unknown', foreground_verified: false,
         stop_reason: stopped(error) ? stoppingReason(error) : 'unknown', error: error.message,
@@ -274,7 +287,7 @@ async function launch(ctx, target, args) {
   if (target.kind === 'simulator') {
     const env = { ...process.env };
     for (const [key, value] of Object.entries(args.environment ?? {})) env[`SIMCTL_CHILD_${key}`] = value;
-    const command = ['simctl', 'launch', ...(testLaunch ? ['--terminate-running-process'] : []), target.id, app.bundle_id, ...argv];
+    const command = ['simctl', 'launch', ...(terminate ? ['--terminate-running-process'] : []), target.id, app.bundle_id, ...argv];
     await selectKeyboard(target.id);
     openInput(target.id);
     const response = await platformRun('xcrun', command, { env });
@@ -288,15 +301,18 @@ async function launch(ctx, target, args) {
 
 // simctl returns before the app draws: SpringBoard stays in front, then the app reports no elements
 // for a few seconds. A tap in that gap fails as if its target did not exist.
+// The launched process seen in front confirms the launch as a phone's receipt does, readable or not.
 async function interfaceReady(ctx, pid) {
   const started = performance.now();
+  let inFront = false;
   while (performance.now() - started < launchReadyMs) {
     checkWork();
     const seen = await ctx.structure().catch(error => { if (stopped(error)) throw error; });
-    if (seen?.foreground?.pid === pid && seen.elements.length) return { interface_ready: true, ...ctx.inBatch ? {} : { screen: (await ctx.readback()).screen } };
+    inFront ||= seen?.foreground?.pid === pid;
+    if (seen?.foreground?.pid === pid && seen.elements.length) return { foreground_verified: true, interface_ready: true, ...ctx.inBatch ? {} : { screen: (await ctx.readback()).screen } };
     await pause(100);
   }
-  return { interface_ready: false, ...ctx.inBatch ? {} : { screen: (await ctx.readback()).screen }, instruction: `The app reported no readable elements within ${launchReadyMs / 1000} seconds. Use take_screenshot to look, or wait_for if it is still loading.` };
+  return { foreground_verified: inFront, interface_ready: false, ...ctx.inBatch ? {} : { screen: (await ctx.readback()).screen }, instruction: `The app reported no readable elements within ${launchReadyMs / 1000} seconds. Use take_screenshot to look, or wait_for if it is still loading.` };
 }
 
 async function applicationMutation(target, request, verify) {
@@ -446,7 +462,7 @@ async function observeAction(ctx, action) {
     if (changed) break;
     await pause(200);
   } while (Date.now() < deadline);
-  return { ...result, screen_changed: changed, screen_change_verified: true, foreground_before: before.foreground, foreground_after: after.foreground,
+  return { ...result, screen_change: changed ? 'changed' : 'unchanged', screen_changed: changed, screen_change_verified: true, foreground_before: before.foreground, foreground_after: after.foreground,
     ...(!changed ? { notice: 'The URL was accepted, but the screen did not visibly change afterwards.' } : {}) };
 }
 
