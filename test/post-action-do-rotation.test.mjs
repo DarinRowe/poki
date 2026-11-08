@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import sharp from 'sharp';
 import { fixture, value } from './fixture.mjs';
 
-const OPT = process.env.REVIEW_NO_OPT ? {} : { return_observation: true };
 
 test('rotation before a do coordinate tap refreshes dimensions', { timeout: 30000 }, async t => {
   const f = await fixture(t);
@@ -13,9 +12,9 @@ test('rotation before a do coordinate tap refreshes dimensions', { timeout: 3000
   ];
   // First tap changes the screen, so no delayed unchanged-screen confirmation.
   await f.set({ elements: ax(100, 200), afterInput: { elements: ax(100, 200, 'Done') } });
-  const first = await f.call('tap', { x: 80, y: 170, ...OPT });
+  const first = await f.call('tap', { x: 80, y: 170, return_observation: true });
   assert.ok(!first.isError);
-  if (!process.env.REVIEW_NO_OPT) assert.ok(value(first).post_action_observation, 'AX-only binding created');
+  assert.ok(value(first).post_action_observation, 'AX-only binding created');
   await sharp({ create: { width: 200, height: 100, channels: 3, background: 'white' } })
     .png().toFile(f.image);
   await f.set({ elements: ax(200, 100, 'Done'), afterInput: null });
