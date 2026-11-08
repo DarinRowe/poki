@@ -89,7 +89,16 @@ final class SessionStore {
     private var pendingWrites: Set<String> = []
     private var writeTask: Task<Void, Never>?
     /// The outside agent sessions seen since launch: id → client name.
-    private var clients: [String: String] = [:]
+    /// Each MCP session's client name (its clientInfo at initialize), kept across launches: an agent
+    /// keeps its session while Poki restarts or the session is closed for being idle, and its next
+    /// call (ask_poki among them) still says who it is.
+    private var clients: [String: String] = (UserDefaults.standard.dictionary(forKey: "sessions.clients") as? [String: String]) ?? [:] {
+        didSet {
+            var kept = clients
+            if kept.count > 200 { kept = Dictionary(uniqueKeysWithValues: kept.suffix(200).map { ($0.key, $0.value) }) }
+            UserDefaults.standard.set(kept, forKey: "sessions.clients")
+        }
+    }
     /// The connector each outside agent session came through: id → sha256 of its secret.
     private var connectors: [String: String] = [:]
     /// The session whose call is running, for approvals and hand-offs (they carry no session).
@@ -240,7 +249,6 @@ final class SessionStore {
             clients[id] = AgentName.pretty(client)
             if let connector { connectors[id] = connector }
         case .session(.ended(let id)):
-            clients[id] = nil
             if var session = session(id), session.live {
                 session.live = false
                 session.outcome = session.outcome ?? .done
