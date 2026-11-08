@@ -278,10 +278,8 @@ private struct StepBar: View {
                 if face.stepUnderWay {
                     Capsule().fill(ok.opacity(dimmed ? 0.5 : 0.35)).frame(height: 5)
                 }
-                // The rest of the bar's twelve places, empty.
-                ForEach(0..<max(0, PokiState.outcomeLimit - shown.count - (face.stepUnderWay ? 1 : 0)), id: \.self) { _ in
-                    Capsule().fill(palette.track).frame(height: 5)
-                }
+                // One segment per step so far and no empty places: three steps are three segments,
+                // and the bar splits as each new step comes in.
             }
             .padding(.top, 2)
             .accessibilityElement()
@@ -350,7 +348,7 @@ struct ApprovalButtons: View {
             .tint(.secondary)
             .foregroundStyle(.primary)
             Button(intent: ApproveActionIntent(approvalID: approvalID)) {
-                Label(String(activity: "Allow"), systemImage: "faceid")
+                Label(String(activity: "Allow"), systemImage: "checkmark")
                     .font(theme.button)
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)

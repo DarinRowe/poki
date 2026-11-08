@@ -128,8 +128,17 @@ final class ActivityController {
         change(&state)
         ActivityUpdatePolicy.settle(&state, over: old)
         let alert = transition(from: old)
+        // Something needs the person and there is no Live Activity to pop up: a banner instead (an
+        // approval and a pairing code have their own).
+        if let banner = attention, activity == nil {
+            AttentionNotice.post(title: banner.title, body: banner.body)
+        }
+        attention = nil
+        if state.handoff == nil, state.phase != .problem, old.handoff != nil || old.phase == .problem { AttentionNotice.clear() }
         send(alert: alert, critical: Self.isCritical(state, after: old))
     }
+    /// The hand-off or problem this change pops up for (`update` posts a banner when no activity runs).
+    private var attention: (title: String, body: String)?
 
     /// Writes a thumbnail, at most about 160 points wide, to the App Group container for the widget.
     func setThumbnail(_ jpeg: Data?) {
@@ -173,6 +182,7 @@ final class ActivityController {
         if let handoff = state.handoff, handoff.id != old.handoff?.id {
             setEvent(.handoff, "Your turn")
             alert = critical(handoff.title, handoff.detail)
+            attention = (handoff.title, handoff.detail)
         }
         if state.handoff == nil, old.handoff != nil, state.phase == .working {
             setEvent(.resumed, "Carrying on")
@@ -190,6 +200,7 @@ final class ActivityController {
         if state.phase == .problem, old.phase != .problem {
             setEvent(.problem, state.label ?? "Problem")
             alert = critical(String(activity: "Poki needs attention"), ActivityWords.local(state.headline))
+            attention = (String(activity: "Poki needs attention"), ActivityWords.local(state.headline))
         }
         if let pin = state.pin, pin != old.pin {
             setEvent(.code, "Code ready")

@@ -14,7 +14,7 @@ enum ApprovalNotice {
     /// approval can be answered without opening Poki. Allow asks for Face ID or the passcode first.
     @MainActor static func registerActions() {
         let allowAction = UNNotificationAction(identifier: allow, title: String(localized: "Allow"),
-                                               options: [.authenticationRequired], icon: UNNotificationActionIcon(systemImageName: "faceid"))
+                                               options: [.authenticationRequired], icon: UNNotificationActionIcon(systemImageName: "checkmark"))
         let denyAction = UNNotificationAction(identifier: deny, title: String(localized: "Don’t Allow"),
                                               options: [.destructive], icon: UNNotificationActionIcon(systemImageName: "xmark"))
         let approvals = UNNotificationCategory(identifier: category, actions: [allowAction, denyAction], intentIdentifiers: [],
@@ -94,6 +94,25 @@ enum PairingNotice {
         let shown = pin.count == 6 ? "\(pin.prefix(3)) \(pin.suffix(3))" : pin
         content.title = String(localized: "Pairing code \(shown)")
         content.body = String(localized: "Type it on the Pair with Poki screen in Settings.")
+        content.sound = .default
+        content.interruptionLevel = .timeSensitive
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [id])
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
+    }
+    @MainActor static func clear() {
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [id])
+    }
+}
+
+/// What the Live Activity would pop up for (the agent's hand-off, a problem) when there is no Live
+/// Activity to pop up: dismissed, off in Settings, or Poki turned on from the background, where iOS does
+/// not let an app start one. A time-sensitive banner instead.
+enum AttentionNotice {
+    static let id = "poki-attention"
+    @MainActor static func post(title: String, body: String) {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
         content.sound = .default
         content.interruptionLevel = .timeSensitive
         UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [id])

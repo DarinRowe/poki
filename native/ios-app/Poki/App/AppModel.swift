@@ -346,6 +346,12 @@ final class AppModel {
         diskImage.notice()
         warmInProcess("Poki came to the front")
         loopback.resume()
+        // Swiped away, ended by iOS, or Poki turned on from the background (where iOS starts none):
+        // the Live Activity comes back while Poki is on, so the next thing that needs the owner pops up.
+        if sessionOn, !activity.isRunning {
+            activity.start(deviceName: deviceName)
+            if activity.isRunning { log.add("activity", "Live Activity started again (Poki came to the front)") }
+        }
         // Poki in front while an agent's step is under way: nobody opened it on purpose. A tap near the
         // top of the screen hit the expanded Dynamic Island (iOS opens the activity's app), or the agent
         // tapped the activity's own label in the tree. Logged so the phone log shows it; PokiCore sends
