@@ -20,6 +20,15 @@ jobs:
           sudo xcode-select -s "$XCODE/Contents/Developer"
           xcodebuild -version && xcrun --sdk iphoneos --show-sdk-version
 
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            native/launcher/target
+            build/app-external
+            ~/Library/Developer/Xcode/DerivedData/ModuleCache.noindex
+          key: ipa-fast-${{ github.sha }}
+          restore-keys: ipa-fast-
       - name: PokiLauncher (Rust static library for the phone)
         run: |
           set -euo pipefail
@@ -49,7 +58,7 @@ jobs:
           mkdir -p build out
           VERSION="${RELEASE_VERSION:-$(cat native/ios-app/VERSION)}"
           BUILD="${RELEASE_BUILD:-${{ github.run_number }}}"
-          for edition in local external; do
+          for edition in ${POKI_EDITIONS:-external}; do
             project=Poki
             ipa=Poki-unsigned.ipa
             if [ "$edition" = external ]; then project=PokiExternal; ipa=Poki-external-unsigned.ipa; fi
@@ -68,7 +77,7 @@ jobs:
           done
           ditto -c -k --keepParent out/signing out/Poki-signing.zip
           (cd out && shasum -a 256 *.ipa | tee SHA256SUMS)
-          for ipa in out/Poki-unsigned.ipa out/Poki-external-unsigned.ipa; do
+          for ipa in out/*.ipa; do
             unzip -p "$ipa" Payload/Poki.app/Info.plist > build/ipa-Info.plist
             V=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' build/ipa-Info.plist)
             B=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' build/ipa-Info.plist)
