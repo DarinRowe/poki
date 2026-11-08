@@ -29,10 +29,66 @@ jobs:
         run: |
           xcode-select -p
           swift --version
+      # Developer ID signing and notarization, when the repository has the secrets (see
+      # desktop/mac/README.md). Without them the app is signed ad hoc, as before.
+      - name: Developer ID certificate
+        env:
+          P12: ${{ secrets.MACOS_CERT_P12 }}
+          P12_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          if [ -z "$P12" ]; then echo "No MACOS_CERT_P12 secret: signing ad hoc."; exit 0; fi
+          KC="$RUNNER_TEMP/poki-sign.keychain-db"
+          KCPW="$(uuidgen)"
+          echo "$P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KCPW" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$KCPW" "$KC"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KC" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KCPW" "$KC" >/dev/null
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/cert.p12"
+          ID=$(security find-identity -v -p codesigning "$KC" | sed -n 's/.*"\(Developer ID Application:.*\)"/\1/p' | head -1)
+          if [ -z "$ID" ]; then echo "::error::The certificate in MACOS_CERT_P12 is not a Developer ID Application certificate."; security find-identity -v -p codesigning "$KC"; exit 1; fi
+          echo "Signing as: $ID"
+          echo "MAC_SIGN_IDENTITY=$ID" >> "$GITHUB_ENV"
+          echo "MAC_SIGN_KEYCHAIN=$KC" >> "$GITHUB_ENV"
       - name: Build the app and DMG
         env:
           MODE: ${{ (contains(github.event.head_commit.message, '[universal]') || startsWith(github.ref, 'refs/tags/')) && 'universal' || 'native' }}
         run: desktop/mac/scripts/bundle.sh "$MODE" "$PWD/dist"
+      - name: Notarize
+        env:
+          KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          ISSUER: ${{ secrets.NOTARY_ISSUER_ID }}
+          KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+          APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          APP_PASSWORD: ${{ secrets.NOTARY_APP_PASSWORD }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -z "${MAC_SIGN_IDENTITY:-}" ]; then echo "Signed ad hoc: nothing to notarize."; exit 0; fi
+          DMG=$(ls dist/*.dmg)
+          if [ -n "$KEY_ID" ] && [ -n "$KEY_P8" ]; then
+            printf '%s' "$KEY_P8" > "$RUNNER_TEMP/notary.p8"
+            AUTH=(--key "$RUNNER_TEMP/notary.p8" --key-id "$KEY_ID" ${ISSUER:+--issuer "$ISSUER"})
+          elif [ -n "$APPLE_ID" ] && [ -n "$APP_PASSWORD" ] && [ -n "$TEAM_ID" ]; then
+            AUTH=(--apple-id "$APPLE_ID" --password "$APP_PASSWORD" --team-id "$TEAM_ID")
+          else
+            echo "::error::Developer ID signing is set up but notarization secrets are missing (NOTARY_KEY_ID + NOTARY_KEY_P8 + NOTARY_ISSUER_ID, or NOTARY_APPLE_ID + NOTARY_APP_PASSWORD + APPLE_TEAM_ID)."
+            exit 1
+          fi
+          xcrun notarytool submit "$DMG" "${AUTH[@]}" --wait --timeout 30m --output-format json | tee "$RUNNER_TEMP/notary.json"
+          SUB=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$RUNNER_TEMP/notary.json")
+          STATUS=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["status"])' "$RUNNER_TEMP/notary.json")
+          if [ "$STATUS" != "Accepted" ]; then
+            xcrun notarytool log "$SUB" "${AUTH[@]}" || true
+            echo "::error::Notarization: $STATUS"; exit 1
+          fi
+          xcrun stapler staple "$DMG"
+          xcrun stapler staple "dist/Poki Setup.app"
+          rm -f "$RUNNER_TEMP/notary.p8"
+          echo "== Gatekeeper"
+          spctl -a -vv -t exec "dist/Poki Setup.app"
+          spctl -a -vv -t open --context context:primary-signature "$DMG"
       - name: Core and bridge check against Apple
         run: python3 desktop/mac/scripts/e2e.py "$PWD/dist/Poki Setup.app/Contents/MacOS/poki-setup-bridge"
       - name: Signing check with Apple's codesign
@@ -60,6 +116,9 @@ jobs:
           name: poki-setup-macos
           path: dist/*.dmg
           if-no-files-found: error
+      - name: Remove the signing keychain
+        if: always()
+        run: if [ -n "${MAC_SIGN_KEYCHAIN:-}" ]; then security delete-keychain "$MAC_SIGN_KEYCHAIN" || true; fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:

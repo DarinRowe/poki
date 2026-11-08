@@ -38,8 +38,12 @@ printf 'APPL????' > "$APP/Contents/PkgInfo"
 
 echo "== Sign"
 IDENTITY="${MAC_SIGN_IDENTITY:--}"
-codesign --force --options runtime --timestamp=none -s "$IDENTITY" "$APP/Contents/MacOS/poki-setup-bridge"
-codesign --force --options runtime --timestamp=none -s "$IDENTITY" "$APP"
+# A Developer ID signature needs a secure timestamp for notarization; an ad hoc one cannot have it.
+if [ "$IDENTITY" = "-" ]; then TS=--timestamp=none; else TS=--timestamp; fi
+KC=()
+if [ -n "${MAC_SIGN_KEYCHAIN:-}" ]; then KC=(--keychain "$MAC_SIGN_KEYCHAIN"); fi
+codesign --force --options runtime "$TS" ${KC[@]+"${KC[@]}"} -s "$IDENTITY" "$APP/Contents/MacOS/poki-setup-bridge"
+codesign --force --options runtime "$TS" ${KC[@]+"${KC[@]}"} -s "$IDENTITY" "$APP"
 codesign --verify --deep --strict --verbose=2 "$APP"
 
 echo "== DMG"
@@ -49,4 +53,7 @@ cp -R "$APP" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"
 rm -f "$DMG"
 hdiutil create -volname "Poki Setup" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
+if [ "$IDENTITY" != "-" ]; then
+  codesign --force --timestamp ${KC[@]+"${KC[@]}"} -s "$IDENTITY" "$DMG"
+fi
 echo "$DMG"
