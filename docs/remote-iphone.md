@@ -59,6 +59,29 @@ this does not discover renamed hosts, follow changed service ports, scan all
 phones automatically, or make Bonjour work across different networks. Keep an
 explicit Tailscale address for cross-network operation.
 
+### When remote pairing is unreachable
+
+`Remote pairing is unreachable` means the helper could not open a TCP connection
+to the configured host and port. It fails before any pairing check or tunnel
+handshake. The message lists each address the host resolved to, its interface
+for IPv6 link-local addresses, and the error macOS returned for it:
+
+- `Connection refused`: the address answered, but nothing accepted the port.
+  Check the advertised port with `dns-sd -L`.
+- `No route to host` or `did not resolve` for a LAN address or `.local` name
+  can mean that the Mac sent the connection through an interface that cannot
+  reach the phone, or that macOS Local Network privacy blocked the helper. macOS 15 and later grant
+  local network access automatically only to programs started from Terminal or
+  over SSH and the programs they start. When another app starts Poki, such as an
+  editor's terminal or a desktop AI client, that app needs
+  **System Settings > Privacy & Security > Local Network**. See
+  [Apple TN3179](https://developer.apple.com/documentation/technotes/tn3179-understanding-local-network-privacy).
+  Tailscale addresses use a VPN interface, which this privacy check does not cover.
+
+The remote helper outlives the daemon, and macOS keeps attributing it to the app
+that started it. To move Poki to a different app, call `disconnect_device` first,
+then restart the daemon from that app.
+
 ### Shared transport behavior
 
 Supported paths are screenshots, accessibility observations, app listing and launch, touches and gestures, keyboard events, and verified text input through Poki's existing clipboard/field verification flow. Clipboard restoration is reported separately; an unavailable snapshot means the prior clipboard cannot be restored.
