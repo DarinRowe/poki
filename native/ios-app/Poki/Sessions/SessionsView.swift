@@ -54,6 +54,17 @@ struct SessionsView: View {
                     }
                 }
             }
+            if store.ordered.isEmpty {
+                // In the list, under the controls (an overlay would sit on top of them).
+                Section {
+                    ContentUnavailableView {
+                        Label("No Sessions Yet", systemImage: "bubble.left.and.bubble.right")
+                    } description: {
+                        Text("Start a chat with Poki, or connect an agent such as Claude or Codex in Agents. Every session shows up here.")
+                    }
+                    .listRowBackground(Color.clear)
+                }
+            }
             Section {
                 ForEach(store.ordered) { session in
                     Button { open(session) } label: { SessionRow(session: session) }
@@ -67,26 +78,15 @@ struct SessionsView: View {
             }
         }
         .listStyle(.insetGrouped)
-        .overlay(alignment: .bottom) {
-            if store.ordered.isEmpty {
-                ContentUnavailableView {
-                    Label("No Sessions Yet", systemImage: "bubble.left.and.bubble.right")
-                } description: {
-                    Text("Start a chat with Poki, or connect an agent such as Claude or Codex in Agents. Every session shows up here.")
-                } actions: {
-                    Button("Message Poki") { openChat() }.buttonStyle(.borderedProminent)
-                }
-            }
-        }
         .navigationTitle(Text(verbatim: "Poki"))
         .navigationBarTitleDisplayMode(.large)
         // A new chat with Poki's own agent, at the bottom left.
         .safeAreaInset(edge: .bottom, alignment: .leading, spacing: 0) {
             Button { chat.newConversation(); openChat() } label: {
-                Label("New Chat", systemImage: "square.and.pencil").font(.body.weight(.semibold))
-                    .padding(.horizontal, 16).padding(.vertical, 12)
+                Label("New Chat", systemImage: "square.and.pencil").fontWeight(.semibold)
             }
             .newChatStyle()
+            .controlSize(.large)
             .disabled(chat.running)
             .padding(.leading, 16).padding(.bottom, 8)
             .accessibilityLabel(Text("New Chat with Poki"))
