@@ -172,7 +172,7 @@ extension URL: @retroactive Identifiable { public var id: String { absoluteStrin
 struct SignInPage: UIViewRepresentable {
     var url: URL
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeCoordinator() -> SignInRedirect { SignInRedirect() }
 
     func makeUIView(context: Context) -> WKWebView {
         let view = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
@@ -183,17 +183,18 @@ struct SignInPage: UIViewRepresentable {
     }
 
     func updateUIView(_ view: WKWebView, context: Context) {}
+}
 
-    @MainActor
-    final class Coordinator: NSObject, WKNavigationDelegate {
-        func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
-            guard let target = action.request.url, ["127.0.0.1", "localhost"].contains(target.host() ?? ""), target.port == 1455,
-                  var parts = URLComponents(url: target, resolvingAgainstBaseURL: false) else { return .allow }
-            parts.scheme = "http"
-            parts.host = "127.0.0.1"
-            if let local = parts.url { URLSession.shared.dataTask(with: local).resume() }
-            return .cancel
-        }
+/// Hands the redirect to Poki's own listener instead of loading it.
+final class SignInRedirect: NSObject, WKNavigationDelegate {
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
+                 decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
+        guard let target = navigationAction.request.url, ["127.0.0.1", "localhost"].contains(target.host() ?? ""), target.port == 1455,
+              var parts = URLComponents(url: target, resolvingAgainstBaseURL: false) else { decisionHandler(.allow); return }
+        parts.scheme = "http"
+        parts.host = "127.0.0.1"
+        if let local = parts.url { URLSession.shared.dataTask(with: local).resume() }
+        decisionHandler(.cancel)
     }
 }
 

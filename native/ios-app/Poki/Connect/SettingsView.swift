@@ -164,33 +164,6 @@ struct SettingsHome: View {
         (30, "30 seconds"), (60, "1 minute"), (120, "2 minutes"), (300, "5 minutes"), (0, "Never"),
     ]
 
-    @ViewBuilder private var phone: some View {
-        let done = SetupStep.shown.filter(model.isDone).count
-        let total = SetupStep.shown.count
-        GroupLabel(text: "THIS IPHONE")
-        VStack(spacing: 0) {
-            Button { path.append(.relay) } label: {
-                WhiteRow(title: "Relay") {
-                    RowValue(text: model.relayAddress.map { Text(verbatim: $0.origin.host() ?? $0.origin.absoluteString) } ?? Text("Not Set"),
-                             color: model.relayAddress == nil ? Site.danger : Site.text3)
-                }
-            }
-            .buttonStyle(.plain)
-            Button { path.append(.memory) } label: {
-                WhiteRow(title: "Memory") { RowValue(text: Text("\(RoutineStore.shared.routines.count) routines")) }
-            }
-            .buttonStyle(.plain)
-            Button(action: openSetup) {
-                WhiteRow(title: "Setup") { RowValue(text: Text("\(done) of \(total)"), color: done == total ? Site.okInk : Site.text3) }
-            }
-            .buttonStyle(.plain)
-            Button { path.append(.diagnostics) } label: { WhiteRow(title: "Diagnostics", divider: false) { RowValue() } }
-                .buttonStyle(.plain)
-        }
-        .whiteCard()
-        GroupFootnote(text: "Memory holds the routines and notes every agent shares. Diagnostics: logs, checks, background hold, addresses, and Live Activity preview.")
-    }
-
     /// Keychain errors in words. -34018 means the app's signature has no keychain access (an unsigned
     /// or wrongly signed build); everything else shows its code.
     static func friendly(_ error: String) -> String {

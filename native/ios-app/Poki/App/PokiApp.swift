@@ -146,6 +146,12 @@ struct RootView: View {
         }
     }
 
+    /// A page of the Agents tab: accounts, voice, the Activity Log.
+    private func openAgents(_ route: AgentsRoute) {
+        tab = .agents
+        agents = NavigationPath([route])
+    }
+
     /// The live voice conversation runs inside Poki's chat: the chat opens and the conversation starts.
     private func openLiveVoice() {
         tab = .chats
