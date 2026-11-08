@@ -28,6 +28,77 @@ pub struct Deployed {
     pub deployed_at: i64,
     /// `poki://setup?relay=<address>`, for the QR the phone scans.
     pub phone_link: String,
+    /// SHA-256 of the Worker code deployed, to tell when a newer relay is out.
+    #[serde(default)]
+    pub worker_sha256: Option<String>,
+    /// Where that code came from: a release tag, or "built in".
+    #[serde(default)]
+    pub worker_source: Option<String>,
+}
+
+/// The Poki the relay must match: the one this computer installed or renewed most recently.
+fn relay_for() -> crate::release::RelayFor {
+    let newest = crate::keeper::all().ok().and_then(|all| all.into_iter().max_by_key(|r| r.signed_at));
+    match newest {
+        Some(r) => crate::release::RelayFor {
+            tag: (!r.release_tag.starts_with("local:")).then(|| r.release_tag.clone()),
+            version: Some(r.version.clone()),
+            build: Some(r.build.clone()),
+        },
+        None => Default::default(),
+    }
+}
+
+/// The relay code to deploy: `poki-relay-worker.js` from the release of the Poki on the iPhone
+/// (else the newest on the chosen channel), checked against that release's SHA256SUMS; the copy
+/// built into this app when no release has one or GitHub can't be reached.
+pub async fn worker_code() -> (String, String) {
+    let (code, source, _) = worker_code_and_link().await;
+    (code, source)
+}
+
+/// The relay's source in the release repo, for deploying it by hand.
+pub fn source_link() -> String { format!("https://github.com/{}/tree/standalone/deploy/cf-relay", crate::release::repo()) }
+
+/// The code, where it came from, and a link to that exact file (the release asset, or the source).
+pub async fn worker_code_and_link() -> (String, String, String) {
+    match crate::release::relay_worker(&relay_for()).await {
+        Ok(Some((tag, code, url))) => (code, tag, url),
+        Ok(None) => (WORKER_JS.to_string(), "built in".into(), source_link()),
+        Err(e) => {
+            tracing::warn!("relay from releases unavailable, using the built-in copy: {e}");
+            (WORKER_JS.to_string(), "built in".into(), source_link())
+        }
+    }
+}
+
+pub fn sha256_hex(s: &str) -> String {
+    use sha2::Digest;
+    hex::encode(sha2::Sha256::digest(s.as_bytes()))
+}
+
+/// Whether the relay you deployed differs from the one Poki Setup would deploy now.
+#[derive(Debug, Clone, Serialize)]
+pub struct WorkerStatus {
+    pub source: String,
+    /// The worker.js to deploy by hand (the release's `poki-relay-worker.js`, or the source folder).
+    pub download_url: String,
+    /// DEPLOY.md, the steps for deploying it by hand.
+    pub guide_url: String,
+    pub sha256: String,
+    pub deployed_sha256: Option<String>,
+    pub update_available: bool,
+}
+
+pub async fn worker_status() -> Result<WorkerStatus> {
+    let (code, source, download_url) = worker_code_and_link().await;
+    let sha256 = sha256_hex(&code);
+    let at = if source == "built in" { "standalone" } else { source.as_str() };
+    let guide_url = format!("https://github.com/{}/blob/{at}/deploy/cf-relay/DEPLOY.md", crate::release::repo());
+    let deployed_sha256 = remembered()?.and_then(|d| d.worker_sha256);
+    // A relay deployed before Poki Setup recorded hashes counts as older.
+    let update_available = remembered()?.is_some() && deployed_sha256.as_deref() != Some(sha256.as_str());
+    Ok(WorkerStatus { source, download_url, guide_url, sha256, deployed_sha256, update_available })
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -139,10 +210,12 @@ impl Cloudflare {
             Some("v1") => {}
             Some(other) => return Err(Error::msg(format!("The Worker {SCRIPT_NAME} in this account has migration tag {other}, which this version does not know. Deploy it with ./deploy.sh instead."))),
         }
-        reporter.part("relay", 0.4, Some("Uploading the Worker".into()));
+        reporter.part("relay", 0.3, Some("Getting the newest relay".into()));
+        let (code, source) = worker_code().await;
+        reporter.part("relay", 0.4, Some(format!("Uploading the Worker ({source})")));
         let form = reqwest::multipart::Form::new()
             .part("metadata", reqwest::multipart::Part::text(metadata.to_string()).mime_str("application/json").unwrap())
-            .part("index.js", reqwest::multipart::Part::text(WORKER_JS).file_name("index.js").mime_str("application/javascript+module").unwrap());
+            .part("index.js", reqwest::multipart::Part::text(code.clone()).file_name("index.js").mime_str("application/javascript+module").unwrap());
         let res = self.http.put(format!("{API}/accounts/{}/workers/scripts/{SCRIPT_NAME}", account.id)).bearer_auth(&self.token).multipart(form).send().await?;
         let _: serde_json::Value = Self::parse(res, "the upload").await?;
 
@@ -166,7 +239,7 @@ impl Cloudflare {
         if !up {
             return Err(Error::msg(format!("The Worker is uploaded, but {address} does not answer yet. Wait a minute and check it from Relay → Check.")));
         }
-        Ok(Deployed { account_id: account.id.clone(), account_name: account.name.clone(), address: address.clone(), first_deploy, deployed_at: crate::keeper::now(), phone_link: phone_link(&address) })
+        Ok(Deployed { account_id: account.id.clone(), account_name: account.name.clone(), address: address.clone(), first_deploy, deployed_at: crate::keeper::now(), phone_link: phone_link(&address), worker_sha256: Some(sha256_hex(&code)), worker_source: Some(source) })
     }
 }
 

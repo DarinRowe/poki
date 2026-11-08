@@ -354,6 +354,50 @@ pub async fn fetch(release: &Release, reporter: &Reporter) -> Result<(PathBuf, O
     Ok((ipa, signing))
 }
 
+const RELAY_ASSET: &str = "poki-relay-worker.js";
+
+/// Which Poki the relay has to match: the release it was installed from, or its version and build
+/// (for an IPA file picked by hand, found by the release's `Poki-external-<version>-<build>.ipa`).
+#[derive(Debug, Clone, Default)]
+pub struct RelayFor {
+    pub tag: Option<String>,
+    pub version: Option<String>,
+    pub build: Option<String>,
+}
+
+/// The relay Worker (`poki-relay-worker.js`) of the release matching that Poki, checked against
+/// the release's SHA256SUMS. Without a match (or with nothing to match), the newest one on the
+/// chosen channel, stepping down like Poki's own releases. None when no release carries one.
+pub async fn relay_worker(want: &RelayFor) -> Result<Option<(String, String, String)>> {
+    let list = list().await?;
+    let has = |r: &&GhRelease| r.assets.iter().any(|a| a.name == RELAY_ASSET);
+    let by_tag = want.tag.as_deref().and_then(|t| list.iter().filter(has).find(|r| r.tag_name == t));
+    let by_build = match (&want.version, &want.build) {
+        (Some(v), Some(b)) => {
+            let ipa = format!("Poki-external-{v}-{b}.ipa");
+            list.iter().filter(has).find(|r| r.assets.iter().any(|a| a.name == ipa))
+        }
+        _ => None,
+    };
+    let found = by_tag.or(by_build).or_else(|| {
+        channel().fallbacks().find_map(|c| list.iter().filter(has).find(|r| release_channel(r).map(|rc| c.includes(rc)).unwrap_or(false)))
+    });
+    let Some(r) = found else { return Ok(None) };
+    let url = &r.assets.iter().find(|a| a.name == RELAY_ASSET).unwrap().browser_download_url;
+    let sums_url = r.assets.iter().find(|a| a.name == "SHA256SUMS").map(|a| a.browser_download_url.clone())
+        .ok_or_else(|| Error::msg(format!("Release {} has the relay but no SHA256SUMS to check it against.", r.tag_name)))?;
+    let http = client()?;
+    let sums = http.get(&sums_url).timeout(std::time::Duration::from_secs(30)).send().await?.error_for_status()?.text().await?;
+    let expected = sums.lines().find(|l| l.split_whitespace().last().map(|n| n.trim_start_matches('*')) == Some(RELAY_ASSET)).and_then(|l| l.split_whitespace().next()).map(|h| h.to_lowercase())
+        .ok_or_else(|| Error::msg(format!("Release {}'s SHA256SUMS does not list {RELAY_ASSET}.", r.tag_name)))?;
+    let body = http.get(url).timeout(std::time::Duration::from_secs(60)).send().await?.error_for_status()?.text().await?;
+    let got = hex::encode(Sha256::digest(body.as_bytes()));
+    if got != expected {
+        return Err(Error::msg(format!("The relay in release {} does not match its SHA256SUMS. Try again; if it repeats, the download is being altered on the way.", r.tag_name)));
+    }
+    Ok(Some((r.tag_name.clone(), body, url.clone())))
+}
+
 pub async fn download(url: &str, to: &std::path::Path, reporter: &Reporter, step: &str) -> Result<()> {
     use futures_util::StreamExt;
     let res = client()?.get(url).send().await?.error_for_status()?;

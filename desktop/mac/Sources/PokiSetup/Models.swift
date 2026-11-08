@@ -121,6 +121,18 @@ struct Deployed: Decodable, Equatable {
     var firstDeploy: Bool
     var deployedAt: Int
     var phoneLink: String
+    var workerSha256: String? = nil
+    var workerSource: String? = nil
+}
+
+/// Which relay Poki Setup deploys now, and whether yours is older (`relay_worker`).
+struct WorkerStatus: Decodable {
+    var source: String
+    var downloadUrl: String
+    var guideUrl: String
+    var sha256: String
+    var deployedSha256: String?
+    var updateAvailable: Bool
 }
 
 struct CloudflareAccount: Decodable, Identifiable, Hashable {

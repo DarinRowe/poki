@@ -236,6 +236,10 @@ pub async fn latest_release() -> R<release::Release> { Ok(release::latest().awai
 #[tauri::command]
 pub fn relay_state() -> R<Option<relay::Deployed>> { Ok(relay::remembered()?) }
 
+/// Whether a newer relay than the deployed one is out.
+#[tauri::command]
+pub async fn relay_worker() -> R<relay::WorkerStatus> { Ok(relay::worker_status().await?) }
+
 #[tauri::command]
 pub async fn relay_accounts(token: String) -> R<Vec<relay::Account>> { Ok(relay::Cloudflare::new(&token)?.accounts().await?) }
 
