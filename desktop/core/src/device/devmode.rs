@@ -36,7 +36,7 @@ pub async fn enable(phone: &Phone, reporter: &Reporter) -> Result<bool> {
         // iOS only turns it on remotely when the device has no passcode. The switch is shown in
         // Settings now (the reveal above), so the person turns it on there.
         Err(e) if e.to_string().to_lowercase().contains("passcode") => {
-            reporter.waiting("devmode", "On the iPhone or iPad, open Settings > Privacy & Security > Developer Mode, turn it on and tap Restart. After the restart, tap Turn On and enter the passcode.");
+            reporter.waiting("devmode", "Developer Mode is now available on your iPhone or iPad. Open Settings > Privacy & Security > Developer Mode, turn it on and tap Restart. After the restart, tap Turn On and enter your passcode. Poki Setup carries on by itself once it is on.");
             return Ok(false);
         }
         Err(idevice::IdeviceError::PasswordProtected) | Err(idevice::IdeviceError::DeviceLocked) => {
