@@ -12,7 +12,7 @@ struct ContentView: View {
                     }
                 }
                 Section("Advanced") {
-                    ForEach([Page.relay, .connectors, .debug]) { p in
+                    ForEach([Page.relay, .debug]) { p in
                         Label(p.title, systemImage: p.symbol).tag(p)
                     }
                 }
@@ -27,7 +27,6 @@ struct ContentView: View {
                 case .phones: PhonesView()
                 case .account: AccountView()
                 case .relay: RelayView()
-                case .connectors: ConnectorsView()
                 case .debug: DiagnosticsView()
                 }
             }

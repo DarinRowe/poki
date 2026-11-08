@@ -25,7 +25,7 @@ export type Check = { at: number; ok: boolean; relay_ok: boolean; phone_online: 
 export type Connector = { name: string; url: string; added_at: number; last_check: Check | null };
 export type AppInfo = { version: string; os: string; arch: string; data_dir: string; can_use_system_anisette: boolean };
 export type ChannelId = "stable" | "beta" | "alpha" | "pre-alpha";
-export type UpdateInfo = { current: string; latest: string | null; url: string | null; newer: boolean; channel?: ChannelId };
+export type UpdateInfo = { current: string; latest: string | null; url: string | null; asset_url?: string | null; asset_name?: string | null; newer: boolean; channel?: ChannelId };
 export type Release = { tag: string; version: string; build: string; published_at: string; ipa_name: string; channel?: ChannelId };
 export type ChannelInfo = { id: ChannelId; title: string; selected: boolean; latest: Release | null };
 
@@ -62,6 +62,7 @@ export const api = {
   mountDdi: (udid: string) => invoke<void>("mount_ddi", { udid }),
   supportBundle: (udid: string | null, outDir: string) => invoke<string>("support_bundle", { udid, outDir }),
   checkUpdate: () => invoke<UpdateInfo>("check_update"),
+  installUpdate: () => invoke<string>("install_update"),
   channels: () => invoke<ChannelInfo[]>("channels"),
   setChannel: (channel: ChannelId) => invoke<ChannelInfo[]>("set_channel", { channel }),
   qrSvg: (text: string) => invoke<string>("qr_svg", { text }),

@@ -76,6 +76,8 @@ const zh: Record<string, string> = {
   "Stable has tested releases only. Beta adds test builds. Alpha adds early builds. Pre-alpha adds every snapshot, which can break. Poki Setup installs and renews Poki from this channel and checks it for its own updates.": "稳定版只有经过测试的版本。测试版另含测试构建。Alpha 版另含早期构建。预览版包含每个快照，可能不稳定。Poki Setup 从这个通道安装和续签 Poki，并检查自身更新。",
   "Up to date": "已是最新",
   "Update available": "有可用更新",
+  "Install update": "安装更新",
+  "Downloading…": "正在下载…",
   "About": "关于",
   "Not signed in": "未登录",
   "Developer Mode": "开发者模式",

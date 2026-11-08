@@ -10,6 +10,7 @@ DESKTOP="$(cd "$HERE/.." && pwd)"
 VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' "$DESKTOP/Cargo.toml" | head -1)"
 BUILD="${BUILD_NUMBER:-$(git -C "$DESKTOP" rev-list --count HEAD 2>/dev/null || echo 1)}"
 mkdir -p "$OUT"
+export POKI_SETUP_BUILD="$BUILD"
 
 echo "== Rust bridge ($MODE)"
 if [ "$MODE" = universal ]; then

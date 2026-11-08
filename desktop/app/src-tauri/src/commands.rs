@@ -53,7 +53,7 @@ pub struct AppInfo {
 
 #[tauri::command]
 pub fn app_info() -> AppInfo {
-    AppInfo { version: poki_setup_core::VERSION.into(), os: std::env::consts::OS, arch: std::env::consts::ARCH, data_dir: poki_setup_core::paths::data_dir().display().to_string(), can_use_system_anisette: cfg!(target_os = "macos") }
+    AppInfo { version: poki_setup_core::full_version(), os: std::env::consts::OS, arch: std::env::consts::ARCH, data_dir: poki_setup_core::paths::data_dir().display().to_string(), can_use_system_anisette: cfg!(target_os = "macos") }
 }
 
 #[derive(Serialize)]
@@ -330,10 +330,16 @@ pub async fn support_bundle(udid: Option<String>, out_dir: String) -> R<String> 
     Ok(b.path.display().to_string())
 }
 
-/// Poki Setup's own update on the chosen channel. Installing stays a download for now: in-place
-/// updates need a signing key for the update feed, which comes with the first signed release.
+/// Poki Setup's own update on the chosen channel.
 #[tauri::command]
 pub async fn check_update() -> R<release::UpdateInfo> { Ok(release::desktop_update().await?) }
+
+/// Downloads the newer Poki Setup and starts its installer.
+#[tauri::command]
+pub async fn install_update(app: AppHandle) -> R<String> {
+    let path = release::install_desktop_update(&reporter(&app, "update")).await?;
+    Ok(path.display().to_string())
+}
 
 /// Every channel with its newest release, the chosen one marked.
 #[tauri::command]
