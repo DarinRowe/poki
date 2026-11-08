@@ -33,14 +33,14 @@ enum ActivityMetrics {
     static let contentLine: CGFloat = 25
     static let lineGap: CGFloat = 6
     /// The expanded island's margins inside its 44 point corners.
-    static let islandInsets = EdgeInsets(top: 12, leading: 20, bottom: 18, trailing: 20)
+    static let islandInsets = EdgeInsets(top: 18, leading: 24, bottom: 22, trailing: 24)
     static let islandCorner: CGFloat = 44
     static let islandGap: CGFloat = 6
     /// iOS clips the expanded island's content to the island inset by about 13 points, with corners
     /// about 36 points round (measured on the iPhone 17 Pro simulator). At the board's margins the
     /// corners cut the bear, the meta's last letters and the ends of the last row, so those move in.
     /// The row beside the camera: extra room on the outer side.
-    static let islandRowInset: CGFloat = 8
+    static let islandRowInset: CGFloat = 4
     /// The last row: extra room below it, more for the content line alone than for a row under it,
     /// and the step line and the setup steps narrower as well (the step line's first dot was cut).
     static func islandBottomExtra(_ bottom: ActivityFace.Bottom) -> CGFloat {
@@ -49,7 +49,7 @@ enum ActivityMetrics {
         default: 2
         }
     }
-    static let islandLastRowInset: CGFloat = 6
+    static let islandLastRowInset: CGFloat = 0
 
     static let avatar: CGFloat = 20
     static let compactAvatar: CGFloat = 22
@@ -340,9 +340,8 @@ private struct BottomControl: View {
             EmptyView()
         case .progress(let outcomes, let current, let finished, let stop):
             HStack(spacing: 8) {
-                // As many dots as fit beside the Lock Screen's thumbnail, or across the island.
-                StepLine(outcomes: outcomes, current: current, finished: finished,
-                         capacity: (surface == .lockScreen ? 12 : 14) - (stop ? 2 : 0), palette: palette)
+                // Plain words with the system's symbols: steps that went through and those that did not.
+                StepCounts(outcomes: outcomes, finished: finished, palette: palette)
                 Spacer(minLength: 0)
                 if stop { StopButton(surface: surface).transition(.opacity) }
             }
@@ -367,6 +366,32 @@ private struct BottomControl: View {
             .padding(.horizontal, surface == .island ? ActivityMetrics.islandLastRowInset : 0)
             .transition(.activityRow)
         }
+    }
+}
+
+private struct StepCounts: View {
+    var outcomes: [Bool]
+    var finished: Bool
+    var palette: ActivityPalette
+    var body: some View {
+        let missed = outcomes.filter { !$0 }.count
+        let done = outcomes.count - missed
+        HStack(spacing: 12) {
+            Label {
+                Text(finished ? String(activity: "Finished") : "\(done)")
+            } icon: {
+                Image(systemName: "checkmark.circle.fill")
+            }
+            .foregroundStyle(finished ? palette.done : palette.quiet)
+            if missed > 0 {
+                Label { Text(verbatim: "\(missed)") } icon: { Image(systemName: "exclamationmark.circle.fill") }
+                    .foregroundStyle(palette.problem)
+            }
+        }
+        .font(.subheadline.weight(.semibold))
+        .monospacedDigit()
+        .lineLimit(1)
+        .contentTransition(.numericText())
     }
 }
 
