@@ -71,7 +71,9 @@ pub async fn serve(record: Vec<u8>) -> Result<Server> {
     let inline = inline_link(&record);
     let handoff = Handoff {
         qr_svg: qr_svg(&link)?,
-        inline_qr_svg: qr_svg(&inline)?,
+        // The record inside the link rarely fits a QR code (a lockdown record is ~10 KB); leave
+        // that code empty rather than failing the whole hand-off.
+        inline_qr_svg: qr_svg(&inline).unwrap_or_default(),
         link,
         inline_link: inline,
         url,
@@ -130,6 +132,17 @@ pub fn urlencode(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn big_record_still_serves_a_code() {
+        let big = vec![b'a'; 9500];
+        assert!(qr_svg(&inline_link(&big)).is_err());
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        if let Ok(server) = rt.block_on(serve(big)) {
+            assert!(server.handoff.qr_svg.contains("<svg"));
+            assert!(server.handoff.inline_qr_svg.is_empty());
+        }
+    }
+
     #[test]
     fn link_shape() {
         let l = inline_link(b"<plist/>");

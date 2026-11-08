@@ -131,3 +131,126 @@ pub async fn enable_network(phone: &Phone) -> Result<()> {
     lockdown.set_value("EnableWifiConnections", true.into(), Some("com.apple.mobile.wireless_lockdown")).await?;
     Ok(())
 }
+
+// Remote pairing (RPPairing).
+//
+// Since iOS 26.4 the phone hangs up on lockdown records over the loopback Poki uses to reach its
+// own developer services; a Remote Pairing record (the kind the phone makes for itself, or that
+// idevice_pair makes over USB) is accepted there. Poki Setup makes one over the cable, through
+// remotepairingdeviced, right after the lockdown pairing, and that is what Poki gets.
+
+/// The plist key Poki reads for the host name to send with an RPPairing record.
+pub const SENDING_HOST_KEY: &str = "sending_host";
+
+pub fn remote_record_path(udid: &str) -> Result<PathBuf> {
+    Ok(paths::pairings_dir()?.join(format!("{udid}.rppairing.plist")))
+}
+
+/// Whether `bytes` is an RPPairing record (public_key, private_key, identifier) rather than a
+/// lockdown pairing plist.
+pub fn is_remote_record(bytes: &[u8]) -> bool {
+    idevice::remote_pairing::RpPairingFile::from_bytes(bytes).is_ok()
+}
+
+/// The saved RPPairing record for `udid`, as Poki wants it.
+pub fn saved_remote_bytes(udid: &str) -> Result<Option<Vec<u8>>> {
+    let path = remote_record_path(udid)?;
+    if !path.exists() {
+        return Ok(None);
+    }
+    Ok(Some(std::fs::read(path)?))
+}
+
+/// The record to give Poki: the RPPairing record when there is one, else the lockdown record.
+pub fn for_poki(udid: &str) -> Result<Option<Vec<u8>>> {
+    Ok(match saved_remote_bytes(udid)? {
+        Some(b) => Some(b),
+        None => saved_bytes(udid)?,
+    })
+}
+
+/// Whether the iOS version string is one where the phone needs an RPPairing record for the
+/// loopback (26.4 and later).
+pub fn needs_remote_record(ios: &str) -> bool {
+    let mut parts = ios.split('.').map(|p| p.parse::<u32>().unwrap_or(0));
+    let major = parts.next().unwrap_or(0);
+    let minor = parts.next().unwrap_or(0);
+    (major, minor) >= (26, 4)
+}
+
+/// Makes (or reuses) an RPPairing record over USB. The lockdown pairing must already exist (the
+/// service is reached through lockdown). The iPhone may ask to trust this computer again; it has
+/// to be unlocked, ideally on the Home Screen. Returns the record's bytes.
+pub async fn pair_remote(phone: &Phone, reporter: &Reporter, wait: Duration) -> Result<Vec<u8>> {
+    use idevice::remote_pairing::{RemotePairingLockdownService, RpPairingFile};
+    if !phone.is_usb() {
+        return Err(Error::device("Remote pairing needs the cable. Plug the iPhone in with a data cable."));
+    }
+    let provider = phone.provider()?;
+    let path = remote_record_path(&phone.udid)?;
+
+    // A record that still verifies is kept: Poki may already be using it.
+    if let Ok(bytes) = std::fs::read(&path) {
+        if let Ok(mut file) = RpPairingFile::from_bytes(&bytes) {
+            let ok = async {
+                let service = RemotePairingLockdownService::connect(&*provider).await?;
+                let mut client = service.into_client(HOST_NAME)?;
+                client.attempt_pair_verify().await?;
+                client.validate_pairing(&mut file).await
+            };
+            match tokio::time::timeout(Duration::from_secs(15), ok).await {
+                Ok(Ok(_)) => return Ok(bytes),
+                Ok(Err(e)) => tracing::info!("saved RPPairing record no longer verifies: {e}"),
+                Err(_) => tracing::info!("verifying the saved RPPairing record timed out"),
+            }
+        }
+    }
+
+    reporter.waiting("pair", "On the iPhone: stay on the Home Screen, unlocked. If it asks, tap Trust and enter the passcode.");
+    let mut file = RpPairingFile::generate(HOST_NAME);
+    let made = async {
+        let service = RemotePairingLockdownService::connect(&*provider).await?;
+        let mut client = service.into_client(HOST_NAME)?;
+        client.connect(&mut file, || async { "000000".to_string() }).await
+    };
+    tokio::time::timeout(wait, made)
+        .await
+        .map_err(|_| Error::NeedsPerson("The iPhone did not finish remote pairing in time. Unlock it, stay on the Home Screen and try again.".into()))??;
+
+    let bytes = with_sending_host(&file.to_bytes(), HOST_NAME)?;
+    std::fs::write(&path, &bytes)?;
+    Ok(bytes)
+}
+
+/// Adds the `sending_host` key Poki reads, so it identifies itself by the name the record was
+/// made with.
+fn with_sending_host(bytes: &[u8], host: &str) -> Result<Vec<u8>> {
+    let mut dict: plist::Dictionary = plist::from_bytes(bytes).map_err(|e| Error::msg(format!("RPPairing record: {e}")))?;
+    dict.insert(SENDING_HOST_KEY.into(), plist::Value::String(host.into()));
+    let mut out = Vec::new();
+    plist::to_writer_xml(&mut out, &dict).map_err(|e| Error::msg(format!("RPPairing record: {e}")))?;
+    Ok(out)
+}
+
+#[cfg(test)]
+mod remote_tests {
+    use super::*;
+
+    #[test]
+    fn cutoff_is_26_4() {
+        assert!(!needs_remote_record("26.3.1"));
+        assert!(needs_remote_record("26.4"));
+        assert!(needs_remote_record("27.3"));
+        assert!(!needs_remote_record("18.6"));
+    }
+
+    #[test]
+    fn sending_host_survives_and_record_still_reads() {
+        let f = idevice::remote_pairing::RpPairingFile::generate(HOST_NAME);
+        let b = with_sending_host(&f.to_bytes(), HOST_NAME).unwrap();
+        assert!(is_remote_record(&b));
+        let d: plist::Dictionary = plist::from_bytes(&b).unwrap();
+        assert_eq!(d.get(SENDING_HOST_KEY).and_then(|v| v.as_string()), Some(HOST_NAME));
+        assert!(!is_remote_record(b"<plist><dict><key>HostID</key><string>x</string></dict></plist>"));
+    }
+}

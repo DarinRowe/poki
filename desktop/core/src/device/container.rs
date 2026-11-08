@@ -62,7 +62,10 @@ pub async fn list(phone: &Phone, bundle_id: &str, relative: &str) -> Result<Vec<
 pub async fn place_pairing_file(phone: &Phone, bundle_id: &str, record: &[u8]) -> Result<bool> {
     let path = format!("{SUPPORT_DIR}/pairing.plist");
     if let Ok(existing) = read_file(phone, bundle_id, &path).await {
-        if !existing.is_empty() {
+        // Never replace a pairing Poki made itself. A lockdown record (an earlier hand-off from
+        // this computer) does give way to an RPPairing record, which is what the loopback needs.
+        let upgrade = super::pairing::is_remote_record(record) && !super::pairing::is_remote_record(&existing);
+        if !existing.is_empty() && !upgrade {
             return Ok(existing == record);
         }
     }

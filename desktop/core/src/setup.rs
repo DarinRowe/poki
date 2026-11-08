@@ -285,11 +285,24 @@ pub async fn run(signer: &mut Signer, opts: Options, reporter: &Reporter) -> Res
     reporter.done("phone", Some(phone.udid.clone()));
 
     reporter.step("pair", "Pairing with the iPhone");
-    let record = device::pairing::pair(&phone, reporter, wait).await?;
+    let lockdown_record = device::pairing::pair(&phone, reporter, wait).await?;
     if let Err(e) = device::pairing::enable_network(&phone).await {
         reporter.note("pair", format!("Could not let the iPhone use this pairing over the network ({e}); Poki may need to pair on the phone."));
     }
     let facts = device::info::read(&phone).await?;
+    // iOS 26.4 and later only accept an RPPairing record over the loopback Poki uses.
+    let needs_remote = device::pairing::needs_remote_record(&facts.ios);
+    let record = match device::pairing::pair_remote(&phone, reporter, wait).await {
+        Ok(r) => Some(r),
+        Err(e) if needs_remote => {
+            reporter.note("pair", format!("Remote pairing did not finish ({e}). Poki can pair on the iPhone instead."));
+            None
+        }
+        Err(e) => {
+            tracing::info!("remote pairing not made, using the lockdown record: {e}");
+            Some(lockdown_record)
+        }
+    };
     reporter.done("pair", Some(format!("{} · iOS {}", facts.name, facts.ios)));
 
     reporter.step("devmode", "Developer Mode");
@@ -331,26 +344,28 @@ pub async fn run(signer: &mut Signer, opts: Options, reporter: &Reporter) -> Res
 
     reporter.step("pairing_file", "Giving Poki its pairing file");
     let mut handed = false;
-    // Right after an install the phone sometimes drops the first container connection; try again.
-    // On iOS 27 and later Poki pairs with the phone itself (an RPPairing file), which is what its
-    // loopback connections use; a lockdown record from this computer would only get in the way.
-    let ios_major = facts.ios.split('.').next().and_then(|m| m.parse::<u32>().ok()).unwrap_or(0);
-    let mut placed = if ios_major >= 27 { Ok(false) } else { device::container::place_pairing_file(&phone, &built.bundle_id, &record).await };
-    for _ in 0..2 {
-        if placed.is_ok() { break; }
-        tokio::time::sleep(Duration::from_secs(2)).await;
-        placed = device::container::place_pairing_file(&phone, &built.bundle_id, &record).await;
-    }
-    match placed {
-        Ok(true) => {
-            handed = true;
-            reporter.done("pairing_file", Some("placed in Poki's container".into()));
+    match &record {
+        None => reporter.done("pairing_file", Some("Poki pairs on the iPhone itself".into())),
+        Some(record) => {
+            // Right after an install the phone sometimes drops the first container connection; try again.
+            let mut placed = device::container::place_pairing_file(&phone, &built.bundle_id, record).await;
+            for _ in 0..2 {
+                if placed.is_ok() { break; }
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                placed = device::container::place_pairing_file(&phone, &built.bundle_id, record).await;
+            }
+            match placed {
+                Ok(true) => {
+                    handed = true;
+                    reporter.done("pairing_file", Some("placed in Poki's container".into()));
+                }
+                Ok(false) => {
+                    handed = true;
+                    reporter.done("pairing_file", Some("Poki already has its own pairing; kept it".into()));
+                }
+                Err(e) => reporter.note("pairing_file", format!("Could not write into Poki's container ({e}); the QR hand-off below does it instead.")),
+            }
         }
-        Ok(false) => {
-            handed = true;
-            reporter.done("pairing_file", Some(if ios_major >= 27 { "iOS 27 and later: Poki pairs on the iPhone itself".into() } else { "Poki already has its own pairing; kept it".into() }));
-        }
-        Err(e) => reporter.note("pairing_file", format!("Could not write into Poki's container ({e}); the QR hand-off below does it instead.")),
     }
     let apple_id = signer.account.apple_id().unwrap_or("").to_string();
     hand_signing_identity(&phone, &built, &apple_id, reporter).await;
@@ -359,7 +374,7 @@ pub async fn run(signer: &mut Signer, opts: Options, reporter: &Reporter) -> Res
             reporter.note("pairing_file", format!("Developer disk image not pre-seeded ({e}); Poki downloads it itself."));
         }
     }
-    let handoff = if opts.hand_off || !handed {
+    let handoff = if let (true, Some(record)) = (opts.hand_off || !handed, &record) {
         let server = pairshare::serve(record.clone()).await?;
         reporter.waiting("pairing_file", format!("Scan the code with the iPhone's Camera, or open {} on the iPhone", server.handoff.link));
         Some(server)

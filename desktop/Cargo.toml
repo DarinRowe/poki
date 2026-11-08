@@ -56,4 +56,4 @@ spki = "0.7"
 der = "0.7"
 cms = { version = "0.2", features = ["std"] }
 apple-codesign = { version = "0.29", default-features = false }
-idevice = { version = "0.1.68", default-features = false, features = ["aws-lc", "usbmuxd", "tcp", "pair", "afc", "house_arrest", "installation_proxy", "misagent", "amfi", "mobile_image_mounter", "tss", "syslog_relay", "crashreportcopymobile", "springboardservices", "heartbeat"] }
+idevice = { version = "0.1.68", default-features = false, features = ["aws-lc", "usbmuxd", "tcp", "pair", "remote_pairing", "afc", "house_arrest", "installation_proxy", "misagent", "amfi", "mobile_image_mounter", "tss", "syslog_relay", "crashreportcopymobile", "springboardservices", "heartbeat"] }
