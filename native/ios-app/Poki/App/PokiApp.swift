@@ -111,11 +111,14 @@ struct RootView: View {
 
             AgentsView(path: $agents, openSession: openRun)
                 .tabItem { Label("Agents", systemImage: "point.3.connected.trianglepath.dotted") }
+                // A dot when something there needs attention: no account for the chat, or the relay down.
+                .badge(agentsNeedAttention ? Text(verbatim: " ") : nil)
                 .tag(RootTab.agents)
 
             SetupTab(path: $setup)
                 .tabItem { Label("Setup", systemImage: "checklist") }
-                .badge(model.setupComplete ? 0 : SetupStep.shown.filter { !model.isDone($0) }.count)
+                // A dot while a setup item is still open.
+                .badge(model.setupComplete || SetupStep.shown.allSatisfy(model.isDone) ? nil : Text(verbatim: " "))
                 .tag(RootTab.setup)
         }
         .task { InProcessProbe.shared.startFromLaunchArguments(model: model) }
@@ -155,6 +158,13 @@ struct RootView: View {
             }
             #endif
         }
+    }
+
+    /// The Agents tab needs a look: no usable chat account, or the relay set but not reachable.
+    private var agentsNeedAttention: Bool {
+        if !ModelKeys.hasUsableKey { return true }
+        if case .offline = model.relayStatus { return true }
+        return false
     }
 
     /// A page of the Agents tab: accounts, voice, the Activity Log.
