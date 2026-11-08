@@ -33,6 +33,12 @@ pub async fn enable(phone: &Phone, reporter: &Reporter) -> Result<bool> {
         Ok(()) => {}
         // The phone restarts at once and can drop the connection before it answers.
         Err(idevice::IdeviceError::Socket(_)) => {}
+        // iOS only turns it on remotely when the device has no passcode. The switch is shown in
+        // Settings now (the reveal above), so the person turns it on there.
+        Err(e) if e.to_string().to_lowercase().contains("passcode") => {
+            reporter.waiting("devmode", "On the iPhone or iPad, open Settings > Privacy & Security > Developer Mode, turn it on and tap Restart. After the restart, tap Turn On and enter the passcode.");
+            return Ok(false);
+        }
         Err(idevice::IdeviceError::PasswordProtected) | Err(idevice::IdeviceError::DeviceLocked) => {
             return Err(Error::NeedsPerson("Unlock the iPhone or iPad, then try Developer Mode again. iOS only turns it on from an unlocked phone.".into()));
         }
