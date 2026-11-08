@@ -42,6 +42,7 @@ final class AppModel: ObservableObject {
     @Published var relay: Deployed?
     @Published var latest: Release?
     @Published var latestError: String?
+    @Published var channels: [ChannelInfo] = []
 
     // Sign-in
     @Published var needsCode = false
@@ -88,6 +89,7 @@ final class AppModel: ObservableObject {
             await refreshAccount()
             await refreshRecords()
             await refreshLatest()
+            await refreshChannels()
             connectors = (try? await bridge.call("connectors")) ?? []
             relay = try? await bridge.call("relay_state", as: Deployed?.self) ?? nil
         }
@@ -151,6 +153,19 @@ final class AppModel: ObservableObject {
             latest = nil
             latestError = error.localizedDescription
         }
+    }
+
+    var channel: ChannelInfo? { channels.first(where: \.selected) }
+
+    func refreshChannels() async {
+        if demo { return }
+        if let c: [ChannelInfo] = try? await bridge.call("channels") { channels = c }
+    }
+
+    /// Saves the channel; installs, renewals and update checks follow it from now on.
+    func setChannel(_ id: String) async throws {
+        channels = try await bridge.call("set_channel", ["channel": id])
+        await refreshLatest()
     }
 
     // MARK: Account
@@ -308,7 +323,12 @@ final class AppModel: ObservableObject {
         records = [rec]
         relay = Deployed(accountId: "abc", accountName: "Jane's account", address: "https://poki-relay.jane.workers.dev", firstDeploy: false, deployedAt: now - 86_400, phoneLink: "poki://setup?relay=https://poki-relay.jane.workers.dev")
         connectors = [Connector(name: "Jane's iPhone", url: "https://poki-relay.jane.workers.dev/v1/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRST/s3cr3t/mcp", addedAt: now - 7200, lastCheck: Check(at: now - 60, ok: true, relayOk: true, phoneOnline: true, tools: ["look", "tap", "type", "swipe", "open_app"], detail: "5 tools"))]
-        latest = Release(tag: "ios-v0.2.8", version: "0.2.8", build: "64", ipaName: "Poki-external-0.2.8-64.ipa")
+        latest = Release(tag: "ios-v0.2.8", version: "0.2.8", build: "64", ipaName: "Poki-external-0.2.8-64.ipa", channel: "beta")
+        channels = [
+            ChannelInfo(id: "stable", title: "Stable", selected: false, latest: nil),
+            ChannelInfo(id: "beta", title: "Beta", selected: true, latest: latest),
+            ChannelInfo(id: "pre-alpha", title: "Pre-alpha", selected: false, latest: Release(tag: "ios-prealpha-0.2.8-260", version: "0.2.8", build: "260", ipaName: "Poki-external-0.2.8-260.ipa", channel: "pre-alpha")),
+        ]
         steps["install"] = [
             StepItem(id: "phone", title: "Finding the iPhone", state: .done, detail: facts.name),
             StepItem(id: "pair", title: "Pairing with the iPhone", state: .done),

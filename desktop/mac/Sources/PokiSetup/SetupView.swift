@@ -168,7 +168,7 @@ struct SetupView: View {
                             .buttonStyle(.borderless).foregroundStyle(.secondary)
                             .accessibilityLabel("Use the latest release instead")
                     } else if let latest = model.latest {
-                        Text("Latest release, \(latest.version)").foregroundStyle(.secondary)
+                        Text("\(model.channel?.title ?? "Latest") release, \(latest.version) (\(latest.build))").foregroundStyle(.secondary)
                     } else {
                         Text("Choose a Poki IPA").foregroundStyle(.secondary)
                     }
@@ -200,7 +200,7 @@ struct SetupView: View {
 
     private var footer: String {
         if model.account?.signedIn != true { return "Sign in first. Your Apple Account password goes to Apple only." }
-        if ipa == nil && model.latest == nil { return "No Poki release is published yet. Choose the Poki IPA you downloaded (the “external” one)." }
+        if ipa == nil && model.latest == nil { return "No Poki release is published on the \(model.channel?.title ?? "chosen") channel yet. Pick another channel in Settings, or choose the Poki IPA you downloaded (the “external” one)." }
         return "Poki Setup signs Poki for your team, installs it, and gives Poki its pairing file, so it can work on its own."
     }
 

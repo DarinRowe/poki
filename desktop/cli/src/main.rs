@@ -142,8 +142,17 @@ enum Cmd {
         #[command(subcommand)]
         cmd: McpCmd,
     },
-    /// The latest Poki release.
-    Release,
+    /// The latest Poki release on the chosen channel, or every channel with --all.
+    Release {
+        /// List every channel and its newest release.
+        #[arg(long)]
+        all: bool,
+    },
+    /// Show or set the release channel (stable, beta, pre-alpha) for installs, renewals and updates.
+    Channel {
+        /// The channel to use from now on.
+        set: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -463,9 +472,23 @@ async fn run() -> Result<()> {
                 Ok(())
             }
         },
-        Cmd::Release => {
+        Cmd::Release { all: false } => {
             let r = release::latest().await?;
             out(cli.json, &r, |r| println!("{}  Poki {} ({})  {}  {}", r.tag, r.version, r.build, r.published_at, r.ipa_url))
+        }
+        Cmd::Release { all: true } | Cmd::Channel { set: None } => {
+            let list = release::channels().await?;
+            out(cli.json, &list, |list| {
+                for c in list {
+                    let latest = c.latest.as_ref().map(|r| format!("Poki {} ({})  {}", r.version, r.build, r.tag)).unwrap_or_else(|| "nothing published".into());
+                    println!("{} {:<10} {}", if c.selected { "*" } else { " " }, c.title, latest);
+                }
+            })
+        }
+        Cmd::Channel { set: Some(name) } => {
+            release::set_channel(name.parse()?)?;
+            println!("Channel: {}", release::channel().title());
+            Ok(())
         }
     }
 }

@@ -344,6 +344,13 @@ async fn dispatch(state: &Shared, out: &Out, cmd: &str, a: &Value) -> R {
             ok(true)
         }
         "latest_release" => ok(release::latest().await?),
+        // Every channel with its newest release, the chosen one marked (Settings' picker).
+        "channels" => ok(release::channels().await?),
+        "set_channel" => {
+            let channel: String = arg(a, "channel")?;
+            release::set_channel(channel.parse()?)?;
+            ok(release::channels().await?)
+        }
         "relay_state" => ok(relay::remembered()?),
         "relay_accounts" => {
             let token: String = arg(a, "token")?;
@@ -446,33 +453,7 @@ async fn dispatch(state: &Shared, out: &Out, cmd: &str, a: &Value) -> R {
     }
 }
 
-async fn check_update() -> R {
-    #[derive(Deserialize)]
-    struct Rel {
-        tag_name: String,
-        html_url: String,
-        draft: bool,
-    }
-    let http = reqwest::Client::builder().user_agent(format!("PokiSetup/{}", poki_setup_core::VERSION)).timeout(std::time::Duration::from_secs(20)).build().map_err(|e| e.to_string())?;
-    let list: Vec<Rel> = http
-        .get(format!("https://api.github.com/repos/{}/releases?per_page=30", release::repo()))
-        .header("Accept", "application/vnd.github+json")
-        .send()
-        .await
-        .map_err(|e| e.to_string())?
-        .json()
-        .await
-        .map_err(|e| e.to_string())?;
-    let current = poki_setup_core::VERSION.to_string();
-    let latest = list.into_iter().find(|r| !r.draft && r.tag_name.starts_with("desktop-v"));
-    let (tag, url) = match latest {
-        Some(r) => (Some(r.tag_name.trim_start_matches("desktop-v").to_string()), Some(r.html_url)),
-        None => (None, None),
-    };
-    let p = |s: &str| s.split(['.', '-']).map(|x| x.parse::<u64>().unwrap_or(0)).collect::<Vec<_>>();
-    let newer = tag.as_deref().map(|t| p(t) > p(&current)).unwrap_or(false);
-    ok(json!({ "current": current, "latest": tag, "url": url, "newer": newer }))
-}
+async fn check_update() -> R { ok(release::desktop_update().await?) }
 
 /// The log file, or nowhere when it could not be opened.
 struct FileOrSink(Option<std::fs::File>);

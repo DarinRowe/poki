@@ -163,6 +163,19 @@ struct Release: Decodable {
     var version: String
     var build: String
     var ipaName: String
+    /// "stable", "beta" or "pre-alpha".
+    var channel: String? = nil
+}
+
+/// A release channel and its newest release (`channels`, `set_channel`).
+struct ChannelInfo: Decodable, Identifiable, Hashable {
+    var id: String
+    var title: String
+    var selected: Bool
+    var latest: Release?
+
+    static func == (a: ChannelInfo, b: ChannelInfo) -> Bool { a.id == b.id && a.selected == b.selected && a.latest?.tag == b.latest?.tag }
+    func hash(into h: inout Hasher) { h.combine(id) }
 }
 
 /// One progress event from a long job (`install`, `pair`, `renew`, `relay`, ...).

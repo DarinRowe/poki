@@ -330,50 +330,19 @@ pub async fn support_bundle(udid: Option<String>, out_dir: String) -> R<String> 
     Ok(b.path.display().to_string())
 }
 
-#[derive(Serialize)]
-pub struct UpdateInfo {
-    current: String,
-    latest: Option<String>,
-    url: Option<String>,
-    newer: bool,
-}
-
-/// Looks at the `desktop-v*` releases. Installing stays a download for now: in-place updates
-/// need a signing key for the update feed, which comes with the first signed release.
+/// Poki Setup's own update on the chosen channel. Installing stays a download for now: in-place
+/// updates need a signing key for the update feed, which comes with the first signed release.
 #[tauri::command]
-pub async fn check_update() -> R<UpdateInfo> {
-    #[derive(serde::Deserialize)]
-    struct Rel {
-        tag_name: String,
-        html_url: String,
-        draft: bool,
-    }
-    let list: Vec<Rel> = reqwest_client()?
-        .get(format!("https://api.github.com/repos/{}/releases?per_page=30", release::repo()))
-        .header("Accept", "application/vnd.github+json")
-        .send()
-        .await
-        .map_err(|e| e.to_string())?
-        .json()
-        .await
-        .map_err(|e| e.to_string())?;
-    let current = poki_setup_core::VERSION.to_string();
-    let latest = list.into_iter().filter(|r| !r.draft && r.tag_name.starts_with("desktop-v")).next();
-    let (tag, url) = match latest {
-        Some(r) => (Some(r.tag_name.trim_start_matches("desktop-v").to_string()), Some(r.html_url)),
-        None => (None, None),
-    };
-    let newer = tag.as_deref().map(|t| semver_gt(t, &current)).unwrap_or(false);
-    Ok(UpdateInfo { current, latest: tag, url, newer })
-}
+pub async fn check_update() -> R<release::UpdateInfo> { Ok(release::desktop_update().await?) }
 
-fn reqwest_client() -> R<reqwest::Client> {
-    reqwest::Client::builder().user_agent(format!("PokiSetup/{}", poki_setup_core::VERSION)).timeout(std::time::Duration::from_secs(20)).build().map_err(|e| e.to_string().into())
-}
+/// Every channel with its newest release, the chosen one marked.
+#[tauri::command]
+pub async fn channels() -> R<Vec<release::ChannelInfo>> { Ok(release::channels().await?) }
 
-fn semver_gt(a: &str, b: &str) -> bool {
-    let p = |s: &str| s.split('.').map(|x| x.parse::<u64>().unwrap_or(0)).collect::<Vec<_>>();
-    p(a) > p(b)
+#[tauri::command]
+pub async fn set_channel(channel: String) -> R<Vec<release::ChannelInfo>> {
+    release::set_channel(channel.parse()?)?;
+    Ok(release::channels().await?)
 }
 
 #[tauri::command]

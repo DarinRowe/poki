@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, failureText, type Account, type AppInfo, type UpdateInfo } from "../api";
+import { api, failureText, type Account, type AppInfo, type ChannelInfo, type UpdateInfo } from "../api";
 import { setLang, t, useLang } from "../i18n";
 import { Capsule, Card, ErrorBox, Field } from "../ui";
 
@@ -9,8 +9,10 @@ export default function Settings({ info }: { info: AppInfo | null }) {
   const [server, setServer] = useState("https://ani.sidestore.io");
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [channels, setChannels] = useState<ChannelInfo[]>([]);
   const load = () => api.account().then((a) => { setAcct(a); if (a.anisette.kind === "remote") setServer(a.anisette.url); }).catch(() => {});
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); api.channels().then(setChannels).catch(() => {}); }, []);
+  const chosen = channels.find((c) => c.selected);
   const system = acct?.anisette.kind === "system";
   return (
     <>
@@ -26,6 +28,16 @@ export default function Settings({ info }: { info: AppInfo | null }) {
         <div className="row" style={{ alignItems: "flex-end" }}>
           {info?.can_use_system_anisette && <div className="seg"><button className={system ? "on" : ""} onClick={() => api.setAnisette({ kind: "system" }).then(load).catch((e) => setError(failureText(e)))}>{t("This Mac")}</button><button className={!system ? "on" : ""} onClick={() => api.setAnisette({ kind: "remote", url: server }).then(load).catch((e) => setError(failureText(e)))}>{t("Server")}</button></div>}
           {!system && <div className="grow"><Field label={t("Server")}><div className="row"><input className="input mono grow" value={server} onChange={(e) => setServer(e.target.value)} /><Capsule kind="ghost" onClick={() => api.setAnisette({ kind: "remote", url: server }).then(load).catch((e) => setError(failureText(e)))}>{t("Done")}</Capsule></div></Field></div>}
+        </div>
+      </Card>
+      <Card>
+        <h2>{t("Updates")}</h2>
+        <p className="muted small">{t("Stable has tested releases only. Beta adds test builds. Pre-alpha adds every snapshot, which can break. Poki Setup installs and renews Poki from this channel and checks it for its own updates.")}</p>
+        <div className="row" style={{ alignItems: "center" }}>
+          <div className="seg" role="radiogroup" aria-label={t("Channel")}>
+            {channels.map((c) => <button key={c.id} role="radio" aria-checked={c.selected} className={c.selected ? "on" : ""} onClick={() => api.setChannel(c.id).then((l) => { setChannels(l); setUpdate(null); }).catch((e) => setError(failureText(e)))}>{t(c.title)}</button>)}
+          </div>
+          <span className="muted small">{chosen?.latest ? `${t("Newest Poki")}: ${chosen.latest.version} (${chosen.latest.build})` : t("None published")}</span>
         </div>
       </Card>
       <Card>
