@@ -119,11 +119,15 @@ struct ChatTranscript<Footer: View>: View {
             }
             .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 10)
             .frame(maxWidth: .infinity)
-            .containerRelativeFrame(.vertical, alignment: .bottom) { height, _ in height }
             .animation(PlanMotion.enter, value: entries)
             .animation(.easeOut(duration: 0.2), value: typing)
         }
+        // Opens at the newest message, keeps a short chat at the bottom, and follows new lines (the
+        // live voice transcript grows below the messages) while the content itself scrolls freely.
+        // A frame fixed to the screen's height here cut off everything above it.
         .defaultScrollAnchor(.bottom)
+        .defaultScrollAnchor(.bottom, for: .alignment)
+        .defaultScrollAnchor(.bottom, for: .sizeChanges)
         .scrollDismissesKeyboard(.interactively)
     }
 
@@ -636,7 +640,7 @@ struct LiveVoiceTranscript: View {
 
     var body: some View {
         if voice.isOn || !voice.lines.isEmpty {
-            let lines = Array(voice.lines.suffix(24))
+            let lines = voice.lines
             VStack(spacing: 4) {
                 if !lines.isEmpty {
                     Label("Voice conversation", systemImage: "waveform")

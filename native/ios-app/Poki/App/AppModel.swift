@@ -64,7 +64,11 @@ final class AppModel {
     private(set) var guiding: SetupStep?
     /// The pairing file, if it is really there. The path is never stored: the app's container moves
     /// when Poki is installed again, and a stored path then points at nothing.
-    var pairingPath: String? { _ = pairingFileSeen; return FileManager.default.fileExists(atPath: AppFiles.pairingFile.path) ? AppFiles.pairingFile.path : nil }
+    var pairingPath: String? {
+        _ = pairingFileSeen
+        if FileManager.default.fileExists(atPath: AppFiles.phonePairingFile.path) { return AppFiles.phonePairingFile.path }
+        return FileManager.default.fileExists(atPath: AppFiles.pairingFile.path) ? AppFiles.pairingFile.path : nil
+    }
     /// Whether the pairing file was there at the last look. Poki Setup on a computer writes it into
     /// Poki's container after an install, while Poki may be running: setting this redraws what depends
     /// on `pairingPath` (the file itself is not observed).
@@ -1129,6 +1133,9 @@ final class AppModel {
         // A lockdown pairing plist or an RPPairing file; both are property lists.
         _ = try PropertyListSerialization.propertyList(from: data, format: nil)
         try data.write(to: AppFiles.pairingFile, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        // Chosen by hand: it replaces the phone's own pairing as well.
+        try? FileManager.default.removeItem(at: AppFiles.phonePairingFile)
+        pairingFileSeen = true
         SetupVault.storePairing(data)
         setup.pairingFile = AppFiles.pairingFile.path
         pairingTrouble = nil; pairingVerifiedAt = nil
@@ -1258,7 +1265,10 @@ final class AppModel {
             background.releasePairing()
             try? (url as NSURL).setResourceValue(URLFileProtection.completeUntilFirstUserAuthentication, forKey: .fileProtectionKey)
             setup.pairingFile = url.path
-            if let data = try? Data(contentsOf: url) { SetupVault.storePairing(data) }
+            if let data = try? Data(contentsOf: url) {
+                SetupVault.storePairing(data)
+                try? data.write(to: AppFiles.phonePairingFile, options: .completeFileProtectionUntilFirstUserAuthentication)
+            }
             pairingTrouble = nil; pairingVerifiedAt = nil
             log.add("pairing", "paired on the phone")
             activity.update { $0.phase = .idle; $0.pin = nil; $0.headline = "Paired" }
