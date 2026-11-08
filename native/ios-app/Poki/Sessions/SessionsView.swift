@@ -115,7 +115,8 @@ struct SessionsView: View {
         .toolbar {
             HomeBrand()
             ToolbarItem(placement: .topBarTrailing) {
-                PowerButton(on: model.sessionOn, turnOn: { model.startSession() }, turnOff: { chat.stop(); model.stopSession() })
+                PowerButton(state: !model.setupComplete && !SetupStep.shown.allSatisfy(model.isDone) ? .paused : model.sessionOn ? .ready : .stopped,
+                            turnOn: { model.startSession() }, turnOff: { chat.stop(); model.stopSession() }, openSetup: openSetup)
             }
         }
         .alert("Rename Session", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
@@ -206,16 +207,12 @@ extension View {
 }
 
 private extension View {
-    /// On: the whole toolbar button filled blue (iOS 26's prominent toolbar button, which takes the
-    /// place of the bar's glass rather than sitting on it; a prominent circle before iOS 26). Off: the
-    /// plain toolbar button.
-    @ViewBuilder func powerStyle(on: Bool) -> some View {
-        if on {
-            if #available(iOS 26.0, *) { buttonStyle(.glassProminent).buttonBorderShape(.circle).tint(.blue) }
-            else { buttonStyle(.borderedProminent).buttonBorderShape(.circle).tint(.blue) }
-        } else {
-            foregroundStyle(.secondary)
-        }
+    /// The state pill: a fixed-width capsule filled with the state's colour (iOS 26's prominent toolbar
+    /// button, which takes the place of the bar's glass rather than sitting on it; a prominent capsule
+    /// before iOS 26).
+    @ViewBuilder func powerStyle(tint: Color) -> some View {
+        if #available(iOS 26.0, *) { buttonStyle(.glassProminent).buttonBorderShape(.capsule).tint(tint) }
+        else { buttonStyle(.borderedProminent).buttonBorderShape(.capsule).tint(tint) }
     }
 
     /// Blue-tinted Liquid Glass on iOS 26 and later; a blue prominent capsule before it.
@@ -254,32 +251,57 @@ struct HomeBrand: ToolbarContent {
     }
 }
 
-/// Poki's power, at the top right of the Poki tab: a plain toolbar button (the bar draws the glass),
-/// a blue filled bolt while on, the grey power symbol while off. A tap turns it on or off, with
-/// a haptic for each.
+/// Poki's state as a fixed-width pill at the top right: Ready (blue, on; a tap turns it off), Stopped
+/// (red, off; a tap turns it on), Paused (orange, a setup item is open; a tap opens Setup). Words as
+/// well as colours, so the state reads without colour. A haptic for each turn.
 struct PowerButton: View {
-    var on: Bool
+    enum Status { case ready, stopped, paused }
+    var state: Status
     var turnOn: () -> Void
     var turnOff: () -> Void
+    var openSetup: () -> Void
 
     var body: some View {
         Button {
-            if on {
+            switch state {
+            case .ready:
                 UINotificationFeedbackGenerator().notificationOccurred(.warning)
                 turnOff()
-            } else {
+            case .stopped:
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
                 turnOn()
+            case .paused:
+                // A setup item is open: the fix is there, not in turning on.
+                openSetup()
             }
         } label: {
-            // Different shapes as well as colours, so on and off read without colour: a filled bolt on
-            // a blue filled button while on, the plain power symbol while off.
-            Image(systemName: on ? "bolt.fill" : "power")
-                .contentTransition(.symbolEffect(.replace.downUp))
+            Text(word)
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+                .frame(width: 72)
+                .contentTransition(.interpolate)
         }
-        .powerStyle(on: on)
-        .accessibilityLabel(Text(on ? "Turn Poki Off" : "Turn Poki On"))
-        .accessibilityValue(Text(on ? "On" : "Off"))
+        .powerStyle(tint: tint)
+        .animation(.snappy, value: state)
+        .accessibilityLabel(Text("Poki"))
+        .accessibilityValue(Text(word))
+        .accessibilityHint(Text(state == .ready ? "Turns Poki off" : state == .stopped ? "Turns Poki on" : "Opens Setup"))
+    }
+
+    private var word: LocalizedStringKey {
+        switch state {
+        case .ready: "Ready"
+        case .stopped: "Stopped"
+        case .paused: "Paused"
+        }
+    }
+
+    private var tint: Color {
+        switch state {
+        case .ready: .blue
+        case .stopped: .red
+        case .paused: .orange
+        }
     }
 }
 
