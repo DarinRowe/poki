@@ -292,7 +292,7 @@ private struct LoopbackPage: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(headline(monitor))
                         Text(monitor.isWorking || monitor.state == .noAnswer ? LocalizedStringKey(monitor.detail) : "Checking 10.7.0.1 every few seconds…")
-                            .font(.footnote).foregroundStyle(.secondary)
+                            .font(.footnote).foregroundStyle(Color(.secondaryLabel))
                     }
                 } icon: {
                     Image(systemName: monitor.isWorking ? "checkmark.circle.fill" : monitor.state == .noAnswer ? "exclamationmark.triangle.fill" : "circle.dashed")
@@ -357,7 +357,7 @@ private struct LoopbackPage: View {
         } label: {
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: name)
-                if let sub { Text(sub).font(.footnote).foregroundStyle(.secondary) }
+                if let sub { Text(sub).font(.footnote).foregroundStyle(Color(.secondaryLabel)) }
             }
         }
     }
@@ -862,7 +862,7 @@ struct SetupGuide: View {
                     ToolbarItemGroup(placement: .bottomBar) {
                         Button("Back", systemImage: "chevron.left") { index -= 1 }.disabled(index == 0)
                         Spacer()
-                        Text("\(index + 1) of \(steps.count)").font(.footnote).foregroundStyle(.secondary)
+                        Text("\(index + 1) of \(steps.count)").font(.footnote).foregroundStyle(Color(.secondaryLabel))
                         Spacer()
                         if index + 1 < steps.count {
                             Button("Next", systemImage: "chevron.right") { index += 1 }

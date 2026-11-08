@@ -22,7 +22,7 @@ struct MemoryView: View {
     var body: some View {
         Form {
             Section {
-                if routines.isEmpty { Text("None yet").foregroundStyle(.secondary) }
+                if routines.isEmpty { Text("None yet").foregroundStyle(Color(.secondaryLabel)) }
                 ForEach(routines, id: \.name) { r in
                     RoutineRow(routine: r)
                         .swipeActions { Button("Forget", role: .destructive) { _ = store.forget(r.name); reload() } }
@@ -122,7 +122,7 @@ private struct RoutineRow: View {
             }
             Spacer()
             if let ms = routine.lastMs {
-                Text(verbatim: String(format: "%.1f s", Double(ms) / 1000)).font(.subheadline).foregroundStyle(.secondary)
+                Text(verbatim: String(format: "%.1f s", Double(ms) / 1000)).font(.subheadline).foregroundStyle(Color(.secondaryLabel))
             }
         }
     }

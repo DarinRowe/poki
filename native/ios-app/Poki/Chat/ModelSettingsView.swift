@@ -89,7 +89,7 @@ private struct AccountRow: View {
             ProviderTile(provider: provider)
             VStack(alignment: .leading, spacing: 1) {
                 Text(verbatim: provider.name)
-                Text(ModelAccounts.uses(provider)).font(.footnote).foregroundStyle(.secondary)
+                Text(ModelAccounts.uses(provider)).font(.footnote).foregroundStyle(Color(.secondaryLabel))
             }
         }
     }
@@ -190,7 +190,7 @@ private struct TextChatFeature: View {
                     Toggle(isOn: Binding(get: { ModelCatalog.enabled(provider).contains(choice.id) }, set: { ModelCatalog.set(choice.id, on: $0, for: provider) })) {
                         VStack(alignment: .leading, spacing: 1) {
                             Text(choice.name)
-                            if ModelCatalog.fast(choice.id) { Text("Fast").font(.caption).foregroundStyle(.secondary) }
+                            if ModelCatalog.fast(choice.id) { Text("Fast").font(.caption).foregroundStyle(Color(.secondaryLabel)) }
                         }
                     }
                 }
@@ -274,7 +274,7 @@ private struct AddAccount: View {
                                 ProviderTile(provider: provider)
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(verbatim: provider.name).foregroundStyle(Color(.label))
-                                    Text(capabilities(provider)).font(.footnote).foregroundStyle(.secondary)
+                                    Text(capabilities(provider)).font(.footnote).foregroundStyle(Color(.secondaryLabel))
                                 }
                                 Spacer()
                                 if ModelAccounts.isSetUp(provider) { Image(systemName: "checkmark").foregroundStyle(.tint) }

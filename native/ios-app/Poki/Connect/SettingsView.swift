@@ -68,7 +68,7 @@ struct SettingsHome: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("This iPhone").font(.headline)
                         Text(verbatim: model.identity.label.isEmpty ? "—" : "\(model.identity.label.prefix(12))…")
-                            .font(.footnote.monospaced()).foregroundStyle(.secondary)
+                            .font(.footnote.monospaced()).foregroundStyle(Color(.secondaryLabel))
                     }
                     Spacer()
                     let relay = Health.relay(model)
@@ -238,7 +238,7 @@ struct ConnectorDetail: View {
         Form {
             if url.isEmpty {
                 Section {
-                    Text("Set your relay in Agents to get this connector’s address.").foregroundStyle(.secondary)
+                    Text("Set your relay in Agents to get this connector’s address.").foregroundStyle(Color(.secondaryLabel))
                 }
             } else {
             Section {
@@ -250,7 +250,7 @@ struct ConnectorDetail: View {
                         .accessibilityLabel(Text("QR code of the address"))
                 }
                 Text(verbatim: url.replacingOccurrences(of: secret.secret, with: "••••••"))
-                    .font(.footnote.monospaced()).foregroundStyle(.secondary).textSelection(.disabled)
+                    .font(.footnote.monospaced()).foregroundStyle(Color(.secondaryLabel)).textSelection(.disabled)
                 Button(copied ? "Copied" : "Copy Address", systemImage: copied ? "checkmark" : "doc.on.doc") {
                     UIPasteboard.general.string = url
                     copied = true
@@ -262,7 +262,7 @@ struct ConnectorDetail: View {
             Section {
                 let recent = Array(SessionStore.shared.sessions(for: secret, among: model.identity.secrets).prefix(20))
                 if recent.isEmpty {
-                    Text("No agent has used this connector yet.").foregroundStyle(.secondary)
+                    Text("No agent has used this connector yet.").foregroundStyle(Color(.secondaryLabel))
                 }
                 ForEach(recent) { session in
                     HStack(spacing: 12) {
@@ -270,11 +270,11 @@ struct ConnectorDetail: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(verbatim: session.name).font(.body.weight(.semibold)).lineLimit(1)
                             let line = session.lastLine
-                            if !line.isEmpty { Text(verbatim: line).font(.subheadline).foregroundStyle(.secondary).lineLimit(2) }
+                            if !line.isEmpty { Text(verbatim: line).font(.subheadline).foregroundStyle(Color(.secondaryLabel)).lineLimit(2) }
                         }
                         Spacer(minLength: 8)
                         Text(session.live ? String(localized: "now") : ChatTime.row(session.updated))
-                            .font(.subheadline).foregroundStyle(.secondary)
+                            .font(.subheadline).foregroundStyle(Color(.secondaryLabel))
                     }
                     .accessibilityElement(children: .combine)
                 }

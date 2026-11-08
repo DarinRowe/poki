@@ -207,7 +207,7 @@ private struct IssueRow: View {
         VStack(alignment: .leading, spacing: 4) {
             Label(issue.title, systemImage: "exclamationmark.triangle.fill").font(.subheadline.weight(.semibold))
                 .symbolRenderingMode(.multicolor)
-            Text(issue.text).font(.subheadline).foregroundStyle(.secondary)
+            Text(issue.text).font(.subheadline).foregroundStyle(Color(.secondaryLabel))
             if let button = issue.button {
                 Button(button) { issue.act(model, openSetup: openSetup) }.font(.subheadline.weight(.semibold)).buttonStyle(.borderless)
             }

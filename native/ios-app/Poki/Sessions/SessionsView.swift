@@ -32,7 +32,7 @@ struct SessionsView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Poki can’t work fully yet").font(Prominent.font(.headline, .semibold))
                             Text("Fix the items below. Each one has a dot on its tab.")
-                                .font(.subheadline).foregroundStyle(.secondary)
+                                .font(.subheadline).foregroundStyle(Color(.secondaryLabel))
                         }
                     } icon: {
                         Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)

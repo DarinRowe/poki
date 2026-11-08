@@ -83,7 +83,7 @@ struct AgentsView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("MCP Relay")
                                 Text(model.relayAddress == nil ? String(localized: "Set an address first") : model.relayEnabled ? Health.relay(model).word : String(localized: "Off"))
-                                    .font(.footnote).foregroundStyle(.secondary)
+                                    .font(.footnote).foregroundStyle(Color(.secondaryLabel))
                             }
                         } icon: {
                             Image(systemName: "antenna.radiowaves.left.and.right")

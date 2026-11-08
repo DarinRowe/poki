@@ -101,7 +101,7 @@ struct SigningSection: View {
                     (Text(expiry, format: .dateTime.month(.abbreviated).day()) + Text(verbatim: " · ") + Text(expiry, style: .relative).foregroundStyle(countdownColor))
                         .lineLimit(1).minimumScaleFactor(0.8)
                 } else {
-                    Text("No Profile").foregroundStyle(.secondary)
+                    Text("No Profile").foregroundStyle(Color(.secondaryLabel))
                 }
             } label: {
                 Label("Signed Until", systemImage: "signature")
