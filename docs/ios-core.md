@@ -580,6 +580,26 @@ on the phone; the next first `look` of a task in that app names the saved routin
   in-process gym (run 42411678488) netted 190 pt a swipe on a 72 % drag of 550 pt, with "more
   than a screen" and a drag back after every forward swipe, where WebDriverAgent moved 72 %: the
   figure tells which path moves what, without a probe.
+- **A scroll's drag ends with a slow tail, on both paths.** The gym's WebDriverAgent run on
+  dc53779 showed the same 1.5x on the runner path: a 482 pt press-drag moved the list 762 pt (17
+  rows for 15 on screen, so 2 rows passed unread on every swipe), and the "moved" figure read 0
+  because the title and the status line inside the area are listed in every read. XCTest's hold at
+  the end of pressAndDragWithVelocity is a move to the same point, which synthesis can drop, so the
+  lift is a flick. scroll_to now sends its drag as W3C pointer actions (`scrollDrag`): the finger
+  moves for 0.4 s, then the last 12 points over 0.25 s, and lifts almost still; a runner without
+  /actions gets the press-drag. The movement figure and the overshoot check now set aside what
+  stood still between the reads (`fixedBetween`): the moving elements' median shift is the
+  figure, "a screen or more" when the reads share nothing that moved, 0 when the same elements
+  stood where they were.
+- **A declined answer carries the picture.** "not_sent from action 1: the owner declined on the
+  phone ... Nothing was sent." is followed by a read of the screen it was refused on (the gym: the
+  one answer without a picture).
+- **A new in-process session warms its first snapshot and screenshot.** The agent's first look
+  after `prepare` took 8.1 s in the gym and came with no tree and no picture (GET /source and
+  GET /screenshot both past 4.5 s; the next read took 1.6 s): the accessibility client's first
+  snapshot and XCUIScreen's first screenshot cost seconds each. `prepare` now pays them itself
+  when the session is new (a depth-3, 30-children snapshot of the front app and one screenshot),
+  reports `warm_seconds`, and the first agent read is an ordinary one.
 - **The in-process drag holds still before it lifts.** InProcessWDA's pressAndDragWithVelocity
   ends with a move to one point short of the end, then to the end over the hold time, so the
   scroll view sees a finger that stopped before it lifted (a hold given as a move to the same
@@ -602,8 +622,12 @@ on the phone; the next first `look` of a task in that app names the saved routin
   `sourceXML:maxDepth:maxChildren:` passes them to the AX snapshot request (maxDepth, maxChildren,
   maxArrayCount). What the watchdog does in-process: `forgetRunner` drops the session and
   `onUnhealthy` reaches AppModel's restart hook, which closes the in-process session and opens a
-  new one (`closeInProcess` + `warmInProcess`), so the session comes back on its own; the stalled
-  snapshot itself runs on in the AX server until it answers or the request's deadline passes.
+  new one (`closeInProcess` + `warmInProcess`), so the session comes back on its own. The stalled
+  snapshot held InProcessWDA's one serial queue, though, and every request after it (the gym's
+  dense screen: GET /source over 4.5 s, then a screenshot and an activeAppInfo 9 s old, until the
+  run was killed), as a wedged WebDriverAgent holds its thread: now the POST /session that opens
+  the new session gets a new queue when the request in flight is older than 8 s, and the held
+  request is left to end on its own, as a restarted runner leaves its old process.
 - **A type waits for a busy runner as long as its action allows.** A type gave up after 3 s with
   "the runner is still finishing an earlier GET /source" while 7 s of its 9 s were left; the
   runner was serving this side's own leftover read from the look before, and the model paid a

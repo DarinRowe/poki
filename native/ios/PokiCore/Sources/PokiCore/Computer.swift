@@ -888,7 +888,12 @@ final class Computer: @unchecked Sendable {
     /// The answer when the sensitive part was not sent: text only when nothing went, else the read
     /// after what did go.
     func refused(until: Double, full: Bool, did: [String], text: String) async -> ToolResult {
-        guard !did.isEmpty else { return ToolResult(text: text + " Nothing was sent.", jpeg: nil, isError: true) }
+        guard !did.isEmpty else {
+            // The screen it was refused on, so the model sees what it asked for (gym: the declined
+            // answer was the one answer without a picture).
+            let read = await readAndReply(until: until, full: full, changes: true)
+            return ToolResult(text: text + " Nothing was sent.\n" + read.text, jpeg: read.jpeg, isError: true)
+        }
         return await readAndReply(until: until, full: full, changes: true, did: did, error: text)
     }
 

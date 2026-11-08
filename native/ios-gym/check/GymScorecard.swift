@@ -133,14 +133,28 @@ public final class GymScorecard {
         // An element whose whole label is the text comes before one that only contains it (a tap on
         // "Open" must not land on the alert "Open in Poki Gym?").
         let exact = candidates.filter { $0.contains(" \"\(text)\" ") || $0.contains(" \"\(text) = ") }
-        let lines = exact.isEmpty ? candidates : exact
-        guard let line = last ? lines.last : lines.first else { return nil }
-        let head = line.split(separator: " ").first.map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "+~ ")) } ?? ""
-        return Int(head)
+        // Only element lines count: a "did: wait_until: "text" appeared" line also quotes the text.
+        func number(_ line: Substring) -> Int? {
+            Int(line.split(separator: " ").first.map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "+~ ")) } ?? "")
+        }
+        let numbered = (exact.isEmpty ? candidates : exact).compactMap(number)
+        return last ? numbered.last : numbered.first
     }
 
     /// A system permission alert ("X Would Like to Send You Notifications") sits over every app until
     /// it is answered; an agent taps Don't Allow. Returns the read after it, or the answer as it was.
+    /// A first-run tip (Safari's TipView with Close) or a What's New sheet (Continue) over an app's
+    /// screen: an agent dismisses it and reads again. Returns the read after it, or the answer as it was.
+    func dismissTip(_ answer: String) async -> String {
+        if answer.contains("TipView"), let close = ref(in: answer, "Close", type: "Button") {
+            return await call("tap Close on the tip", "do", ["actions": [["tap": .number(Double(close))], ["wait_until": ["settled": true, "ms": 1500]]]])
+        }
+        if answer.contains("What’s New") || answer.contains("What's New"), let cont = ref(in: answer, "Continue", type: "Button") {
+            return await call("tap Continue on the What's New sheet", "do", ["actions": [["tap": .number(Double(cont))], ["wait_until": ["settled": true, "ms": 2000]]]])
+        }
+        return answer
+    }
+
     func dismissSystemAlert(_ answer: String) async -> String {
         guard answer.contains("Would Like") || answer.contains("Don’t Allow") || answer.contains("Don't Allow") else { return answer }
         guard let no = ref(in: answer, "Don’t Allow", type: "Button") ?? ref(in: answer, "Don't Allow", type: "Button") else { return answer }
@@ -320,6 +334,14 @@ public final class GymScorecard {
         a = await tap("Row 250", in: a, expect: "Row 250 tapped")
         let missing = await call("scroll_to a row that does not exist", "do", ["actions": [["scroll_to": ["text": "Row 9999", "max_swipes": 2]]]], budget: 30)
         check(!missing.contains("HUNG"), "scroll_to for a missing text answers")
+        // A drag by points (the content follows the finger: WDA's /actions, in-process the touch path).
+        let before = await call("look before the drag", "look", ["full": true])
+        let dragged = await call("drag the list up by 400 pt", "do", ["actions": [["drag": ["from": [200, 700], "to": [200, 300], "ms": 500]]]], budget: 12)
+        check(dragged.contains("did: drag"), "a drag by points is sent")
+        let topBefore = before.range(of: #"Button "Row [0-9]+""#, options: .regularExpression).map { String(before[$0]) } ?? "?"
+        let after = dragged.contains("screen_changed: false") ? dragged : await call("look after the drag", "look", ["full": true])
+        let topAfter = after.range(of: #"Button "Row [0-9]+""#, options: .regularExpression).map { String(after[$0]) } ?? "?"
+        check(topAfter != topBefore, "the list moved under the drag (top row \(topBefore) -> \(topAfter))")
 
         // 5. A half sheet.
         a = await open("sheet")
@@ -558,7 +580,12 @@ public final class GymScorecard {
             }
             if ref(in: loaded, "Example Domain") != nil {
                 check(true, "the page loads and its text is in the tree")
-                let link = await scrollTo("Learn more", step: "scroll_to the link's text", budget: 30, max: 3)
+                var link = await scrollTo("Learn more", step: "scroll_to the link's text", budget: 30, max: 3)
+                // Safari's first-run tip (View Bookmarks, Share Menu...) can come up over the page.
+                if link.contains("TipView") {
+                    _ = await dismissTip(link)
+                    link = await scrollTo("Learn more", step: "scroll_to the link's text (after the tip)", budget: 30, max: 3)
+                }
                 check(link.contains("found at") || link.contains("found by scroll_to") || ref(in: link, "Learn more") != nil, "scroll_to finds page text in Safari")
                 var page = link
                 if ref(in: page, "Learn more") == nil { page = await call("look (full) for the link", "look", ["full": true]) }
@@ -605,7 +632,14 @@ public final class GymScorecard {
         if cellRef != nil {
             check(openedPhoto.contains("screen_changed: true"), "tapping a grid cell opens the photo (screen changed)")
             let backToGrid = await call("back to the grid", "do", ["actions": [["back": true], ["wait_until": ["settled": true, "ms": 2500]]]])
-            let grid = (ref(in: backToGrid, "Photo,", type: "Image") ?? ref(in: backToGrid, "Library", type: "Button")) != nil ? backToGrid : await call("look (full) at the grid", "look", ["full": true])
+            var grid = (ref(in: backToGrid, "Photo,", type: "Image") ?? ref(in: backToGrid, "Library", type: "Button")) != nil ? backToGrid : await call("look (full) at the grid", "look", ["full": true])
+            // The What's New sheet can slide up late, over the grid.
+            // The What's New sheet can slide up late, over the grid, and the notifications alert after it.
+            for _ in 1...3 where (ref(in: grid, "Photo,", type: "Image") ?? ref(in: grid, "Library", type: "Button")) == nil
+                && (ref(in: grid, "Continue", type: "Button") != nil || grid.contains("Would Like")) {
+                _ = await dismissSystemAlert(await dismissTip(grid))
+                grid = await call("look (full) at the grid (after the sheet)", "look", ["full": true])
+            }
             check((ref(in: grid, "Photo,", type: "Image") ?? ref(in: grid, "Library", type: "Button")) != nil, "back returns to the photo grid")
         } else { check(false, "a photo cell or the Library grid is listed") }
 

@@ -112,6 +112,8 @@ final class AppModel {
     private(set) var probeDriven = false
     /// The app's MCP tools (ask_poki), set by AskPoki.
     func setHostTools(_ tools: [HostTool]) { core.setHostTools(tools) }
+    /// The gym probe answers approvals itself: with no session on, `handle` keeps them off the screen.
+    var onProbeApproval: ((PendingApproval) -> Void)?
 
     init(launcher: RunnerLauncher = RustLauncher(), pairer: DevicePairing = RustPairing()) {
         ActivityController.endAll()
@@ -231,7 +233,8 @@ final class AppModel {
                 self.inProcessWarming = false
                 let ok = (result["ok"] as? Bool) == true
                 let seconds = String(format: "%.2f", result["seconds"] as? Double ?? 0)
-                self.log.add("runner", ok ? "in-process session ready for \(why) (generation \(result["generation"] ?? 0), \((result["reused"] as? Bool) == true ? "already open" : "opened"), \(seconds) s)"
+                let warm = (result["warm_seconds"] as? Double).map { $0 > 0 ? String(format: ", first snapshot and screenshot %.2f s", $0) : "" } ?? ""
+                self.log.add("runner", ok ? "in-process session ready for \(why) (generation \(result["generation"] ?? 0), \((result["reused"] as? Bool) == true ? "already open" : "opened"), \(seconds) s\(warm))"
                                           : "in-process session not ready for \(why): \(result["code"] ?? "unknown") after \(seconds) s")
                 self.inProcessSession = ok ? .open : .failed(code: "\(result["code"] ?? "unknown")", detail: result["detail"] as? String ?? "")
                 if self.sessionOn { self.host.update(runner: self.coreState(of: self.runner)) }
@@ -637,6 +640,7 @@ final class AppModel {
     }
 
     private func handle(_ event: ShellEvent) {
+        if case .approvalRequested(let approval) = event, let probe = onProbeApproval { probe(approval) }
         // Every outside agent's session and step goes into the Sessions list, on or off.
         SessionStore.shared.observe(event, approvals: approvals)
         // Events after Turn off (the core's own "stopped") are not for the screen. An approval is

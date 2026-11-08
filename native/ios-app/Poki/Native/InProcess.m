@@ -395,7 +395,23 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
         NSString *code = [error.domain isEqualToString:@"RecoveredNative"] ? error.localizedDescription : [NSString stringWithFormat:@"%@ %ld", error.domain ?: @"unknown", (long)error.code];
         return @{@"ok": @NO, @"code": code ?: @"unknown", @"detail": detail, @"seconds": @(seconds)};
     }
-    return @{@"ok": @YES, @"generation": @(_sessions.generation), @"reused": @(_sessions.enableWasReused), @"seconds": @(seconds)};
+    double warm = 0;
+    if (!_sessions.enableWasReused) {
+        // The first use of a new session pays for the accessibility client's first snapshot and
+        // XCUIScreen's first screenshot, seconds each (the gym: the agent's first look after prepare
+        // took 8.1 s and came with no tree and no picture; the next read took 1.6 s). Paid here, with
+        // a shallow snapshot of the front app, so the agent's first read is an ordinary one.
+        NSTimeInterval warmStarted = NSProcessInfo.processInfo.systemUptime;
+        @try {
+            id ax = nil;
+            id app = [self front:NULL ax:&ax];
+            if (app && ax) PKRequestSnapshot(ax, app, 3, 30, NULL);
+            NSString *code = nil;
+            [self screenshot:&code];
+        } @catch (__unused NSException *e) {}
+        warm = NSProcessInfo.processInfo.systemUptime - warmStarted;
+    }
+    return @{@"ok": @YES, @"generation": @(_sessions.generation), @"reused": @(_sessions.enableWasReused), @"seconds": @(seconds), @"warm_seconds": @(warm)};
 }
 
 - (NSDictionary<NSString *, id> *)close {

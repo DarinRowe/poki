@@ -161,6 +161,38 @@ extension Computer {
         }
     }
 
+    /// A scroll's drag: the finger moves at a steady speed for `seconds`, then the last 12 points
+    /// over `rest` seconds, and lifts. XCTest's press-drag ends with a hold that is a move to the same
+    /// point, which synthesis can drop, and the list took the lift as a flick: a 482 pt drag moved
+    /// the gym's list 762 pt on both paths (17 rows for 15 on screen, 2 passed unread each swipe).
+    /// The slow tail is real motion, so the lift finds a finger that all but stopped. Sent as W3C
+    /// pointer actions, which both WebDriverAgent and the in-process path take; a runner without
+    /// them gets the press-drag.
+    func scrollDrag(_ path: (Double, Double, Double, Double), seconds: Double, rest: Double, until: Double) async throws {
+        let distance = max(1, hypot(path.2 - path.0, path.3 - path.1))
+        guard distance > 24 else { return try await gesture(path, seconds: seconds, rest: rest, until: until) }
+        let tail = 12.0
+        let near = (x: path.2 - (path.2 - path.0) / distance * tail, y: path.3 - (path.3 - path.1) / distance * tail)
+        let expected = seconds + rest
+        let timeout = max(expected + 1.5, min(expected + 5, until - now() - 0.2))
+        let finger: JSON = ["type": "pointer", "id": "f1", "parameters": ["pointerType": "touch"], "actions": [
+            ["type": "pointerMove", "duration": 0, "x": .number(path.0.rounded()), "y": .number(path.1.rounded())],
+            ["type": "pointerDown", "button": 0],
+            ["type": "pointerMove", "duration": .number((seconds * 1000).rounded()), "x": .number(near.x.rounded()), "y": .number(near.y.rounded())],
+            ["type": "pointerMove", "duration": .number((rest * 1000).rounded()), "x": .number(path.2.rounded()), "y": .number(path.3.rounded())],
+            ["type": "pointerUp", "button": 0],
+        ]]
+        do {
+            _ = try await runner.call("POST", "/actions", ["actions": [finger]], timeout: timeout, countsAsMiss: false)
+            swipeUnread = true
+        } catch let e as RunnerError where e.code == "unknown command" || e.code == "unknown method" {
+            try await gesture(path, seconds: seconds, rest: rest, until: until)
+        } catch let e as RunnerError where e.delivery == .unknown {
+            swipeUnread = true
+            throw e
+        }
+    }
+
     /// A bare host typed into Safari's address field: the Go key did not navigate on it in the gym
     /// (3 of 3; the suggestions stayed), while the same with a scheme loaded the page in 2 s.
     func safariAddressNote(_ target: Element?, _ text: String) -> String {
@@ -770,7 +802,7 @@ extension Computer {
             // overlap, under the navigation bar, and the drag back fired on every call: 8 calls).
             let path = corrective ? try swipePath(region, ["up": "down", "down": "up", "left": "right", "right": "left"][fingerGoes] ?? "down", "short") : try swipePath(region, fingerGoes, "scroll")
             do {
-                try await gesture(path, seconds: 0.4, rest: 0.2, until: until - 0.8)
+                try await scrollDrag(path, seconds: 0.4, rest: 0.25, until: until - 0.8)
             } catch let e as RunnerError where e.delivery == .unknown {
                 return notYet("the runner did not confirm the last swipe in time (\(e.message)), so it may still land")
             }
@@ -791,8 +823,18 @@ extension Computer {
                 return f.x < region.maxX && f.maxX > region.x && f.y < region.maxY && f.maxY > region.y && !e.text.isEmpty && !Self.containers.contains(e.type)
             }.map(\.key))
         }
-        let a = inside(before), b = inside(after)
+        // What stood still between the reads (a title, a status line, a scroll bar inside the area) is
+        // chrome, not the list: without this the gym's "Gym: list" and "state: ready" lines made every
+        // read share something, and a swipe that passed a whole screen counted as an overlap.
+        let fixed = Self.fixedBetween(before, after)
+        let a = inside(before).subtracting(fixed), b = inside(after).subtracting(fixed)
         return a.count >= 4 && b.count >= 4 && a.isDisjoint(with: b)
+    }
+
+    /// The keys of the elements both reads list at the same place.
+    static func fixedBetween(_ before: [Element], _ after: [Element]) -> Set<String> {
+        let was = Dictionary(before.map { ($0.key, $0.frame) }, uniquingKeysWith: { a, _ in a })
+        return Set(after.filter { e in was[e.key].map { abs($0.y - e.frame.y) < 2 && abs($0.x - e.frame.x) < 2 } ?? false }.map(\.key))
     }
 
     /// How far the list moved between two reads, in points along the swipe's axis, positive in the
@@ -811,10 +853,15 @@ extension Computer {
             return out
         }
         let a = positions(before), b = positions(after)
-        let shifts = a.compactMap { k, y in b[k].map { y - $0 } }.sorted()
+        let shifts = a.compactMap { k, y in b[k].map { y - $0 } }
         guard !shifts.isEmpty else { return nil }
         let sign: Double = fingerGoes == "up" || fingerGoes == "left" ? 1 : -1
-        return sign * shifts[shifts.count / 2]
+        // What moved tells the distance; what stood still is chrome (a title, a status line). All
+        // still and the same elements: the list did not move. All still and others came or went: it
+        // moved more than the reads share.
+        let moving = shifts.filter { abs($0) >= 2 }.sorted()
+        if !moving.isEmpty { return sign * moving[moving.count / 2] }
+        return Set(a.keys) == Set(b.keys) ? 0 : nil
     }
 
     /// A swipe that did something other than scroll (gym: a drag that started on Safari's address

@@ -68,14 +68,24 @@ final class FakeWDA: HTTPTransport, @unchecked Sendable {
         let inSession = url.path.hasPrefix("/session/")
         var path = url.path.replacingOccurrences(of: #"^/session/[^/]+"#, with: "", options: .regularExpression)
         if path.isEmpty { path = "/session" }
-        let key = "\(method) \(path)"
+        var key = "\(method) \(path)"
         // As in WDA 16.15.3 (FBCustomCommands.m): the Home button has no route inside a session.
         if inSession, Self.sessionlessOnly.contains(key) {
             let missing: JSON = ["value": ["error": "unknown command", "message": .string("Unhandled endpoint: \(url.path)")]]
             _ = record(method, url.path, nil, "")
             return (404, missing.data())
         }
-        let parsed = body.flatMap { try? JSON.parse($0) }
+        var parsed = body.flatMap { try? JSON.parse($0) }
+        // scroll_to's drag goes as W3C actions (one finger, a slow tail): the tests hook the press-drag
+        // route and read fromY/toY from it, so a one-finger drag is answered there with that shape.
+        if key == "POST /actions", let sources = parsed?["actions"]?.array, sources.count == 1, let steps = sources[0]["actions"]?.array {
+            let moves = steps.filter { $0["type"]?.string == "pointerMove" }
+            if moves.count >= 2, let first = moves.first, let last = moves.last {
+                // The slow tail before the lift stands where the press-drag's hold stood.
+                parsed = ["fromX": first["x"] ?? 0, "fromY": first["y"] ?? 0, "toX": last["x"] ?? 0, "toY": last["y"] ?? 0, "holdDuration": .number((last["duration"]?.double ?? 0) / 1000), "w3c": true]
+                key = "POST /wda/pressAndDragWithVelocity"; path = "/wda/pressAndDragWithVelocity"
+            }
+        }
         let route = record(method, path, parsed, key)
         guard let route else { let missing: JSON = ["value": ["error": "unknown command", "message": .string("no route \(key)")]]; return (404, missing.data()) }
         let (status, json) = try await route(parsed)

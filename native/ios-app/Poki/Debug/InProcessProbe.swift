@@ -253,22 +253,18 @@ final class InProcessProbe: ObservableObject {
         defer { UIApplication.shared.endBackgroundTask(background) }
         let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
         let transcript = GymTranscript()
+        // The owner's side of approvals: PokiCore asks, the approver answers after the delay the
+        // scorecard set (there is no session on, so the app's own list does not see them).
+        let asked = GymAskedApprovals()
         let approver = GymApprover { id, approved in
-            if let approval = model.approvals.first(where: { $0.id == id }) { model.resolve(approval, approved: approved) }
+            if let approval = asked.byID[id] { model.resolve(approval, approved: approved) }
         }
-        // The owner's side of approvals: the app's list grows when PokiCore asks.
-        let watch = Task { @MainActor in
-            var seen: Set<String> = []
-            while !Task.isCancelled {
-                for approval in model.approvals where !seen.contains(approval.id) {
-                    seen.insert(approval.id)
-                    NSLog("PokiGym approval asked: %@ (%@)", approval.summary, approval.reason)
-                    approver.requested(id: approval.id)
-                }
-                try? await Task.sleep(for: .milliseconds(250))
-            }
+        model.onProbeApproval = { approval in
+            asked.byID[approval.id] = approval
+            NSLog("PokiGym approval asked: %@ (%@)", approval.summary, approval.reason)
+            approver.requested(id: approval.id)
         }
-        defer { watch.cancel() }
+        defer { model.onProbeApproval = nil }
         var env = GymEnvironment(call: { name, args in
             let answer = await model.phoneToolWithPicture(name, arguments: args.serialized())
             return (answer.text, answer.jpeg.map { [$0] } ?? [])
@@ -331,6 +327,8 @@ final class InProcessProbe: ObservableObject {
 
     /// The scorecard's log, kept for Documents/gym-scorecard.txt.
     private final class GymTranscript { var lines: [String] = [] }
+    /// The approvals PokiCore asked for during the scorecard, by id.
+    private final class GymAskedApprovals { var byID: [String: PendingApproval] = [:] }
 
     // MARK: Steps
 
