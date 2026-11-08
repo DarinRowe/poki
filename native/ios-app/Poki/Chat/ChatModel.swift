@@ -199,6 +199,12 @@ final class ChatModel {
             return
         }
         let model = ModelKeys.selectedModel
+        // The first message names the chat: a few words from the chat's own model, in the background.
+        if kind == .poki, !again, entries.filter({ if case .you = $0.kind { return true }; return false }).count == 1,
+           let piModel = provider.piModel(model) {
+            let id = sessionID
+            Task { if let name = await SessionNamer.name(for: text, provider: provider, model: piModel) { SessionStore.shared.setAutoName(id, name) } }
+        }
         running = true
         awaitingModel = true
         stopAsked = false

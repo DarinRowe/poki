@@ -19,6 +19,9 @@ struct SavedSession: Codable, Identifiable, Equatable {
     var outcome: Outcome?
     var entries: [ChatEntry]
     var calls: [CallRecord]
+    /// The owner's own name for it (Rename), and the short name Poki's chat model gave it.
+    var customName: String? = nil
+    var autoName: String? = nil
 
     /// The row's second line: the last thing that happened.
     var lastLine: String {
@@ -40,10 +43,11 @@ struct SavedSession: Codable, Identifiable, Equatable {
 
     /// "Claude → Poki" for a hand-off, the agent's name for its own session, "Poki" for a chat.
     var name: String {
+        if let customName, !customName.isEmpty { return customName }
         switch kind {
-        case .poki: "Poki"
-        case .agent: client ?? String(localized: "An agent")
-        case .handoff: "\(client ?? String(localized: "An agent")) → Poki"
+        case .poki: return autoName ?? (title == String(localized: "New conversation") ? "Poki" : String(title.prefix(40)))
+        case .agent: return client ?? String(localized: "An agent")
+        case .handoff: return autoName.map { "\(client ?? String(localized: "An agent")) · \($0)" } ?? "\(client ?? String(localized: "An agent")) → Poki"
         }
     }
 }
@@ -112,6 +116,7 @@ final class SessionStore {
         session.entries = chat.entries
         session.calls = chat.savedCalls
         session.title = chat.title
+        if let name = pendingNames.removeValue(forKey: chat.sessionID) { session.autoName = name }
         session.updated = Date()
         session.live = chat.running
         put(session)
@@ -122,6 +127,24 @@ final class SessionStore {
         session.live = false
         session.outcome = stopped ? .stopped : success == false ? .failed : .done
         session.updated = Date()
+        put(session)
+    }
+
+    /// The owner's name for a session; empty goes back to the automatic one.
+    func rename(_ id: String, to name: String) {
+        guard var session = session(id) else { return }
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        session.customName = name.isEmpty ? nil : String(name.prefix(60))
+        put(session)
+    }
+
+    /// Names given before the session's first save wait here.
+    private var pendingNames: [String: String] = [:]
+
+    /// The short name Poki's chat model gave a chat.
+    func setAutoName(_ id: String, _ name: String) {
+        guard var session = session(id) else { pendingNames[id] = name; return }
+        session.autoName = name
         put(session)
     }
 
