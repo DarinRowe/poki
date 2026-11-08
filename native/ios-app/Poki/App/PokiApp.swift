@@ -47,30 +47,63 @@ struct RootView: View {
     enum HomeRoute: Hashable { case chat, session(String), setup }
     enum RootTab: Hashable { case chats, agents, setup }
 
-    var body: some View {
-        TabView(selection: $tab) {
+    @Environment(\.horizontalSizeClass) private var width
+    /// In a wide window (iPad, the inner display of iPhone Duo, a large Split View or Stage Manager
+    /// window) the Poki tab is split: sessions and controls on the left, the chat on the right.
+    @State private var wide: HomeRoute = .chat
+
+    private func show(_ route: HomeRoute) {
+        wide = route
+        home = NavigationPath([route])
+    }
+
+    private var sessions: some View {
+        SessionsView(openChat: { show(HomeRoute.chat) }, openSession: { show(HomeRoute.session($0)) },
+                     openModel: { openAgents(AgentsRoute.accounts) },
+                     openConnectors: { tab = .agents; agents = NavigationPath() },
+                     openDetails: { tab = .agents }, openVoice: openLiveVoice,
+                     openSetup: openSetup)
+    }
+
+    @ViewBuilder private func page(_ route: HomeRoute, split: Bool) -> some View {
+        switch route {
+        case .chat:
+            ChatView(openDetails: { tab = .agents }, openVoice: openLiveVoice,
+                     openSetup: openSetup, openModel: { openAgents(AgentsRoute.accounts) },
+                     back: split ? nil : { home = NavigationPath() })
+        case .session(let id):
+            SessionView(id: id, back: { home = NavigationPath() }, hidesTabBar: !split)
+        case .setup:
+            SetupChecklist()
+        }
+    }
+
+    @ViewBuilder private var pokiTab: some View {
+        if width == .regular {
+            NavigationSplitView {
+                sessions
+                    .navigationDestination(for: SetupStep.self) { SetupStepPage(step: $0) }
+            } detail: {
+                NavigationStack {
+                    page(wide, split: true).id(wide)
+                        .navigationDestination(for: SetupStep.self) { SetupStepPage(step: $0) }
+                }
+            }
+            .navigationSplitViewStyle(.balanced)
+        } else {
             NavigationStack(path: $home) {
-                SessionsView(openChat: { home = NavigationPath([HomeRoute.chat]) }, openSession: { home = NavigationPath([HomeRoute.session($0)]) },
-                             openModel: { openAgents(AgentsRoute.accounts) },
-                             openConnectors: { tab = .agents; agents = NavigationPath() },
-                             openDetails: { tab = .agents }, openVoice: openLiveVoice,
-                             openSetup: openSetup)
-                    .navigationDestination(for: HomeRoute.self) { route in
-                        switch route {
-                        case .chat:
-                            ChatView(openDetails: { tab = .agents }, openVoice: openLiveVoice,
-                                     openSetup: openSetup, openModel: { openAgents(AgentsRoute.accounts) },
-                                     back: { home = NavigationPath() })
-                        case .session(let id):
-                            SessionView(id: id, back: { home = NavigationPath() })
-                        case .setup:
-                            SetupChecklist()
-                        }
-                    }
+                sessions
+                    .navigationDestination(for: HomeRoute.self) { page($0, split: false) }
                     .navigationDestination(for: SetupStep.self) { SetupStepPage(step: $0) }
             }
-            .tabItem { Label(String(localized: "Poki"), systemImage: "bubble.left.and.bubble.right.fill") }
-            .tag(RootTab.chats)
+        }
+    }
+
+    var body: some View {
+        TabView(selection: $tab) {
+            pokiTab
+                .tabItem { Label(String(localized: "Poki"), systemImage: "bubble.left.and.bubble.right.fill") }
+                .tag(RootTab.chats)
 
             AgentsView(path: $agents, openSession: openRun)
                 .tabItem { Label("Agents", systemImage: "point.3.connected.trianglepath.dotted") }
@@ -81,8 +114,6 @@ struct RootView: View {
                 .badge(model.setupComplete ? 0 : SetupStep.shown.filter { !model.isDone($0) }.count)
                 .tag(RootTab.setup)
         }
-        // A sidebar on iPad (and beside another app in Split View), the tab bar on iPhone.
-        .tabViewStyle(.sidebarAdaptable)
         .task { InProcessProbe.shared.startFromLaunchArguments(model: model) }
         .onChange(of: scenePhase, initial: true) { _, phase in
             if phase == .active { model.becameActive(); AskPoki.refresh() } else if phase == .background { model.wentToBackground() }
@@ -100,7 +131,7 @@ struct RootView: View {
                 setup = NavigationPath([step])
             } else {
                 if url.host() == "voice" { model.voice.open(url) }
-                tab = .chats; home = NavigationPath([HomeRoute.chat])
+                tab = .chats; show(HomeRoute.chat)
             }
         }
         .onAppear(perform: openLaunchScreen)
@@ -108,7 +139,7 @@ struct RootView: View {
             #if DEBUG
             // Development builds: `-pokiVoiceLink "poki://voice?…"` at launch starts a silent test run.
             if let link = UserDefaults.standard.string(forKey: "pokiVoiceLink"), let url = URL(string: link), url.host() == "voice" {
-                tab = .chats; home = NavigationPath([HomeRoute.chat])
+                tab = .chats; show(HomeRoute.chat)
                 model.voice.openAtLaunch(url)
             }
             #endif
@@ -118,7 +149,7 @@ struct RootView: View {
     /// The live voice conversation runs inside Poki's chat: the chat opens and the conversation starts.
     private func openLiveVoice() {
         tab = .chats
-        home = NavigationPath([HomeRoute.chat])
+        show(HomeRoute.chat)
         if !model.voice.isOn, model.voice.canTalkLive {
             // Taps that send, pay, delete or call ask for the person's OK, also by notification.
             ApprovalNotice.requestPermission()
@@ -129,7 +160,7 @@ struct RootView: View {
     /// Setup's checklist, on the Chats page.
     private func openSetup() {
         tab = .chats
-        home = NavigationPath([HomeRoute.setup])
+        show(HomeRoute.setup)
     }
 
     /// A run from the Activity Log: Poki's own chat or an outside agent's session, in Chats.
@@ -137,9 +168,9 @@ struct RootView: View {
         tab = .chats
         if let session = SessionStore.shared.session(id), session.kind == .poki {
             if session.id != chat.sessionID { chat.restore(session) }
-            home = NavigationPath([HomeRoute.chat])
+            show(HomeRoute.chat)
         } else {
-            home = NavigationPath([HomeRoute.session(id)])
+            show(HomeRoute.session(id))
         }
     }
 
@@ -152,10 +183,10 @@ struct RootView: View {
         // developer connection can pass launch arguments). It never turns on the microphone.
         if let address = defaults.string(forKey: "pokiVoiceBridge") { _ = model.voice.setBridge(address) }
         // A sample conversation (`-pokiChat working`) opens in the chat itself.
-        if defaults.string(forKey: "pokiChat") != nil { home = NavigationPath([HomeRoute.chat]) }
+        if defaults.string(forKey: "pokiChat") != nil { show(HomeRoute.chat) }
         switch defaults.string(forKey: "pokiScreen") {
-        case "chat": home = NavigationPath([HomeRoute.chat])
-        case "session": if let first = SessionStore.shared.ordered.first(where: { $0.kind != .poki }) { home = NavigationPath([HomeRoute.session(first.id)]) }
+        case "chat": show(HomeRoute.chat)
+        case "session": if let first = SessionStore.shared.ordered.first(where: { $0.kind != .poki }) { show(HomeRoute.session(first.id)) }
         case "setup":
             let step = defaults.integer(forKey: "pokiSetupStep")
             tab = .setup
@@ -169,7 +200,7 @@ struct RootView: View {
         case "details", "status": tab = .agents
         case "model": openAgents(.accounts)
         case "steps": openAgents(.activityLog)
-        case "voice": home = NavigationPath([HomeRoute.chat])
+        case "voice": show(HomeRoute.chat)
         default: break
         }
     }

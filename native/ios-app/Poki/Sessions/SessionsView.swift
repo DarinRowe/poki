@@ -232,6 +232,7 @@ struct SessionView: View {
     @Environment(AppModel.self) private var model
     var id: String
     var back: () -> Void
+    var hidesTabBar = true
 
     var body: some View {
         let session = SessionStore.shared.session(id)
@@ -255,7 +256,7 @@ struct SessionView: View {
                 }
             }
         }
-        .toolbar(.hidden, for: .tabBar)
+        .toolbar(hidesTabBar ? .hidden : .automatic, for: .tabBar)
     }
 
     private func caption(_ session: SavedSession?) -> String {

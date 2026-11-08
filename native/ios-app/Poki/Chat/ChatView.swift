@@ -73,7 +73,8 @@ struct ChatView: View {
                 .accessibilityLabel(Text("More"))
             }
         }
-        .toolbar(.hidden, for: .tabBar)
+        // Full screen on iPhone; beside the sessions in a wide window, with the tabs kept.
+        .toolbar(back == nil ? .automatic : .hidden, for: .tabBar)
     }
 
     /// Setup is not finished (nothing paired yet, or a step left after pairing, such as UI Automation):
