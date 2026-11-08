@@ -24,15 +24,15 @@ struct AccountView: View {
 
     @ViewBuilder private func signedIn(_ a: AccountState) -> some View {
         HeroSection {
-            HStack(spacing: 16) {
-                AccountBadge(name: a.name, signedIn: true).scaleEffect(1.85).frame(width: 52, height: 52)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(a.name ?? "Apple Account").font(.title2.weight(.bold))
-                    Text(a.appleId ?? "").foregroundStyle(.secondary)
+            HStack(spacing: 14) {
+                AccountBadge(name: a.name, appleID: a.appleId, signedIn: true, size: PageHeroMetrics.icon)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(a.name ?? "Apple Account").font(.title3.weight(.bold)).lineLimit(1)
+                    Text(a.appleId ?? "").font(.callout).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer()
             }
-            .padding(.vertical, 6)
+            .frame(minHeight: PageHeroMetrics.height)
         }
         Section("Signing") {
             if model.teams.isEmpty {

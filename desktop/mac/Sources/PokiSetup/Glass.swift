@@ -26,7 +26,7 @@ extension View {
             .background {
                 ZStack {
                     shape.fill(.regularMaterial)
-                    if tinted { shape.fill(Color.pokiBlue.gradient.opacity(0.85)) }
+                    if tinted { shape.fill(Color.pokiBlue.opacity(0.85)) }
                 }
             }
             .overlay { shape.stroke(.white.opacity(tinted ? 0.35 : 0.18), lineWidth: 1) }
@@ -111,29 +111,33 @@ struct PageHero<Trailing: View>: View {
     @ViewBuilder var trailing: () -> Trailing
 
     var body: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 14) {
             Group {
                 if let symbol {
                     Image(systemName: symbol)
-                        .font(.system(size: 24, weight: .medium))
+                        .font(.system(size: 20, weight: .medium))
                         .foregroundStyle(.white)
-                        .frame(width: 52, height: 52)
-                        .background(LinearGradient(colors: [Color.pokiSky, Color.pokiBlue], startPoint: .topLeading, endPoint: .bottomTrailing), in: Circle())
-                        .overlay(Circle().stroke(.white.opacity(0.35), lineWidth: 1))
-                        .shadow(color: Color.pokiBlue.opacity(0.35), radius: 8, y: 3)
+                        .frame(width: PageHeroMetrics.icon, height: PageHeroMetrics.icon)
+                        .background(Color.pokiBlue, in: Circle())
                 } else {
-                    AppIconImage(size: 60)
+                    AppIconImage(size: PageHeroMetrics.icon)
                 }
             }
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.title2.weight(.bold))
-                Text(subtitle).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.title3.weight(.bold)).lineLimit(1)
+                Text(subtitle).font(.callout).foregroundStyle(.secondary).lineLimit(2).fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 8)
             trailing()
         }
-        .padding(.vertical, 6)
+        .frame(minHeight: PageHeroMetrics.height)
     }
+}
+
+/// Every page header has the same size.
+enum PageHeroMetrics {
+    static let icon: CGFloat = 44
+    static let height: CGFloat = 56
 }
 
 extension PageHero where Trailing == EmptyView {
@@ -158,4 +162,63 @@ struct HeroSection<Content: View>: View {
 extension Color {
     /// Poki's lighter blue, for gradients.
     static let pokiSky = Color(red: 90 / 255, green: 167 / 255, blue: 255 / 255)
+}
+
+/// The photo of the Apple Account this Mac is signed in to: macOS shows the same picture for the
+/// user and their Apple Account. Used only when that account is the one signed in to Poki Setup.
+@MainActor
+final class AccountPhoto {
+    static let shared = AccountPhoto()
+    private var cache: [String: NSImage?] = [:]
+
+    func photo(for appleID: String?) -> NSImage? {
+        guard let id = appleID?.lowercased(), !id.isEmpty else { return nil }
+        if let hit = cache[id] { return hit }
+        let image = macAppleAccounts().contains(id) ? userPicture() : nil
+        cache[id] = image
+        return image
+    }
+
+    /// The Apple Accounts in System Settings (Internet Accounts' iCloud entries).
+    private func macAppleAccounts() -> Set<String> {
+        guard let accounts = CFPreferencesCopyAppValue("Accounts" as CFString, "MobileMeAccounts" as CFString) as? [[String: Any]] else { return [] }
+        return Set(accounts.compactMap { ($0["AccountID"] as? String)?.lowercased() })
+    }
+
+    private func userPicture() -> NSImage? {
+        // dscl keeps the picture as JPEGPhoto (hex) or as a file path.
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/dscl")
+        p.arguments = ["-plist", ".", "-read", "/Users/\(NSUserName())", "JPEGPhoto", "Picture"]
+        let out = Pipe()
+        p.standardOutput = out
+        p.standardError = Pipe()
+        do { try p.run() } catch { return nil }
+        let data = out.fileHandleForReading.readDataToEndOfFile()
+        p.waitUntilExit()
+        guard let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else { return nil }
+        if let hex = (plist["dsAttrTypeStandard:JPEGPhoto"] as? [String])?.first, let bytes = Data(hexString: hex), let img = NSImage(data: bytes) {
+            return img
+        }
+        if let path = (plist["dsAttrTypeStandard:Picture"] as? [String])?.first, let img = NSImage(contentsOfFile: path) {
+            return img
+        }
+        return nil
+    }
+}
+
+private extension Data {
+    init?(hexString: String) {
+        let chars = Array(hexString.filter { !$0.isWhitespace })
+        guard chars.count % 2 == 0 else { return nil }
+        var bytes = [UInt8]()
+        bytes.reserveCapacity(chars.count / 2)
+        var i = 0
+        while i < chars.count {
+            guard let b = UInt8(String(chars[i...i + 1]), radix: 16) else { return nil }
+            bytes.append(b)
+            i += 2
+        }
+        self.init(bytes)
+    }
 }

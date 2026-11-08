@@ -6,6 +6,9 @@ struct ContentView: View {
     var body: some View {
         NavigationSplitView {
             List(selection: Binding(get: { model.page }, set: { if let p = $0 { model.page = p } })) {
+                SidebarBrand()
+                    .selectionDisabled()
+                    .listRowSeparator(.hidden)
                 Section {
                     ForEach([Page.setup, .phones, .account]) { p in
                         Label(p.title, systemImage: p.symbol).tag(p)
@@ -18,7 +21,6 @@ struct ContentView: View {
                 }
             }
             .listStyle(.sidebar)
-            .safeAreaInset(edge: .top) { SidebarBrand() }
             .navigationSplitViewColumnWidth(min: 190, ideal: 210, max: 260)
             .safeAreaInset(edge: .bottom) { SidebarFooter() }
         } detail: {
@@ -55,9 +57,7 @@ private struct SidebarBrand: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 14)
-        .padding(.top, 4)
-        .padding(.bottom, 8)
+        .padding(.vertical, 6)
     }
 }
 
@@ -66,7 +66,7 @@ private struct SidebarFooter: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            AccountBadge(name: model.account?.name, signedIn: model.account?.signedIn == true)
+            AccountBadge(name: model.account?.name, appleID: model.account?.appleId, signedIn: model.account?.signedIn == true)
             VStack(alignment: .leading, spacing: 1) {
                 Text(model.account?.signedIn == true ? (model.account?.name ?? "Signed In") : "Not Signed In")
                     .font(.callout.weight(.medium))
@@ -85,20 +85,29 @@ private struct SidebarFooter: View {
     }
 }
 
+/// The Apple Account's picture: this Mac's account photo when the Mac is signed in to the same
+/// Apple Account (the photo the Apple Account uses), otherwise initials on flat Poki blue.
 struct AccountBadge: View {
     var name: String?
+    var appleID: String? = nil
     var signedIn: Bool
+    var size: CGFloat = 28
 
     var body: some View {
         ZStack {
-            Circle().fill(signedIn ? AnyShapeStyle(Color.pokiBlue.gradient) : AnyShapeStyle(Color.secondary.opacity(0.25)))
-            if signedIn, let initials = initials {
-                Text(initials).font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
+            if signedIn, let photo = AccountPhoto.shared.photo(for: appleID) {
+                Image(nsImage: photo).resizable().scaledToFill()
             } else {
-                Image(systemName: "person.fill").font(.system(size: 13)).foregroundStyle(.white)
+                Circle().fill(signedIn ? Color.pokiBlue : Color.secondary.opacity(0.25))
+                if signedIn, let initials = initials {
+                    Text(initials).font(.system(size: size * 0.42, weight: .semibold)).foregroundStyle(.white)
+                } else {
+                    Image(systemName: "person.fill").font(.system(size: size * 0.46)).foregroundStyle(.white)
+                }
             }
         }
-        .frame(width: 28, height: 28)
+        .frame(width: size, height: size)
+        .clipShape(Circle())
     }
 
     private var initials: String? {
