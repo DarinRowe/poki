@@ -470,7 +470,8 @@ extension Computer {
             let preferred = fresh.filter { ["NavigationBar", "StaticText", "Heading"].contains($0.type) } + fresh.filter { !["NavigationBar", "StaticText", "Heading"].contains($0.type) }
             checks = Array(preferred.prefix(3).map { $0.label ?? $0.text })
         }
-        let app = recorded.first(where: { $0.step.app != nil })?.step.app
+        // The app of the first step that touched something (a launch step was recorded where it began).
+        let app = recorded.first(where: { $0.step.target != nil && $0.step.app != nil })?.step.app ?? recorded.first(where: { $0.step.app != nil })?.step.app
         let now = Date()
         let routine = Routine(name: name, description: description, app: app, steps: steps, params: params, expect: checks.filter { !$0.isEmpty }, read: read,
                               runs: 0, ok: 0, failuresInARow: 0, lastStop: nil, lastMs: nil, savedBy: by, created: now, updated: now)
@@ -535,6 +536,9 @@ extension Computer {
                 var found: Element?
                 var why = "\(target.describe) is not on screen"
                 var reads = 0
+                // The match and its frame in the read before: a target is tapped only once it holds still
+                // across two reads (a page sliding in moves its rows, and a tap then is lost), or after 1.5 s.
+                var candidate: String?
                 let readStart = now()
                 while now() < stepEnds - 0.2 {
                     guard let tree = try? await runner.tree(timeout: min(config.readTimeout, max(0.3, stepEnds - now() - 0.1)), format: config.treeFormat) else { break }
@@ -549,14 +553,23 @@ extension Computer {
                         let layout = Layout(all: tree.elements, screen: screen)
                         let reachable = matches.filter { layout.touchPoint($0) != nil }
                         let near = reachable.sorted { hypot($0.frame.centre.x - target.x, $0.frame.centre.y - target.y) < hypot($1.frame.centre.x - target.x, $1.frame.centre.y - target.y) }
-                        if near.count == 1 { found = near[0]; break }
+                        var pick: Element?
+                        if near.count == 1 { pick = near[0] }
                         if near.count > 1 {
                             let d0 = hypot(near[0].frame.centre.x - target.x, near[0].frame.centre.y - target.y)
                             let d1 = hypot(near[1].frame.centre.x - target.x, near[1].frame.centre.y - target.y)
-                            if d0 < 40, d1 > 2 * d0 + 20 { found = near[0]; break }
+                            if d0 < 40, d1 > 2 * d0 + 20 { pick = near[0] }
                             why = "\(near.count) elements match \(target.describe) and none is clearly the recorded one"
                         } else { why = "\(target.describe) is listed but not where a tap reaches it" }
+                        if let pick {
+                            let here = "\(pick.key)@\(pick.frame.described)"
+                            if here == candidate || now() - readStart > 1.5 { found = pick; break }
+                            candidate = here
+                            why = "\(target.describe) was still moving"
+                            continue
+                        }
                     }
+                    candidate = nil
                     await sleep(seconds: 0.12)
                 }
                 guard let element = found else { throw stop(index, why + " (\(reads) reads in \(Int(((now() - readStart) * 1000).rounded())) ms)") }
@@ -711,7 +724,8 @@ extension PokiCore {
             }
             if !r.expect.isEmpty { lines.append("end check: " + r.expect.map { "\"\($0)\"" }.joined(separator: ", ")) }
             if !r.read.isEmpty { lines.append("reads: " + r.read.joined(separator: ", ")) }
-            let steps = (try? String(decoding: RoutineStore.encoder.encode(r.steps), as: UTF8.self)) ?? "[]"
+            let compact = JSONEncoder(); compact.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]; compact.dateEncodingStrategy = .iso8601
+            let steps = (try? String(decoding: compact.encode(r.steps), as: UTF8.self)) ?? "[]"
             lines.append("steps as JSON (edit takes this shape): \(steps)")
             return ToolResult(text: lines.joined(separator: "\n"), jpeg: nil)
         case "save":
