@@ -12,18 +12,6 @@ use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 
-/// Anisette servers describe themselves as akd (`<…> <…> <com.apple.AuthKit/1 (com.apple.akd/1.0)>`).
-/// SideStore and AltSign present Xcode's AuthKit client instead, which matches the Xcode app id
-/// these requests carry; Apple then offers the trusted-device prompt instead of SMS only.
-pub(crate) fn xcode_client_info(info: &str) -> String {
-    const XCODE: &str = "com.apple.AuthKit/1 (com.apple.dt.Xcode/3594.4.19)";
-    let parts: Vec<&str> = info.split('<').filter(|p| !p.trim().is_empty()).map(|p| p.trim().trim_end_matches('>')).collect();
-    if parts.len() < 3 {
-        return info.to_string();
-    }
-    format!("<{}> <{}> <{XCODE}>", parts[0], parts[1])
-}
-
 const GS_SERVICE: &str = "https://gsa.apple.com/grandslam/GsService2";
 const TRUSTED_DEVICE: &str = "https://gsa.apple.com/auth/verify/trusteddevice";
 const VALIDATE: &str = "https://gsa.apple.com/grandslam/GsService2/validate";
@@ -160,7 +148,7 @@ impl Client {
             .header("Content-Type", "text/x-xml-plist")
             .header("Accept", "*/*")
             .header("User-Agent", headers.get("User-Agent").unwrap_or(GSA_AGENT))
-            .header("X-MMe-Client-Info", xcode_client_info(headers.get("X-Mme-Client-Info").unwrap_or("")))
+            .header("X-MMe-Client-Info", headers.get("X-Mme-Client-Info").unwrap_or(""))
             .body(body)
             .send()
             .await?
@@ -291,10 +279,6 @@ impl Client {
             .header("User-Agent", "Xcode");
         for (k, v) in &anisette.map {
             if k.eq_ignore_ascii_case("User-Agent") {
-                continue;
-            }
-            if k.eq_ignore_ascii_case("X-Mme-Client-Info") {
-                rb = rb.header(k.as_str(), xcode_client_info(v));
                 continue;
             }
             rb = rb.header(k.as_str(), v.as_str());
@@ -548,15 +532,6 @@ fn first_phone_id(v: &serde_json::Value) -> Option<u64> {
 
 #[cfg(test)]
 mod sms_tests {
-    #[test]
-    fn client_info_names_xcode() {
-        assert_eq!(
-            super::xcode_client_info("<MacBookPro13,3> <Mac OS X;10.12.6;16G29> <com.apple.AuthKit/1 (com.apple.akd/1.0)>"),
-            "<MacBookPro13,3> <Mac OS X;10.12.6;16G29> <com.apple.AuthKit/1 (com.apple.dt.Xcode/3594.4.19)>"
-        );
-        assert_eq!(super::xcode_client_info("odd"), "odd");
-    }
-
     #[test]
     fn picks_the_sms_phone() {
         let v = serde_json::json!({ "trustedPhoneNumbers": [ { "id": 3, "pushMode": "voice" }, { "id": 7, "pushMode": "sms" } ] });
