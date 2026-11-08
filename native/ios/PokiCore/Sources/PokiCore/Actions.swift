@@ -170,7 +170,9 @@ extension Computer {
     /// them gets the press-drag.
     func scrollDrag(_ path: (Double, Double, Double, Double), seconds: Double, rest: Double, until: Double) async throws {
         let distance = max(1, hypot(path.2 - path.0, path.3 - path.1))
-        guard distance > 24 else { return try await gesture(path, seconds: seconds, rest: rest, until: until) }
+        // Shaped input (Humanize) already ends a resting drag on a minimum-jerk slowdown to a stop,
+        // real motion to the lift, so it takes that path; plain input gets the slow tail.
+        guard distance > 24, !humanize.enabled else { return try await gesture(path, seconds: seconds, rest: rest, until: until) }
         let tail = 12.0
         let near = (x: path.2 - (path.2 - path.0) / distance * tail, y: path.3 - (path.3 - path.1) / distance * tail)
         let expected = seconds + rest

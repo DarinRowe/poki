@@ -206,7 +206,7 @@ final class HumanizeTests: XCTestCase {
         XCTAssertEqual(drags.count, 2, "two swipes, both shaped: \(wda.sent)")
         for d in drags {
             XCTAssertEqual(steps(d).dropLast().last?["type"]?.string, "pause")
-            XCTAssertEqual(steps(d).dropLast().last?["duration"]?.double ?? 0, 200, accuracy: 1, "scroll_to's 200 ms rest")
+            XCTAssertEqual(steps(d).dropLast().last?["duration"]?.double ?? 0, 250, accuracy: 1, "scroll_to's 250 ms rest")
         }
     }
 

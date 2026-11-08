@@ -78,7 +78,8 @@ final class FakeWDA: HTTPTransport, @unchecked Sendable {
         var parsed = body.flatMap { try? JSON.parse($0) }
         // scroll_to's drag goes as W3C actions (one finger, a slow tail): the tests hook the press-drag
         // route and read fromY/toY from it, so a one-finger drag is answered there with that shape.
-        if key == "POST /actions", let sources = parsed?["actions"]?.array, sources.count == 1, let steps = sources[0]["actions"]?.array {
+        // Only scroll_to's own finger ("f1"); shaped touches (Humanize's "finger1") stay /actions.
+        if key == "POST /actions", let sources = parsed?["actions"]?.array, sources.count == 1, sources[0]["id"]?.string == "f1", let steps = sources[0]["actions"]?.array {
             let moves = steps.filter { $0["type"]?.string == "pointerMove" }
             if moves.count >= 2, let first = moves.first, let last = moves.last {
                 // The slow tail before the lift stands where the press-drag's hold stood.
