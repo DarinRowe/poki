@@ -184,7 +184,7 @@ async fn dispatch(state: &Shared, out: &Out, cmd: &str, a: &Value) -> R {
         }
         "share_pairing" => {
             let udid: String = arg(a, "udid")?;
-            let record = device::pairing::saved_bytes(&udid)?.ok_or_else(|| Error::msg("Pair with the iPhone first."))?;
+            let record = device::pairing::for_poki(&udid)?.ok_or_else(|| Error::msg("Pair with the iPhone first."))?;
             let mut guard = state.handoff.lock().await;
             if let Some(old) = guard.take() {
                 old.stop();

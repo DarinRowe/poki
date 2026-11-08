@@ -92,7 +92,7 @@ pub async fn pair(app: AppHandle, udid: String) -> R<()> {
 
 #[tauri::command]
 pub async fn share_pairing(state: State<'_, Shared>, udid: String) -> R<pairshare::Handoff> {
-    let record = device::pairing::saved_bytes(&udid)?.ok_or_else(|| poki_setup_core::Error::msg("Pair with the iPhone first."))?;
+    let record = device::pairing::for_poki(&udid)?.ok_or_else(|| poki_setup_core::Error::msg("Pair with the iPhone first."))?;
     let mut guard = state.handoff.lock().await;
     if let Some(old) = guard.take() {
         old.stop();
