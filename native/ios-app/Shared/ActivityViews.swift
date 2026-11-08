@@ -19,36 +19,37 @@ import WidgetKit
 /// presentations always say the same thing. The sizes are ESP-139's final board 02, for two lines of
 /// words (ESP-162).
 enum ActivityMetrics {
-    /// The Lock Screen card's padding: 14 top and bottom, 20 leading, 14 trailing.
-    static let lockInsets = EdgeInsets(top: 14, leading: 20, bottom: 14, trailing: 14)
+    /// The Lock Screen card's padding: 18 top and bottom, 22 at the sides, concentric with the card's
+    /// deep corners on iOS 26 and later, so nothing is cut at the corners.
+    static let lockInsets = EdgeInsets(top: 18, leading: 22, bottom: 18, trailing: 22)
     /// The card's corner as iOS draws it, for the concentric corners inside it.
     static let lockCorner: CGFloat = 24
     /// Inside the card's padding, the two cards with a screenshot beside the words: the step line's
     /// and the approval's. Fixed, so the card does not grow when the first screenshot arrives.
-    static let lockProgressContent: CGFloat = 90
-    static let lockApprovalContent: CGFloat = 108
+    static let lockProgressContent: CGFloat = 100
+    static let lockApprovalContent: CGFloat = 120
     /// The status row's height (the bear's), the content line's, and the gap between them.
     static let statusRow: CGFloat = 20
     static let contentLine: CGFloat = 25
     static let lineGap: CGFloat = 6
     /// The expanded island's margins inside its 44 point corners.
-    static let islandInsets = EdgeInsets(top: 11, leading: 14, bottom: 16, trailing: 14)
+    static let islandInsets = EdgeInsets(top: 12, leading: 20, bottom: 18, trailing: 20)
     static let islandCorner: CGFloat = 44
     static let islandGap: CGFloat = 6
     /// iOS clips the expanded island's content to the island inset by about 13 points, with corners
     /// about 36 points round (measured on the iPhone 17 Pro simulator). At the board's margins the
     /// corners cut the bear, the meta's last letters and the ends of the last row, so those move in.
     /// The row beside the camera: extra room on the outer side.
-    static let islandRowInset: CGFloat = 14
+    static let islandRowInset: CGFloat = 8
     /// The last row: extra room below it, more for the content line alone than for a row under it,
     /// and the step line and the setup steps narrower as well (the step line's first dot was cut).
     static func islandBottomExtra(_ bottom: ActivityFace.Bottom) -> CGFloat {
         switch bottom {
-        case .none: 18
-        default: 8
+        case .none: 8
+        default: 2
         }
     }
-    static let islandLastRowInset: CGFloat = 10
+    static let islandLastRowInset: CGFloat = 6
 
     static let avatar: CGFloat = 20
     static let compactAvatar: CGFloat = 22
@@ -58,7 +59,7 @@ enum ActivityMetrics {
     /// Concentric with the card: its corner less the inset.
     static let thumbnailCorner = lockCorner - lockInsets.top
 
-    static func buttonHeight(_ surface: ActivitySurface) -> CGFloat { surface == .lockScreen ? 44 : 38 }
+    static func buttonHeight(_ surface: ActivitySurface) -> CGFloat { surface == .lockScreen ? 40 : 36 }
     static let denyWidth: CGFloat = 96
     /// Stop at the end of the step line: a round button with the stop symbol.
     static let stop: CGFloat = 30
@@ -99,7 +100,7 @@ struct LockScreenCard: View {
                     StatusRow(face: face)
                     ContentLine(face: face, surface: .lockScreen)
                         .padding(.top, ActivityMetrics.lineGap)
-                    Spacer(minLength: 8)
+                    Spacer(minLength: 4)
                     BottomControl(face: face, surface: .lockScreen)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -163,8 +164,11 @@ private struct ContentLine: View {
             .font(face.contentIsCode ? theme.content.monospacedDigit() : theme.content)
             .tracking(theme.contentTracking)
             .foregroundStyle(theme.palette(surface).text)
-            .lineLimit(1)
-            .frame(height: ActivityMetrics.contentLine)
+            // Two lines where the words need them, so a step is not cut to a few words.
+            .lineLimit(face.contentIsCode ? 1 : 2)
+            .minimumScaleFactor(0.85)
+            .frame(minHeight: ActivityMetrics.contentLine, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
             .contentTransition(face.contentIsCode ? .numericText() : .interpolate)
     }
 }

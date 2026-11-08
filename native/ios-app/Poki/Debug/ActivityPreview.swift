@@ -19,7 +19,13 @@ struct ActivityPreview: View {
             VStack(alignment: .leading, spacing: 28) {
                 ForEach(Self.samples.filter { only == nil || $0.0 == only }, id: \.0) { name, state in
                     VStack(alignment: .leading, spacing: 10) {
-                        Text(name).font(.footnote.weight(.semibold)).foregroundStyle(.secondary).textCase(.uppercase)
+                        HStack {
+                            Text(name).font(.footnote.weight(.semibold)).foregroundStyle(.secondary).textCase(.uppercase)
+                            Spacer()
+                            // The real thing: iOS draws it on the Lock Screen and in the Dynamic Island.
+                            Button("Show on iPhone", systemImage: "play.fill") { Task.detached { await DemoActivity.run(state) } }
+                                .font(.footnote.weight(.semibold)).buttonStyle(.bordered).controlSize(.small)
+                        }
                         LockScreenFrame(state: state)
                         IslandExpandedFrame(state: state)
                         IslandCompactFrame(state: state)
@@ -29,7 +35,7 @@ struct ActivityPreview: View {
             .padding(.vertical).padding(.horizontal, 16)
             .frame(maxWidth: .infinity)
         }
-        .background(Color(red: 0.36, green: 0.40, blue: 0.56).ignoresSafeArea())
+        .background(Color(.systemGroupedBackground).ignoresSafeArea())
         .navigationTitle("Live Activity")
         .navigationBarTitleDisplayMode(.inline)
         .task {

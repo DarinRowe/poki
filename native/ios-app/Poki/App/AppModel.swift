@@ -164,6 +164,8 @@ final class AppModel {
             self.decide(decision)
             return true
         }
+        // The same answers from the approval notification's own buttons.
+        ApprovalNotice.registerActions()
         listenForApprovals()
         // One pump for the app's whole life. Cancelling a task that reads an AsyncStream ends the
         // stream for good, so a pump per session would go silent after the first Turn off (no steps,
@@ -700,7 +702,9 @@ final class AppModel {
             log.add("approval", "requested \(approval.id) in \(approval.app): \(approval.summary); Live Activity \(activity.isRunning ? "running" : "NOT running: \(activity.lastError ?? "no error")")")
             activity.update { $0.phase = .approval; $0.approval = approval; $0.headline = "Allow this step?" }
             // The Live Activity pops up for it by itself; the notification is for when it is not running.
-            if !activity.isRunning { ApprovalNotice.post(approval) }
+            // Before iOS 26 an approval is answered from the notification (touch and hold it); later, from
+            // the Live Activity's own buttons when one is running.
+            if #available(iOS 26.0, *), activity.isRunning {} else { ApprovalNotice.post(approval) }
         case .approvalEnded(let id, let approved):
             approvals.removeAll { $0.id == id }
             log.add("approval", "ended \(id): \(approved.map { $0 ? "approved" : "denied" } ?? "expired or replaced")")
