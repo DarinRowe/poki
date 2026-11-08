@@ -237,27 +237,85 @@ pub async fn channels() -> Result<Vec<ChannelInfo>> {
         .collect())
 }
 
-/// Poki Setup's own update on the chosen channel (`desktop-v*`, `desktop-alpha-*`, `desktop-prealpha-*` tags).
+/// Poki Setup's own update on the chosen channel. Any release on the channel can carry it (an
+/// `ios-*` release with the desktop apps attached, or a `desktop-*` one): the asset for this
+/// platform, `PokiSetup-<version>-<build>-macos.dmg` or `PokiSetup-<version>-<build>-windows-x64-setup.exe`.
 #[derive(Debug, Clone, Serialize)]
 pub struct UpdateInfo {
     pub current: String,
     pub latest: Option<String>,
+    /// The release page.
     pub url: Option<String>,
+    /// The installer for this computer.
+    pub asset_url: Option<String>,
+    pub asset_name: Option<String>,
     pub newer: bool,
     pub channel: Channel,
 }
 
+/// The installer name suffix for this platform.
+fn platform_suffix() -> &'static str {
+    if cfg!(target_os = "macos") { "-macos.dmg" } else { "-windows-x64-setup.exe" }
+}
+
+/// The version in a Poki Setup installer's name, for this platform.
+fn desktop_asset_version(name: &str, suffix: &str) -> Option<String> {
+    let v = name.strip_prefix("PokiSetup-")?.strip_suffix(suffix)?;
+    (!v.is_empty() && v.chars().next()?.is_ascii_digit()).then(|| v.to_string())
+}
+
+fn release_channel(r: &GhRelease) -> Option<Channel> {
+    Channel::of_tag("desktop", &r.tag_name, r.prerelease).or_else(|| Channel::of_tag("ios", &r.tag_name, r.prerelease))
+}
+
+/// The newest Poki Setup installer a channel offers (stepping down like Poki's own releases).
+fn pick_desktop<'a>(list: &'a [GhRelease], channel: Channel, suffix: &str) -> Option<(&'a GhRelease, &'a GhAsset, String)> {
+    channel.fallbacks().find_map(|want| {
+        list.iter()
+            .filter(|r| release_channel(r).map(|c| want.includes(c)).unwrap_or(false))
+            .find_map(|r| r.assets.iter().find_map(|a| desktop_asset_version(&a.name, suffix).map(|v| (r, a, v))))
+    })
+}
+
 pub async fn desktop_update() -> Result<UpdateInfo> {
     let channel = channel();
-    let current = crate::VERSION.to_string();
+    let current = crate::full_version();
     let list = list().await?;
-    let found = channel.fallbacks().find_map(|want| list.iter().find(|r| Channel::of_tag("desktop", &r.tag_name, r.prerelease).map(|c| want.includes(c)).unwrap_or(false)).cloned());
-    let (latest, url) = match found {
-        Some(r) => (Some(r.tag_name.trim_start_matches("desktop-v").trim_start_matches("desktop-prealpha-").trim_start_matches("desktop-alpha-").to_string()), r.html_url),
-        None => (None, None),
+    let found = pick_desktop(&list, channel, platform_suffix());
+    let newer = found.as_ref().map(|(_, _, v)| version_key(v) > version_key(&current)).unwrap_or(false);
+    Ok(match found {
+        Some((r, a, v)) => UpdateInfo { current, latest: Some(v), url: r.html_url.clone(), asset_url: Some(a.browser_download_url.clone()), asset_name: Some(a.name.clone()), newer, channel },
+        None => UpdateInfo { current, latest: None, url: None, asset_url: None, asset_name: None, newer, channel },
+    })
+}
+
+/// Downloads the newer Poki Setup and opens it: the disk image on a Mac (drag it over the old
+/// one), the installer on Windows. Returns where it was saved.
+pub async fn install_desktop_update(reporter: &Reporter) -> Result<PathBuf> {
+    let info = desktop_update().await?;
+    let (Some(url), Some(name), true) = (info.asset_url, info.asset_name, info.newer) else {
+        return Err(Error::msg("Poki Setup is up to date."));
     };
-    let newer = latest.as_deref().map(|t| version_key(t) > version_key(&current)).unwrap_or(false);
-    Ok(UpdateInfo { current, latest, url, newer, channel })
+    let dir = paths::cache_dir()?.join("updates");
+    std::fs::create_dir_all(&dir)?;
+    let to = dir.join(&name);
+    if !to.is_file() {
+        let part = dir.join(format!("{name}.part"));
+        download(&url, &part, reporter, "update").await?;
+        std::fs::rename(&part, &to)?;
+    }
+    open_installer(&to)?;
+    Ok(to)
+}
+
+fn open_installer(path: &std::path::Path) -> Result<()> {
+    #[cfg(target_os = "macos")]
+    std::process::Command::new("/usr/bin/open").arg(path).spawn()?;
+    #[cfg(windows)]
+    std::process::Command::new(path).spawn()?;
+    #[cfg(not(any(target_os = "macos", windows)))]
+    let _ = path;
+    Ok(())
 }
 
 /// `0.2.1` < `0.2.1-5` < `0.2.2`: numbers compared in order, a build suffix counts after the version.
@@ -385,6 +443,19 @@ mod tests {
         assert_eq!(channel(), Channel::Stable);
         set_channel(Channel::PreAlpha).unwrap();
         assert_eq!(channel(), Channel::PreAlpha);
+    }
+
+    #[test]
+    fn desktop_installer_found_on_any_release() {
+        let mut ios = gh("ios-prealpha-0.2.8-441", true, "2026-11-08T08:00:00Z", Some("Poki-external-0.2.8-441.ipa"));
+        ios.assets.push(GhAsset { name: "PokiSetup-0.2.1-300-macos.dmg".into(), browser_download_url: "https://x/dmg".into() });
+        ios.assets.push(GhAsset { name: "PokiSetup-0.2.1-300-windows-x64-setup.exe".into(), browser_download_url: "https://x/exe".into() });
+        let list = vec![ios];
+        let (_, a, v) = pick_desktop(&list, Channel::Stable, "-macos.dmg").unwrap();
+        assert_eq!((a.name.as_str(), v.as_str()), ("PokiSetup-0.2.1-300-macos.dmg", "0.2.1-300"));
+        assert_eq!(pick_desktop(&list, Channel::Beta, "-windows-x64-setup.exe").unwrap().2, "0.2.1-300");
+        assert!(version_key("0.2.1-300") > version_key("0.2.1-296"));
+        assert!(version_key("0.2.1-300") > version_key("0.2.0"));
     }
 
     #[test]

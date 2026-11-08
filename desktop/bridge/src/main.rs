@@ -111,7 +111,7 @@ async fn main() {
             }
         }
     });
-    out.send(json!({ "event": "ready", "data": { "version": poki_setup_core::VERSION } }));
+    out.send(json!({ "event": "ready", "data": { "version": poki_setup_core::full_version() } }));
     let state = Arc::new(Shared::default());
     let mut lines = tokio::io::BufReader::new(tokio::io::stdin()).lines();
     while let Ok(Some(line)) = lines.next_line().await {
@@ -151,7 +151,7 @@ struct PhoneRow {
 async fn dispatch(state: &Shared, out: &Out, cmd: &str, a: &Value) -> R {
     match cmd {
         "app_info" => ok(json!({
-            "version": poki_setup_core::VERSION,
+            "version": poki_setup_core::full_version(),
             "os": std::env::consts::OS,
             "arch": std::env::consts::ARCH,
             "data_dir": poki_setup_core::paths::data_dir().display().to_string(),
@@ -448,6 +448,7 @@ async fn dispatch(state: &Shared, out: &Out, cmd: &str, a: &Value) -> R {
             ok(b.path.display().to_string())
         }
         "check_update" => check_update().await,
+        "install_update" => ok(release::install_desktop_update(&out.reporter("update")).await?.display().to_string()),
         "ping" => ok("pong"),
         other => Err(Failure { kind: "bad_request", message: format!("unknown command {other}") }),
     }

@@ -8,6 +8,7 @@ export default function Settings({ info }: { info: AppInfo | null }) {
   const [acct, setAcct] = useState<Account | null>(null);
   const [server, setServer] = useState("https://ani.sidestore.io");
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
+  const [updating, setUpdating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [channels, setChannels] = useState<ChannelInfo[]>([]);
   const load = () => api.account().then((a) => { setAcct(a); if (a.anisette.kind === "remote") setServer(a.anisette.url); }).catch(() => {});
@@ -45,7 +46,7 @@ export default function Settings({ info }: { info: AppInfo | null }) {
         <p className="muted small" style={{ userSelect: "text" }}>Poki Setup {info?.version} · {info?.os} {info?.arch} · {info?.data_dir}</p>
         <div className="row">
           <Capsule kind="ghost" onClick={() => api.checkUpdate().then(setUpdate).catch((e) => setError(failureText(e)))}>{t("Check for updates")}</Capsule>
-          {update && (update.newer ? <Capsule onClick={async () => { const { openUrl } = await import("@tauri-apps/plugin-opener"); if (update.url) openUrl(update.url); }}>{t("Update available")}: {update.latest}</Capsule> : <span className="muted">{t("Up to date")}</span>)}
+          {update && (update.newer ? <Capsule disabled={updating} onClick={() => { setUpdating(true); api.installUpdate().catch((e) => setError(failureText(e))).finally(() => setUpdating(false)); }}>{updating ? t("Downloading…") : `${t("Install update")}: ${update.latest}`}</Capsule> : <span className="muted">{t("Up to date")}</span>)}
           <Capsule kind="ghost" onClick={async () => { const { openUrl } = await import("@tauri-apps/plugin-opener"); openUrl("https://github.com/JosssphZhou/poki/blob/main/desktop/README.md"); }}>README</Capsule>
         </div>
         <p className="muted small" style={{ marginBottom: 0 }}>AGPL-3.0. Sign-in protocol after SideStore's icloud-auth (MPL-2.0) and Sideloader (GPL-3.0); signer: apple-codesign (MPL-2.0); device: idevice (MIT); type: Geist (OFL). See THIRD_PARTY_NOTICES.md.</p>

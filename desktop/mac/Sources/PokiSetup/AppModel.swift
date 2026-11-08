@@ -3,7 +3,7 @@ import Foundation
 import SwiftUI
 
 enum Page: String, CaseIterable, Identifiable {
-    case setup, phones, account, relay, connectors, debug
+    case setup, phones, account, relay, debug
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -11,7 +11,6 @@ enum Page: String, CaseIterable, Identifiable {
         case .phones: "iPhones"
         case .account: "Apple Account"
         case .relay: "Relay"
-        case .connectors: "Connectors"
         case .debug: "Diagnostics"
         }
     }
@@ -21,7 +20,6 @@ enum Page: String, CaseIterable, Identifiable {
         case .phones: "iphone.gen3"
         case .account: "person.crop.circle"
         case .relay: "point.3.connected.trianglepath.dotted"
-        case .connectors: "link"
         case .debug: "stethoscope"
         }
     }
@@ -38,7 +36,6 @@ final class AppModel: ObservableObject {
     @Published var phonesError: CoreError?
     @Published var selectedUDID: String?
     @Published var records: [Record] = []
-    @Published var connectors: [Connector] = []
     @Published var relay: Deployed?
     @Published var latest: Release?
     @Published var latestError: String?
@@ -90,7 +87,6 @@ final class AppModel: ObservableObject {
             await refreshRecords()
             await refreshLatest()
             await refreshChannels()
-            connectors = (try? await bridge.call("connectors")) ?? []
             relay = try? await bridge.call("relay_state", as: Deployed?.self) ?? nil
         }
         pollTask = Task { [weak self] in
@@ -322,7 +318,6 @@ final class AppModel: ObservableObject {
         phones = [PhoneRow(phone: PhoneRef(udid: facts.udid), facts: facts, error: nil, record: rec)]
         records = [rec]
         relay = Deployed(accountId: "abc", accountName: "Jane's account", address: "https://poki-relay.jane.workers.dev", firstDeploy: false, deployedAt: now - 86_400, phoneLink: "poki://setup?relay=https://poki-relay.jane.workers.dev")
-        connectors = [Connector(name: "Jane's iPhone", url: "https://poki-relay.jane.workers.dev/v1/ABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRST/s3cr3t/mcp", addedAt: now - 7200, lastCheck: Check(at: now - 60, ok: true, relayOk: true, phoneOnline: true, tools: ["look", "tap", "type", "swipe", "open_app"], detail: "5 tools"))]
         latest = Release(tag: "ios-v0.2.8", version: "0.2.8", build: "64", ipaName: "Poki-external-0.2.8-64.ipa", channel: "beta")
         channels = [
             ChannelInfo(id: "stable", title: "Stable", selected: true, latest: nil),

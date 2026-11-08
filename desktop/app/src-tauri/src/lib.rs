@@ -87,6 +87,7 @@ pub fn run() {
             commands::mount_ddi,
             commands::support_bundle,
             commands::check_update,
+            commands::install_update,
             commands::channels,
             commands::set_channel,
             commands::qr_svg,

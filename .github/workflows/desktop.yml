@@ -47,6 +47,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Build number
+        shell: bash
+        run: echo "POKI_SETUP_BUILD=$(git rev-list --count HEAD)" >> "$GITHUB_ENV"
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm, cache-dependency-path: desktop/app/package-lock.json }
       - uses: dtolnay/rust-toolchain@stable

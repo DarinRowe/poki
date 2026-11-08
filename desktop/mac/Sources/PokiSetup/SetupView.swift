@@ -10,6 +10,7 @@ struct SetupView: View {
     @State private var failed: String?
     @State private var update: UpdateInfo?
     @State private var checking = false
+    @State private var installingUpdate = false
     @State private var channelError: String?
 
     private var installing: Bool { model.busyJobs.contains("install") }
@@ -179,11 +180,21 @@ struct SetupView: View {
 
     /// What the last check found: the newest Poki on the channel and whether Poki Setup is current.
     private var updateLine: String? {
-        guard let update else { return nil }
+        guard let update else { return model.info.map { "Poki Setup \($0.version)" } }
         var poki = "No Poki release published yet"
         if let r = model.latest { poki = "Newest Poki \(r.version) (\(r.build))" }
         let setup = update.newer ? "Poki Setup \(update.latest ?? "") is available" : "Poki Setup \(update.current) is up to date"
         return "\(poki). \(setup)."
+    }
+
+    /// Downloads the newer Poki Setup and opens its disk image; drag it over this one.
+    private func installUpdate() async {
+        installingUpdate = true
+        defer { installingUpdate = false }
+        do {
+            let _: String = try await model.bridge.call("install_update")
+            model.banner = "Poki Setup's update is open in Finder. Quit Poki Setup, then drag the new one into Applications."
+        } catch { channelError = error.localizedDescription }
     }
 
     private func checkForUpdates() async {
@@ -226,8 +237,12 @@ struct SetupView: View {
                 Text("Updates")
                 if let line = updateLine { Text(line) }
             }
-            if let u = update, u.newer, let s = u.url, let url = URL(string: s) {
-                Link("Download Poki Setup \(u.latest ?? "")", destination: url)
+            if let u = update, u.newer {
+                LabeledContent("Poki Setup \(u.latest ?? "") is available") {
+                    Button(installingUpdate ? "Downloading…" : "Install Update") { Task { await installUpdate() } }
+                        .pokiProminentButton()
+                        .disabled(installingUpdate)
+                }
             }
             if let channelError {
                 Text(channelError).font(.callout).foregroundStyle(.red).textSelection(.enabled)
