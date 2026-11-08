@@ -120,6 +120,8 @@ final class AppModel {
     private var lastAgentActivity = Date.distantPast
     /// The agent's step now running (its label and start), for the foreground check above.
     private var stepUnderWay: (summary: String, started: Date)?
+    /// When the last approval ended, so a Stop landing on the Live Activity right after is not taken.
+    private var lastApprovalAnswered: Date?
     private var idleTimer: Timer?
     private var launcherConfig: LauncherConfig?
 
@@ -721,13 +723,23 @@ final class AppModel {
     /// next agent request starts it again. From the Stop runner button, the Live Activity, or idle.
     func pauseRunner(reason: String = "Stopped") {
         guard sessionOn, !runnerPaused, approvals.isEmpty else { return }
+        // Allow on the Live Activity is followed by its layout changing under the finger: a Stop
+        // that lands within a few seconds of an answered approval is that same tap (build 144: an
+        // Allow, then "Stopped from the Live Activity" 0.7 s after the approval ended).
+        if reason == "Stopped from the Live Activity", let answered = lastApprovalAnswered, Date().timeIntervalSince(answered) < 4 {
+            log.add("runner", "a Stop from the Live Activity right after an approval was ignored")
+            return
+        }
         if automationPath == .inProcess {
             // The in-process session is closed, and with it Automation Mode and iOS's banner; the
             // next agent request opens a new one (a few seconds, no passcode within the same boot).
-            log.add("runner", "standing by: \(reason); closing the in-process session, and the banner with it")
+            // The session stays open while Poki is on: a session reopened in the same launch answered
+            // no tree reads on the phone (0.2.8 build 144, after a stand-by every look timed out until
+            // Poki was relaunched), so standing by ends the task and leaves the session (and iOS's
+            // banner) as they are. Turning Poki off still closes it.
+            log.add("runner", "standing by: \(reason); the in-process session stays open until Poki is turned off")
             // The task ends here too, as with the runner (ESP-176): nothing is switched.
             Task { [core] in _ = await core.finishTask(switching: false) }
-            closeInProcess("standing by")
             // The launcher stays: the disk image is mounted and the next session opens through
             // testmanagerd on the phone itself, so no loopback (and no Wi-Fi) is needed to wake.
             standBy(reason: reason)
@@ -991,6 +1003,7 @@ final class AppModel {
             // the Live Activity's own buttons when one is running.
             if #available(iOS 26.0, *), activity.isRunning {} else { ApprovalNotice.post(approval, caller: caller) }
         case .approvalEnded(let id, let approved):
+            lastApprovalAnswered = Date()
             approvals.removeAll { $0.id == id }
             log.add("approval", "ended \(id): \(approved.map { $0 ? "approved" : "denied" } ?? "expired or replaced")")
             if approved == nil { problem = "An approval ran out before you answered, so that step was not done. The agent can ask again." }

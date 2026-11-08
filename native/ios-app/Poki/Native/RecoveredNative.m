@@ -1,6 +1,7 @@
 #import "RecoveredNative.h"
 #import <dlfcn.h>
 #import <unistd.h>
+#import <objc/runtime.h>
 
 // Selectors found by inspecting XCTest private classes at run time (NativeHIDProbe), not the public SDK.
 @interface NSObject (SRObservedPrivateAPI)
@@ -25,6 +26,33 @@
 - (id)connection;
 - (void)invalidate;
 @end
+
+/// The session of Poki's own opened after a close. XCTest's accessibility client
+/// (XCUIDevice.accessibilityInterface) and XCUIScreen reach testmanagerd through
+/// +[XCTRunnerDaemonSession sharedSession], which keeps answering the session that was closed: on the
+/// phone (0.2.8 build 144) every tree read after a stand-by and reopen hung there while the new
+/// session answered. While Poki holds a session of its own, sharedSession answers that one.
+static id SROwnedSharedSession;
+static NSLock *SROwnedLock(void) {
+    static NSLock *lock; static dispatch_once_t once;
+    dispatch_once(&once, ^{ lock = [NSLock new]; });
+    return lock;
+}
+static void SRUseAsSharedSession(Class cls, id session) {
+    [SROwnedLock() lock]; SROwnedSharedSession = session; [SROwnedLock() unlock];
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        Method method = class_getClassMethod(cls, NSSelectorFromString(@"sharedSession"));
+        if (!method) { NSLog(@"SRNativeSession: no +sharedSession to point at the owned session"); return; }
+        IMP original = method_getImplementation(method);
+        IMP replacement = imp_implementationWithBlock(^id(id self) {
+            [SROwnedLock() lock]; id owned = SROwnedSharedSession; [SROwnedLock() unlock];
+            return owned ?: ((id (*)(id, SEL))original)(self, NSSelectorFromString(@"sharedSession"));
+        });
+        method_setImplementation(method, replacement);
+        NSLog(@"SRNativeSession: +sharedSession now answers the owned session");
+    });
+}
 
 static BOOL SRFail(NSError **error, NSString *code) {
     if (error) *error = [NSError errorWithDomain:@"RecoveredNative" code:1
@@ -256,6 +284,7 @@ static BOOL SRABI(id target, SEL selector, const char *result, NSArray<NSString 
         _opening = nil; _openedSession = nil; _openFailure = nil;
         if (!opened) { if (error) *error = failure ?: [NSError errorWithDomain:@"RecoveredNative" code:1 userInfo:@{NSLocalizedDescriptionKey: @"session_reopen_failed"}]; return nil; }
         session = opened;
+        SRUseAsSharedSession(cls, opened);
     }
     if (![session respondsToSelector:@selector(supportsAutomationMode)] ||
         ![session supportsAutomationMode] ||
