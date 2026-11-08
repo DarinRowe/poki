@@ -204,9 +204,13 @@ pub mod remote {
             let tag = hex::encode(&Sha256::digest(url.as_bytes())[..6]);
             Ok(paths::anisette_dir()?.join(format!("state-{tag}.json")))
         }
+        fn vault_name(url: &str) -> String { format!("anisette-{}", hex::encode(&Sha256::digest(url.as_bytes())[..6])) }
         fn load_or_new(url: &str) -> Result<State> {
-            let path = Self::path(url)?;
-            if let Ok(text) = std::fs::read_to_string(&path) {
+            let text = match crate::vault::installed() {
+                Some(v) => v.get(&Self::vault_name(url))?.map(|b| String::from_utf8_lossy(&b).to_string()),
+                None => std::fs::read_to_string(Self::path(url)?).ok(),
+            };
+            if let Some(text) = text {
                 if let Ok(s) = serde_json::from_str::<State>(&text) {
                     if s.keychain_identifier.len() == 16 {
                         return Ok(s);
@@ -219,6 +223,9 @@ pub mod remote {
             Ok(State { keychain_identifier: id, adi_pb: None })
         }
         fn save(&self, url: &str) -> Result<()> {
+            if let Some(v) = crate::vault::installed() {
+                return v.set(&Self::vault_name(url), &serde_json::to_vec(self)?);
+            }
             let path = Self::path(url)?;
             std::fs::write(path, serde_json::to_vec_pretty(self)?)?;
             Ok(())

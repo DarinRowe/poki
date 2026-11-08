@@ -4,9 +4,13 @@ use crate::apple::anisette::{Provider, Source};
 use crate::apple::gsa::{self, AppToken, Outcome as SignInOutcome, Pending};
 use crate::apple::portal::{FEATURE_APP_GROUPS, Portal, Team};
 use crate::apple::{identity, store};
+#[cfg(feature = "device")]
 use crate::device::{self, Phone};
-use crate::{Error, Reporter, Result, keeper, pairshare, release, sign};
+#[cfg(feature = "device")]
+use crate::{keeper, pairshare, release};
+use crate::{Error, Reporter, Result, sign};
 use std::path::{Path, PathBuf};
+#[cfg(feature = "device")]
 use std::time::Duration;
 
 /// The signed-in account with a live GSA client.
@@ -190,6 +194,7 @@ pub async fn sign_for_team(signer: &mut Signer, team: &Team, phone: Option<(&str
     Ok(SignedBuild { ipa: out.to_path_buf(), bundle_id: unpacked.bundles[0].new_id.clone(), app_group: unpacked.app_group.clone(), version: unpacked.version.clone(), build: unpacked.build.clone(), profile_expires_at: expires, profiles: raw_profiles, notes: all_notes })
 }
 
+#[cfg(feature = "device")]
 #[derive(Debug, Clone, Default)]
 pub struct Options {
     pub udid: Option<String>,
@@ -203,12 +208,14 @@ pub struct Options {
     pub seed_ddi: bool,
 }
 
+#[cfg(feature = "device")]
 pub struct Done {
     pub record: keeper::Record,
     pub handoff: Option<pairshare::Server>,
     pub notes: Vec<String>,
 }
 
+#[cfg(feature = "device")]
 /// Picks the phone: the one asked for, else the one USB phone.
 pub async fn pick_phone(udid: Option<&str>) -> Result<Phone> {
     let phones = Phone::list().await?;
@@ -232,6 +239,7 @@ pub async fn pick_phone(udid: Option<&str>) -> Result<Phone> {
     }
 }
 
+#[cfg(feature = "device")]
 /// The one-click setup.
 pub async fn run(signer: &mut Signer, opts: Options, reporter: &Reporter) -> Result<Done> {
     let wait = opts.wait.unwrap_or(Duration::from_secs(120));
@@ -328,6 +336,7 @@ pub async fn run(signer: &mut Signer, opts: Options, reporter: &Reporter) -> Res
     Ok(Done { record: rec, handoff, notes: built.notes })
 }
 
+#[cfg(feature = "device")]
 /// Signs Poki again for a phone this computer set up and reinstalls it (an upgrade keeps data).
 pub async fn renew(signer: &mut Signer, udid: &str, reporter: &Reporter) -> Result<keeper::Record> {
     let rec = keeper::get(udid)?.ok_or_else(|| Error::msg("This computer did not set up that iPhone."))?;
@@ -360,6 +369,7 @@ pub async fn renew(signer: &mut Signer, udid: &str, reporter: &Reporter) -> Resu
     }
 }
 
+#[cfg(feature = "device")]
 /// Renews every phone that is due. Returns (udid, result) pairs.
 pub async fn renew_due(signer: &mut Signer, reporter: &Reporter) -> Vec<(String, Result<keeper::Record>)> {
     let mut out = vec![];

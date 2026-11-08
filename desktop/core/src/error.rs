@@ -54,6 +54,7 @@ impl Error {
     }
 }
 
+#[cfg(feature = "device")]
 impl From<idevice::IdeviceError> for Error {
     fn from(e: idevice::IdeviceError) -> Self {
         use idevice::IdeviceError as E;
@@ -70,6 +71,7 @@ impl From<idevice::IdeviceError> for Error {
     }
 }
 
+#[cfg(feature = "device")]
 fn usbmuxd_missing() -> String {
     if cfg!(target_os = "windows") {
         "Poki Setup cannot reach the iPhone service. Install Apple Devices from the Microsoft Store (or iTunes from apple.com), then plug the iPhone in again.".into()

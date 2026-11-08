@@ -38,6 +38,11 @@ pub struct Unpacked {
 /// Bundle id for a team: the released id with the team id appended, extensions under it.
 pub fn team_bundle_id(released: &str, team: &str) -> String {
     let base = crate::POKI_BUNDLE_ID;
+    // Already this team's (re-signing an installed copy): keep it.
+    let teamed = format!("{base}.{team}");
+    if released == teamed || released.starts_with(&format!("{teamed}.")) {
+        return released.to_string();
+    }
     if released == base {
         format!("{base}.{team}")
     } else if let Some(rest) = released.strip_prefix(&format!("{base}.")) {
@@ -175,6 +180,33 @@ pub fn pack(unpacked: &Unpacked, out: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Packs an installed .app (Poki's own bundle on the iPhone) as an IPA, so a refresh re-signs
+/// exactly the build that is installed. Its old signatures and profiles are replaced by `sign`.
+pub fn package_app(app_dir: &Path, out: &Path) -> Result<()> {
+    let name = app_dir.file_name().ok_or_else(|| Error::Sign("the app has no name".into()))?.to_string_lossy().to_string();
+    let file = std::fs::File::create(out)?;
+    let mut zip = zip::ZipWriter::new(file);
+    let opts = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored).unix_permissions(0o755);
+    zip.add_directory("Payload/", opts).map_err(|e| Error::Sign(e.to_string()))?;
+    for entry in walkdir::WalkDir::new(app_dir).sort_by_file_name() {
+        let entry = entry.map_err(|e| Error::Sign(e.to_string()))?;
+        let inner = entry.path().strip_prefix(app_dir).unwrap().to_string_lossy().replace('\\', "/");
+        let rel = if inner.is_empty() { format!("Payload/{name}") } else { format!("Payload/{name}/{inner}") };
+        if entry.file_type().is_dir() {
+            zip.add_directory(format!("{rel}/"), opts).map_err(|e| Error::Sign(e.to_string()))?;
+        } else if entry.file_type().is_symlink() {
+            let target = std::fs::read_link(entry.path())?;
+            zip.add_symlink(rel, target.to_string_lossy(), opts).map_err(|e| Error::Sign(e.to_string()))?;
+        } else {
+            zip.start_file(rel, opts).map_err(|e| Error::Sign(e.to_string()))?;
+            let mut f = std::fs::File::open(entry.path())?;
+            std::io::copy(&mut f, &mut zip)?;
+        }
+    }
+    zip.finish().map_err(|e| Error::Sign(e.to_string()))?;
+    Ok(())
+}
+
 pub fn unzip(archive: &Path, into: &Path) -> Result<()> {
     let file = std::fs::File::open(archive)?;
     let mut zip = zip::ZipArchive::new(file).map_err(|e| Error::Sign(format!("not a zip: {e}")))?;
@@ -238,6 +270,34 @@ mod tests {
         assert_eq!(team_bundle_id("nz.zheha.poki", "ABC123"), "nz.zheha.poki.ABC123");
         assert_eq!(team_bundle_id("nz.zheha.poki.widgets", "ABC123"), "nz.zheha.poki.ABC123.widgets");
         assert_eq!(team_app_group("ABC123"), "group.nz.zheha.poki.ABC123");
+        // Re-signing an installed copy keeps its ids.
+        assert_eq!(team_bundle_id("nz.zheha.poki.ABC123", "ABC123"), "nz.zheha.poki.ABC123");
+        assert_eq!(team_bundle_id("nz.zheha.poki.ABC123.widgets", "ABC123"), "nz.zheha.poki.ABC123.widgets");
+    }
+
+    /// An installed .app packs into an IPA that unpacks with the same ids for the same team.
+    #[test]
+    fn package_installed_app_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = dir.path().join("Poki.app");
+        std::fs::create_dir_all(app.join("PlugIns/PokiWidgets.appex")).unwrap();
+        let mut info = plist::Dictionary::new();
+        info.insert("CFBundleIdentifier".into(), "nz.zheha.poki.ABC123".into());
+        info.insert("PokiAppGroup".into(), "group.nz.zheha.poki.ABC123".into());
+        info.insert("CFBundleShortVersionString".into(), "0.2.8".into());
+        info.insert("CFBundleVersion".into(), "110".into());
+        plist::to_file_binary(app.join("Info.plist"), &info).unwrap();
+        std::fs::write(app.join("embedded.mobileprovision"), b"old").unwrap();
+        let mut w = plist::Dictionary::new();
+        w.insert("CFBundleIdentifier".into(), "nz.zheha.poki.ABC123.widgets".into());
+        plist::to_file_xml(app.join("PlugIns/PokiWidgets.appex/Info.plist"), &w).unwrap();
+        let ipa = dir.path().join("Poki.ipa");
+        package_app(&app, &ipa).unwrap();
+        let u = unpack(&ipa, "ABC123", &Default::default(), &crate::Reporter::silent()).unwrap();
+        let ids: Vec<_> = u.bundles.iter().map(|b| b.new_id.as_str()).collect();
+        assert_eq!(ids, ["nz.zheha.poki.ABC123", "nz.zheha.poki.ABC123.widgets"]);
+        assert_eq!(u.build, "110");
+        assert!(!u.app_dir.join("embedded.mobileprovision").exists());
     }
 
     /// A fake IPA with an app, a widget and a packet tunnel: ids are rewritten, the tunnel goes,
