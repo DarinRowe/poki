@@ -198,6 +198,13 @@ struct SessionsView: View {
 
 }
 
+extension View {
+    /// The line under the title (iOS 26's navigation subtitle); nothing before iOS 26.
+    @ViewBuilder func sessionSubtitle(_ text: String) -> some View {
+        if #available(iOS 26.0, *), !text.isEmpty { navigationSubtitle(Text(verbatim: text)) } else { self }
+    }
+}
+
 private extension View {
     /// On: the whole toolbar button filled blue (iOS 26's prominent toolbar button, which takes the
     /// place of the bar's glass rather than sitting on it; a prominent circle before iOS 26). Off: the
@@ -366,27 +373,35 @@ struct SessionView: View {
     var back: () -> Void
     var hidesTabBar = true
 
+    @State private var renaming = false
+    @State private var newName = ""
+
     var body: some View {
         let session = SessionStore.shared.session(id)
-        VStack(spacing: 0) {
-            ChatTranscript(entries: (AskPoki.live(id)?.entries ?? session?.entries) ?? [], typing: AskPoki.live(id)?.awaitingModel ?? false, canRetry: false, retry: {}) {
-                if session?.live == true, let approval = model.approvals.first {
-                    ApprovalCard(approval: approval) { approved in model.resolve(approval, approved: approved) }
-                }
+        ChatTranscript(entries: (AskPoki.live(id)?.entries ?? session?.entries) ?? [], typing: AskPoki.live(id)?.awaitingModel ?? false, canRetry: false, retry: {}) {
+            if session?.live == true, let approval = model.approvals.first {
+                ApprovalCard(approval: approval) { approved in model.resolve(approval, approved: approved) }
             }
+        }
+        // Stop sits on the bottom edge as an inset, so the bubbles scroll under it and the bars keep
+        // their scroll-edge behaviour (as in the chat).
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             if AskPoki.live(id) != nil {
-                Button("Stop Poki") { AskPoki.live(id)?.stop() }.buttonStyle(.bordered).tint(Color(.systemRed)).padding(.bottom, 10)
+                Button("Stop Poki") { AskPoki.live(id)?.stop() }.buttonStyle(.bordered).tint(Color(.systemRed)).padding(.vertical, 10)
             }
         }
         .background(Color(.systemBackground))
+        // The session's name is the title; its menu renames it (the system title menu).
+        .navigationTitle(Text(verbatim: session?.name ?? ""))
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                VStack(spacing: 0) {
-                    Text(verbatim: session?.name ?? "").font(.headline)
-                    Text(verbatim: caption(session)).font(.caption2).foregroundStyle(.secondary)
-                }
-            }
+        .sessionSubtitle(caption(session))
+        .toolbarTitleMenu {
+            Button("Rename", systemImage: "pencil") { newName = session?.name ?? ""; renaming = true }
+        }
+        .alert("Rename Session", isPresented: $renaming) {
+            TextField("Name", text: $newName)
+            Button("Cancel", role: .cancel) {}
+            Button("Save") { SessionStore.shared.rename(id, to: newName) }
         }
         .toolbar(hidesTabBar ? .hidden : .automatic, for: .tabBar)
     }

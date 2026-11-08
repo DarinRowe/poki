@@ -15,6 +15,8 @@ struct ChatView: View {
     var back: (() -> Void)? = nil
 
     private var voice: VoiceModel { model.voice }
+    @State private var renaming = false
+    @State private var newName = ""
 
     var body: some View {
         ChatTranscript(entries: chat.entries, typing: chat.awaitingModel, canRetry: chat.canRetry, retry: chat.retry) {
@@ -32,14 +34,22 @@ struct ChatView: View {
                               newConversation: chat.newConversation)
         }
         .background(Color(.systemBackground))
+        // The conversation's name (the one Poki gave it, or the owner's) is the title, and its title
+        // menu renames it; the chat model is the subtitle on iOS 26.
+        .navigationTitle(Text(verbatim: SessionStore.shared.session(chat.sessionID)?.name ?? "Poki"))
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                VStack(spacing: 0) {
-                    Text(verbatim: "Poki").font(.headline)
-                    Text(verbatim: ModelKeys.selectedModelName).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                }
+        .sessionSubtitle(ModelKeys.selectedModelName)
+        .toolbarTitleMenu {
+            if SessionStore.shared.session(chat.sessionID) != nil {
+                Button("Rename", systemImage: "pencil") { newName = SessionStore.shared.session(chat.sessionID)?.name ?? ""; renaming = true }
             }
+        }
+        .alert("Rename Conversation", isPresented: $renaming) {
+            TextField("Name", text: $newName)
+            Button("Cancel", role: .cancel) {}
+            Button("Save") { SessionStore.shared.rename(chat.sessionID, to: newName) }
+        }
+        .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button("New Conversation", systemImage: "square.and.pencil", action: chat.newConversation).disabled(chat.running)

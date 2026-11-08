@@ -25,8 +25,27 @@ struct SavedSession: Codable, Identifiable, Equatable {
     /// sha256 of the connector secret an outside agent's session came through (the relay says).
     var connector: String? = nil
 
-    /// The row's second line: the last thing that happened.
-    var lastLine: String {
+    /// The row's second line: the last thing that happened, as plain text (markdown neither drawn nor
+    /// shown as its marks).
+    var lastLine: String { Self.plain(rawLastLine) }
+
+    /// Markdown to plain text: inline marks dropped, headings, list bullets, quotes and code fences
+    /// stripped, links reduced to their text, lines joined.
+    static func plain(_ markdown: String) -> String {
+        let lines = markdown.split(separator: "\n", omittingEmptySubsequences: true).compactMap { raw -> String? in
+            var line = raw.trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("```") { return nil }
+            while line.hasPrefix("#") || line.hasPrefix(">") { line.removeFirst(); line = line.trimmingCharacters(in: .whitespaces) }
+            for bullet in ["- ", "* ", "+ "] where line.hasPrefix(bullet) { line.removeFirst(2) }
+            if let match = line.firstMatch(of: #/^\d+[.)]\s+/#) { line.removeSubrange(match.range) }
+            let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+            if let attributed = try? AttributedString(markdown: line, options: options) { line = String(attributed.characters) }
+            return line.isEmpty ? nil : line
+        }
+        return lines.joined(separator: " ")
+    }
+
+    private var rawLastLine: String {
         for entry in entries.reversed() {
             switch entry.kind {
             case .poki(let text): return text
