@@ -121,7 +121,11 @@ struct RootView: View {
     private func openLiveVoice() {
         tab = .chats
         home = [.chat]
-        if !model.voice.isOn, model.voice.canTalkLive { Task { await model.voice.start() } }
+        if !model.voice.isOn, model.voice.canTalkLive {
+            // Taps that send, pay, delete or call ask for the person's OK, also by notification.
+            ApprovalNotice.requestPermission()
+            Task { await model.voice.start() }
+        }
     }
 
     private func openSetup() { setupStart = SetupStart(index: SetupView.firstOpen(model)) }
