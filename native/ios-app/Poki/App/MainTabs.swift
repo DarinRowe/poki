@@ -26,6 +26,7 @@ struct AgentsView: View {
     var openSession: (String) -> Void
 
     var body: some View {
+        @Bindable var model = model
         NavigationStack(path: $path) {
             List {
                 Section {
@@ -117,6 +118,14 @@ struct AgentsView: View {
                     Text("MCP Relay")
                 } footer: {
                     Text("The relay forwards agents’ requests to this iPhone while Poki is open or in the background. It stores nothing.")
+                }
+
+                Section {
+                    Toggle("Ask Before Sensitive Steps", isOn: $model.askBeforeSensitiveSteps)
+                } header: {
+                    Text("Approvals")
+                } footer: {
+                    Text("Poki asks you before an agent pays, deletes, sends a message, places a call, types a password or does anything in Wallet: on the Live Activity, in a notification, or here in Poki. Turned off, agents do all of that without asking. Changes take effect the next time Poki opens.")
                 }
 
                 Section {

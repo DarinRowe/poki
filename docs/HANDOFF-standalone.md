@@ -193,15 +193,26 @@ merged. Nobody has done that merge yet.
   or the iPhone build breaks without anyone noticing on the desktop.
 - Linux needs `libdbus-1-dev` and `pkg-config` for the keyring crate.
 
-## Approvals are off in this alpha
+## Approvals: on by default from `fix/ask-before-default` (ESP-211)
 
-Zhehan's call (Nov 8, 5:14 am ET): this alpha approves everything by default (payments, deleting, sending, calls,
-passwords, Wallet input), because the prompts slowed tasks down and the in-app prompt could not be answered while an
-agent drove the phone. Since `41509e8` Settings › Diagnostics › Testing has three switches, all off by default: ask_poki Tool (outside agents drive with look and do unless it is on), Ask Before
-Sensitive Steps (the manual prompts; testers are told not to turn it on, it does not fully work yet) and
-Auto-Classifier (Permissiveness Strict, Balanced or Permissive; the chat model decides each sensitive step out of
-sight from what the owner said, shows "Approved by model" or "Not approved by model", and a refused step goes
-through after the owner says yes in the chat). The release notes warn about all of this in every language.
+Zhehan's call for 501 (Nov 8, 5:14 am ET) was to approve everything by default, because the prompts slowed tasks
+down and the in-app prompt could not be answered while an agent drove the phone. `fix/ask-before-default` turns
+Ask Before Sensitive Steps back on by default and fixes what made it hard to use:
+
+- The switch is in Agents › Approvals again and is on unless the owner turned it off (`approvals.ask` unset reads as on).
+- An unanswered request ends by itself after its 120 s, so the Live Activity, the idle stop and Stop Runner no longer
+  wait for the agent's next call.
+- Wallet asks for taps, typing, keys, drags and routine runs; waiting, handing the screen to the owner, swipes, pinches, `scroll_to`, `back`, the hardware buttons and leaving go without asking.
+- The chat shows Allow and Don't Allow while an approval waits, because iOS hides Poki's own Live Activity in the
+  Dynamic Island while Poki is in front.
+- Actions after a `launch`, Home or `run` in the same `do` are checked against the launched app, and a tap after a `launch` or `run` asks;
+  any tap in Phone asks. A point tapped after a tap in the same `do` asks, and in a messaging app any such tap.
+- Return in a messaging app asks (WeChat, WhatsApp and Telegram send on it), except in a search field (the one tapped, or typed into by its number, in that `do` before any action in it may have changed the screen).
+- A routine run checks each step it sends by the same rules, a typing step on an element included, and stops before one that needs approval.
+
+The Auto-Classifier stays under Diagnostics › Testing (off by default) and answers in the owner's place when it is on.
+ask_poki Tool is unchanged (off). Only the simulator has seen this; the real-phone checks are in
+`docs/device-test-checklist.md` section 5.
 
 Also from `8519c32`: on iOS 26 and later Poki keeps running with a BGContinuedProcessingTask instead of silent audio
 and location. `desktop/core` `sign/mod.rs` now rewrites `BGTaskSchedulerPermittedIdentifiers` to the signed bundle

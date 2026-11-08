@@ -663,12 +663,32 @@
         }
       }
     },
-    "Approved in the Dynamic Island, %@" : {
+    "Approvals" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已在灵动岛批准：%@"
+            "value" : "批准"
+          }
+        }
+      }
+    },
+    "Approved, %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已批准：%@"
+          }
+        }
+      }
+    },
+    "Ask Before Sensitive Steps" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "敏感步骤先问我"
           }
         }
       }
@@ -2775,6 +2795,16 @@
         }
       }
     },
+    "Poki asks you before an agent pays, deletes, sends a message, places a call, types a password or does anything in Wallet: on the Live Activity, in a notification, or here in Poki. Turned off, agents do all of that without asking. Changes take effect the next time Poki opens." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "代理付款、删除、发消息、打电话、输入密码或在钱包里操作之前，Poki 会先问你：在实时活动、通知或 Poki 里批准。关掉后，这些操作都不再询问。更改在下次打开 Poki 时生效。"
+          }
+        }
+      }
+    },
     "Poki can't use the microphone. Allow it in Settings, Privacy, Microphone." : {
       "localizations" : {
         "zh-Hans" : {
@@ -4483,12 +4513,12 @@
         }
       }
     },
-    "Waiting for you to approve in the Dynamic Island" : {
+    "Waiting for your approval" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "等待在灵动岛批准"
+            "value" : "等待你批准"
           }
         }
       }

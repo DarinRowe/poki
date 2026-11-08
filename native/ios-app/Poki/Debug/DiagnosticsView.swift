@@ -134,13 +134,12 @@ struct LogView: View {
     }
 }
 
-/// Approvals, for testing only: in the alpha every step goes ahead without asking (both switches off).
+/// Switches being tried, all off by default. Ask Before Sensitive Steps is in Agents › Approvals.
 private struct ApprovalTestingSection: View {
     @Environment(AppModel.self) private var model
     var body: some View {
         @Bindable var model = model
         Section {
-            Toggle("Ask Before Sensitive Steps", isOn: $model.askBeforeSensitiveSteps)
             Toggle("ask_poki Tool", isOn: $model.askPokiTool)
             Toggle("Auto-Classifier", isOn: $model.approvalClassifier)
             if model.approvalClassifier {
@@ -151,7 +150,7 @@ private struct ApprovalTestingSection: View {
         } header: {
             Text("Testing")
         } footer: {
-            Text("All off in this alpha. ask_poki lets outside agents hand a repetitive task to Poki's own agent. Approvals: agents pay, delete, send messages, call and type passwords without asking. Only connect agents you trust. The auto-classifier asks your chat model, out of sight, whether what you said asks for the step; it allows or refuses, and a yes from you in the chat or a live call lets it through next time. It never asks you to tap anything. Changes take effect the next time Poki opens.")
+            Text("Both off by default. ask_poki lets outside agents hand a repetitive task to Poki's own agent. The auto-classifier answers approvals in your place: it asks your chat model, out of sight, whether what you said asks for the step, and allows or refuses it with nothing for you to tap; a yes from you in the chat or a live call lets a refused step through next time. With no chat model set up it refuses every sensitive step. Changes take effect the next time Poki opens.")
         }
     }
 }

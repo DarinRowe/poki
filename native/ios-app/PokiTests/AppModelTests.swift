@@ -148,6 +148,32 @@ final class AppModelTests: XCTestCase {
 }
 
 @MainActor
+final class ApprovalDefaultTests: XCTestCase {
+    private var saved: Any?
+    override func setUp() { saved = UserDefaults.standard.object(forKey: LiveCore.askKey) }
+    override func tearDown() { UserDefaults.standard.set(saved, forKey: LiveCore.askKey) }
+
+    /// A phone that never chose (a new install, or an alpha tester who left the switch alone) asks the
+    /// owner before a sensitive step: the Send tap in Messages waits for an answer instead of going
+    /// through, and the switch reads on.
+    func testAPhoneThatNeverChoseAsksBeforeASensitiveTap() async {
+        UserDefaults.standard.removeObject(forKey: LiveCore.askKey)
+        let core = LiveCore(host: AppCoreHost(), transport: URLSessionTransport())
+        let tap = await core.clearTap(on: "Send", inApp: "com.apple.MobileSMS", named: "Messages", waiting: 0.2)
+        XCTAssertFalse(tap.mayTap, "\(tap)")
+        XCTAssertTrue(AppModel(launcher: FakeLauncher(), pairer: FakePairing()).askBeforeSensitiveSteps)
+    }
+
+    /// An owner who turned asking off keeps that choice.
+    func testAnOwnerWhoTurnedAskingOffIsNotAsked() async {
+        UserDefaults.standard.set(false, forKey: LiveCore.askKey)
+        let core = LiveCore(host: AppCoreHost(), transport: URLSessionTransport())
+        let tap = await core.clearTap(on: "Send", inApp: "com.apple.MobileSMS", named: "Messages", waiting: 0.2)
+        XCTAssertEqual(tap, .clear)
+    }
+}
+
+@MainActor
 final class PasscodeTests: XCTestCase {
     /// After a restart iOS asks for the passcode before the first automation. The launcher says so
     /// (code "passcode"); the agent reads a plain "starting" with the reason, and the Live Activity

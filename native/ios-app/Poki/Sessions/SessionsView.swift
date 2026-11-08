@@ -453,8 +453,9 @@ struct SessionView: View {
     }
 }
 
-/// An approval waiting for the owner, inside the session that asked for it (also in the Dynamic Island).
-private struct ApprovalCard: View {
+/// An approval waiting for the owner, in the chat and in the session that asked for it (also in the
+/// Dynamic Island, which iOS hides while Poki is in front).
+struct ApprovalCard: View {
     var approval: PendingApproval
     var answer: (Bool) -> Void
     var body: some View {

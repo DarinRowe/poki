@@ -58,9 +58,9 @@ final class AppModel {
     var closeSessionWhenIdle: Bool = UserDefaults.standard.bool(forKey: "inProcess.closeWhenIdle") {
         didSet { UserDefaults.standard.set(closeSessionWhenIdle, forKey: "inProcess.closeWhenIdle"); log.add("runner", "close the session when idle: \(closeSessionWhenIdle ? "on" : "off")") }
     }
-    /// Ask the owner before payments, deleting, sending, passwords and Wallet input. Off in the alpha;
-    /// PokiCore reads it when Poki starts.
-    var askBeforeSensitiveSteps: Bool = UserDefaults.standard.bool(forKey: LiveCore.askKey) {
+    /// Ask the owner before payments, deleting, sending, calls, passwords and Wallet input. On unless
+    /// they turned it off; PokiCore reads it when Poki starts.
+    var askBeforeSensitiveSteps: Bool = LiveCore.asksBeforeSensitiveSteps {
         didSet { UserDefaults.standard.set(askBeforeSensitiveSteps, forKey: LiveCore.askKey); log.add("approval", "ask before sensitive steps: \(askBeforeSensitiveSteps ? "on" : "off") (from the next start of Poki)") }
     }
     /// Approvals are decided by the chat model (ApprovalClassifier) instead of the owner. Testing only, off.

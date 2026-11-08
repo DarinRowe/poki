@@ -925,46 +925,116 @@ final class Computer: @unchecked Sendable {
         return false
     }
 
-    func element(at point: (x: Double, y: Double)) -> Element? {
-        lastElements.filter { f in f.frame.x <= point.x && point.x <= f.frame.x + f.frame.width && f.frame.y <= point.y && point.y <= f.frame.y + f.frame.height }
+    func element(at point: (x: Double, y: Double), in elements: [Element]? = nil) -> Element? {
+        (elements ?? lastElements).filter { f in f.frame.x <= point.x && point.x <= f.frame.x + f.frame.width && f.frame.y <= point.y && point.y <= f.frame.y + f.frame.height }
             .min { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }
     }
 
-    func target(_ spec: JSON?) -> Element? {
+    /// The element a spec points at: a number of the latest read, or what lies under a point (of the
+    /// latest read, or of `elements`, where numbers mean nothing).
+    func target(_ spec: JSON?, in elements: [Element]? = nil) -> Element? {
         guard let spec else { return nil }
-        if let point = spec.array, point.count >= 2, let x = point[0].double, let y = point[1].double { return element(at: (x, y)) }
+        if let point = spec.array, point.count >= 2, let x = point[0].double, let y = point[1].double { return element(at: (x, y), in: elements) }
         if case .object = spec {
-            if let ref = spec["ref"]?.int { return refs[ref] }
-            if let x = spec["x"]?.double, let y = spec["y"]?.double { return element(at: (x, y)) }
+            if let ref = spec["ref"]?.int { return elements == nil ? refs[ref] : nil }
+            if let x = spec["x"]?.double, let y = spec["y"]?.double { return element(at: (x, y), in: elements) }
             return nil
         }
-        return spec.int.flatMap { refs[$0] }
+        return elements == nil ? spec.int.flatMap { refs[$0] } : nil
     }
 
     func sensitiveReason(_ actions: [JSON]) -> String? { firstSensitive(actions)?.reason }
 
+    /// What the approval check carries from one action to the next.
+    struct SensitiveScan {
+        /// The app the action lands in, followed through launches, Home and runs.
+        var front: Foreground?
+        /// The screen is still the one `elements` were read from: after a launch, Home or a run the
+        /// numbers and points of that read belong to another screen.
+        var read = true
+        /// An action before this one may have changed the screen (a tap opens a conversation or a
+        /// photo): a point is not judged by what the read had under it.
+        var moved = false
+        var typingTarget: Element?
+        var secureOnScreen: Bool
+        /// The elements to look under a point in; nil for the latest read (and its numbers).
+        var elements: [Element]?
+    }
+
     /// The first action that needs the owner's approval, and why.
     func firstSensitive(_ actions: [JSON]) -> (at: Int, reason: String)? {
-        let rules = config.sensitive
-        let secureOnScreen = lastElements.contains(where: \.isSecure)
-        var typingTarget: Element?
+        guard config.sensitive.enabled else { return nil }
+        var scan = SensitiveScan(front: lastForeground, secureOnScreen: lastElements.contains(where: \.isSecure))
         for (at, action) in actions.enumerated() {
-            if let tap = action["tap"] {
-                let e = target(tap)
-                typingTarget = e
-                if let r = rules.reason(touching: e, typing: false, app: lastForeground, secureOnScreen: secureOnScreen) { return (at, r) }
-            } else if action["type"] != nil {
-                let e = action["ref"].flatMap { refs[$0.int ?? -1] } ?? typingTarget
-                if let r = rules.reason(touching: e, typing: true, app: lastForeground, secureOnScreen: secureOnScreen && e == nil) { return (at, r) }
-            } else if let spec = action["long_press"] {
-                if let r = rules.reason(touching: target(spec), typing: false, app: lastForeground, secureOnScreen: secureOnScreen) { return (at, r) }
-            } else if action["key"]?.string?.lowercased() == "return", let field = typingTarget, rules.reason(touching: field, typing: true, app: lastForeground, secureOnScreen: false) != nil {
-                return (at, "submitting a password field")
-            } else if let r = rules.reason(touching: nil, typing: false, app: lastForeground, secureOnScreen: false) {
-                return (at, r)
-            }
+            if let reason = sensitive(action, &scan) { return (at, reason) }
         }
         return nil
+    }
+
+    /// Why this action needs the owner's approval, or nil; `scan` moves on past it. `do` checks its
+    /// actions with it before sending any, and a routine run each step before it sends it.
+    func sensitive(_ action: JSON, _ scan: inout SensitiveScan) -> String? {
+        let rules = config.sensitive
+        guard rules.enabled else { return nil }
+        defer { if ["tap", "long_press", "type", "key", "swipe", "drag", "pinch", "scroll_to", "back"].contains(where: { action[$0] != nil }) { scan.moved = true } }
+        let messaging = scan.front?.bundleID.map(rules.messagingApps.contains) ?? false
+        // In a messaging app, after an action that may have opened another screen, that screen is not
+        // read yet: the composer's Send sits where the list had nothing, and the search field's number
+        // from the list no longer says where typed text goes.
+        let unread = !scan.read || (scan.moved && messaging)
+        if let spec = action["launch"] {
+            scan.front = Foreground(bundleID: spec.string ?? spec["bundle"]?.string, name: nil)
+            scan.read = false; scan.typingTarget = nil
+        } else if action["button"]?.text?.lowercased() == "home" {
+            scan.front = nil
+            scan.read = false; scan.typingTarget = nil
+        } else if let spec = action["run"] {
+            // A routine sends its own taps and keys: in a guarded app, in front or the routine's own
+            // (launched first), running it is input there.
+            let name = spec.string ?? spec["name"]?.string ?? ""
+            let app = memory?.routine(named: name)?.app
+            for bundle in [scan.front?.bundleID, app].compactMap({ $0 }) where rules.guardedApps.contains(bundle) {
+                return "input in \(bundle == scan.front?.bundleID ? scan.front?.describe ?? bundle : bundle) (routine \"\(name)\")"
+            }
+            if let app { scan.front = Foreground(bundleID: app, name: nil) }
+            scan.read = false; scan.typingTarget = nil
+        } else if let spec = action["tap"] ?? action["long_press"] {
+            let e = unread ? nil : target(spec, in: scan.elements)
+            if action["tap"] != nil { scan.typingTarget = e }
+            if let r = rules.reason(touching: e, typing: false, app: scan.front, secureOnScreen: scan.secureOnScreen) { return r }
+            let app = scan.front?.describe ?? "unknown"
+            if unread, messaging { return "sending a message (a tap in \(app) on a screen not read yet)" }
+            // After a launch or a run nothing of the app's screen was read: a Delete there reads as nothing.
+            // The home screen after Home opens apps, which ask for themselves.
+            if !scan.read, scan.front != nil { return "a tap on a screen not read yet (in \(app))" }
+            if scan.moved, spec.array != nil || spec["x"] != nil {
+                return "a tap at a point on a screen that may have changed since it was read (in \(app))"
+            }
+        } else if let text = action["type"]?.text {
+            let e = if let ref = action["ref"] {
+                unread ? nil : (scan.elements == nil ? refs[ref.int ?? -1] : nil) ?? scan.typingTarget
+            } else {
+                scan.read ? scan.typingTarget : nil
+            }
+            scan.typingTarget = e
+            if let r = rules.reason(touching: e, typing: true, app: scan.front, secureOnScreen: scan.read && scan.secureOnScreen && e == nil) { return r }
+            if messaging, text.contains(where: \.isNewline), !Self.isSearch(e) { return "sending a message (a return typed in \(scan.front?.describe ?? "unknown"))" }
+        } else if action["key"]?.string?.lowercased() == "return", let field = scan.typingTarget, rules.reason(touching: field, typing: true, app: scan.front, secureOnScreen: false) != nil {
+            return "submitting a password field"
+        } else if messaging, let key = action["key"]?.text, (Self.keyText[key.lowercased()] ?? key).contains(where: \.isNewline), !Self.isSearch(scan.typingTarget) {
+            // Return is the send key in WeChat, WhatsApp and Telegram: typed text goes out on it.
+            return "sending a message (return in \(scan.front?.describe ?? "unknown"))"
+        } else if action["key"] != nil || action["drag"] != nil, let bundle = scan.front?.bundleID, rules.guardedApps.contains(bundle) {
+            // Waiting, handing the screen over, swipes, Home and launches are not input in a guarded app.
+            return "input in \(scan.front?.describe ?? bundle)"
+        }
+        return nil
+    }
+
+    /// A search field: return there searches, it sends nothing.
+    static func isSearch(_ field: Element?) -> Bool {
+        guard let field else { return false }
+        return field.type == "SearchField" || [field.text, field.identifier ?? ""].contains { $0.localizedCaseInsensitiveContains("search") || $0.contains("搜索") }
     }
 
     func describe(_ action: JSON) -> String {

@@ -86,6 +86,14 @@ result and the time next to each line.
 - [ ] Decline: `not_sent: the owner declined`.
 - [ ] While an approval is pending, have the agent tap the Live Activity's Approve button (`do` with the button's point): the pending request is withdrawn first, so nothing is approved.
 - [ ] Typing into a password field asks first, and the Live Activity hides the text.
+- [ ] A fresh install (or an alpha that never touched the switch): Agents › Approvals › Ask Before Sensitive Steps is on, and the first Delete asks.
+- [ ] With Poki in front while an agent's approval waits (the Dynamic Island hides Poki's own Live Activity then): the chat shows Allow this step? with Allow and Don't Allow; Allow runs the step and the phone goes back to the app the agent was in.
+- [ ] Leave an approval unanswered and send nothing more: after 2 minutes the Live Activity leaves Approval, Poki says the approval ran out, and the idle stop works again.
+- [ ] In Wallet: the agent can wait, hand the screen to you and press Home without being asked; a tap asks.
+- [ ] In Wallet, `do {run: name}` of a saved routine asks before anything is tapped.
+- [ ] In WeChat: tap the message field, type, then `{key: "return"}`: it asks before the return, and nothing is sent. In WeChat's search field the same return searches without asking, also after `{type: "…", ref: n}` on it. In the chat list, a `do` that taps a chat and then types by the search field's number from the list asks before the return.
+- [ ] In WeChat, `do {run: {name, with: {text_1: "…\n"}}}` of a saved routine that types into the message field: the run stops before that step, and nothing is sent.
+- [ ] `do [{launch: "com.apple.mobileslideshow"}, {wait: 500}, {tap: [x, y]}]`: Photos opens, then it asks before the tap.
 
 ## 6. Live Activity
 

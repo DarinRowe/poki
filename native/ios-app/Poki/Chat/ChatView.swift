@@ -2,8 +2,8 @@ import AVFoundation
 import SwiftUI
 
 /// The chat page (ESP-171 boards "M Chat empty", "M Chat working", "M Chat approved"): Poki's picture and
-/// name on top, the bubbles, and the message field. Approvals happen in the Dynamic Island; the chat only
-/// keeps one grey line about them.
+/// name on top, the bubbles, and the message field. Approvals happen in the Dynamic Island, which iOS
+/// hides while Poki is in front, so the chat also shows the waiting approval's card.
 struct ChatView: View {
     @Environment(AppModel.self) private var model
     @Environment(ChatModel.self) private var chat
@@ -21,6 +21,9 @@ struct ChatView: View {
     var body: some View {
         ChatTranscript(entries: chat.entries, typing: chat.awaitingModel, canRetry: chat.canRetry, retry: chat.retry) {
             if needsSetup { SetupBubble(paired: model.pairingPath != nil, openSetup: openSetup) }
+            if !ApprovalClassifier.isOn, let approval = model.approvals.first {
+                ApprovalCard(approval: approval) { approved in model.resolve(approval, approved: approved) }
+            }
             LiveVoiceTranscript(voice: voice)
         }
         // The header and the message field are insets of the conversation, so the field sits right on
@@ -360,10 +363,10 @@ private struct NoteLine: View {
             case .waiting:
                 // The Dynamic Island, small.
                 Capsule().fill(Color(hex: 0x1C1C1E)).frame(width: 22, height: 8)
-                Text("Waiting for you to approve in the Dynamic Island")
+                Text("Waiting for your approval")
             case .approved(let at):
                 Text(verbatim: "✓").fontWeight(.semibold).foregroundStyle(ChatColor.green)
-                Text("Approved in the Dynamic Island, \(at.formatted(date: .omitted, time: .shortened))")
+                Text("Approved, \(at.formatted(date: .omitted, time: .shortened))")
             case .declined:
                 Text(verbatim: "✕").fontWeight(.semibold).foregroundStyle(Color(.systemRed))
                 Text("Not approved, so Poki skipped that step")

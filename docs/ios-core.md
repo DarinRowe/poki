@@ -768,7 +768,13 @@ PR #11 for HID input; this is its counterpart for the phone's own XCTest path.
 | Tapping an element whose label starts with a payment word, or is a short label (four words or fewer) holding one (Pay, Buy, Purchase, Subscribe, Transfer, Send money, 支付, 付款, 购买, 转账, …); a name inside a longer text is not an action (`Contact photo for Best Buy`) | approval |
 | Deleting (Delete, Remove, Erase, Reset, 删除, 移除, 抹掉, …) | approval |
 | Sending a message or mail (Send, 发送 in Messages, Mail, WeChat, WhatsApp, Telegram, …) | approval |
-| Apps on a list (banking, wallets; by bundle id) | approval for every input |
+| Apps on a list (banking, wallets; by bundle id) | approval for every tap, long press, typing, key and drag, and for running a routine there; waiting, handing the screen to the owner, swipes, pinches, `scroll_to`, `back`, the hardware buttons, Home and launches go without asking |
+| Any tap in Phone or FaceTime, also on a point with nothing readable under it | approval |
+| Return in a messaging app, as a key or a newline in typed text (WeChat, WhatsApp and Telegram send on it), except in a search field (the one tapped, or typed into by its number, in that `do` before any action in it may have changed the screen) | approval |
+
+The app each action lands in is followed through the `launch`, Home and `run` actions before it in the same `do`, as for the Poki check, and the actions after one of them are checked against that app. After a `launch` or `run` its screen has not been read, so any tap there asks (a tap on the home screen after Home does not). After a tap, key, swipe or drag in the same `do` the screen may have changed: a tap at a point asks, and in a messaging app any tap does. A routine run checks each step it sends by the same rules, on the screen read just before the step (for a step on an element, the read that found it), and stops there so the agent sends that step as an ordinary `do` and the owner is asked. An unanswered request ends by itself when its 120 s are up (`approvalEnded` with no answer), whether or not another call comes.
+
+The app turns these rules on unless the owner switched off Agents › Approvals › Ask Before Sensitive Steps (on by default; before this, alpha builds had it off). The auto-classifier (Diagnostics › Testing, off) answers in the owner's place when it is on.
 
 When an action matches, the plain actions before it in that `do` are sent first (seen on the phone:
 a last selection tap held back with the Delete after it meant the Delete, once approved, would have
