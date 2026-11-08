@@ -14,10 +14,8 @@ struct RelayView: View {
 
     var body: some View {
         Form {
-            Section {
-                Text("Poki's relay lets AI apps reach your iPhone from anywhere. It is a small Cloudflare Worker in your own Cloudflare account. It passes messages along and stores nothing. The free plan is enough.")
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            HeroSection {
+                PageHero(symbol: "point.3.connected.trianglepath.dotted", title: "Relay", subtitle: "Lets AI apps reach your iPhone from anywhere. A small Cloudflare Worker in your own account that passes messages along and stores nothing. The free plan is enough.")
             }
             if let d = model.relay {
                 Section("Your Relay") {
@@ -61,7 +59,7 @@ struct RelayView: View {
                         Button("Continue") { Task { await loadAccounts() } }.disabled(token.isEmpty || working)
                     } else {
                         Button(model.relay == nil ? "Deploy Relay" : "Update Relay") { Task { await deploy() } }
-                            .buttonStyle(.borderedProminent)
+                            .pokiProminentButton()
                             .disabled(accountID.isEmpty || working)
                     }
                 }
@@ -73,7 +71,7 @@ struct RelayView: View {
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }
-        .formStyle(.grouped)
+        .pokiPage()
         .task { if let d = model.relay, !model.demo { await check(d.address) } else if model.demo { relayUp = true } }
     }
 
@@ -118,9 +116,8 @@ struct ConnectorsView: View {
 
     var body: some View {
         Form {
-            Section {
-                Text("A connector link lets an AI app such as Claude or ChatGPT use your iPhone. Poki makes the link on the iPhone (Poki › Connect). Keep it here to check that it works and to get the setup steps for each app.")
-                    .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            HeroSection {
+                PageHero(symbol: "link", title: "Connectors", subtitle: "A connector link lets an AI app such as Claude or ChatGPT use your iPhone. Poki makes it on the iPhone (Poki › Connect); keep it here to check it and get each app's setup steps.")
             }
             ForEach(model.connectors) { c in connectorSection(c) }
             Section("Add a Link") {
@@ -133,7 +130,7 @@ struct ConnectorsView: View {
                 }
             }
         }
-        .formStyle(.grouped)
+        .pokiPage()
     }
 
     @ViewBuilder private func connectorSection(_ c: Connector) -> some View {
@@ -243,7 +240,7 @@ struct DiagnosticsView: View {
                     if let message { Text(message).font(.callout).foregroundStyle(.secondary).textSelection(.enabled) }
                 }
             }
-            .formStyle(.grouped)
+            .pokiPage()
             .scrollDisabled(true)
             .frame(height: message == nil ? 318 : 350)
             Divider()

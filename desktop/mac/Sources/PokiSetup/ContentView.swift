@@ -18,6 +18,7 @@ struct ContentView: View {
                 }
             }
             .listStyle(.sidebar)
+            .safeAreaInset(edge: .top) { SidebarBrand() }
             .navigationSplitViewColumnWidth(min: 190, ideal: 210, max: 260)
             .safeAreaInset(edge: .bottom) { SidebarFooter() }
         } detail: {
@@ -41,6 +42,22 @@ struct ContentView: View {
             }
         }
         .animation(.snappy, value: model.banner)
+    }
+}
+
+private struct SidebarBrand: View {
+    var body: some View {
+        HStack(spacing: 10) {
+            AppIconImage(size: 30)
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Poki Setup").font(.headline)
+                Text("for iPhone").font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, 4)
+        .padding(.bottom, 8)
     }
 }
 
@@ -111,7 +128,6 @@ private struct Banner: View {
         }
         .padding(12)
         .frame(maxWidth: 560)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
+        .pokiGlass(in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }

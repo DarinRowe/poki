@@ -16,7 +16,9 @@ permissions:
 jobs:
   mac:
     if: github.repository == 'ZhehanZhang/poki-remote' || startsWith(github.ref, 'refs/tags/')
-    runs-on: macos-15
+    # macOS 26 with Xcode 26: the SDK with Liquid Glass. The app still runs on macOS 14 and 15,
+    # which the fallback job below checks.
+    runs-on: macos-26
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
@@ -27,8 +29,12 @@ jobs:
         with: { workspaces: desktop }
       - name: Xcode
         run: |
+          X=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | grep -v -i beta | sort -V | tail -1)
+          [ -z "$X" ] && X=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$X" ]; then sudo xcode-select -s "$X/Contents/Developer"; fi
           xcode-select -p
           swift --version
+          sw_vers
       # Developer ID signing and notarization, when the repository has the secrets (see
       # desktop/mac/README.md). Without them the app is signed ad hoc, as before.
       - name: Developer ID certificate
@@ -116,6 +122,15 @@ jobs:
           name: poki-setup-macos
           path: dist/*.dmg
           if-no-files-found: error
+      - name: Keep the app for the older-macOS check
+        if: always()
+        run: ditto -c -k --keepParent "dist/Poki Setup.app" dist/PokiSetup-app.zip
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: poki-setup-macos-app
+          path: dist/PokiSetup-app.zip
+          retention-days: 3
       - name: Remove the signing keychain
         if: always()
         run: if [ -n "${MAC_SIGN_KEYCHAIN:-}" ]; then security delete-keychain "$MAC_SIGN_KEYCHAIN" || true; fi
@@ -123,4 +138,29 @@ jobs:
         if: always()
         with:
           name: poki-setup-macos-screenshots
+          path: shots/
+
+  # The same build on macOS 15, where there is no Liquid Glass: it must open and draw every page
+  # with the material fallback.
+  fallback:
+    needs: mac
+    if: always() && needs.mac.result == 'success'
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: poki-setup-macos-app }
+      - name: Screenshots on macOS 15
+        run: |
+          sw_vers
+          ditto -x -k PokiSetup-app.zip .
+          APP="$PWD/Poki Setup.app/Contents/MacOS/PokiSetup"
+          mkdir -p shots
+          POKI_SETUP_DEMO=1 POKI_SETUP_SNAPSHOT_DIR="$PWD/shots" perl -e 'alarm shift; exec { $ARGV[0] } @ARGV' 180 "$APP" || echo "demo run ended with $?"
+          for f in shots/*.png; do mv "$f" "shots/macos15-$(basename "$f")"; done
+          ls -la shots
+          test -n "$(ls shots)" || { echo 'no screenshots were saved'; exit 1; }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: poki-setup-macos15-screenshots
           path: shots/

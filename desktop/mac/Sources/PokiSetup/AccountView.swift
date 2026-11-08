@@ -18,18 +18,19 @@ struct AccountView: View {
                 signInForm
             }
         }
-        .formStyle(.grouped)
+        .pokiPage()
         .sheet(isPresented: $model.needsCode) { codeSheet }
     }
 
     @ViewBuilder private func signedIn(_ a: AccountState) -> some View {
-        Section {
-            HStack(spacing: 14) {
-                AccountBadge(name: a.name, signedIn: true).scaleEffect(1.6).frame(width: 48, height: 48)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(a.name ?? "Apple Account").font(.title3.weight(.semibold))
+        HeroSection {
+            HStack(spacing: 16) {
+                AccountBadge(name: a.name, signedIn: true).scaleEffect(1.85).frame(width: 52, height: 52)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(a.name ?? "Apple Account").font(.title2.weight(.bold))
                     Text(a.appleId ?? "").foregroundStyle(.secondary)
                 }
+                Spacer()
             }
             .padding(.vertical, 6)
         }
@@ -62,14 +63,8 @@ struct AccountView: View {
     }
 
     @ViewBuilder private var signInForm: some View {
-        Section {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Sign in with your Apple Account").font(.title3.weight(.semibold))
-                Text("Poki Setup uses it the way Xcode does: to sign Poki for your iPhone. A free Apple Account works. Your password goes to Apple only.")
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(.vertical, 4)
+        HeroSection {
+            PageHero(symbol: "person.crop.circle", title: "Sign in with your Apple Account", subtitle: "Poki Setup uses it the way Xcode does: to sign Poki for your iPhone. A free Apple Account works. Your password goes to Apple only.")
         }
         Section {
             TextField("Email or Phone Number", text: $appleID, prompt: Text("name@example.com"))
@@ -90,7 +85,7 @@ struct AccountView: View {
                 Spacer()
                 if working { ProgressView().controlSize(.small) }
                 Button("Sign In") { Task { await signIn() } }
-                    .buttonStyle(.borderedProminent)
+                    .pokiProminentButton()
                     .controlSize(.large)
                     .keyboardShortcut(.defaultAction)
                     .disabled(working || appleID.trimmingCharacters(in: .whitespaces).isEmpty || password.isEmpty)
@@ -127,7 +122,7 @@ struct AccountView: View {
                 Spacer()
                 if working { ProgressView().controlSize(.small) }
                 Button("Verify") { Task { await verify() } }
-                    .buttonStyle(.borderedProminent)
+                    .pokiProminentButton()
                     .keyboardShortcut(.defaultAction)
                     .disabled(code.count != 6 || working)
             }

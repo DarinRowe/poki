@@ -13,6 +13,9 @@ struct SetupView: View {
 
     var body: some View {
         Form {
+            HeroSection {
+                PageHero(symbol: nil, title: "Set Up Poki", subtitle: "Poki Setup signs Poki with your Apple Account, installs it on your iPhone and keeps it signed.")
+            }
             phoneSection
             accountSection
             appSection
@@ -21,7 +24,7 @@ struct SetupView: View {
             }
             if let result { resultSection(result) }
         }
-        .formStyle(.grouped)
+        .pokiPage()
         .fileImporter(isPresented: $choosingIPA, allowedContentTypes: [UTType(filenameExtension: "ipa") ?? .data]) { r in
             if case .success(let url) = r { ipa = url }
         }
@@ -180,7 +183,7 @@ struct SetupView: View {
                 } label: {
                     Text(installing ? "Installing…" : "Install Poki").frame(minWidth: 140)
                 }
-                .buttonStyle(.borderedProminent)
+                .pokiProminentButton()
                 .controlSize(.large)
                 .keyboardShortcut(.defaultAction)
                 .disabled(!canInstall)

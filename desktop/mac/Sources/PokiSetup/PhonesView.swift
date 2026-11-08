@@ -12,9 +12,12 @@ struct PhonesView: View {
                 EmptyState(symbol: "iphone.gen3", title: "No iPhones Yet", message: "iPhones you set up with Poki Setup appear here, with how long Poki stays signed.")
             } else {
                 Form {
+                    HeroSection {
+                        PageHero(symbol: "iphone.gen3", title: "iPhones", subtitle: "Poki Setup renews Poki before it stops opening, every few hours while this Mac is on.")
+                    }
                     ForEach(model.records) { r in section(r) }
                 }
-                .formStyle(.grouped)
+                .pokiPage()
             }
         }
         .confirmationDialog("Forget \(forgetting?.phoneName ?? "this iPhone")?", isPresented: Binding(get: { forgetting != nil }, set: { if !$0 { forgetting = nil } }), presenting: forgetting) { r in
@@ -61,6 +64,7 @@ struct PhonesView: View {
                         do { try await model.renew(udid: r.udid) } catch { model.report(error) }
                     }
                 }
+                .pokiProminentButton()
                 .disabled(model.busyJobs.contains("renew"))
             }
         }
