@@ -76,11 +76,11 @@ struct SessionsView: View {
         .toolbarTitleDisplayMode(.inlineLarge)
         .toolbar {
             // Indicators left of the power button: the local connection and the agents' relay, each
-            // green when working and grey (or orange) with a slashed icon when not; a tap opens its page.
+            // blue when working and grey (or orange) with a slashed icon when not; a tap opens its page.
             ToolbarItemGroup(placement: .topBarTrailing) {
                 NavigationLink(value: SetupStep.loopback) {
                     Image(systemName: model.loopback.isWorking ? "network" : "network.slash")
-                        .foregroundStyle(model.loopback.isWorking ? Color.green : Color.orange)
+                        .foregroundStyle(model.loopback.isWorking ? Color.blue : Color.orange)
                         .contentTransition(.symbolEffect(.replace))
                 }
                 .accessibilityLabel(Text(model.loopback.isWorking ? "Local connection on" : "Local connection off"))
@@ -126,10 +126,10 @@ struct SessionsView: View {
         return String(localized: "On, ready for a task")
     }
 
-    /// The agents indicator: online green, connecting yellow, otherwise grey and slashed.
+    /// The agents indicator: online blue, connecting yellow, otherwise grey and slashed.
     private var agentsIcon: (String, Color) {
         switch model.relayStatus {
-        case .ready: ("person.2.wave.2.fill", .green)
+        case .ready: ("person.2.wave.2.fill", .blue)
         case .connecting: ("person.2.wave.2", .yellow)
         case .offline: ("person.2.slash", .orange)
         case .off: ("person.2.slash", .secondary)
@@ -180,7 +180,7 @@ private extension View {
 }
 
 /// Poki's power, at the top right of the Poki tab: a plain toolbar button (the bar draws the glass),
-/// the filled green power symbol while on, the grey outline while off. A tap turns it on or off, with
+/// a blue filled bolt while on, the grey power symbol while off. A tap turns it on or off, with
 /// a haptic for each.
 struct PowerButton: View {
     var on: Bool
@@ -197,10 +197,12 @@ struct PowerButton: View {
                 turnOn()
             }
         } label: {
-            Image(systemName: on ? "power.circle.fill" : "power.circle")
+            // Different shapes as well as colours, so on and off read without colour: a filled bolt
+            // while on, the plain power symbol while off.
+            Image(systemName: on ? "bolt.circle.fill" : "power")
                 .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(on ? Color.green : Color.secondary)
-                .contentTransition(.symbolEffect(.replace))
+                .foregroundStyle(on ? Color.blue : Color.secondary)
+                .contentTransition(.symbolEffect(.replace.downUp))
         }
         .accessibilityLabel(Text(on ? "Turn Poki Off" : "Turn Poki On"))
         .accessibilityValue(Text(on ? "On" : "Off"))
