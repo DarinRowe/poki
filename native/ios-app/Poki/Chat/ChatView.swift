@@ -265,61 +265,6 @@ private struct StepLine: View {
 
 // MARK: Header
 
-// MessageListHeader is from GetStream/swiftui-iMessage-clone (commit df114b4,
-// iMessageClone/MessageList/View/Header/MessageListHeader.swift, by Stefan Blos; the repository has no
-// licence file). Changed: Poki's picture at the board's 56 pt instead of 20, the 12 pt name with its
-// chevron, no video button, and a view of its own instead of a toolbar item.
-struct MessageListHeader: View {
-    var dark: Bool
-    /// The model answering, under the name (the chat); nil on the voice page.
-    var subtitle: String? = nil
-    var title: String = "Poki"
-    var back: (() -> Void)? = nil
-    var openDetails: () -> Void
-
-    var body: some View {
-        Button(action: openDetails) {
-            VStack(spacing: 4) {
-                PokiAvatar(size: 56)
-                HStack(alignment: .firstTextBaseline, spacing: 3) {
-                    Text(verbatim: title)
-                        .font(.system(size: 12))
-                        .foregroundStyle(dark ? Color.white : Color(.label))
-                    Image(systemName: "chevron.right")
-                        .resizable()
-                        .scaledToFit()
-                        .fontWeight(.semibold)
-                        .frame(width: 5, height: 8)
-                        .foregroundStyle(dark ? Color.white.opacity(0.7) : ChatColor.secondary)
-                }
-                if let subtitle, !subtitle.isEmpty {
-                    Text(verbatim: subtitle).font(.system(size: 11)).foregroundStyle(ChatColor.secondary).lineLimit(1)
-                }
-            }
-            .padding(.top, 2).padding(.bottom, 8)
-            .frame(maxWidth: .infinity)
-            .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(Text("\(title), details"))
-        .overlay(alignment: .topLeading) {
-            if let back {
-                Button(action: back) {
-                    Image(systemName: "chevron.left").font(.system(size: 20, weight: .semibold)).foregroundStyle(Site.blue)
-                        .frame(width: 44, height: 44).contentShape(.rect)
-                }
-                .buttonStyle(.plain).padding(.leading, 6)
-                .accessibilityLabel(Text("Sessions"))
-            }
-        }
-        .background {
-            if !dark {
-                Rectangle().fill(.bar).ignoresSafeArea(edges: .top)
-                    .overlay(alignment: .bottom) { ChatColor.separator.frame(height: 0.5) }
-            }
-        }
-    }
-}
 
 /// The bear in a round frame, as the ESP-171 boards draw it (`PokiFace.png` is the boards' own image: the
 /// app icon's bear, closer up).
@@ -443,44 +388,6 @@ private struct SetupBubble: View {
             Spacer(minLength: .messageInsetPadding)
         }
         .padding(.top, 4)
-    }
-}
-
-// MARK: Chat and Voice
-
-enum RootPage: Hashable { case chat, voice }
-
-/// CHAT and VOICE under the page, like Photo and Video in Camera: the page's own word sits in the middle.
-struct ModeLabels: View {
-    var page: RootPage
-    var dark: Bool
-    var select: ((RootPage) -> Void)? = nil
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 22) {
-                label("CHAT", .chat)
-                label("VOICE", .voice)
-            }
-            // The board's 66 and 62 pt: the page's word in the middle.
-            .padding(.leading, page == .chat ? 66 : 0).padding(.trailing, page == .voice ? 62 : 0)
-            .padding(.top, 6).padding(.bottom, 4)
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private func label(_ title: LocalizedStringKey, _ target: RootPage) -> some View {
-        Button { select?(target) } label: {
-            Text(title).font(.system(size: 13, weight: .semibold)).tracking(13 * 0.06)
-                .foregroundStyle(color(target))
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(page == target ? .isSelected : [])
-    }
-
-    private func color(_ target: RootPage) -> Color {
-        if dark { return page == target ? .white : .white.opacity(0.55) }
-        return page == target ? Site.blue : ChatColor.secondary
     }
 }
 

@@ -132,24 +132,6 @@ private extension View {
     }
 }
 
-private struct StripCard<Content: View>: View {
-    var title: LocalizedStringKey
-    var symbol: String
-    @ViewBuilder var content: () -> Content
-    var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Label(title, systemImage: symbol).font(.system(size: 13, weight: .semibold)).foregroundStyle(Color(.label)).lineLimit(1)
-            content()
-        }
-        .tint(Site.blue)
-        .buttonStyle(.plain)
-        .foregroundStyle(Site.blue)
-        .padding(12)
-        .frame(maxWidth: .infinity, minHeight: 92, alignment: .topLeading)
-        .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 14, style: .continuous))
-    }
-}
-
 /// One row: who, when, the last thing that happened, and how it ended.
 struct SessionRow: View {
     var session: SavedSession
