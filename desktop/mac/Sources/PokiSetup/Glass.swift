@@ -61,6 +61,21 @@ extension View {
         #endif
     }
 
+    /// No soft fade under the title bar: on macOS 26 the sidebar list draws a scroll edge effect at
+    /// its top even when nothing has scrolled, which leaves a faint white wash over the first row.
+    @ViewBuilder
+    func noTopEdgeFade() -> some View {
+        #if compiler(>=6.2)
+        if #available(macOS 26.0, *) {
+            self.scrollEdgeEffectHidden(true, for: .top)
+        } else {
+            self
+        }
+        #else
+        self
+        #endif
+    }
+
     /// A page of grouped rows over Poki's blue backdrop.
     func pokiPage() -> some View {
         self
