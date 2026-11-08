@@ -95,6 +95,23 @@ final class AppModelTests: XCTestCase {
         if case .failed(let detail, _) = model.host.currentRunner { XCTAssertEqual(detail, "it stopped") } else { XCTFail("not failed") }
     }
 
+    /// A loopback that answers before any connection was chosen in Setup (a proxy app set up before
+    /// Poki, or by Poki Setup on a computer) is the step done, and the external connection becomes the
+    /// recorded choice so Turn on does not ask for one (0.2.8 build 91 held the owner on the page).
+    func testWorkingLoopbackWithNoChoiceIsTheStepDone() {
+        let (model, _) = model()
+        model.setup.loopback = .none
+        XCTAssertFalse(model.isDone(.loopback))
+        model.loopback.simulate(.working(ms: 7))
+        XCTAssertTrue(model.isDone(.loopback))
+        XCTAssertEqual(model.setup.loopback, .proxy)
+        XCTAssertEqual(SetupView.firstOpen(model), SetupStep.shown.firstIndex { !model.isDone($0) }, "setup opens past the loopback")
+        XCTAssertNotEqual(SetupStep.shown[SetupView.firstOpen(model)], .loopback)
+        model.loopback.simulate(.off)
+        XCTAssertFalse(model.isDone(.loopback))
+        XCTAssertEqual(model.setup.loopback, .proxy, "a drop does not unchoose the connection")
+    }
+
     /// Idle stop setting round-trips and never goes below the floor the picker offers.
     func testIdleStopSetting() {
         let (model, _) = model()

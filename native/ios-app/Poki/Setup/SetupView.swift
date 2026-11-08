@@ -51,12 +51,13 @@ struct SetupView: View {
         .onChange(of: checkedByPhone) { was, now in
             if !was, now, step != .loopback { advanceSoon() }
         }
-        // The loopback moves on when it comes on while this page is open, not when the first check finds
-        // it already on.
+        // The loopback moves on when it comes on while this page is open, and when the first check after
+        // opening finds it already on (a proxy app set up before Poki: the page opened on `checking`).
         .onChange(of: model.loopback.state) { was, now in
-            if step == .loopback, was == .off || was == .noAnswer, model.loopback.isWorking { advanceSoon() }
+            if step == .loopback, !was.isWorking, model.loopback.isWorking { advanceSoon() }
         }
-        .onAppear { model.loopback.resume() }
+        .onAppear { model.loopback.resume(); reconnectBuiltIn() }
+        .onChange(of: step) { _, now in if now == .loopback { reconnectBuiltIn() } }
         // Leaving the pairing step in Poki (another step, or closing setup) stops the pairing and its
         // background keep-alive. Going to Settings is not leaving.
         .onChange(of: index) { old, _ in if steps[old] == .pairing { model.leftPairing() } }
@@ -125,6 +126,15 @@ struct SetupView: View {
         } else {
             CapsuleButton(title: "Continue", height: 54, enabled: model.isDone(step)) { advance() }
         }
+    }
+
+    /// The built-in connection was chosen and set up before, but it goes down whenever Poki is off, so
+    /// the step opened on "Not on yet" with nothing to tap in view: it is dialled again here, and the
+    /// check that follows moves the page on.
+    private func reconnectBuiltIn() {
+        guard step == .loopback, model.setup.loopback == .builtIn, model.tunnel.available,
+              !model.tunnel.connected, !model.tunnel.busy, !model.connectionInUse else { return }
+        Task { try? await model.tunnel.connect(); model.loopback.check() }
     }
 
     private func advanceSoon() {

@@ -13,6 +13,7 @@ final class LoopbackMonitor {
         /// A tunnel gave the phone a 10.7.0.x address, but nothing answered through it.
         case noAnswer
         case off
+        var isWorking: Bool { if case .working = self { true } else { false } }
     }
     private(set) var state = State.checking
     private(set) var onWiFi = false
@@ -83,7 +84,7 @@ final class LoopbackMonitor {
         }
     }
 
-    var isWorking: Bool { if case .working = state { true } else { false } }
+    var isWorking: Bool { state.isWorking }
 
     /// The tunnel is on and refuses, and the phone has only cellular: the one case where the fix is
     /// "start from Wi-Fi", not "turn the proxy app on".
