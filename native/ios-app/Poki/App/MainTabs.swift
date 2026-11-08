@@ -22,6 +22,28 @@ struct AgentsView: View {
         NavigationStack(path: $path) {
             List {
                 Section {
+                    NavigationLink(value: AgentsRoute.accounts) {
+                        LabeledContent {
+                            Text(ModelKeys.hasUsableKey ? ModelKeys.selectedModelName : String(localized: "Add an Account")).foregroundStyle(ModelKeys.hasUsableKey ? Color.secondary : Color.orange)
+                        } label: { Label("Accounts and Models", systemImage: "person.crop.circle") }
+                    }
+                    NavigationLink(value: AgentsRoute.voice) {
+                        LabeledContent {
+                            Text(VoiceDirect.apiKey != nil ? VoiceDirect.model : String(localized: "Dictation Only"))
+                        } label: { Label("Voice", systemImage: "waveform") }
+                    }
+                    NavigationLink(value: SettingsRoute.memory) {
+                        LabeledContent {
+                            Text("\(RoutineStore.shared.routines.count) routines")
+                        } label: { Label("Memory", systemImage: "brain") }
+                    }
+                } header: {
+                    Text("Poki Agent")
+                } footer: {
+                    Text("The model Poki’s chat and voice use on this iPhone. Memory holds the routines and notes every agent shares.")
+                }
+
+                Section {
                     ForEach(model.identity.secrets) { secret in
                         NavigationLink(value: SettingsRoute.connector(secret)) {
                             LabeledContent {
@@ -38,7 +60,7 @@ struct AgentsView: View {
                         Button("Add", action: add).disabled(model.relayAddress == nil || newName.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
                 } header: {
-                    Text("Agents on Other Devices")
+                    Text("External Agents")
                 } footer: {
                     Text(model.relayAddress == nil
                          ? "Set your relay first: each agent gets its own MCP address on it."
@@ -57,28 +79,6 @@ struct AgentsView: View {
                     Text("MCP Relay")
                 } footer: {
                     Text("The relay forwards agents’ requests to this iPhone while Poki is open or in the background. It stores nothing.")
-                }
-
-                Section {
-                    NavigationLink(value: AgentsRoute.accounts) {
-                        LabeledContent {
-                            Text(ModelKeys.hasUsableKey ? ModelKeys.selectedModelName : String(localized: "Add an Account")).foregroundStyle(ModelKeys.hasUsableKey ? Color.secondary : Color.orange)
-                        } label: { Label("Accounts and Models", systemImage: "person.crop.circle") }
-                    }
-                    NavigationLink(value: AgentsRoute.voice) {
-                        LabeledContent {
-                            Text(VoiceDirect.apiKey != nil ? VoiceDirect.model : String(localized: "Dictation Only"))
-                        } label: { Label("Voice", systemImage: "waveform") }
-                    }
-                    NavigationLink(value: SettingsRoute.memory) {
-                        LabeledContent {
-                            Text("\(RoutineStore.shared.routines.count) routines")
-                        } label: { Label("Memory", systemImage: "brain") }
-                    }
-                } header: {
-                    Text("Poki’s Own Agent")
-                } footer: {
-                    Text("The model Poki’s chat and voice use on this iPhone. Memory holds the routines and notes every agent shares.")
                 }
 
                 Section {
