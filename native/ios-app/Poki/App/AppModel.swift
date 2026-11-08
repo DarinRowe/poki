@@ -639,8 +639,14 @@ final class AppModel {
     private func handle(_ event: ShellEvent) {
         // Every outside agent's session and step goes into the Sessions list, on or off.
         SessionStore.shared.observe(event, approvals: approvals)
-        // Events after Turn off (the core's own "stopped") are not for the screen.
-        guard sessionOn || probeDriven else { return }
+        // Events after Turn off (the core's own "stopped") are not for the screen. An approval is
+        // the exception: a call that asks one (the on-device chat, the gym probe) waits on the
+        // owner's answer whether or not Poki is on, and dropping it left that call waiting for the
+        // whole approval time.
+        switch event {
+        case .approvalRequested, .approvalEnded: break
+        default: guard sessionOn || probeDriven else { return }
+        }
         for observer in shellObservers { observer(event) }
         switch event {
         case .session: break

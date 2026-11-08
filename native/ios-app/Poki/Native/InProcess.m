@@ -128,30 +128,31 @@ static id PKForegroundElement(id ax, NSString *(^bundleForPID)(int)) {
     if (candidates.count == 1) return candidates.firstObject;
     if (!candidates.count) return springBoard ?: system;
     CGRect screen = system ? [PKRequestSnapshot(ax, system, 1, 1, NULL) frame] : CGRectNull;
-    // Beside the target app (the iPhone Duo's side-by-side apps, iPad windows) Poki's own process is
-    // set aside, so the other app is the front one. Full screen, Poki is the front app (an app it just
-    // ended can still be listed for a moment).
+    // The app under the screen's centre is the front one. Poki's own process is the answer only when
+    // it is there and fills the screen; beside the target app (the iPhone Duo's side-by-side apps,
+    // iPad windows) the centre can fall on Poki, and the other app is the one being driven. (A
+    // process in the background still reports a full-screen frame, so the frame alone says nothing.)
     id own = nil;
     for (id element in candidates) if (PKAXPid(element) == getpid()) own = element;
-    if (own) {
-        CGRect frame = [PKRequestSnapshot(ax, own, 1, 1, NULL) frame];
-        BOOL fullScreen = !CGRectIsEmpty(screen) && !CGRectIsEmpty(frame)
-            && frame.size.width >= screen.size.width - 8 && frame.size.height >= screen.size.height - 8;
-        if (fullScreen) return own;
-        NSMutableArray *others = [candidates mutableCopy];
-        [others removeObject:own];
-        candidates = others;
-        if (candidates.count == 1) return candidates.firstObject;
-    }
+    NSMutableArray *others = [candidates mutableCopy];
+    if (own) [others removeObject:own];
     SEL hitTest = NSSelectorFromString(@"accessibilityElementForElementAtPoint:error:");
+    int hitPID = 0;
     if (!CGRectIsEmpty(screen) && [ax respondsToSelector:hitTest]) {
         NSError *error;
         id hit = nil;
         @try { hit = ((PKElementAtPoint)objc_msgSend)(ax, hitTest, CGPointMake(CGRectGetMidX(screen), CGRectGetMidY(screen)), &error); }
         @catch (__unused NSException *e) {}
-        int hitPID = PKAXPid(hit);
-        for (id element in candidates) if (hitPID > 0 && PKAXPid(element) == hitPID) return element;
+        hitPID = PKAXPid(hit);
     }
+    for (id element in others) if (hitPID > 0 && PKAXPid(element) == hitPID) return element;
+    if (own && hitPID == getpid()) {
+        CGRect frame = [PKRequestSnapshot(ax, own, 1, 1, NULL) frame];
+        BOOL fullScreen = !CGRectIsEmpty(screen) && !CGRectIsEmpty(frame)
+            && frame.size.width >= screen.size.width - 8 && frame.size.height >= screen.size.height - 8;
+        if (fullScreen || !others.count) return own;
+    }
+    if (others.count) return others.firstObject;
     return candidates.firstObject;
 }
 
@@ -401,6 +402,7 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
 }
 
 - (PKOutcome *)touch:(NSArray<NSArray<PKTouchPoint *> *> *)fingers timeout:(double)timeout {
+    [self forgetFront];
     PKOutcome *refused;
     uint64_t generation = 0;
     id session = [self current:&generation outcome:&refused];
@@ -450,6 +452,7 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
 }
 
 - (PKOutcome *)type:(NSString *)text typingSpeed:(NSUInteger)speed timeout:(double)timeout {
+    [self forgetFront];
     PKOutcome *refused;
     uint64_t generation = 0;
     id session = [self current:&generation outcome:&refused];
@@ -515,13 +518,22 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
     return bundle;
 }
 
-/// The front app the last tree read found, when it is under a second old (nil otherwise).
-- (nullable NSDictionary<NSString *, id> *)recentFront {
+/// The front app the last tree read found, served once and only when under a second old with no
+/// input since (nil otherwise): PokiCore asks /wda/activeAppInfo together with /source, and that one
+/// answer comes from the tree read. A poll (a launch waiting for its app) always looks again.
+- (nullable NSDictionary<NSString *, id> *)takeRecentFront {
     @synchronized (self) {
-        if (!_lastFront || _lastFrontGeneration != _sessions.generation) return nil;
+        NSDictionary *front = _lastFront;
+        _lastFront = nil;
+        if (!front || _lastFrontGeneration != _sessions.generation) return nil;
         if (NSProcessInfo.processInfo.systemUptime - _lastFrontAt > 1.0) return nil;
-        return _lastFront;
+        return front;
     }
+}
+
+/// Any touch, key, button or app change can change the front app: the tree read's no longer stands.
+- (void)forgetFront {
+    @synchronized (self) { _lastFront = nil; }
 }
 
 - (void)rememberFront:(NSDictionary<NSString *, id> *)front {
@@ -594,7 +606,7 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
 }
 
 - (NSDictionary<NSString *, id> *)frontApp {
-    NSDictionary *recent = [self recentFront];
+    NSDictionary *recent = [self takeRecentFront];
     if (recent) return recent;
     @try {
         NSTimeInterval started = NSProcessInfo.processInfo.systemUptime;
@@ -606,7 +618,6 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
         [self noteViewport:[root frame]];
         NSMutableDictionary *out = [info mutableCopy];
         out[@"name"] = PKText([root label]) ?: @"";
-        [self rememberFront:out];
         NSLog(@"PokiInProcess timing: front app %d ms (%@)", (int)lround((NSProcessInfo.processInfo.systemUptime - started) * 1000), out[@"bundleId"]);
         return out;
     } @catch (NSException *e) { return @{}; }
@@ -689,6 +700,7 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
 }
 
 - (nullable NSString *)press:(NSString *)name {
+    [self forgetFront];
     @try {
         PKOutcome *refused;
         uint64_t generation = 0;
@@ -728,6 +740,7 @@ static NSString *PKDaemonReply(NSTimeInterval seconds, void (^send)(void (^)(NSE
 /// (or starts it), terminate ends it. XCUIApplication itself refuses to exist outside a UI test bundle.
 /// Launch and activate return once the app is in front.
 - (nullable NSString *)app:(NSString *)bundle action:(NSString *)action {
+    [self forgetFront];
     @try {
         PKOutcome *refused;
         uint64_t generation = 0;
