@@ -12,7 +12,7 @@ name: Pre-alpha
 on:
   push:
     branches: [main]
-    paths-ignore: ['**/*.md', 'docs/**', '.github/ISSUE_TEMPLATE/**', '.github/channels.json']
+    paths-ignore: ['**/*.md', 'docs/**', '.github/ISSUE_TEMPLATE/**', '.github/channels.json', '.github/workflows/promote-*.yml']
   # Re-publish main's head by hand (for example after a failed run).
   workflow_dispatch:
 
