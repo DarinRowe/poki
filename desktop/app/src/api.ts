@@ -66,6 +66,7 @@ export const api = {
   mountDdi: (udid: string) => invoke<void>("mount_ddi", { udid }),
   supportBundle: (udid: string | null, outDir: string) => invoke<string>("support_bundle", { udid, outDir }),
   agentPrompt: () => invoke<string>("agent_prompt"),
+  approveCertificateReplacement: () => invoke<number>("approve_certificate_replacement"),
   checkUpdate: () => invoke<UpdateInfo>("check_update"),
   installUpdate: () => invoke<{ path: string; relaunching: boolean }>("install_update"),
   channels: () => invoke<ChannelInfo[]>("channels"),

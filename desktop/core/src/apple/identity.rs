@@ -173,13 +173,81 @@ pub fn csr_pem(key_pkcs8: &[u8], common_name: &str) -> Result<String> {
     csr.pem().map_err(|e| Error::msg(e.to_string()))
 }
 
-/// A certificate on the team that matches this computer's key, or a new one. Revokes a stale
-/// Poki Setup certificate first when Apple's limit is in the way (free teams allow one).
+/// The certificate Poki Setup would replace when the team is at Apple's limit: one made by Poki
+/// Setup or Poki, the soonest to expire first.
+fn replacement_candidate(certs: &[Certificate]) -> Option<&Certificate> {
+    certs
+        .iter()
+        .filter(|c| c.machine_name.starts_with("Poki Setup") || c.machine_name.starts_with("Poki on") || c.name.contains("Poki"))
+        .min_by_key(|c| days_left(&c.der).unwrap_or(i64::MIN))
+}
+
+/// A replacement the person was asked about, and whether they said yes. One file per team.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+struct Replacement {
+    serial: String,
+    #[serde(default)]
+    approved: bool,
+}
+
+fn replacement_path(team: &str) -> Result<std::path::PathBuf> { Ok(paths::state_dir()?.join(format!("certificate-replacement-{team}.json"))) }
+
+fn replacement(team: &str) -> Option<Replacement> { std::fs::read(replacement_path(team).ok()?).ok().and_then(|b| serde_json::from_slice(&b).ok()) }
+
+fn set_replacement(team: &str, r: Option<&Replacement>) -> Result<()> {
+    let path = replacement_path(team)?;
+    match r {
+        Some(r) => std::fs::write(path, serde_json::to_vec(r)?)?,
+        None => {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+    Ok(())
+}
+
+/// The person agreed to replace the certificate Poki Setup last asked about (on every team it
+/// asked for). The next install or renewal revokes exactly that certificate, and only that one.
+/// Returns how many it approved; 0 means nothing was waiting.
+pub fn approve_replacement() -> Result<usize> {
+    let mut n = 0;
+    for entry in std::fs::read_dir(paths::state_dir()?)? {
+        let path = entry?.path();
+        let Some(team) = path.file_name().and_then(|f| f.to_str()).and_then(|f| f.strip_prefix("certificate-replacement-")).and_then(|f| f.strip_suffix(".json")) else { continue };
+        if let Some(mut r) = replacement(team) {
+            r.approved = true;
+            set_replacement(team, Some(&r))?;
+            n += 1;
+        }
+    }
+    Ok(n)
+}
+
+/// What to tell the person when the team is at its limit and `old` would be replaced.
+fn limit_message(old: &Certificate) -> String {
+    let made_by = if old.machine_name.trim().is_empty() { String::new() } else { format!(" made by “{}”", old.machine_name.trim()) };
+    let ends = match days_left(&old.der) {
+        Some(d) if d < 0 => "it has already expired".to_string(),
+        Some(0) => "it expires today".to_string(),
+        Some(1) => "it expires tomorrow".to_string(),
+        Some(d) => format!("it expires in {d} days"),
+        None => "its end date could not be read".to_string(),
+    };
+    format!(
+        "Your Apple Account already has its development certificate: “{}”{made_by}, serial {}; {ends}. Poki Setup on this computer cannot use it, because its key is on the computer or app that made it. Replacing it lets this computer sign Poki, but every app that certificate signed stops opening, on every iPhone and iPad, until it is installed again from here. If another computer still signs Poki for you, sign with that one instead. Choose Replace Certificate to go ahead.",
+        old.name.trim(),
+        old.serial_number.trim()
+    )
+}
+
+/// A certificate on the team that matches this computer's key, or a new one. When Apple's limit
+/// is in the way, nothing is revoked unless the person approved replacing that exact certificate
+/// (see [`approve_replacement`]); otherwise this stops with [`Error::CertificateLimit`].
 pub async fn ensure(portal: &mut Portal<'_>, team: &str, reporter: &crate::Reporter) -> Result<Identity> {
     let (key, fresh) = key_for(team)?;
     let certs = portal.certificates(team).await?;
     if !fresh {
         if let Some(c) = certs.iter().find(|c| certificate_matches(&key, &c.der) && days_left(&c.der).unwrap_or(-1) > 1) {
+            set_replacement(team, None)?;
             return Ok(Identity { team_id: team.into(), certificate: c.clone(), key_pkcs8: key });
         }
     }
@@ -188,16 +256,25 @@ pub async fn ensure(portal: &mut Portal<'_>, team: &str, reporter: &crate::Repor
     let machine_name = if crate::vault::installed().is_some() { format!("Poki on {}", hostname()) } else { format!("Poki Setup on {}", hostname()) };
     let csr = csr_pem(&key, "Poki Setup")?;
     let submitted = match portal.submit_csr(team, &csr, &machine_id, &machine_name).await {
-        Ok(c) => c,
+        Ok(c) => {
+            set_replacement(team, None)?;
+            c
+        }
         Err(Error::Apple { code, .. }) if code == 3250 || code == 7250 || code == 9100 => {
-            // Free teams get one development certificate: retire the old Poki Setup one.
-            if let Some(old) = certs.iter().find(|c| c.machine_name.starts_with("Poki Setup") || c.name.contains("Poki")) {
-                reporter.note("identity", "Replacing this team's previous Poki Setup certificate");
-                portal.revoke_certificate(team, &old.serial_number).await?;
-                portal.submit_csr(team, &csr, &machine_id, &machine_name).await?
-            } else {
-                return Err(Error::apple(code, "This team already has its one development certificate, made by another computer or app. Revoke it at developer.apple.com (Certificates) or in that app, then try again."));
+            let Some(old) = replacement_candidate(&certs) else {
+                return Err(Error::apple(code, "This team already has its development certificate, made by another computer or app. Revoke it at developer.apple.com (Certificates) or in that app, then try again."));
+            };
+            let approved = replacement(team).map(|r| r.approved && same_serial(&r.serial, &old.serial_number)).unwrap_or(false);
+            if !approved {
+                // Remember which certificate the person is asked about, so a yes covers only it.
+                set_replacement(team, Some(&Replacement { serial: old.serial_number.clone(), approved: false }))?;
+                return Err(Error::CertificateLimit(limit_message(old)));
             }
+            set_replacement(team, None)?;
+            reporter.note("identity", format!("Replacing the certificate “{}” (serial {}), as you chose", old.name.trim(), old.serial_number.trim()));
+            tracing::warn!(serial = %old.serial_number, machine = %old.machine_name, "revoking a certificate the person approved replacing");
+            portal.revoke_certificate(team, &old.serial_number).await?;
+            portal.submit_csr(team, &csr, &machine_id, &machine_name).await?
         }
         Err(e) => return Err(e),
     };
@@ -288,5 +365,41 @@ mod tests {
         assert!(days_left(cert.der()).unwrap() > 300);
         let (other, _) = key_for("OTHER").unwrap();
         assert!(!certificate_matches(&other, cert.der()));
+    }
+}
+
+#[cfg(test)]
+mod replacement_tests {
+    use super::*;
+
+    fn cert(serial: &str, machine: &str, name: &str) -> Certificate {
+        Certificate { certificate_id: serial.into(), serial_number: serial.into(), name: name.into(), machine_name: machine.into(), der: vec![] }
+    }
+
+    #[test]
+    fn only_poki_certificates_are_candidates() {
+        assert!(replacement_candidate(&[cert("1", "Xcode on Mac", "Apple Development: Jane")]).is_none());
+        let list = [cert("1", "Xcode on Mac", "Apple Development: Jane"), cert("2", "Poki Setup on Mac", "Apple Development: Jane")];
+        assert_eq!(replacement_candidate(&list).unwrap().serial_number, "2");
+        assert_eq!(replacement_candidate(&[cert("3", "Poki on iPhone", "x")]).unwrap().serial_number, "3");
+    }
+
+    #[test]
+    fn a_yes_covers_only_the_certificate_asked_about() {
+        let (_g, _d) = paths::test_home();
+        set_replacement("T1", Some(&Replacement { serial: "0ABC".into(), approved: false })).unwrap();
+        assert!(!replacement("T1").unwrap().approved);
+        assert_eq!(approve_replacement().unwrap(), 1);
+        let r = replacement("T1").unwrap();
+        assert!(r.approved && same_serial(&r.serial, "ABC") && !same_serial(&r.serial, "ABD"));
+        set_replacement("T1", None).unwrap();
+        assert!(replacement("T1").is_none());
+        assert_eq!(approve_replacement().unwrap(), 0);
+    }
+
+    #[test]
+    fn the_question_names_the_certificate_and_what_stops() {
+        let m = limit_message(&cert("5F00", "Poki Setup on Old Mac", "Apple Development: Jane"));
+        assert!(m.contains("Poki Setup on Old Mac") && m.contains("5F00") && m.contains("stops opening") && m.contains("Replace Certificate"));
     }
 }

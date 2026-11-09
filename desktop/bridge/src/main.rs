@@ -206,6 +206,7 @@ async fn dispatch(state: &Shared, out: &Out, cmd: &str, a: &Value) -> R {
             *guard = Some(server);
             ok(h)
         }
+        "approve_certificate_replacement" => ok(poki_setup_core::apple::identity::approve_replacement()?),
         "stop_sharing" => {
             if let Some(s) = state.handoff.lock().await.take() {
                 s.stop();

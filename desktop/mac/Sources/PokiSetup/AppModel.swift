@@ -347,6 +347,12 @@ final class AppModel: ObservableObject {
         } catch { report(error) }
     }
 
+    /// The person chose Replace Certificate: the next install revokes the certificate the core
+    /// named, and only that one.
+    func approveCertificateReplacement() async throws {
+        try await bridge.run("approve_certificate_replacement")
+    }
+
     func forget(udid: String) async {
         do {
             try await bridge.run("forget_phone", ["udid": udid])

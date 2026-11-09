@@ -60,6 +60,7 @@ pub fn run() {
             commands::pair,
             commands::share_pairing,
             commands::stop_sharing,
+            commands::approve_certificate_replacement,
             commands::devmode,
             commands::account,
             commands::sign_in,

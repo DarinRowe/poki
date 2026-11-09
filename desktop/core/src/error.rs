@@ -16,6 +16,11 @@ pub enum Error {
     NeedsPerson(String),
     #[error("signing failed: {0}")]
     Sign(String),
+    /// The team is at Apple's certificate limit. Replacing a certificate stops every app it signed
+    /// from opening, so only the person decides: they approve it ([`crate::apple::identity::approve_replacement`])
+    /// and try again.
+    #[error("{0}")]
+    CertificateLimit(String),
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error("network: {0}")]
@@ -46,6 +51,7 @@ impl Error {
             Error::Apple { .. } => "apple",
             Error::NeedsPerson(_) => "needs_person",
             Error::Sign(_) => "sign",
+            Error::CertificateLimit(_) => "certificate_limit",
             Error::Io(_) => "io",
             Error::Http(_) => "http",
             Error::Plist(_) => "plist",

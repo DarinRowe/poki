@@ -30,6 +30,8 @@ const zh: Record<string, string> = {
   "free, Poki is signed 7 days at a time": "免费账号，Poki 每 7 天续签一次",
   "paid": "付费账号",
   "Done": "完成",
+  "Replace Certificate": "替换证书",
+  "Cancel": "取消",
   "Renew": "续签",
   "Renewing…": "正在续签…",
   "Forget": "移除",
