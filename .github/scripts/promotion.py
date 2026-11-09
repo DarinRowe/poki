@@ -117,11 +117,34 @@ def propose(channel, src=None, override=None):
     print(f"branch=promote/{channel}-{rec['version']}")
 
 
+RECORD_FORMS = {
+    "beta": {"tag": r"ios-v\d+\.\d+\.\d+-beta\.\d+", "source": r"ios-alpha-\d+\.\d+\.\d+-\d+",
+             "version": r"\d+\.\d+\.\d+-beta\.\d+", "build": r"\d+"},
+    "stable": {"tag": r"ios-v\d+\.\d+\.\d+", "source": r"ios-v\d+\.\d+\.\d+-beta\.\d+",
+               "version": r"\d+\.\d+\.\d+", "build": r"\d*"},
+}
+
+
+def check(rec):
+    """A record from channels.json decides the release name and the approval environment, so a
+    malformed one stops the publish instead of slipping past the stable approval."""
+    forms = RECORD_FORMS.get(rec.get("channel"))
+    if not forms:
+        sys.exit(f"promotion record has channel {rec.get('channel')!r}; it must be beta or stable")
+    fields = dict(forms, sha=r"[0-9a-f]{40}", base_version=r"\d+\.\d+\.\d+")
+    for key, form in fields.items():
+        if not re.fullmatch(form, str(rec.get(key, ""))):
+            sys.exit(f"promotion record field {key}={rec.get(key)!r} is not in the expected form")
+    if not rec["tag"].endswith(rec["version"]) or not rec["version"].startswith(rec["base_version"]):
+        sys.exit("promotion record's tag, version and base_version disagree")
+    return rec
+
+
 def pending():
     data = load()
     for rec in reversed(data["promotions"]):
         if not tag_exists(rec["tag"]):
-            print(json.dumps(rec))
+            print(json.dumps(check(rec)))
             return rec
     print("{}")
     return None

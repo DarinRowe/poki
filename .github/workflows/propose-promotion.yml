@@ -45,26 +45,36 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.bot.outputs.token }}
           GH_REPO: ${{ github.repository }}
-        run: python3 .github/scripts/promotion.py propose "${{ inputs.channel }}" "${{ inputs.from }}" "${{ inputs.skip_wait }}" | tee -a "$GITHUB_OUTPUT"
+          # Form inputs go through the environment, never into the script text.
+          CHANNEL: ${{ inputs.channel }}
+          FROM: ${{ inputs.from }}
+          SKIP: ${{ inputs.skip_wait }}
+        run: python3 .github/scripts/promotion.py propose "$CHANNEL" "$FROM" "$SKIP" | tee -a "$GITHUB_OUTPUT"
       - name: Open the promotion PR
         env:
           GH_TOKEN: ${{ steps.bot.outputs.token }}
           SLUG: ${{ steps.bot.outputs.app-slug }}
           ACTOR: ${{ github.actor }}
           SKIP: ${{ inputs.skip_wait }}
+          BRANCH: ${{ steps.p.outputs.branch }}
+          CHANNEL: ${{ steps.p.outputs.channel }}
+          VERSION: ${{ steps.p.outputs.version }}
+          TAG: ${{ steps.p.outputs.tag }}
+          SOURCE: ${{ steps.p.outputs.source }}
+          SHA: ${{ steps.p.outputs.sha }}
         run: |
           set -euo pipefail
           id="$(gh api "/users/${SLUG}[bot]" --jq .id)"
           git config user.name "${SLUG}[bot]"
           git config user.email "${id}+${SLUG}[bot]@users.noreply.github.com"
-          branch="${{ steps.p.outputs.branch }}"
+          branch="$BRANCH"
           git switch -c "$branch"
           git add .github/channels.json native/ios-app/VERSION
-          git commit -m "Promote ${{ steps.p.outputs.source }} to ${{ steps.p.outputs.channel }} as ${{ steps.p.outputs.tag }}"
+          git commit -m "Promote ${SOURCE} to ${CHANNEL} as ${TAG}"
           git push origin "$branch"
-          channel="${{ steps.p.outputs.channel }}"
+          channel="$CHANNEL"
           {
-            echo "Promotes \`${{ steps.p.outputs.source }}\` (${{ steps.p.outputs.sha }}) to **${channel^}** as \`${{ steps.p.outputs.tag }}\`. The same IPA is published under the new name; nothing is rebuilt."
+            echo "Promotes \`${SOURCE}\` (${SHA}) to **${channel^}** as \`${TAG}\`. The same IPA is published under the new name; nothing is rebuilt."
             echo
             if [ "$channel" = beta ]; then
               echo "- Gate: the Gym on this commit, with no more failures than the last beta (promotion-gate.yml)."
@@ -78,4 +88,4 @@ jobs:
             echo
             echo "Requested by @$ACTOR."
           } > body.md
-          gh pr create --base main --head "$branch" --title "Promote Poki v${{ steps.p.outputs.version }} to ${channel^}" --body-file body.md --label promotion
+          gh pr create --base main --head "$branch" --title "Promote Poki v${VERSION} to ${channel^}" --body-file body.md --label promotion
