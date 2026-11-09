@@ -824,6 +824,17 @@
         }
       }
     },
+    "Check that Developer Mode is on (Settings → Privacy & Security → Developer Mode) and that iOS is 17.4 or later." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请确认开发者模式已开启（设置 › 隐私与安全性 › 开发者模式），并且 iOS 是 17.4 或更高版本。"
+          }
+        }
+      }
+    },
     "Checking 10.7.0.1 every few seconds…" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2826,6 +2837,17 @@
         }
       }
     },
+    "Poki Runner did not start. In Settings → Developer, turn on UI Automation; in Settings → General → VPN & Device Management, trust the developer of Poki Runner." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki Runner 没有启动。请在“设置 › 开发者”中开启 UI 自动化，并在“设置 › 通用 › VPN 与设备管理”中信任 Poki Runner 的开发者。"
+          }
+        }
+      }
+    },
     "Poki Runner is installed and trusted" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2863,6 +2885,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "代理付款、删除、发消息、打电话、输入密码或在钱包里操作之前，Poki 会先问你：在实时活动、通知或 Poki 里批准。关掉后，这些操作都不再询问。更改在下次打开 Poki 时生效。"
+          }
+        }
+      }
+    },
+    "Poki can't reach this iPhone. Check in this order: Setup › Loopback (your proxy app or LocalDevVPN is connected, with 10.7.0.1 set), then Setup › Pairing (pair again with the loopback on), then Developer Mode in Settings → Privacy & Security." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 连不上这台 iPhone。请按顺序检查：“设置引导 › 回环”（代理 App 或 LocalDevVPN 已连接，并已设好 10.7.0.1），然后“设置引导 › 配对”（在回环开着时重新配对），最后是“设置 › 隐私与安全性”里的开发者模式。"
           }
         }
       }
@@ -4064,12 +4097,13 @@
         }
       }
     },
-    "The local interface is present, but this iPhone's developer services do not answer. Check Developer Mode and Wi-Fi, then reconnect the local connection." : {
+    "The local interface is present, but this iPhone does not answer at 10.7.0.1. Reconnect the local connection and check Wi-Fi. If it still does not answer, pair again in Setup › Pairing, then check Developer Mode." : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "本机接口已存在，但此 iPhone 的开发者服务没有应答。请检查开发者模式和无线局域网，然后重新连接本机连接。"
+            "value" : "本机接口已存在，但此 iPhone 在 10.7.0.1 没有应答。请重新连接本机连接并检查无线局域网；仍没有应答时，到“设置引导 › 配对”重新配对，然后再检查开发者模式。"
           }
         }
       }
@@ -4370,17 +4404,6 @@
         }
       }
     },
-    "Turn on Developer Mode: Settings → Privacy & Security → Developer Mode, then restart the phone. If it is on: in Settings → General → VPN & Device Management, trust the developer of Poki Runner." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "开启开发者模式：设置 › 隐私与安全性 › 开发者模式，然后重启手机。如果已开启：在“设置 › 通用 › VPN 与设备管理”中信任 Poki Runner 的开发者。"
-          }
-        }
-      }
-    },
     "Turn on Enhanced Mode (required for loopback)." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4480,6 +4503,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "使用你的代理 App"
+          }
+        }
+      }
+    },
+    "Update iOS to 17.4 or later." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请把 iOS 更新到 17.4 或更高版本。"
           }
         }
       }

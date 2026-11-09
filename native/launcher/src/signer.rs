@@ -55,7 +55,7 @@ impl From<crate::device::Failure> for Failure {
             Some(fix) => format!("{} {}", e.detail, fix),
             None => e.detail,
         };
-        Failure { message, code: "device" }
+        Failure { message, code: e.code.unwrap_or("device") }
     }
 }
 

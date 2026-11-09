@@ -122,6 +122,17 @@
         }
       }
     },
+    "Can’t Reach iPhone" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "连不上这台 iPhone"
+          }
+        }
+      }
+    },
     "Carrying on" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -129,6 +140,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "继续"
+          }
+        }
+      }
+    },
+    "Check Developer Mode" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "检查开发者模式"
           }
         }
       }
@@ -650,6 +672,17 @@
         }
       }
     },
+    "Poki Runner Didn’t Start" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki Runner 没有启动"
+          }
+        }
+      }
+    },
     "Poki Runner Missing" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1130,6 +1163,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "UI 自动化"
+          }
+        }
+      }
+    },
+    "Update iOS" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需要更新 iOS"
           }
         }
       }

@@ -2,6 +2,17 @@
 
 What changed in each round, and what still needs the phone. Newest first.
 
+## Developer Mode only when the phone says so (2026-11-09, on standalone)
+
+Changed:
+- Poki says Developer Mode is off only when the phone says so. A listener, tunnel or RSD failure after pair-verify says Poki can't reach this iPhone and lists the checks in order: Setup › Loopback, Setup › Pairing, then Developer Mode; the Live Activity says Can’t Reach iPhone. A phone without cryptexd is asked for DeveloperModeStatus first. A runner that stops before it answers points to UI Automation and to trusting Poki Runner's developer (#69).
+- The Loopback page's text for a local interface with no answer says to reconnect and check Wi-Fi, then to pair again, then to check Developer Mode.
+- The app acts on the launcher's failure code, not on words in its message. `-pokiLoopback noanswer` shows that Loopback state on a simulator.
+
+Needs the phone:
+- Reading DeveloperModeStatus through the tunnel's lockdown service.
+- Home and the Live Activity after a listener, tunnel or RSD failure, for example with the proxy app turned off mid-connection.
+
 ## Remote pairing that does not answer (2026-11-09, on standalone)
 
 Changed:

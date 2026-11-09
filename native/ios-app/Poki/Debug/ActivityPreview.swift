@@ -118,7 +118,7 @@ struct ActivityPreview: View {
         idle.runnerPaused = true
         ready.runnerPaused = false
 
-        let title = AppModel.problemText("Turn on the loopback in your proxy app: the Poki module in Surge or Loon.")
+        let title = AppModel.problemText(code: "loopback", fix: "Turn on the loopback in your proxy app: the Poki module in Surge or Loon.")
         var problem = PokiState(phase: .problem, headline: title, thumbnailVersion: 0)
         problem.label = "Runner Stopped"
         problem.stepCount = 6

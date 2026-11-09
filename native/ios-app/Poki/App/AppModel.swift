@@ -640,8 +640,8 @@ final class AppModel {
                 return true
             } catch {
                 let text = error.localizedDescription
-                // The launcher ends a refused pairing's message with its fix, "Pair again in Poki's setup."
-                if text.contains("Pair again") {
+                let code = (error as? SignerError)?.code
+                if code == "pairing" {
                     if self.pairingTrouble == nil { self.log.add("pairing", "check: refused: \(text)") }
                     self.pairingTrouble = text.replacingOccurrences(of: " Pair again in Poki's setup.", with: "")
                     return false
@@ -654,7 +654,7 @@ final class AppModel {
                     return false
                 }
                 self.log.add("pairing", "check could not finish: \(text) [\(self.networkNote)]")
-                if text.contains("remote pairing handshake failed") { self.servicesSilent = true }
+                if code == "handshake" { self.servicesSilent = true }
                 return true
             }
         }
@@ -1027,9 +1027,9 @@ final class AppModel {
             if status.state == "running", !setup.uiAutomation { setup.uiAutomation = true; log.add("setup", "UI Automation is on (the runner runs)") }
             if status.state == "running", automationPath == .runner { automationStarted() }
             if status.state == "launching", runner.state != "launching" { launchingSince = Date() }
-        case "failed" where status.detail?.hasPrefix("remote pairing handshake failed") == true:
+        case "failed" where status.code == "handshake":
             servicesSilent = true
-        case "failed" where status.fix?.contains("Pair again") == true:
+        case "failed" where status.code == "pairing":
             if pairingTrouble == nil { log.add("pairing", "refused: \(status.detail ?? "")") }
             pairingTrouble = status.detail ?? "The phone refused the pairing."
         default: break
@@ -1057,7 +1057,7 @@ final class AppModel {
         // the first look finds it open.
         if status.state == "running" { warmInProcess("the launcher is ready") }
         if status.state == "failed" {
-            let title = Self.problemText(status.fix ?? status.detail ?? "The runner stopped")
+            let title = Self.problemText(code: status.code, fix: status.fix ?? status.detail ?? "The runner stopped")
             activity.update { $0.phase = .problem; $0.label = "Runner Stopped"; $0.headline = title }
         } else if !status.isRunning {
             activity.update { $0.phase = .idle; $0.headline = status.title }
@@ -1275,23 +1275,27 @@ final class AppModel {
     /// How long the expanded island takes to fold after a tap on its button.
     static let islandCollapse: TimeInterval = 1.5
 
-    /// The launcher's fix as the Live Activity's content line, in English (the face words it in the
-    /// system's language). The fixes the launcher sends (native/launcher/src/device.rs, launch.rs) have
-    /// names of a few words; any other text gives its first part. What to do is in the app, which shows
-    /// the whole fix.
-    nonisolated static func problemText(_ fix: String) -> String {
-        let short: [(String, String)] = [
-            ("Turn on the loopback", "Loopback Off"),
-            ("Poki needs the internet", "No Internet"),
-            ("Mounting the developer disk image timed out", "No Internet"),
-            ("This iOS version needs a newer", "Disk Image Outdated"),
-            ("The developer disk image did not install", "Fetching Disk Image"),
-            ("Pair again", "Pairing Refused"),
-            ("Open Setup › Loopback", "Loopback or Pairing"),
-            ("Turn on Developer Mode", "Developer Mode Off"),
-            ("Install Poki Runner", "Poki Runner Missing"),
+    /// A launcher failure as the Live Activity's content line, in English (the face words it in the
+    /// system's language). The codes the launcher sends (native/launcher/src/device.rs, ddi.rs,
+    /// launch.rs) have names of a few words; a failure without one gives the first part of its fix.
+    /// What to do is in the app, which shows the whole fix.
+    nonisolated static func problemText(code: String?, fix: String) -> String {
+        let short = [
+            "loopback": "Loopback Off",
+            "network": "No Internet",
+            "ddi_timeout": "No Internet",
+            "ddi_refused": "Disk Image Outdated",
+            "ddi_bad": "Fetching Disk Image",
+            "pairing": "Pairing Refused",
+            "handshake": "Loopback or Pairing",
+            "unreachable": "Can’t Reach iPhone",
+            "developer_mode": "Developer Mode Off",
+            "no_cryptexd": "Check Developer Mode",
+            "ios_too_old": "Update iOS",
+            "runner": "Poki Runner Missing",
+            "runner_blocked": "Poki Runner Didn’t Start",
         ]
-        return short.first { fix.hasPrefix($0.0) }?.1 ?? firstPart(fix)
+        return code.flatMap { short[$0] } ?? firstPart(fix)
     }
 
     /// A text up to its first colon or the end of its first sentence, capitalised.

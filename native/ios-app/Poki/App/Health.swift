@@ -70,7 +70,11 @@ struct Issue: Identifiable {
             let runner = model.runner
             if runner.state == "failed", model.pairingTrouble == nil {
                 let fix = runner.fix ?? ""
-                let kind: Fix = fix.contains("Install Poki Runner") || fix.contains("Pair again") || fix.contains("setup") || fix.contains("Setup ›") ? .setup : fix.contains("Developer Mode") ? .settings : .retry
+                let kind: Fix = switch runner.code {
+                case "runner", "pairing", "handshake", "unreachable", "ddi_refused": .setup
+                case "developer_mode", "no_cryptexd", "ios_too_old", "runner_blocked": .settings
+                default: .retry
+                }
                 out.append(Issue(id: "runner", title: String(localized: "The runner stopped"),
                                  text: fix.isEmpty ? (runner.detail.map { "\($0.prefix(1).uppercased())\($0.dropFirst())." } ?? String(localized: "Poki starts it again on the next agent request.")) : local(fix), fix: kind))
             } else if runner.state == "waiting_network", let fix = runner.fix, fix.contains("internet") {
