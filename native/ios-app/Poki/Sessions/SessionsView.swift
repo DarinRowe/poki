@@ -130,10 +130,10 @@ struct SessionsView: View {
                 renaming = nil
             }
         }
-        // A new chat with Poki's own agent, at the bottom right. On iOS 26 it is the round button on
-        // the tab bar's line instead (RootView's New Chat tab).
+        // A new chat with Poki's own agent, at the bottom right: Poki's blue, in Liquid Glass on iOS 26
+        // (a search-role tab cannot take a colour, so it is this button on every version).
         .safeAreaInset(edge: .bottom, alignment: .trailing, spacing: 0) {
-            if #unavailable(iOS 26.0) { newChatButton }
+            newChatButton
         }
     }
 
@@ -220,8 +220,8 @@ private extension View {
 
     /// Blue-tinted Liquid Glass on iOS 26 and later; a blue prominent capsule before it.
     @ViewBuilder func newChatStyle() -> some View {
-        if #available(iOS 26.0, *) { buttonStyle(.glassProminent).buttonBorderShape(.circle).tint(.blue) }
-        else { buttonStyle(.borderedProminent).buttonBorderShape(.circle).tint(.blue) }
+        if #available(iOS 26.0, *) { buttonStyle(.glassProminent).buttonBorderShape(.circle).tint(Color.accentColor) }
+        else { buttonStyle(.borderedProminent).buttonBorderShape(.circle).tint(Color.accentColor) }
     }
 }
 
