@@ -49,7 +49,10 @@ Poki is in English and Simplified Chinese and follows the iPhone's language. The
 
 ## How it runs
 
-- Poki stays on once turned on, and turns on again at launch. Once the launcher has mounted the
+- Poki stays on once turned on, and turns on again at launch. Turning on asks for everything at once:
+  with Poki in front and no automation since the iPhone restarted, Poki first says iOS will ask for
+  the passcode, and Continue opens the session as soon as the launcher is ready, which brings up iOS's
+  passcode screen. Once the launcher has mounted the
   disk image, Poki opens its automation session (the log says `in-process session ready`), so the
   first look does not wait for it. The session, and with it iOS's automation banner, is closed after
   the idle time (default 60 s), from Stop on the Live Activity or in Poki, and when Poki is turned off;
@@ -59,7 +62,9 @@ Poki is in English and Simplified Chinese and follows the iPhone's language. The
   is waiting on iOS's passcode prompt (after Poki restarts, and 8 hours after the passcode was last
   entered): the Live Activity shows Passcode for automation, Poki's home asks the owner, and the agent
   reads that only the owner can enter it. When iOS gives up, after about a minute, the call fails with
-  that reason.
+  that reason. A passcode screen that was cancelled or missed is not opened again, by Poki or by an
+  agent's call, until the owner turns Poki on again. Opens go through one gate: one at a time, and
+  none from the background before the boot's first automation.
 - Nothing listens on a port: PokiCore's requests are answered inside Poki.
 - The built-in local connection dials itself again when it fails or drops while Poki is on: 1, 2, 4, 8,
   16, 30, 30, 30 s, then it stops until the owner taps Enable Local Connection in Setup. Opening Poki
