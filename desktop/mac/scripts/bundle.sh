@@ -12,15 +12,21 @@ BUILD="${BUILD_NUMBER:-$(git -C "$DESKTOP" rev-list --count HEAD 2>/dev/null || 
 mkdir -p "$OUT"
 export POKI_SETUP_BUILD="$BUILD"
 
-echo "== Rust bridge ($MODE)"
+echo "== Rust bridge and command line tool ($MODE)"
+# poki-setup (the command line tool for agents and scripts) ships inside the app next to the bridge.
 if [ "$MODE" = universal ]; then
   rustup target add aarch64-apple-darwin x86_64-apple-darwin >/dev/null
-  (cd "$DESKTOP" && cargo build --release -p poki-setup-bridge --target aarch64-apple-darwin && cargo build --release -p poki-setup-bridge --target x86_64-apple-darwin)
-  lipo -create -output "$OUT/poki-setup-bridge" "$DESKTOP/target/aarch64-apple-darwin/release/poki-setup-bridge" "$DESKTOP/target/x86_64-apple-darwin/release/poki-setup-bridge"
+  for T in aarch64-apple-darwin x86_64-apple-darwin; do
+    (cd "$DESKTOP" && cargo build --release -p poki-setup-bridge -p poki-setup-cli --target "$T")
+  done
+  for B in poki-setup-bridge poki-setup; do
+    lipo -create -output "$OUT/$B" "$DESKTOP/target/aarch64-apple-darwin/release/$B" "$DESKTOP/target/x86_64-apple-darwin/release/$B"
+  done
   SWIFT_ARCHS=(--arch arm64 --arch x86_64)
 else
-  (cd "$DESKTOP" && cargo build --release -p poki-setup-bridge)
+  (cd "$DESKTOP" && cargo build --release -p poki-setup-bridge -p poki-setup-cli)
   cp "$DESKTOP/target/release/poki-setup-bridge" "$OUT/poki-setup-bridge"
+  cp "$DESKTOP/target/release/poki-setup" "$OUT/poki-setup"
   SWIFT_ARCHS=()
 fi
 
@@ -33,6 +39,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/PokiSetup"
 cp "$OUT/poki-setup-bridge" "$APP/Contents/MacOS/poki-setup-bridge"
+cp "$OUT/poki-setup" "$APP/Contents/MacOS/poki-setup"
 cp "$HERE/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 sed -e "s/__VERSION__/$VERSION/" -e "s/__BUILD__/$BUILD/" "$HERE/Resources/Info.plist" > "$APP/Contents/Info.plist"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
@@ -44,6 +51,9 @@ if [ "$IDENTITY" = "-" ]; then TS=--timestamp=none; else TS=--timestamp; fi
 KC=()
 if [ -n "${MAC_SIGN_KEYCHAIN:-}" ]; then KC=(--keychain "$MAC_SIGN_KEYCHAIN"); fi
 codesign --force --options runtime "$TS" ${KC[@]+"${KC[@]}"} -s "$IDENTITY" "$APP/Contents/MacOS/poki-setup-bridge"
+# Same code identity as the bridge, so the command line tool opens the keychain items the app made
+# (the Apple session, the kept password) without a keychain prompt.
+codesign --force --options runtime "$TS" ${KC[@]+"${KC[@]}"} -s "$IDENTITY" --identifier poki-setup-bridge "$APP/Contents/MacOS/poki-setup"
 codesign --force --options runtime "$TS" ${KC[@]+"${KC[@]}"} -s "$IDENTITY" "$APP"
 codesign --verify --deep --strict --verbose=2 "$APP"
 

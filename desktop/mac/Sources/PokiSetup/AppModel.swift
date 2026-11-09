@@ -38,6 +38,13 @@ final class AppModel: ObservableObject {
     @Published var records: [Record] = []
     @Published var relay: Deployed?
     @Published var latest: Release?
+    /// What the channel offers for Poki Setup itself; checked at launch and every six hours.
+    @Published var update: UpdateInfo?
+    @Published var installingUpdate = false
+    /// The newer version the person was asked about (asked once per version).
+    @Published var updatePrompt: String?
+    private var updateTask: Task<Void, Never>?
+    private var askedAbout: String?
     @Published var latestError: String?
     @Published var channels: [ChannelInfo] = []
 
@@ -95,6 +102,14 @@ final class AppModel: ObservableObject {
                 try? await Task.sleep(for: .seconds(3))
             }
         }
+        // Poki Setup's own updates: at launch and every six hours.
+        updateTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(5))
+            while !Task.isCancelled {
+                await self?.checkForUpdate(prompt: true)
+                try? await Task.sleep(for: .seconds(6 * 3600))
+            }
+        }
         // Keep Poki signed: every six hours, renew what is due (needs the kept password).
         keeperTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(60))
@@ -102,6 +117,31 @@ final class AppModel: ObservableObject {
                 await self?.renewDue()
                 try? await Task.sleep(for: .seconds(6 * 3600))
             }
+        }
+    }
+
+    // MARK: Poki Setup updates
+
+    func checkForUpdate(prompt: Bool = false) async {
+        if demo { return }
+        guard let u: UpdateInfo = try? await bridge.call("check_update") else { return }
+        update = u
+        if prompt, u.newer, let v = u.latest, askedAbout != v {
+            askedAbout = v
+            updatePrompt = v
+        }
+    }
+
+    /// Downloads the update, checks it, puts it in place of this app and quits; the new one opens
+    /// by itself. When that is not possible the disk image opens in Finder instead.
+    func installUpdate() async throws {
+        installingUpdate = true
+        defer { installingUpdate = false }
+        let done: Installed = try await bridge.call("install_update")
+        if done.relaunching {
+            NSApp.terminate(nil)
+        } else {
+            banner = "Poki Setup could not replace itself here, so its update is open in Finder. Quit Poki Setup, then drag the new one into Applications."
         }
     }
 
@@ -294,6 +334,18 @@ final class AppModel: ObservableObject {
     }
 
     struct RenewResult: Decodable { var udid: String; var ok: Bool; var error: String? }
+
+    struct AgentPrompt: Decodable { var prompt: String }
+
+    /// Puts the instructions for an agent on this Mac (Claude Code, Codex and the like) on the
+    /// pasteboard; they name the command line tool inside this app.
+    func copyAgentPrompt() async {
+        do {
+            let p: AgentPrompt = try await bridge.call("agent_prompt")
+            copyToPasteboard(p.prompt)
+            banner = "Copied. Paste it into your agent (Claude Code, Codex or another one that runs on this Mac)."
+        } catch { report(error) }
+    }
 
     func forget(udid: String) async {
         do {

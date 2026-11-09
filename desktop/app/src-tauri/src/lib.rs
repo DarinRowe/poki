@@ -89,6 +89,7 @@ pub fn run() {
             commands::logs_stop,
             commands::mount_ddi,
             commands::support_bundle,
+            commands::agent_prompt,
             commands::check_update,
             commands::install_update,
             commands::channels,

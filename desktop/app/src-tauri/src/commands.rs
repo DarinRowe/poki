@@ -118,7 +118,7 @@ pub async fn devmode(app: AppHandle, udid: String) -> R<bool> {
     if device::devmode::enable(&phone, &r).await? {
         return Ok(true);
     }
-    device::devmode::wait_until_on(&udid, &r, std::time::Duration::from_secs(180)).await?;
+    device::devmode::wait_until_on(&udid, &r, std::time::Duration::from_secs(600)).await?;
     Ok(true)
 }
 
@@ -349,11 +349,24 @@ pub async fn support_bundle(udid: Option<String>, out_dir: String) -> R<String> 
 #[tauri::command]
 pub async fn check_update() -> R<release::UpdateInfo> { Ok(release::desktop_update().await?) }
 
-/// Downloads the newer Poki Setup and starts its installer.
+/// The instructions to hand an agent on this computer; they name the poki-setup.exe installed
+/// next to this app.
 #[tauri::command]
-pub async fn install_update(app: AppHandle) -> R<String> {
-    let path = release::install_desktop_update(&reporter(&app, "update")).await?;
-    Ok(path.display().to_string())
+pub fn agent_prompt() -> String { poki_setup_core::agent::prompt_for(poki_setup_core::agent::cli_path().as_deref()) }
+
+/// Downloads the newer Poki Setup and starts its installer in passive mode; the installer
+/// starts Poki Setup again, so this one quits.
+#[tauri::command]
+pub async fn install_update(app: AppHandle) -> R<release::Installed> {
+    let done = release::install_desktop_update(&reporter(&app, "update")).await?;
+    if done.relaunching {
+        let a = app.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+            a.exit(0);
+        });
+    }
+    Ok(done)
 }
 
 /// Every channel with its newest release, the chosen one marked.

@@ -3,22 +3,36 @@
 use anyhow::{Context, Result, anyhow};
 use clap::{Parser, Subcommand};
 use poki_setup_core::apple::anisette::Source;
-use poki_setup_core::{Reporter, device, keeper, mcp, pairshare, relay, release, setup, support};
+use poki_setup_core::{Reporter, agent, device, keeper, mcp, pairshare, relay, release, setup, support};
 use std::path::PathBuf;
 use std::time::Duration;
 
 #[derive(Parser)]
-#[command(name = "poki-setup", version, about = "Install Poki on an iPhone, keep it signed, and manage the relay and connector links.")]
+#[command(name = "poki-setup", version, about = "Install Poki on an iPhone, keep it signed, and manage the relay and connector links.", after_help = "For agents: start with `poki-setup next --json`, and `poki-setup prompt` prints the full instructions. With --json, results go to stdout, progress to stderr as JSON lines. Exit codes: 0 done, 1 failed, 2 a person has to act, 3 waiting for the Apple sign-in code.")]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,
-    /// Print results as JSON where a command has a result.
+    /// JSON for agents and scripts: the result on stdout, progress on stderr as one JSON object
+    /// per line, and errors as {"ok": false, "error": {"kind", "message"}}.
     #[arg(long, global = true)]
     json: bool,
 }
 
 #[derive(Subcommand)]
 enum Cmd {
+    /// What is done and what is next, with who has to act and the command to run. Changes nothing.
+    Next {
+        #[arg(long)]
+        udid: Option<String>,
+    },
+    /// The instructions to hand an agent on this computer (Claude Code, Codex and the like).
+    Prompt,
+    /// Update Poki Setup itself to the newest version on the channel.
+    Update {
+        /// Only say whether there is one.
+        #[arg(long)]
+        check: bool,
+    },
     /// List the iPhones this computer can reach.
     Phones,
     /// Pair with the iPhone (Trust This Computer) and save the pairing file.
@@ -37,9 +51,17 @@ enum Cmd {
         #[arg(long)]
         udid: Option<String>,
     },
-    /// Sign in with an Apple ID. Asks for the password and the code.
+    /// Sign in with an Apple ID. Asks for the password and the code. Without a terminal (agents):
+    /// `--password-stdin`, then `login --code <code>` in a second run when Apple asks for one.
     Login {
-        apple_id: String,
+        /// Not needed with --code.
+        apple_id: Option<String>,
+        /// Read the password from the first line of stdin instead of asking.
+        #[arg(long)]
+        password_stdin: bool,
+        /// Finish a sign-in that is waiting for Apple's six-digit code.
+        #[arg(long)]
+        code: Option<String>,
         /// Keep the password in the keychain so weekly re-signing needs no one.
         #[arg(long)]
         keep_password: bool,
@@ -199,19 +221,117 @@ fn out<T: serde::Serialize>(json: bool, value: &T, text: impl FnOnce(&T)) -> Res
 
 async fn phone(udid: Option<&str>) -> Result<device::Phone> { Ok(setup::pick_phone(udid).await?) }
 
+/// Exit codes agents can act on.
+const EXIT_FAILED: i32 = 1;
+const EXIT_PERSON: i32 = 2;
+const EXIT_NEEDS_CODE: i32 = 3;
+
+/// A sign-in that stopped at Apple's code: the second run (`login --code`) finishes it.
+struct NeedsCode(String);
+impl std::fmt::Display for NeedsCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_str(&self.0) }
+}
+impl std::fmt::Debug for NeedsCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_str(&self.0) }
+}
+impl std::error::Error for NeedsCode {}
+
+/// The error's kind for agents, and the exit code that goes with it.
+fn classify(e: &anyhow::Error) -> (&'static str, i32) {
+    if e.downcast_ref::<NeedsCode>().is_some() {
+        return ("needs_code", EXIT_NEEDS_CODE);
+    }
+    match e.downcast_ref::<poki_setup_core::Error>() {
+        Some(poki_setup_core::Error::NeedsPerson(_)) => ("needs_person", EXIT_PERSON),
+        Some(poki_setup_core::Error::Apple { .. }) => ("apple", EXIT_FAILED),
+        Some(poki_setup_core::Error::Device(_)) => ("device", EXIT_FAILED),
+        Some(poki_setup_core::Error::Http(_)) => ("network", EXIT_FAILED),
+        Some(poki_setup_core::Error::Sign(_)) => ("sign", EXIT_FAILED),
+        _ => ("error", EXIT_FAILED),
+    }
+}
+
 fn main() {
+    let json = std::env::args().any(|a| a == "--json");
     let rt = tokio::runtime::Runtime::new().expect("tokio");
     if let Err(e) = rt.block_on(run()) {
-        eprintln!("Error: {e:#}");
-        std::process::exit(1);
+        let (kind, code) = classify(&e);
+        if json {
+            println!("{}", serde_json::json!({ "ok": false, "error": { "kind": kind, "message": format!("{e:#}") } }));
+        } else {
+            eprintln!("Error: {e:#}");
+        }
+        std::process::exit(code);
     }
+}
+
+/// Progress as one JSON object per line on stderr, for agents.
+fn json_reporter() -> Reporter { Reporter::new(|p| eprintln!("{}", serde_json::to_string(&p).unwrap_or_default())) }
+
+/// The final result of a command that changes something: JSON for agents, a line for people.
+fn finish(json: bool, value: serde_json::Value, text: impl AsRef<str>) -> Result<()> {
+    if json {
+        let mut v = value;
+        if let Some(o) = v.as_object_mut() {
+            o.insert("ok".into(), true.into());
+        }
+        println!("{v}");
+    } else {
+        println!("{}", text.as_ref());
+    }
+    Ok(())
+}
+
+const PENDING: &str = "pending-sign-in";
+
+fn read_password(from_stdin: bool) -> Result<String> {
+    if let Ok(p) = std::env::var("POKI_SETUP_PASSWORD") {
+        if !p.is_empty() {
+            return Ok(p);
+        }
+    }
+    use std::io::{BufRead, IsTerminal};
+    if from_stdin || !std::io::stdin().is_terminal() {
+        let mut line = String::new();
+        std::io::stdin().lock().read_line(&mut line)?;
+        let p = line.trim_end_matches(['\r', '\n']).to_string();
+        if p.is_empty() {
+            return Err(poki_setup_core::Error::NeedsPerson("No password on stdin. Ask the person to run `poki-setup login <email>` in their own terminal.".into()).into());
+        }
+        return Ok(p);
+    }
+    Ok(rpassword::prompt_password("Apple ID password: ")?)
 }
 
 async fn run() -> Result<()> {
     tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::from_default_env()).with_writer(std::io::stderr).init();
     let cli = Cli::parse();
-    let reporter = Reporter::stderr();
+    let reporter = if cli.json { json_reporter() } else { Reporter::stderr() };
     match cli.cmd {
+        Cmd::Next { udid } => {
+            let n = agent::next(udid.as_deref()).await;
+            out(cli.json, &n, |n| {
+                println!("{}", n.summary);
+                for (i, s) in n.steps.iter().enumerate() {
+                    println!("{}. [{}] {}{}", i + 1, if s.who == agent::Who::Person { "you" } else { "agent" }, s.say, s.command.as_ref().map(|c| format!("\n   {c}")).unwrap_or_default());
+                }
+            })
+        }
+        Cmd::Prompt => {
+            let text = agent::prompt_for(agent::cli_path().as_deref());
+            out(cli.json, &serde_json::json!({ "prompt": text }), |_| print!("{text}"))
+        }
+        Cmd::Update { check } => {
+            let info = release::desktop_update().await?;
+            if check || !info.newer {
+                return out(cli.json, &info, |i| match (&i.latest, i.newer) {
+                    (Some(v), true) => println!("Poki Setup {} is available (this is {}). Run `poki-setup update`.", poki_setup_core::display_version(v), poki_setup_core::display_version(&i.current)),
+                    _ => println!("Poki Setup {} is up to date on the {} channel.", poki_setup_core::display_version(&i.current), i.channel.title()),
+                });
+            }
+            let done = release::install_desktop_update(&reporter).await?;
+            finish(cli.json, serde_json::json!({ "installed": done.path, "relaunching": done.relaunching, "version": info.latest }), format!("Installed Poki Setup {} at {}.", poki_setup_core::display_version(&info.latest.unwrap_or_default()), done.path.display()))
+        }
         Cmd::Phones => {
             let phones = device::Phone::list().await?;
             let mut rows = vec![];
@@ -232,7 +352,11 @@ async fn run() -> Result<()> {
         Cmd::Pair { udid, wait, share } => {
             let p = phone(udid.as_deref()).await?;
             let record = device::pairing::pair(&p, &reporter, Duration::from_secs(wait)).await?;
-            println!("Paired. Pairing file: {}", device::pairing::record_path(&p.udid)?.display());
+            let path = device::pairing::record_path(&p.udid)?;
+            if !share {
+                return finish(cli.json, serde_json::json!({ "udid": p.udid, "pairing_file": path }), format!("Paired. Pairing file: {}", path.display()));
+            }
+            println!("Paired. Pairing file: {}", path.display());
             if share {
                 let server = pairshare::serve(record).await?;
                 println!("\nIn Poki on the iPhone, scan this (same Wi-Fi), or open {}\n", server.handoff.link);
@@ -247,31 +371,41 @@ async fn run() -> Result<()> {
         }
         Cmd::Devmode { udid } => {
             let p = phone(udid.as_deref()).await?;
-            if device::devmode::enable(&p, &reporter).await? {
-                println!("Developer Mode is already on.");
-            } else {
-                device::devmode::wait_until_on(&p.udid, &reporter, Duration::from_secs(180)).await?;
-                println!("Developer Mode is on.");
+            if !device::devmode::enable(&p, &reporter).await? {
+                device::devmode::wait_until_on(&p.udid, &reporter, Duration::from_secs(600)).await?;
             }
-            Ok(())
+            finish(cli.json, serde_json::json!({ "udid": p.udid, "developer_mode": true }), "Developer Mode is on.")
         }
-        Cmd::Login { apple_id, keep_password, anisette } => {
+        Cmd::Login { apple_id, password_stdin, code, keep_password, anisette } => {
             let mut signer = setup::Signer::open()?;
-            if let Some(a) = anisette {
-                signer.set_anisette(if a == "system" { Source::System } else { Source::Remote { url: a } })?;
-            }
-            let password = match std::env::var("POKI_SETUP_PASSWORD") { Ok(p) if !p.is_empty() => p, _ => rpassword::prompt_password("Apple ID password: ")? };
-            if let Some(pending) = signer.sign_in(&apple_id, &password, keep_password).await? {
-                let via = match pending.via {
-                    poki_setup_core::apple::gsa::Factor::TrustedDevice => "your Apple devices",
-                    poki_setup_core::apple::gsa::Factor::Sms => "a text message",
-                };
-                let code = rpassword::prompt_password(format!("Apple sent a code to {via}. Code: "))?;
+            if let Some(code) = code {
+                let saved = poki_setup_core::apple::store::secret_get(PENDING).ok_or_else(|| anyhow!("No sign-in is waiting for a code. Run `poki-setup login <email>` first."))?;
+                let pending: poki_setup_core::apple::gsa::Pending = serde_json::from_str(&saved)?;
                 signer.finish_sign_in(pending, &code).await?;
+                let _ = poki_setup_core::apple::store::secret_delete(PENDING);
+            } else {
+                let apple_id = apple_id.ok_or_else(|| anyhow!("Give the Apple Account email: poki-setup login you@example.com"))?;
+                if let Some(a) = anisette {
+                    signer.set_anisette(if a == "system" { Source::System } else { Source::Remote { url: a } })?;
+                }
+                let password = read_password(password_stdin)?;
+                if let Some(pending) = signer.sign_in(&apple_id, &password, keep_password).await? {
+                    let via = match pending.via {
+                        poki_setup_core::apple::gsa::Factor::TrustedDevice => "your Apple devices",
+                        poki_setup_core::apple::gsa::Factor::Sms => "a text message",
+                    };
+                    use std::io::IsTerminal;
+                    if cli.json || password_stdin || !std::io::stdin().is_terminal() {
+                        poki_setup_core::apple::store::secret_set(PENDING, &serde_json::to_string(&pending)?)?;
+                        return Err(NeedsCode(format!("Apple sent a six-digit code to {via}. Ask the person for it, then run: poki-setup login --code <code>")).into());
+                    }
+                    let code = rpassword::prompt_password(format!("Apple sent a code to {via}. Code: "))?;
+                    signer.finish_sign_in(pending, &code).await?;
+                }
             }
             let team = signer.team().await?;
-            println!("Signed in as {}. Team: {} ({}){}", signer.account.display_name().unwrap_or_default(), team.name, team.team_id, if team.is_free { ", free: Poki is signed for 7 days at a time" } else { "" });
-            Ok(())
+            let name = signer.account.display_name().unwrap_or_default();
+            finish(cli.json, serde_json::json!({ "signed_in": true, "account": name, "team": team.name, "team_id": team.team_id, "free": team.is_free }), format!("Signed in as {name}. Team: {} ({}){}", team.name, team.team_id, if team.is_free { ", free: Poki is signed for 7 days at a time" } else { "" }))
         }
         Cmd::Logout => {
             let mut signer = setup::Signer::open()?;
@@ -306,9 +440,13 @@ async fn run() -> Result<()> {
             }
             let done = setup::run(&mut signer, setup::Options { udid, ipa, signing_zip, wait: Some(Duration::from_secs(wait)), hand_off, seed_ddi }, &reporter).await?;
             for n in &done.notes {
-                eprintln!("  · {n}");
+                reporter.note("install", n.clone());
             }
-            println!("Poki {} ({}) is installed on {} as {}; signed until {} days from now.", done.record.version, done.record.build, done.record.phone_name, done.record.bundle_id, done.record.days_left());
+            let line = format!("Poki {} ({}) is installed on {} as {}; signed until {} days from now.", done.record.version, done.record.build, done.record.phone_name, done.record.bundle_id, done.record.days_left());
+            if done.handoff.is_none() {
+                return finish(cli.json, serde_json::json!({ "installed": &done.record, "notes": &done.notes, "days_left": done.record.days_left() }), line);
+            }
+            println!("{line}");
             if let Some(server) = done.handoff {
                 println!("\nOpen Poki on the iPhone and scan this to give it the pairing file:\n{}\n{}", server.handoff.link, qr_text(&server.handoff.link));
                 server.wait_fetched(Duration::from_secs(600)).await;
@@ -352,8 +490,7 @@ async fn run() -> Result<()> {
                 None => phone(None).await?.udid,
             };
             let rec = setup::renew(&mut signer, &udid, &reporter).await?;
-            println!("{} renewed: Poki {} ({}) signed for {} more days.", rec.phone_name, rec.version, rec.build, rec.days_left());
-            Ok(())
+            finish(cli.json, serde_json::json!({ "renewed": &rec, "days_left": rec.days_left() }), format!("{} renewed: Poki {} ({}) signed for {} more days.", rec.phone_name, rec.version, rec.build, rec.days_left()))
         }
         Cmd::Status => {
             let all = keeper::all()?;
@@ -369,8 +506,7 @@ async fn run() -> Result<()> {
         Cmd::Ddi { udid } => {
             let p = phone(udid.as_deref()).await?;
             device::ddi::mount(&p, &reporter).await?;
-            println!("Developer disk image mounted.");
-            Ok(())
+            finish(cli.json, serde_json::json!({ "udid": p.udid, "mounted": true }), "Developer disk image mounted.")
         }
         Cmd::Logs { udid, filter } => {
             let p = phone(udid.as_deref()).await?;
@@ -389,8 +525,7 @@ async fn run() -> Result<()> {
             };
             let dir = out_dir.unwrap_or(std::env::current_dir()?);
             let b = support::build(p.as_ref(), &dir).await?;
-            println!("{} ({} files)", b.path.display(), b.entries.len());
-            Ok(())
+            finish(cli.json, serde_json::json!({ "bundle": b.path, "files": b.entries.len() }), format!("{} ({} files)", b.path.display(), b.entries.len()))
         }
         Cmd::Relay { cmd } => match cmd {
             RelayCmd::Deploy { account } => {

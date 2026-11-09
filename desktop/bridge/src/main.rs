@@ -217,7 +217,7 @@ async fn dispatch(state: &Shared, out: &Out, cmd: &str, a: &Value) -> R {
             let phone = setup::pick_phone(Some(&udid)).await?;
             let r = out.reporter("devmode");
             if !device::devmode::enable(&phone, &r).await? {
-                device::devmode::wait_until_on(&udid, &r, std::time::Duration::from_secs(180)).await?;
+                device::devmode::wait_until_on(&udid, &r, std::time::Duration::from_secs(600)).await?;
             }
             ok(true)
         }
@@ -485,7 +485,9 @@ async fn dispatch(state: &Shared, out: &Out, cmd: &str, a: &Value) -> R {
             ok(b.path.display().to_string())
         }
         "check_update" => check_update().await,
-        "install_update" => ok(release::install_desktop_update(&out.reporter("update")).await?.display().to_string()),
+        "install_update" => ok(release::install_desktop_update(&out.reporter("update")).await?),
+        "agent_prompt" => ok(json!({ "prompt": poki_setup_core::agent::prompt_for(poki_setup_core::agent::cli_path().as_deref()) })),
+        "agent_next" => ok(poki_setup_core::agent::next(None).await),
         "ping" => ok("pong"),
         other => Err(Failure { kind: "bad_request", message: format!("unknown command {other}") }),
     }

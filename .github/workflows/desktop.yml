@@ -1,4 +1,4 @@
-# Builds Poki Setup (desktop/) for Windows (MSI + NSIS) with the Tauri shell, after the core tests.
+# Builds Poki Setup (desktop/) for Windows (NSIS setup.exe) with the Tauri shell, after the core tests.
 # The macOS app is native SwiftUI and builds in desktop-mac.yml. Runs on demand, on a desktop-vX.Y.Z
 # tag, or on dev/desktop-* branch pushes on the fork only.
 name: desktop
@@ -15,6 +15,11 @@ on:
     # Branch pushes build only on the fork (ZhehanZhang/poki-remote), never upstream: the jobs
     # below check the repository.
     branches: ['dev/desktop-*']
+
+# A newer push to the same branch replaces a build still running.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 permissions:
   contents: write
@@ -35,16 +40,16 @@ jobs:
 
   build:
     name: ${{ matrix.name }}
-    needs: core
+    # Runs beside the core tests, not after them: the tests gate nothing the installer needs.
+    if: github.event_name != 'push' || startsWith(github.ref, 'refs/tags/') || github.repository == 'ZhehanZhang/poki-remote'
     strategy:
       fail-fast: false
       matrix:
         include:
           - name: Windows (x64)
             os: windows-2022
-            args: ""
-            targets: ""
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
@@ -54,115 +59,53 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm, cache-dependency-path: desktop/app/package-lock.json }
       - uses: dtolnay/rust-toolchain@stable
-        with: { targets: "${{ matrix.targets }}" }
+      # The compiled crates are kept even when a run fails, so the next run does not start cold.
       - uses: Swatinem/rust-cache@v2
-        with: { workspaces: desktop }
-      - run: npm ci --no-audit --no-fund
+        with: { workspaces: desktop, cache-on-failure: true, shared-key: windows-release }
+      # The bundler's NSIS toolset (%LOCALAPPDATA%\tauri), kept between runs: the GitHub release
+      # downloads it otherwise makes often answer 50x, and the bundler does not retry them.
+      - name: Bundler tools from cache
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\tauri
+          key: tauri-tools-${{ hashFiles('desktop/app/package-lock.json') }}
+          restore-keys: tauri-tools-
+      - run: npm ci --no-audit --no-fund --prefer-offline
         working-directory: desktop/app
-      # The WiX download the MSI bundler wants (wix314-binaries.zip) is answering 504; the
-      # runner image ships WiX 3.14, and the bundler uses %LOCALAPPDATA%\tauri\WixTools314 when
-      # it is there instead of downloading.
-      - name: Use the runner's WiX
+      # poki-setup.exe, the command line tool for agents and scripts, installs next to the app
+      # (tauri.windows.conf.json lists it as a resource).
+      - name: Command line tool
         shell: bash
         run: |
-          src="$(ls -d "/c/Program Files (x86)/WiX Toolset v3."*/bin 2>/dev/null | tail -1)"
-          if [ -n "$src" ]; then
-            dst="$(cygpath "$LOCALAPPDATA")/tauri/WixTools314"
-            mkdir -p "$dst" && cp -r "$src"/. "$dst"/ && echo "WiX from $src" && ls "$dst" | head
-          else
-            echo "No WiX on this runner; the bundler downloads it."
-          fi
-      # Same for NSIS: GitHub's release download (nsis-3.13.zip) keeps answering 502/503/504 to the
-      # bundler, which does not retry. Fetch it here with retries and unpack it where the bundler
-      # looks first (%LOCALAPPDATA%\tauri\NSIS); it then only fetches its small plugin DLL.
-      - name: Fetch NSIS for the bundler
+          cargo build --release -p poki-setup-cli --manifest-path desktop/Cargo.toml
+          desktop/target/release/poki-setup.exe --version
+          desktop/target/release/poki-setup.exe prompt | grep -q "next --json"
+      # Only the NSIS setup.exe is built: it is what people and the self-update download (it
+      # carries English and Chinese). The MSIs doubled the bundling time and needed WiX.
+      - name: Build the installer
         shell: bash
+        working-directory: desktop/app
         run: |
-          tools="$(cygpath "$LOCALAPPDATA")/tauri"
-          mkdir -p "$tools"
-          for i in 1 2 3 4 5 6; do
-            curl -fL --retry 8 --retry-all-errors --retry-delay 10 -o "$RUNNER_TEMP/nsis.zip" \
-              https://github.com/tauri-apps/binary-releases/releases/download/nsis-3.13/nsis-3.13.zip && break
-            sleep 30
+          for i in 1 2 3; do
+            npx tauri build --bundles nsis && exit 0
+            echo "Bundling failed (try $i); trying again."
+            sleep 10
           done
-          if [ -s "$RUNNER_TEMP/nsis.zip" ]; then
-            rm -rf "$RUNNER_TEMP/nsis" && mkdir -p "$RUNNER_TEMP/nsis"
-            unzip -q "$RUNNER_TEMP/nsis.zip" -d "$RUNNER_TEMP/nsis"
-            top="$(ls -d "$RUNNER_TEMP"/nsis/*/ | head -1)"
-            rm -rf "$tools/NSIS" && mv "$top" "$tools/NSIS" && ls "$tools/NSIS" | head
-          else
-            echo "NSIS not fetched; the bundler tries itself."
-          fi
-      # The bundler downloads WiX and NSIS from GitHub releases, which often answers 504 on
-      # Windows runners; what it already got stays cached, so trying again gets further.
-      - name: Build the installers
-        id: build1
-        continue-on-error: true
-        uses: tauri-apps/tauri-action@v0
-        # Signing and notarization: add APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD,
-        # APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_PASSWORD and APPLE_TEAM_ID here once the
-        # secrets exist. An empty value makes the bundler try to import nothing and fail, so they
-        # are not listed until then; the unsigned app opens with right-click > Open.
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          projectPath: desktop/app
-          args: ${{ matrix.args }}
-          tagName: ${{ (startsWith(github.ref, 'refs/tags/desktop-v') && inputs.release) && github.ref_name || '' }}
-          releaseName: ${{ (startsWith(github.ref, 'refs/tags/desktop-v') && inputs.release) && 'Poki Setup __VERSION__' || '' }}
-          releaseDraft: true
-          prerelease: true
-      - name: Wait before trying again
-        if: steps.build1.outcome == 'failure'
-        shell: bash
-        run: sleep 45
-      - name: Build the installers (try 2)
-        id: build2
-        if: steps.build1.outcome == 'failure'
-        continue-on-error: true
-        uses: tauri-apps/tauri-action@v0
-        # Signing and notarization: add APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD,
-        # APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_PASSWORD and APPLE_TEAM_ID here once the
-        # secrets exist. An empty value makes the bundler try to import nothing and fail, so they
-        # are not listed until then; the unsigned app opens with right-click > Open.
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          projectPath: desktop/app
-          args: ${{ matrix.args }}
-          tagName: ${{ (startsWith(github.ref, 'refs/tags/desktop-v') && inputs.release) && github.ref_name || '' }}
-          releaseName: ${{ (startsWith(github.ref, 'refs/tags/desktop-v') && inputs.release) && 'Poki Setup __VERSION__' || '' }}
-          releaseDraft: true
-          prerelease: true
-      - name: Wait before the last try
-        if: steps.build1.outcome == 'failure' && steps.build2.outcome == 'failure'
-        shell: bash
-        run: sleep 90
-      - name: Build the installers (try 3)
-        id: build3
-        if: steps.build1.outcome == 'failure' && steps.build2.outcome == 'failure'
-        uses: tauri-apps/tauri-action@v0
-        # Signing and notarization: add APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD,
-        # APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_PASSWORD and APPLE_TEAM_ID here once the
-        # secrets exist. An empty value makes the bundler try to import nothing and fail, so they
-        # are not listed until then; the unsigned app opens with right-click > Open.
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          projectPath: desktop/app
-          args: --bundles nsis
-          tagName: ${{ (startsWith(github.ref, 'refs/tags/desktop-v') && inputs.release) && github.ref_name || '' }}
-          releaseName: ${{ (startsWith(github.ref, 'refs/tags/desktop-v') && inputs.release) && 'Poki Setup __VERSION__' || '' }}
-          releaseDraft: true
-          prerelease: true
-      - name: Collect the installers
+          exit 1
+      - name: Collect the installer
         shell: bash
         run: |
           mkdir -p out
-          find desktop/target -path '*/release/bundle/*' \( -name '*.dmg' -o -name '*.msi' -o -name '*-setup.exe' \) -exec cp {} out/ \;
+          find desktop/target -path '*/release/bundle/*' -name '*-setup.exe' -exec cp {} out/ \;
           ls -la out
       - uses: actions/upload-artifact@v4
         with:
           name: poki-setup-${{ runner.os }}-${{ matrix.os }}
           path: out/*
           if-no-files-found: error
+          compression-level: 0
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/desktop-v') && inputs.release
+        env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
+        shell: bash
+        run: gh release upload "$GITHUB_REF_NAME" out/* --clobber

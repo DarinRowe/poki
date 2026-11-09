@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type AppInfo } from "./api";
+import { api, failureText, type AppInfo, type UpdateInfo } from "./api";
 import { t, useLang } from "./i18n";
 import Setup from "./screens/Setup";
 import Phones from "./screens/Phones";
@@ -8,6 +8,7 @@ import Relay from "./screens/Relay";
 import Debug from "./screens/Debug";
 import Settings from "./screens/Settings";
 import { listen } from "@tauri-apps/api/event";
+import { Capsule, displayVersion } from "./ui";
 
 type Page = "setup" | "phones" | "account" | "relay" | "debug" | "settings";
 const pages: { id: Page; label: string; icon: string }[] = [
@@ -31,6 +32,25 @@ export default function App() {
     const un = listen("renew-requested", () => setPage("phones"));
     return () => { un.then((f) => f()); };
   }, []);
+  // Poki Setup's own updates: checked at launch and every six hours, offered once per version.
+  const [update, setUpdate] = useState<UpdateInfo | null>(null);
+  const [dismissed, setDismissed] = useState<string | null>(null);
+  const [updating, setUpdating] = useState(false);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+  useEffect(() => {
+    const check = () => api.checkUpdate().then(setUpdate).catch(() => {});
+    const first = setTimeout(check, 5000);
+    const every = setInterval(check, 6 * 3600 * 1000);
+    return () => { clearTimeout(first); clearInterval(every); };
+  }, []);
+  const restartToUpdate = () => {
+    setUpdating(true);
+    setUpdateError(null);
+    api.installUpdate()
+      .then((r) => { if (!r.relaunching) setUpdateError(t("The installer is open. Finish it to update Poki Setup.")); })
+      .catch((e) => setUpdateError(failureText(e)))
+      .finally(() => setUpdating(false));
+  };
   const win = info?.os !== "macos";
   return (
     <div className="app">
@@ -47,9 +67,16 @@ export default function App() {
             </div>
           ))}
         </nav>
-        <div className="foot">v{info?.version ?? "…"}</div>
+        <div className="foot">{info?.version ? displayVersion(info.version) : "…"}</div>
       </aside>
       <main className={`content ${win ? "win" : ""}`}>
+        {update?.newer && update.latest && dismissed !== update.latest && (
+          <div className="update-bar" role="status">
+            <span>{t("Poki Setup {v} is available.").replace("{v}", displayVersion(update.latest))}{updateError ? ` ${updateError}` : ""}</span>
+            <Capsule sm disabled={updating} onClick={restartToUpdate}>{updating ? t("Updating…") : t("Restart to Update")}</Capsule>
+            <Capsule sm kind="ghost" disabled={updating} onClick={() => setDismissed(update.latest)}>{t("Later")}</Capsule>
+          </div>
+        )}
         {page === "setup" && <Setup goAccount={() => setPage("account")} />}
         {page === "phones" && <Phones />}
         {page === "account" && <Account info={info} />}

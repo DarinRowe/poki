@@ -170,6 +170,11 @@ struct UpdateInfo: Decodable {
     var newer: Bool
 }
 
+struct Installed: Decodable {
+    var path: String
+    var relaunching: Bool
+}
+
 struct Release: Decodable {
     var tag: String
     var version: String

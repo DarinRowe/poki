@@ -8,9 +8,7 @@ struct SetupView: View {
     @State private var handOff = false
     @State private var result: InstallAnswer?
     @State private var failed: String?
-    @State private var update: UpdateInfo?
     @State private var checking = false
-    @State private var installingUpdate = false
     @State private var channelError: String?
 
     private var installing: Bool { model.busyJobs.contains("install") }
@@ -170,7 +168,7 @@ struct SetupView: View {
                 Task {
                     do {
                         try await model.setChannel(id)
-                        update = nil
+                        model.update = nil
                         channelError = nil
                     } catch { channelError = error.localizedDescription }
                 }
@@ -178,14 +176,9 @@ struct SetupView: View {
         )
     }
 
-    /// Downloads the newer Poki Setup and opens its disk image; drag it over this one.
+    /// Downloads the newer Poki Setup, puts it in place of this one and restarts.
     private func installUpdate() async {
-        installingUpdate = true
-        defer { installingUpdate = false }
-        do {
-            let _: String = try await model.bridge.call("install_update")
-            model.banner = "Poki Setup's update is open in Finder. Quit Poki Setup, then drag the new one into Applications."
-        } catch { channelError = error.localizedDescription }
+        do { try await model.installUpdate() } catch { channelError = error.localizedDescription }
     }
 
     private func checkForUpdates() async {
@@ -194,7 +187,7 @@ struct SetupView: View {
         await model.refreshChannels()
         await model.refreshLatest()
         do {
-            update = try await model.bridge.call("check_update")
+            model.update = try await model.bridge.call("check_update")
             channelError = nil
         } catch { channelError = error.localizedDescription }
     }
@@ -213,9 +206,9 @@ struct SetupView: View {
             .disabled(ipa != nil)
             // Poki Setup itself.
             LabeledContent {
-                if let u = update, u.newer {
-                    Button(installingUpdate ? "Downloading…" : "Update to \(u.latest ?? "")") { Task { await installUpdate() } }
-                        .disabled(installingUpdate)
+                if let u = model.update, u.newer {
+                    Button(model.installingUpdate ? "Updating…" : "Restart to Update") { Task { await installUpdate() } }
+                        .disabled(model.installingUpdate)
                 } else {
                     Button(checking ? "Checking…" : "Check for Updates") { Task { await checkForUpdates() } }
                         .disabled(checking)
@@ -267,9 +260,9 @@ struct SetupView: View {
 
     /// The line under "Poki Setup": its version, or what the last check found.
     private var setupLine: String {
-        let version = model.info?.version ?? ""
-        guard let update else { return version }
-        return update.newer ? "\(version), \(update.latest ?? "") is available" : "\(version), up to date"
+        let version = displayVersion(model.info?.version ?? "")
+        guard let update = model.update else { return version }
+        return update.newer ? "\(version), \(displayVersion(update.latest ?? "")) is available" : "\(version), up to date"
     }
 
     /// The release Install will use; says so when the chosen channel has none and a less stable one stands in.

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, failureText, type Account, type AppInfo, type ChannelInfo, type UpdateInfo } from "../api";
 import { setLang, t, useLang } from "../i18n";
-import { Capsule, Card, ErrorBox, Field } from "../ui";
+import { Capsule, Card, Copy, displayVersion, ErrorBox, Field } from "../ui";
 
 export default function Settings({ info }: { info: AppInfo | null }) {
   const lang = useLang();
@@ -11,8 +11,9 @@ export default function Settings({ info }: { info: AppInfo | null }) {
   const [updating, setUpdating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [channels, setChannels] = useState<ChannelInfo[]>([]);
+  const [prompt, setPrompt] = useState<string | null>(null);
   const load = () => api.account().then((a) => { setAcct(a); if (a.anisette.kind === "remote") setServer(a.anisette.url); }).catch(() => {});
-  useEffect(() => { load(); api.channels().then(setChannels).catch(() => {}); }, []);
+  useEffect(() => { load(); api.channels().then(setChannels).catch(() => {}); api.agentPrompt().then(setPrompt).catch(() => {}); }, []);
   const chosen = channels.find((c) => c.selected);
   const system = acct?.anisette.kind === "system";
   return (
@@ -42,11 +43,16 @@ export default function Settings({ info }: { info: AppInfo | null }) {
         </div>
       </Card>
       <Card>
+        <h2>{t("Use an agent")}</h2>
+        <p className="muted small">{t("An agent on this computer (Claude Code, Codex or another one) can do the setup with Poki Setup's command line tool. Copy these instructions and paste them into the agent; it tells you when to tap the phone or type your password.")}</p>
+        <div className="row">{prompt && <Copy text={prompt} />}</div>
+      </Card>
+      <Card>
         <h2>{t("About")}</h2>
-        <p className="muted small" style={{ userSelect: "text" }}>Poki Setup {info?.version} · {info?.os} {info?.arch} · {info?.data_dir}</p>
+        <p className="muted small" style={{ userSelect: "text" }}>Poki Setup {displayVersion(info?.version)} · {info?.os} {info?.arch} · {info?.data_dir}</p>
         <div className="row">
           <Capsule kind="ghost" onClick={() => api.checkUpdate().then(setUpdate).catch((e) => setError(failureText(e)))}>{t("Check for updates")}</Capsule>
-          {update && (update.newer ? <Capsule disabled={updating} onClick={() => { setUpdating(true); api.installUpdate().catch((e) => setError(failureText(e))).finally(() => setUpdating(false)); }}>{updating ? t("Downloading…") : `${t("Install update")}: ${update.latest}`}</Capsule> : <span className="muted">{t("Up to date")}</span>)}
+          {update && (update.newer ? <Capsule disabled={updating} onClick={() => { setUpdating(true); api.installUpdate().then(() => {}).catch((e) => setError(failureText(e))).finally(() => setUpdating(false)); }}>{updating ? t("Downloading…") : `${t("Install update")}: ${displayVersion(update.latest)}`}</Capsule> : <span className="muted">{t("Up to date")}</span>)}
           <Capsule kind="ghost" onClick={async () => { const { openUrl } = await import("@tauri-apps/plugin-opener"); openUrl("https://github.com/JosssphZhou/poki/blob/main/desktop/README.md"); }}>README</Capsule>
         </div>
         <p className="muted small" style={{ marginBottom: 0 }}>AGPL-3.0. Sign-in protocol after SideStore's icloud-auth (MPL-2.0) and Sideloader (GPL-3.0); signer: apple-codesign (MPL-2.0); device: idevice (MIT); type: Geist (OFL). See THIRD_PARTY_NOTICES.md.</p>

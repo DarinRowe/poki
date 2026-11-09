@@ -9,6 +9,11 @@ on:
     tags: ['desktop-v*.*.*']
     branches: ['dev/desktop-*']
 
+# A newer push to the same branch replaces a build still running.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
 permissions:
   contents: read
   actions: read
@@ -26,7 +31,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with: { targets: "aarch64-apple-darwin,x86_64-apple-darwin" }
       - uses: Swatinem/rust-cache@v2
-        with: { workspaces: desktop }
+        with: { workspaces: desktop, cache-on-failure: true }
       - name: Xcode
         run: |
           X=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | grep -v -i beta | sort -V | tail -1)
@@ -95,6 +100,30 @@ jobs:
           echo "== Gatekeeper"
           spctl -a -vv -t exec "dist/Poki Setup.app"
           spctl -a -vv -t open --context context:primary-signature "$DMG"
+      # The DMG is uploaded as soon as it exists, so it can be fetched while the checks below run.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: poki-setup-macos
+          path: dist/*.dmg
+          if-no-files-found: error
+      - name: Keep the app for the older-macOS check
+        if: always()
+        run: ditto -c -k --keepParent "dist/Poki Setup.app" dist/PokiSetup-app.zip
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: poki-setup-macos-app
+          path: dist/PokiSetup-app.zip
+          retention-days: 3
+      - name: Command line tool for agents
+        run: |
+          CLI="$PWD/dist/Poki Setup.app/Contents/MacOS/poki-setup"
+          "$CLI" --version
+          "$CLI" prompt | grep -q "next --json"
+          "$CLI" next --json | python3 -c 'import json,sys; n=json.load(sys.stdin); assert n["steps"], n; print(n["summary"])'
+          set +e; echo "" | "$CLI" login nobody@example.com --password-stdin --json; CODE=$?; set -e
+          test "$CODE" = 2
       - name: Core and bridge check against Apple
         run: python3 desktop/mac/scripts/e2e.py "$PWD/dist/Poki Setup.app/Contents/MacOS/poki-setup-bridge"
       - name: Signing check with Apple's codesign
@@ -116,21 +145,6 @@ jobs:
           POKI_SETUP_SNAPSHOT_DIR="$PWD/shots" perl -e 'alarm shift; exec { $ARGV[0] } @ARGV' 180 "$APP" || echo "live run ended with $?"
           ls -la shots
           test -n "$(ls shots)" || { echo 'no screenshots were saved'; exit 1; }
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: poki-setup-macos
-          path: dist/*.dmg
-          if-no-files-found: error
-      - name: Keep the app for the older-macOS check
-        if: always()
-        run: ditto -c -k --keepParent "dist/Poki Setup.app" dist/PokiSetup-app.zip
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: poki-setup-macos-app
-          path: dist/PokiSetup-app.zip
-          retention-days: 3
       - name: Remove the signing keychain
         if: always()
         run: if [ -n "${MAC_SIGN_KEYCHAIN:-}" ]; then security delete-keychain "$MAC_SIGN_KEYCHAIN" || true; fi

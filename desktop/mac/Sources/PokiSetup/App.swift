@@ -24,6 +24,8 @@ struct PokiSetupApp: App {
                 Button("Apple Account") { model.page = .account }.keyboardShortcut("3")
                 Divider()
                 Button("Renew Signatures Now") { Task { await model.renewDue() } }
+                Divider()
+                Button("Copy Prompt for Your Agent") { Task { await model.copyAgentPrompt() } }
             }
         }
 
@@ -70,6 +72,7 @@ struct MenuBarContent: View {
             NSApp.activate(ignoringOtherApps: true)
         }
         Button("Renew Now") { Task { await model.renewDue() } }
+        Button("Copy Prompt for Your Agent") { Task { await model.copyAgentPrompt() } }
             .disabled(model.records.isEmpty)
         Divider()
         Button("Quit Poki Setup") { NSApp.terminate(nil) }.keyboardShortcut("q")

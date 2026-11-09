@@ -18,6 +18,7 @@
 //! protocol as implemented in SideStore's icloud-auth (MPL-2.0) and Dadoum's Sideloader
 //! (GPL-3.0); the entitlement rule is AltSign's (AGPL-3.0). See THIRD_PARTY_NOTICES.md.
 
+pub mod agent;
 pub mod apple;
 #[cfg(feature = "device")]
 pub mod device;
@@ -44,13 +45,31 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// The build number baked in by the build scripts (the commit count), when there is one.
 pub const BUILD: Option<&str> = option_env!("POKI_SETUP_BUILD");
 
-/// `0.2.1-312`: the version and build, as the app shows it and as update checks compare it.
+/// `0.2.2-320`: the version and build as update checks compare them and release file names carry
+/// them. People see [`display_version`] instead.
 pub fn full_version() -> String {
     match BUILD.filter(|b| !b.is_empty()) {
         Some(b) => format!("{VERSION}-{b}"),
         None => VERSION.to_string(),
     }
 }
+/// `0.2.2-320` as people read it, `0.2.2 (320)`, the way Poki shows its own version.
+pub fn display_version(v: &str) -> String {
+    match v.rsplit_once('-') {
+        Some((ver, build)) if !build.is_empty() && build.chars().all(|c| c.is_ascii_digit()) => format!("{ver} ({build})"),
+        _ => v.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod version_tests {
+    #[test]
+    fn shows_the_build_in_brackets() {
+        assert_eq!(super::display_version("0.2.2-320"), "0.2.2 (320)");
+        assert_eq!(super::display_version("0.2.2"), "0.2.2");
+    }
+}
+
 /// Poki's bundle id as released; a free team gets `<id>.<team>`.
 pub const POKI_BUNDLE_ID: &str = "nz.zheha.poki";
 /// Poki's app group as released.

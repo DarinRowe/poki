@@ -93,6 +93,13 @@ export function useInterval(f: () => void, ms: number, deps: unknown[] = []) {
   }, deps);
 }
 
+/** "0.2.2-320" as people read it, "0.2.2 (320)"; update checks keep the plain form. */
+export function displayVersion(v?: string | null): string {
+  if (!v) return "";
+  const m = /^(.*)-(\d+)$/.exec(v);
+  return m ? `${m[1]} (${m[2]})` : v;
+}
+
 export function Copy({ text }: { text: string }) {
   const [done, setDone] = useState(false);
   return (

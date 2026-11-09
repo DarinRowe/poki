@@ -38,7 +38,9 @@ The agent follows the [install-poki skill](skills/install-poki/SKILL.md) and run
 
 Requires macOS 14+, Node.js 24+, iOS 18+, a USB data cable, an Apple Account, and a compatible VPN/proxy app on the iPhone that routes 10.7.0.1 back to it, such as Karing or Shadowrocket configured through Poki's Setup instructions. Xcode is not required. Free Apple Account signing lasts 7 days and needs renewal. Enable UI Automation in the iPhone's Developer settings and configure model access in Poki. With an older Poki Setup and no Xcode, the agent asks you to finish model-key and connection setup manually and reports those checks as unverified until you confirm them.
 
-Prefer clicking through it yourself? Download Poki Setup from the [releases](https://github.com/JosssphZhou/poki/releases) and follow its window.
+No Node.js 24, or on Windows? The same prompt works once Poki Setup is installed: the agent then uses the command line tool inside Poki Setup. Poki Setup's own menu also copies a prompt for your agent (Poki > Copy Prompt for Your Agent on a Mac, Settings > Use an agent on Windows).
+
+Prefer clicking through it yourself? Download Poki Setup from the [Alpha release](https://github.com/JosssphZhou/poki/releases#release-ios-alpha-latest) and follow its window.
 
 ### Poki MCP for your agent
 
