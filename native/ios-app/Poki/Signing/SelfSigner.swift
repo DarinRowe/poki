@@ -98,6 +98,23 @@ final class SelfSigner {
     var daysLeft: Double? { expiry.map { $0.timeIntervalSinceNow / 86_400 } }
     /// The build Install would put on: an update when one is ready, else a refresh.
     var next: Prepared? { ready["update"] ?? ready["refresh"] }
+    /// The channel has a newer Poki than the installed one.
+    var updateAvailable: Bool { latest.map(isNewer) ?? false }
+    /// A newer Poki is on the channel, but no signed copy of it is ready to install yet. Compared by
+    /// version and build, not tag: the rolling releases (app-prealpha-latest, ios-prealpha-latest)
+    /// keep one tag for every build, so a copy prepared from an earlier build has the same tag.
+    var updateNotReady: Bool {
+        guard updateAvailable, let latest else { return false }
+        guard let u = ready["update"] else { return true }
+        return u.version != latest.version || u.build != latest.build
+    }
+    /// Why Poki cannot download the update by itself, when it cannot. Nil when it can.
+    var updateBlocker: String? {
+        guard updateNotReady else { return nil }
+        if !signedIn { return String(localized: "To download updates by itself, Poki needs your Apple Account: sign in under Signing Options. Or update Poki from Poki Setup on your Mac.") }
+        if phone() == nil { return String(localized: "Poki can't reach this iPhone. Turn on the loopback, then try again.") }
+        return nil
+    }
     var channelTitle: String { status?.channels.first { $0.id == status?.channel }?.title ?? status?.channel ?? "" }
 
     static var home: URL {
@@ -195,8 +212,9 @@ final class SelfSigner {
                 found[kind] = p
             }
         }
-        // A build that is already on (its build number is installed) has nothing left to give.
-        if let u = found["update"], u.build == installedBuild, u.version == installedVersion { found["update"] = nil }
+        // A build that is already on, or older than what is on (Poki Setup installed a newer one
+        // meanwhile), has nothing left to give.
+        if let u = found["update"], !isNewer(version: u.version, build: u.build) { found["update"] = nil }
         if let r = found["refresh"], let expiry, r.expires <= expiry.addingTimeInterval(3600) { found["refresh"] = nil }
         ready = found
     }
@@ -209,7 +227,7 @@ final class SelfSigner {
             lastCheck = Date()
             if let rel = try? await SignerBridge.decode(Release.self, ["op": "check_update"]) {
                 latest = rel
-                if isNewer(rel), ready["update"]?.tag != rel.tag {
+                if updateNotReady {
                     await prepare(kind: "update")
                     return
                 }
@@ -228,15 +246,29 @@ final class SelfSigner {
         guard let rel = try? await SignerBridge.decode(Release.self, ["op": "check_update"]) else { return false }
         latest = rel
         lastCheck = Date()
+        // Found here first (the Signing page looks without waiting for the 3-hour check): the
+        // download starts now too, as it would from that check.
+        if updateNotReady { maintain() }
         return true
     }
 
-    func isNewer(_ rel: Release) -> Bool {
+    /// Download and Install Update, in one tap: gets the newest build and signs it, then installs it.
+    /// install() still checks that Poki is idle: with a task running it waits and says why, and the
+    /// downloaded build stays ready for Install Update.
+    func downloadAndInstallUpdate() async {
+        if updateNotReady { await prepare(kind: "update") }
+        guard !updateNotReady, ready["update"] != nil, lastError == nil else { return }
+        await install()
+    }
+
+    func isNewer(_ rel: Release) -> Bool { isNewer(version: rel.version, build: rel.build) }
+
+    func isNewer(version: String, build: String) -> Bool {
         let installed = (installedVersion, Int(installedBuild) ?? 0)
-        switch rel.version.compare(installed.0, options: .numeric) {
+        switch version.compare(installed.0, options: .numeric) {
         case .orderedDescending: return true
         case .orderedAscending: return false
-        case .orderedSame: return (Int(rel.build) ?? 0) > installed.1
+        case .orderedSame: return (Int(build) ?? 0) > installed.1
         }
     }
 
