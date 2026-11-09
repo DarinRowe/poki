@@ -18,6 +18,7 @@
 //! protocol as implemented in SideStore's icloud-auth (MPL-2.0) and Dadoum's Sideloader
 //! (GPL-3.0); the entitlement rule is AltSign's (AGPL-3.0). See THIRD_PARTY_NOTICES.md.
 
+#[cfg(feature = "device")]
 pub mod agent;
 pub mod apple;
 #[cfg(feature = "device")]
