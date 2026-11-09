@@ -571,9 +571,9 @@ private struct PairingPage: View {
             if PairingScanner.available {
                 Button("Scan Pairing Code", systemImage: "qrcode.viewfinder") { scanning = true }
             }
-            Button("Import Pairing File") { importing = true }
+            Button("Import Pairing File", systemImage: "doc.badge.plus") { importing = true }
             if SetupStep.onDevicePairing && model.pairing == nil && model.pairingTrouble == nil && model.pairingPath != nil {
-                Button("Pair Again") { Self.pair(model) }
+                Button("Pair Again", systemImage: "arrow.triangle.2.circlepath") { Self.pair(model) }
             }
         } header: {
             Text("Other Ways")

@@ -118,7 +118,7 @@ struct SessionsView: View {
         .toolbar {
             HomeBrand()
             ToolbarItem(placement: .topBarTrailing) {
-                PowerButton(state: !model.setupComplete && !SetupStep.shown.allSatisfy(model.isDone) ? .paused : model.sessionOn ? .ready : .stopped,
+                PowerButton(state: !model.setupLooksComplete ? .paused : model.sessionOn ? .ready : .stopped,
                             turnOn: { model.startSession() }, turnOff: { chat.stop(); model.stopSession() }, openSetup: openSetup)
             }
         }
@@ -170,7 +170,7 @@ struct SessionsView: View {
 
     private var needsSetup: Bool { model.pairingPath == nil || model.setupStepsLeft }
 
-    private var setupLeft: Int { model.setupComplete ? 0 : SetupStep.shown.filter { !model.isDone($0) }.count }
+    private var setupLeft: Int { model.setupLooksComplete ? 0 : SetupStep.shown.filter { !model.looksDone($0) }.count }
 
     /// What the Agents tab needs, if anything (the same test as its tab bar dot).
     private var agentsIssue: String? {

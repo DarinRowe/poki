@@ -329,8 +329,19 @@ final class SelfSigner {
     private func stepAside() {
         guard !steppedAside, UIApplication.shared.applicationState == .active else { return }
         steppedAside = true
-        working = String(localized: "Finishing the update: Poki closes and the notice reopens it")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+        working = String(localized: "Finishing the update: close Poki and swipe it away in the app switcher")
+        // The last step: the owner is told Poki must exit, and how to finish (the alert's OK steps
+        // aside); the notice says it again in case the alert was missed.
+        finishNotice = true
+        notify(title: String(localized: "Close Poki to Finish the Update"),
+               body: String(localized: "Swipe up to the app switcher and swipe Poki away, then open it again."))
+    }
+    /// The last install step's alert: Poki has to exit for the update to finish.
+    var finishNotice = false
+    /// OK on that alert: Poki leaves for the Home Screen.
+    func finishNoticeAnswered() {
+        finishNotice = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             UIApplication.shared.perform(NSSelectorFromString("suspend"))
         }
     }
