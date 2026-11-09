@@ -1098,6 +1098,9 @@ final class AppModel {
         }
         // The loopback answers: check the pairing now, before anything needs it.
         if !wasWorking, loopback.isWorking { Task { await verifyPairing() } }
+        // The signer's check at launch ran before the loopback was up and skipped the download: it
+        // looks again now that it can reach the phone.
+        if !wasWorking, loopback.isWorking { signer.maintain() }
         if sessionOn { host.update(runner: coreState(of: runner)) }
     }
 

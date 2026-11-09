@@ -102,20 +102,36 @@ struct SigningSection: View {
             } label: {
                 Label("Signed Until", systemImage: "signature")
             }
-            if let next = signer.next {
+            // A newer build that isn't downloaded yet shows even when a refresh (or an older update) is
+            // ready, so it is never hidden behind it.
+            if signer.updateNotReady, let latest = signer.latest {
+                LabeledContent { Text(verbatim: "\(latest.version) (\(latest.build))") } label: { Label("Update Available", systemImage: "sparkles") }
+            } else if let next = signer.next {
                 LabeledContent {
                     Text(next.kind == "update" ? "\(next.version) (\(next.build))" : "Until \(next.expires.formatted(.dateTime.month(.abbreviated).day().year()))").lineLimit(1)
                 } label: {
                     Label(next.kind == "update" ? "Update Ready" : "Refresh Ready", systemImage: "checkmark.seal")
                 }
-            } else if let latest = signer.latest, signer.isNewer(latest) {
-                LabeledContent { Text(verbatim: "\(latest.version) (\(latest.build))") } label: { Label("Update Available", systemImage: "sparkles") }
             }
             NavigationLink { SigningOptionsPage() } label: {
                 Label("Signing Options", systemImage: "slider.horizontal.3")
             }
-            // The actions last, under what they act on.
-            if let next = signer.next {
+            // The actions last, under what they act on. A newer build not yet downloaded comes first:
+            // one tap downloads and installs it (or, without an Apple Account, opens the sign-in).
+            if signer.updateNotReady {
+                if signer.signedIn {
+                    Button("Download and Install Update", systemImage: "arrow.down.circle") { Task { await signer.downloadAndInstallUpdate() } }
+                        .disabled(signer.working != nil)
+                } else {
+                    NavigationLink {
+                        Form { AccountPage() }
+                            .navigationTitle("Apple Account")
+                            .navigationBarTitleDisplayMode(.inline)
+                    } label: {
+                        Label("Sign In to Download the Update", systemImage: "person.crop.circle.badge.plus")
+                    }
+                }
+            } else if let next = signer.next {
                 // Idle is partly time (a minute since the last agent step), which nothing observes, so
                 // the row looks again every few seconds instead of staying as it was first drawn.
                 TimelineView(.periodic(from: .now, by: 5)) { _ in
@@ -141,6 +157,7 @@ struct SigningSection: View {
     }
 
     private var footer: String {
+        if let blocker = signer.updateBlocker { return blocker }
         if !signer.signedIn { return String(localized: "Poki Setup on your Mac renews Poki when this iPhone is connected.") }
         if signer.next != nil {
             return model.signingIdle
