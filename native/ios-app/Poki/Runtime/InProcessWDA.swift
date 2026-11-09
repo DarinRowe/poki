@@ -1,3 +1,4 @@
+import os
 import Foundation
 import PokiCore
 import UIKit
@@ -45,8 +46,8 @@ enum InProcessSession: Equatable {
         case .waitingForPasscode:
             return .starting("waiting for the owner to enter the iPhone passcode on the phone: iOS asks for it before it allows automation, after Poki restarts and 8 hours after the last time. Only the owner can do this; the Live Activity asks them. Call again in about 10 s")
         case .passcodeMissed:
-            return .failed("the owner needs to enter the iPhone passcode on the phone: iOS asked for it to allow automation and nobody entered it within a minute. Nothing was sent; the next call asks again",
-                           fix: "Enter the iPhone passcode on the phone when iOS asks for it to allow automation")
+            return .failed("the owner did not enter the iPhone passcode when iOS asked for it to allow automation (cancelled, or a minute passed). Nothing was sent, and Poki does not ask again by itself: the owner turns Poki off and on to be asked again",
+                           fix: "Turn Poki off and on, then enter the iPhone passcode when iOS asks for it to allow automation")
         case .failed(let code, let detail):
             return .failed("the in-process session could not be opened (\(code)\(detail.isEmpty ? "" : ": \(detail)")); Poki tries again on the next call",
                            fix: "Open Poki and, if iOS asks, enter the passcode to allow automation")
@@ -80,11 +81,20 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
     /// too long is followed by a smaller one, in-process as on WebDriverAgent. 0: unbounded.
     private var maxDepth = 0, maxChildren = 0
 
+    /// Set when an open asked for the passcode and did not get it; cleared when the owner turns
+    /// Poki on (or taps Continue on the passcode note).
+    static let automationDeclined = OSAllocatedUnfairLock(initialState: false)
+
     init(screen: CGSize) {
         self.screen = screen
         routes = [
             "GET /status": { _, _ in ["ready": true, "message": "in-process"] },
             "POST /session": { [unowned self] _, _ in
+                // The owner cancelled iOS's passcode screen: no new open (and no new screen) until they
+                // turn Poki on again.
+                if Self.automationDeclined.withLock({ $0 }) {
+                    throw Refusal("session not created", "the owner cancelled iOS's passcode screen for automation; Poki asks again when they turn it on")
+                }
                 let prepared = self.native.prepare()
                 guard prepared["ok"] as? Bool == true else {
                     throw Refusal("session not created", "the automation session could not be opened: \(prepared["code"] ?? "unknown") \(prepared["detail"] ?? "")")

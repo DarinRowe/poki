@@ -417,6 +417,7 @@ final class AppModel {
     /// already open answers "reused" in milliseconds.
     func warmInProcess(_ why: String) {
         guard automationPath == .inProcess, sessionOn, runner.isRunning else { return }
+        if InProcessWDA.automationDeclined.withLock({ $0 }) { return }
         // The first open since the iPhone restarted is what brings up iOS's passcode screen: with
         // Poki in front, the owner is told just before it (Continue opens; elsewhere the Live
         // Activity asks for the passcode once an open takes 5 s).
@@ -463,6 +464,11 @@ final class AppModel {
                 let detail = result["detail"] as? String ?? ""
                 // iOS gives up on the passcode after a minute and says only that enabling timed out.
                 let passcodeMissed = waitedForPasscode || detail.localizedCaseInsensitiveContains("enabling automation mode")
+                // Cancelled (or left) iOS's passcode screen: Poki does not open it again by itself.
+                if !ok, passcodeMissed {
+                    InProcessWDA.automationDeclined.withLock { $0 = true }
+                    self.log.add("runner", "the passcode for automation was not entered: Poki will not ask again until it is turned on again")
+                }
                 self.inProcessSession = ok ? .open : passcodeMissed ? .passcodeMissed : .failed(code: "\(result["code"] ?? "unknown")", detail: detail)
                 if self.sessionOn { self.host.update(runner: self.coreState(of: self.runner)) }
             }
@@ -728,6 +734,8 @@ final class AppModel {
 
     func startSession(reconnectLocal: Bool = true) {
         guard !sessionOn, !sessionStarting else { return }
+        // Turning on is the owner asking for automation again, after a cancelled passcode screen too.
+        InProcessWDA.automationDeclined.withLock { $0 = false }
         if automationPath == .inProcess, inProcessUsedUp, !Self.onSimulator {
             // With Poki in front the owner is told first that it exits and must be opened again.
             if inFront { relaunchNotice = true } else { relaunchForFreshSession() }
