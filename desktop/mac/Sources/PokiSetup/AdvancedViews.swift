@@ -284,7 +284,7 @@ struct SettingsView: View {
                     .font(.footnote).foregroundStyle(.secondary)
             }
             Section("About") {
-                LabeledContent("Version") { Text(model.info?.version ?? "").foregroundStyle(.secondary) }
+                LabeledContent("Version") { Text(displayVersion(model.info?.version ?? "")).foregroundStyle(.secondary) }
             }
             Section("Data") {
                 LabeledContent("Folder") {

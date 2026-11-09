@@ -8,7 +8,7 @@ import Relay from "./screens/Relay";
 import Debug from "./screens/Debug";
 import Settings from "./screens/Settings";
 import { listen } from "@tauri-apps/api/event";
-import { Capsule } from "./ui";
+import { Capsule, displayVersion } from "./ui";
 
 type Page = "setup" | "phones" | "account" | "relay" | "debug" | "settings";
 const pages: { id: Page; label: string; icon: string }[] = [
@@ -67,12 +67,12 @@ export default function App() {
             </div>
           ))}
         </nav>
-        <div className="foot">v{info?.version ?? "…"}</div>
+        <div className="foot">{info?.version ? displayVersion(info.version) : "…"}</div>
       </aside>
       <main className={`content ${win ? "win" : ""}`}>
         {update?.newer && update.latest && dismissed !== update.latest && (
           <div className="update-bar" role="status">
-            <span>{t("Poki Setup {v} is available.").replace("{v}", update.latest)}{updateError ? ` ${updateError}` : ""}</span>
+            <span>{t("Poki Setup {v} is available.").replace("{v}", displayVersion(update.latest))}{updateError ? ` ${updateError}` : ""}</span>
             <Capsule sm disabled={updating} onClick={restartToUpdate}>{updating ? t("Updating…") : t("Restart to Update")}</Capsule>
             <Capsule sm kind="ghost" disabled={updating} onClick={() => setDismissed(update.latest)}>{t("Later")}</Capsule>
           </div>

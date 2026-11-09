@@ -117,7 +117,7 @@ pub async fn next(udid: Option<&str>) -> Next {
         (true, Some(p)) => format!("Poki {} ({}) is installed and signed for {} more days. Poki Setup renews it while this computer is on.", p.version, p.build, p.days_left),
         _ => steps.first().map(|s| s.say.clone()).unwrap_or_default(),
     };
-    Next { ready, poki_setup: crate::full_version(), channel, signed_in, account, phones, update, steps, summary }
+    Next { ready, poki_setup: crate::display_version(&crate::full_version()), channel, signed_in, account, phones, update, steps, summary }
 }
 
 /// The steps left, from what [`next`] read. Kept apart so it can be tested without a phone.
@@ -149,7 +149,7 @@ pub fn plan(cli: &str, signed_in: bool, phones: &[PhoneState], update: Option<&s
         }
     }
     if let Some(v) = update {
-        steps.push(Step { id: "update", who: Who::Agent, command: cmd(cli, "update --json"), say: format!("Poki Setup {v} is available; it updates itself and restarts.") });
+        steps.push(Step { id: "update", who: Who::Agent, command: cmd(cli, "update --json"), say: format!("Poki Setup {} is available; it updates itself and restarts.", crate::display_version(v)) });
     }
     steps
 }

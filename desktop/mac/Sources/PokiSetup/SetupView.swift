@@ -260,9 +260,9 @@ struct SetupView: View {
 
     /// The line under "Poki Setup": its version, or what the last check found.
     private var setupLine: String {
-        let version = model.info?.version ?? ""
+        let version = displayVersion(model.info?.version ?? "")
         guard let update = model.update else { return version }
-        return update.newer ? "\(version), \(update.latest ?? "") is available" : "\(version), up to date"
+        return update.newer ? "\(version), \(displayVersion(update.latest ?? "")) is available" : "\(version), up to date"
     }
 
     /// The release Install will use; says so when the chosen channel has none and a less stable one stands in.

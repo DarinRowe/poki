@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, failureText, type Account, type AppInfo, type ChannelInfo, type UpdateInfo } from "../api";
 import { setLang, t, useLang } from "../i18n";
-import { Capsule, Card, Copy, ErrorBox, Field } from "../ui";
+import { Capsule, Card, Copy, displayVersion, ErrorBox, Field } from "../ui";
 
 export default function Settings({ info }: { info: AppInfo | null }) {
   const lang = useLang();
@@ -49,10 +49,10 @@ export default function Settings({ info }: { info: AppInfo | null }) {
       </Card>
       <Card>
         <h2>{t("About")}</h2>
-        <p className="muted small" style={{ userSelect: "text" }}>Poki Setup {info?.version} · {info?.os} {info?.arch} · {info?.data_dir}</p>
+        <p className="muted small" style={{ userSelect: "text" }}>Poki Setup {displayVersion(info?.version)} · {info?.os} {info?.arch} · {info?.data_dir}</p>
         <div className="row">
           <Capsule kind="ghost" onClick={() => api.checkUpdate().then(setUpdate).catch((e) => setError(failureText(e)))}>{t("Check for updates")}</Capsule>
-          {update && (update.newer ? <Capsule disabled={updating} onClick={() => { setUpdating(true); api.installUpdate().then(() => {}).catch((e) => setError(failureText(e))).finally(() => setUpdating(false)); }}>{updating ? t("Downloading…") : `${t("Install update")}: ${update.latest}`}</Capsule> : <span className="muted">{t("Up to date")}</span>)}
+          {update && (update.newer ? <Capsule disabled={updating} onClick={() => { setUpdating(true); api.installUpdate().then(() => {}).catch((e) => setError(failureText(e))).finally(() => setUpdating(false)); }}>{updating ? t("Downloading…") : `${t("Install update")}: ${displayVersion(update.latest)}`}</Capsule> : <span className="muted">{t("Up to date")}</span>)}
           <Capsule kind="ghost" onClick={async () => { const { openUrl } = await import("@tauri-apps/plugin-opener"); openUrl("https://github.com/JosssphZhou/poki/blob/main/desktop/README.md"); }}>README</Capsule>
         </div>
         <p className="muted small" style={{ marginBottom: 0 }}>AGPL-3.0. Sign-in protocol after SideStore's icloud-auth (MPL-2.0) and Sideloader (GPL-3.0); signer: apple-codesign (MPL-2.0); device: idevice (MIT); type: Geist (OFL). See THIRD_PARTY_NOTICES.md.</p>

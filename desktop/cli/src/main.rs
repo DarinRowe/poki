@@ -325,12 +325,12 @@ async fn run() -> Result<()> {
             let info = release::desktop_update().await?;
             if check || !info.newer {
                 return out(cli.json, &info, |i| match (&i.latest, i.newer) {
-                    (Some(v), true) => println!("Poki Setup {v} is available (this is {}). Run `poki-setup update`.", i.current),
-                    _ => println!("Poki Setup {} is up to date on the {} channel.", i.current, i.channel.title()),
+                    (Some(v), true) => println!("Poki Setup {} is available (this is {}). Run `poki-setup update`.", poki_setup_core::display_version(v), poki_setup_core::display_version(&i.current)),
+                    _ => println!("Poki Setup {} is up to date on the {} channel.", poki_setup_core::display_version(&i.current), i.channel.title()),
                 });
             }
             let done = release::install_desktop_update(&reporter).await?;
-            finish(cli.json, serde_json::json!({ "installed": done.path, "relaunching": done.relaunching, "version": info.latest }), format!("Installed Poki Setup {} at {}.", info.latest.unwrap_or_default(), done.path.display()))
+            finish(cli.json, serde_json::json!({ "installed": done.path, "relaunching": done.relaunching, "version": info.latest }), format!("Installed Poki Setup {} at {}.", poki_setup_core::display_version(&info.latest.unwrap_or_default()), done.path.display()))
         }
         Cmd::Phones => {
             let phones = device::Phone::list().await?;

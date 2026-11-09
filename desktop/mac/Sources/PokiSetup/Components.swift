@@ -117,6 +117,15 @@ struct EmptyState: View {
     }
 }
 
+/// "0.2.2-320" as people read it, "0.2.2 (320)", the way Poki shows its own version. Update
+/// checks keep comparing the plain form.
+func displayVersion(_ v: String) -> String {
+    guard let dash = v.lastIndex(of: "-") else { return v }
+    let build = v[v.index(after: dash)...]
+    guard !build.isEmpty, build.allSatisfy(\.isNumber) else { return v }
+    return "\(v[..<dash]) (\(build))"
+}
+
 func copyToPasteboard(_ s: String) {
     NSPasteboard.general.clearContents()
     NSPasteboard.general.setString(s, forType: .string)
