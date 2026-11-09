@@ -1,8 +1,8 @@
 # Publishes a merged promotion (propose-promotion.yml, promotion-gate.yml): the record in
 # .github/channels.json whose tag does not exist yet. The IPA is the one already built, renamed
 # without the build number (inside, CFBundleVersion keeps it):
-#   beta    Poki-external-0.3.0-beta.1.ipa on ios-v0.3.0-beta.1, a prerelease, with the Gym scorecards
-#   stable  Poki-external-0.3.0.ipa on ios-v0.3.0, a full release (never marked Latest: GitHub's
+#   beta    Poki-external-0.3.0-beta.1.ipa on app-0.3.0-beta.1, a prerelease, with the Gym scorecards
+#   stable  Poki-external-0.3.0.ipa on app-0.3.0, a full release (never marked Latest: GitHub's
 #           Latest is Poki MCP's v* release, which the Mac server's update check reads)
 # Poki Setup files come along from the source release. Created as a draft, checked, then published.
 # A stable waits for approval in the "stable" environment (Settings > Environments > stable >
@@ -74,7 +74,7 @@ jobs:
             gh run download "$run" --name Poki-unsigned --dir src
             cp src/Poki-external-unsigned.ipa "dist/Poki-external-$LABEL.ipa"
             cp src/Poki-signing.zip dist/
-            gh release download ios-alpha-latest --dir dist --pattern 'PokiSetup-*' --pattern 'SHA256SUMS-desktop.txt' || echo "::warning::no Poki Setup files on ios-alpha-latest"
+            gh release download app-alpha-latest --dir dist --pattern 'PokiSetup-*' --pattern 'SHA256SUMS-desktop.txt' || echo "::warning::no Poki Setup files on app-alpha-latest"
             # The Gym scorecards from the merged PR's gate, the baseline for the next beta.
             pr_head="$(gh api "repos/$GH_REPO/commits/$GITHUB_SHA/pulls" --jq '.[0].head.sha')"
             gate="$(gh run list --workflow promotion-gate.yml --commit "$pr_head" --json databaseId --jq '.[].databaseId' | while read -r id; do
@@ -94,7 +94,7 @@ jobs:
       - name: Notes
         run: |
           set -euo pipefail
-          prev="$(git tag --list 'ios-v*' --sort=-creatordate | grep -vx "$TAG" | head -1 || true)"
+          prev="$(git tag --list 'app-[0-9]*' 'ios-v*' --sort=-creatordate | grep -Ev -- '-(pre)?alpha\.' | grep -vx "$TAG" | head -1 || true)"
           {
             if [ "$CHANNEL" = beta ]; then
               n="${LABEL##*beta.}"

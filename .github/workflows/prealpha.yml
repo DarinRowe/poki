@@ -5,7 +5,8 @@
 # every release build used to start cold (about 20 minutes, 9 of them in PiSwiftAI).
 #
 # The build number is the commit count of main, so it only goes up while main is never rewritten.
-# Tag: ios-prealpha-<VERSION>-<count>; release: the rolling ios-prealpha-latest (docs/release-channels.md).
+# Tag: app-<VERSION>-prealpha.<count>; release: the rolling app-prealpha-latest, mirrored to the old
+# ios-prealpha-latest for Poki Setup 0.2.2 and earlier (docs/release-channels.md).
 name: Pre-alpha
 
 on:
@@ -60,7 +61,7 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-      - name: Publish to ios-prealpha-latest
+      - name: Publish to app-prealpha-latest
         env:
           GH_TOKEN: ${{ github.token }}
         run: .github/scripts/publish-rolling.sh prealpha "${{ steps.v.outputs.version }}" "${{ steps.v.outputs.build }}" out

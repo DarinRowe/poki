@@ -2,8 +2,8 @@
 """Beta and Stable promotions for Poki's iPhone app (docs/release-channels.md).
 
 A promotion moves one already-built IPA up a channel without rebuilding it:
-  alpha  ios-alpha-0.3.0-712  ->  beta    ios-v0.3.0-beta.1  (prerelease)
-  beta   ios-v0.3.0-beta.1    ->  stable  ios-v0.3.0         (full release, Latest)
+  alpha  app-0.3.0-alpha.712  ->  beta    app-0.3.0-beta.1  (prerelease)
+  beta   app-0.3.0-beta.1     ->  stable  app-0.3.0         (full release, never marked Latest)
 Each one is a record in .github/channels.json, added by a promotion PR (propose), checked on that
 PR (gate) and published when it merges into main (publish-promotion.yml).
 
@@ -74,19 +74,20 @@ def propose(channel, src=None, override=None):
     rec = {"channel": channel, "proposed": now().strftime("%Y-%m-%dT%H:%M:%SZ")}
     if channel == "beta":
         if not src:
-            ipa = next(n for n in gh("release", "view", "ios-alpha-latest", "--json", "assets", "--jq", ".assets[].name").splitlines() if n.startswith("Poki-external-") and n.endswith(".ipa"))
-            src = "ios-alpha-" + ipa[len("Poki-external-"):-len(".ipa")]
-        m = re.fullmatch(r"ios-alpha-(\d+\.\d+\.\d+)-(\d+)", src)
+            ipa = next(n for n in gh("release", "view", "app-alpha-latest", "--json", "assets", "--jq", ".assets[].name").splitlines() if n.startswith("Poki-external-") and n.endswith(".ipa"))
+            stem = ipa[len("Poki-external-"):-len(".ipa")]
+            src = "app-{}-alpha.{}".format(*stem.rsplit("-", 1))
+        m = re.fullmatch(r"app-(\d+\.\d+\.\d+)-alpha\.(\d+)", src)
         if not m:
-            sys.exit(f"{src} is not ios-alpha-X.Y.Z-N")
+            sys.exit(f"{src} is not app-X.Y.Z-alpha.N")
         version, build = m.groups()
-        taken = [t for t in gh("api", "--paginate", f"repos/{os.environ['GH_REPO']}/tags?per_page=100", "--jq", ".[].name").splitlines() if t.startswith(f"ios-v{version}-beta.")]
-        taken += [p["tag"] for p in data["promotions"] if p["tag"].startswith(f"ios-v{version}-beta.")]
+        taken = [t for t in gh("api", "--paginate", f"repos/{os.environ['GH_REPO']}/tags?per_page=100", "--jq", ".[].name").splitlines() if t.startswith(f"app-{version}-beta.")]
+        taken += [p["tag"] for p in data["promotions"] if p["tag"].startswith(f"app-{version}-beta.")]
         k = 1 + max([int(t.rsplit(".", 1)[1]) for t in taken], default=0)
         label = f"{version}-beta.{k}"
-        if tag_exists(f"ios-v{version}"):
+        if tag_exists(f"app-{version}"):
             sys.exit(f"Poki {version} is already Stable; a beta of it would never be offered. Promote a newer alpha.")
-        rec.update(version=label, tag=f"ios-v{label}", base_version=version, build=build, source=src, sha=tag_sha(src))
+        rec.update(version=label, tag=f"app-{label}", base_version=version, build=build, source=src, sha=tag_sha(src))
         # Later alphas must sort above this beta, so main moves on to the next version.
         current = VERSION_FILE.read_text().strip()
         if vkey(current) <= vkey(version):
@@ -94,18 +95,18 @@ def propose(channel, src=None, override=None):
             rec["version_bump"] = f"{current} -> {bump_patch(version)}"
     elif channel == "stable":
         if not src:
-            betas = [r for r in releases() if not r["draft"] and re.fullmatch(r"ios-v\d+\.\d+\.\d+-beta\.\d+", r["tag_name"])]
+            betas = [r for r in releases() if not r["draft"] and re.fullmatch(r"app-\d+\.\d+\.\d+-beta\.\d+", r["tag_name"])]
             if not betas:
                 sys.exit("no published beta to promote")
             src = max(betas, key=lambda r: r["published_at"])["tag_name"]
-        m = re.fullmatch(r"ios-v(\d+\.\d+\.\d+)-beta\.(\d+)", src)
+        m = re.fullmatch(r"app-(\d+\.\d+\.\d+)-beta\.(\d+)", src)
         if not m:
-            sys.exit(f"{src} is not ios-vX.Y.Z-beta.K")
+            sys.exit(f"{src} is not app-X.Y.Z-beta.K")
         version = m.group(1)
-        if tag_exists(f"ios-v{version}"):
-            sys.exit(f"ios-v{version} already exists")
+        if tag_exists(f"app-{version}"):
+            sys.exit(f"app-{version} already exists")
         beta = next((p for p in data["promotions"] if p["tag"] == src), {})
-        rec.update(version=version, tag=f"ios-v{version}", base_version=version, build=beta.get("build", ""), source=src, sha=tag_sha(src))
+        rec.update(version=version, tag=f"app-{version}", base_version=version, build=beta.get("build", ""), source=src, sha=tag_sha(src))
         if override:
             rec["soak_override"] = override
     else:
@@ -118,9 +119,9 @@ def propose(channel, src=None, override=None):
 
 
 RECORD_FORMS = {
-    "beta": {"tag": r"ios-v\d+\.\d+\.\d+-beta\.\d+", "source": r"ios-alpha-\d+\.\d+\.\d+-\d+",
+    "beta": {"tag": r"app-\d+\.\d+\.\d+-beta\.\d+", "source": r"app-\d+\.\d+\.\d+-alpha\.\d+",
              "version": r"\d+\.\d+\.\d+-beta\.\d+", "build": r"\d+"},
-    "stable": {"tag": r"ios-v\d+\.\d+\.\d+", "source": r"ios-v\d+\.\d+\.\d+-beta\.\d+",
+    "stable": {"tag": r"app-\d+\.\d+\.\d+", "source": r"app-\d+\.\d+\.\d+-beta\.\d+",
                "version": r"\d+\.\d+\.\d+", "build": r"\d*"},
 }
 

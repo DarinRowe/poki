@@ -66,7 +66,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           mkdir -p base
-          last="$(gh api "repos/$GH_REPO/releases?per_page=100" --jq '[.[] | select(.draft | not) | select(.tag_name | test("^ios-v[0-9.]+-beta\\.[0-9]+$"))] | sort_by(.published_at) | last | .tag_name // empty')"
+          last="$(gh api "repos/$GH_REPO/releases?per_page=100" --jq '[.[] | select(.draft | not) | select(.tag_name | test("^app-[0-9.]+-beta\\.[0-9]+$"))] | sort_by(.published_at) | last | .tag_name // empty')"
           if [ -n "$last" ]; then gh release download "$last" --dir base --pattern 'gym-scorecard*.txt' || true; fi
           echo "Baseline: ${last:-none (first beta)}"
       - name: This build's scorecards

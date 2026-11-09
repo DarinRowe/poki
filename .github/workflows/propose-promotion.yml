@@ -15,7 +15,7 @@ on:
         type: choice
         options: [beta, stable]
       from:
-        description: "Build to promote: an alpha tag (ios-alpha-0.3.0-712) for beta, a beta tag (ios-v0.3.0-beta.1) for stable. Empty: the current Alpha, or the newest Beta."
+        description: "Build to promote: an alpha tag (app-0.3.0-alpha.712) for beta, a beta tag (app-0.3.0-beta.1) for stable. Empty: the current Alpha, or the newest Beta."
         type: string
         required: false
         default: ''

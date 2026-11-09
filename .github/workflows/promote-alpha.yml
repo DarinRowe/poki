@@ -1,6 +1,7 @@
 # Promote to Alpha: Actions > Promote to Alpha > Run workflow. Takes a pre-alpha (by default the one
-# on ios-prealpha-latest), runs the alpha tests on its commit, and when they pass puts that same IPA
-# (not a rebuild) into the rolling ios-alpha-latest release with the tag ios-alpha-<VERSION>-<build>.
+# on app-prealpha-latest), runs the alpha tests on its commit, and when they pass puts that same IPA
+# (not a rebuild) into the rolling app-alpha-latest release (and the old ios-alpha-latest) with the
+# tag app-<VERSION>-alpha.<build>.
 # Testers on the Alpha channel get exactly the file that was tried on Pre-alpha.
 name: Promote to Alpha
 
@@ -8,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       prealpha:
-        description: "Pre-alpha tag to promote, like ios-prealpha-0.3.0-712 (empty: the one on ios-prealpha-latest)"
+        description: "Pre-alpha tag to promote, like app-0.3.0-prealpha.712 (empty: the one on app-prealpha-latest)"
         type: string
         required: false
         default: ''
@@ -37,18 +38,18 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "$WANT" ]; then
-            ipa="$(gh release view ios-prealpha-latest --json assets --jq '.assets[].name' | grep -E '^Poki-external-.*\.ipa$' | head -1)"
+            ipa="$(gh release view app-prealpha-latest --json assets --jq '.assets[].name' | grep -E '^Poki-external-.*\.ipa$' | head -1)"
             stem="${ipa#Poki-external-}"; stem="${stem%.ipa}"
-            WANT="ios-prealpha-$stem"
+            WANT="app-${stem%-*}-prealpha.${stem##*-}"
           fi
-          [[ "$WANT" =~ ^ios-prealpha-([0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)$ ]] || { echo "::error::$WANT is not ios-prealpha-X.Y.Z-N"; exit 1; }
+          [[ "$WANT" =~ ^app-([0-9]+\.[0-9]+\.[0-9]+)-prealpha\.([0-9]+)$ ]] || { echo "::error::$WANT is not app-X.Y.Z-prealpha.N"; exit 1; }
           version="${BASH_REMATCH[1]}" build="${BASH_REMATCH[2]}"
           sha="$(gh api "repos/$GH_REPO/commits/$WANT" --jq .sha)"
           # The pre-alpha run that built this commit; its artifact is the file to promote.
           run="$(gh run list --workflow prealpha.yml --commit "$sha" --status success --json databaseId --jq '.[0].databaseId')"
           [ -n "$run" ] || { echo "::error::no successful Pre-alpha run built $sha (artifacts are kept 90 days)"; exit 1; }
-          if gh api "repos/$GH_REPO/git/refs/tags/ios-alpha-$version-$build" >/dev/null 2>&1; then
-            echo "::error::ios-alpha-$version-$build already exists"; exit 1
+          if gh api "repos/$GH_REPO/git/refs/tags/app-$version-alpha.$build" >/dev/null 2>&1; then
+            echo "::error::app-$version-alpha.$build already exists"; exit 1
           fi
           echo "Promoting $WANT ($sha), Pre-alpha run $run"
           { echo "sha=$sha"; echo "version=$version"; echo "build=$build"; echo "run=$run"; } >> "$GITHUB_OUTPUT"
@@ -95,7 +96,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh run download "${{ needs.resolve.outputs.run }}" --name Poki-unsigned --dir app
-      - name: Publish to ios-alpha-latest
+      - name: Publish to app-alpha-latest
         env:
           GH_TOKEN: ${{ github.token }}
-        run: pipeline/.github/scripts/publish-rolling.sh alpha "${{ needs.resolve.outputs.version }}" "${{ needs.resolve.outputs.build }}" app ios-prealpha-latest
+        run: pipeline/.github/scripts/publish-rolling.sh alpha "${{ needs.resolve.outputs.version }}" "${{ needs.resolve.outputs.build }}" app app-prealpha-latest

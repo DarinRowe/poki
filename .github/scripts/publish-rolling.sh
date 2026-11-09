@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
-# Puts one Poki build into a channel's rolling prerelease (ios-prealpha-latest or ios-alpha-latest)
-# and tags its commit ios-<channel>-<version>-<build>, the record of what was built. Poki Setup reads
-# the channel from the rolling release's tag and the version from the IPA's name, so these names
-# must not change (docs/release-channels.md).
+# Puts one Poki build into a channel's rolling prerelease (app-prealpha-latest or app-alpha-latest)
+# and tags its commit app-<version>-<channel>.<build>, the record of what was built. Poki Setup reads
+# the channel from the release's tag and the version from the IPA's name (docs/release-channels.md).
+# Until every Poki Setup reads app-* tags, the same files also go to the old ios-<channel>-latest
+# release, which Poki Setup 0.2.2 and earlier read.
 #
 #   publish-rolling.sh <prealpha|alpha> <version> <build> <dir with Poki-external-unsigned.ipa and Poki-signing.zip> [desktop source release]
 #
 # Run from the checkout of the built commit with GH_TOKEN set. New files go up before the previous
 # build's are removed, so the release always has an installable IPA. With a desktop source release
-# (alpha takes ios-prealpha-latest's), its Poki Setup files are copied in as well.
+# (alpha takes app-prealpha-latest's), its Poki Setup files are copied in as well.
 set -euo pipefail
 CHANNEL="$1" VERSION="$2" BUILD="$3" SRC="$4" DESKTOP_FROM="${5:-}"
 case "$CHANNEL" in
@@ -16,8 +17,9 @@ case "$CHANNEL" in
   alpha) TITLE=Alpha; BLURB="A pre-alpha that passed the alpha tests, for the Alpha channel in Poki Setup; expect rough edges." ;;
   *) echo "::error::channel is prealpha or alpha"; exit 2 ;;
 esac
-ROLLING="ios-$CHANNEL-latest"
-TAG="ios-$CHANNEL-$VERSION-$BUILD"
+ROLLING="app-$CHANNEL-latest"
+LEGACY="ios-$CHANNEL-latest"
+TAG="app-$VERSION-$CHANNEL.$BUILD"
 SHA="$(git rev-parse HEAD)"
 git config user.name >/dev/null || git config user.name "github-actions[bot]"
 git config user.email >/dev/null || git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -35,7 +37,7 @@ if [ -n "$DESKTOP_FROM" ]; then
 fi
 
 # What changed since the previous build on this channel.
-previous="$(git tag --list "ios-$CHANNEL-*" --sort=-creatordate | grep -vx "$TAG" | grep -vx "$ROLLING" | head -1 || true)"
+previous="$(git tag --list "app-*-$CHANNEL.*" "ios-$CHANNEL-*" --sort=-creatordate | grep -vx "$TAG" | grep -vx "$LEGACY" | head -1 || true)"
 if [ -n "$previous" ] && git merge-base --is-ancestor "$previous" HEAD 2>/dev/null; then
   range="$previous..HEAD"; since="since $previous"
 else
@@ -62,20 +64,28 @@ else
   git push origin "refs/tags/$TAG"
 fi
 
-if gh release view "$ROLLING" >/dev/null 2>&1; then
-  old="$(gh release view "$ROLLING" --json assets --jq '.assets[].name')"
-  gh release upload "$ROLLING" dist/* --clobber
-  # The previous build's files that this one did not replace (they carry the old build number).
-  new="$(ls dist)"
-  echo "$old" | grep -E '^(Poki-.*\.ipa|PokiSetup-.*)$' | grep -vxF -f <(echo "$new") | while read -r name; do
-    gh release delete-asset "$ROLLING" "$name" --yes
-  done
-  gh release edit "$ROLLING" --title "Poki v$VERSION ($BUILD) $TITLE" --notes-file notes.md --prerelease --latest=false
-  git tag -f "$ROLLING" "$SHA" && git push -f origin "refs/tags/$ROLLING" || echo "::warning::$ROLLING was not moved; the release's files are updated"
-else
-  gh release create "$ROLLING" dist/* --target "$SHA" --draft \
-    --title "Poki v$VERSION ($BUILD) $TITLE" --notes-file notes.md --prerelease --latest=false
-  test "$(gh release view "$ROLLING" --json assets --jq '.assets | length')" -eq "$(ls dist | wc -l)"
-  gh release edit "$ROLLING" --draft=false --prerelease --latest=false
-fi
-echo "Published Poki v$VERSION ($BUILD) to $ROLLING: https://github.com/$GITHUB_REPOSITORY/releases/tag/$ROLLING"
+# Replaces the files of one rolling release (made on first use) with this build's.
+publish_to() {
+  local rel="$1" old new count
+  sed "s#/releases/download/$ROLLING/#/releases/download/$rel/#" notes.md > "notes-$rel.md"
+  if gh release view "$rel" >/dev/null 2>&1; then
+    old="$(gh release view "$rel" --json assets --jq '.assets[].name')"
+    gh release upload "$rel" dist/* --clobber
+    # The previous build's files that this one did not replace (they carry the old build number).
+    new="$(find dist -maxdepth 1 -type f -exec basename {} \;)"
+    echo "$old" | grep -E '^(Poki-.*\.ipa|PokiSetup-.*)$' | grep -vxF -f <(echo "$new") | while read -r name; do
+      gh release delete-asset "$rel" "$name" --yes
+    done
+    gh release edit "$rel" --title "Poki v$VERSION ($BUILD) $TITLE" --notes-file "notes-$rel.md" --prerelease --latest=false
+    git tag -f "$rel" "$SHA" && git push -f origin "refs/tags/$rel" || echo "::warning::$rel was not moved; the release's files are updated"
+  else
+    gh release create "$rel" dist/* --target "$SHA" --draft \
+      --title "Poki v$VERSION ($BUILD) $TITLE" --notes-file "notes-$rel.md" --prerelease --latest=false
+    count="$(find dist -maxdepth 1 -type f | wc -l)"
+    test "$(gh release view "$rel" --json assets --jq '.assets | length')" -eq "$count"
+    gh release edit "$rel" --draft=false --prerelease --latest=false
+  fi
+  echo "Published Poki v$VERSION ($BUILD) to $rel: https://github.com/$GITHUB_REPOSITORY/releases/tag/$rel"
+}
+publish_to "$ROLLING"
+publish_to "$LEGACY"
