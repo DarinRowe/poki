@@ -139,7 +139,10 @@ const commands = {
   },
   install,
   records: () => (record ? [record] : []),
-  mount_ddi: () => true,
+  mount_ddi: () => {
+    if (scenario === 'ddi-refused') fail('device', "TSS server responded with non-success status (STATUS=94&MESSAGE=This device isn't eligible for the requested build.)");
+    return true;
+  },
   relay_token_saved: () => false,
   relay_state: () => null,
   ...containerCommands,

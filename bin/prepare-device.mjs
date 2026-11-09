@@ -4,6 +4,7 @@ import { parseArgs, promisify } from 'node:util';
 import { access } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { root, idevice, noUsbDevice } from '../src/config.mjs';
+import { signingRefused, ddiRecovery } from '../src/ddi-failure.mjs';
 
 const fail = message => { console.error(message); process.exit(1); };
 const execute = promisify(execFile);
@@ -20,7 +21,6 @@ const newerImage = `Use the developer disk image of an Xcode release that suppor
 const restart = 'Quit Xcode, restart the iPhone, reconnect it over USB, unlock it, and run this command again with Xcode closed.';
 const installFailures = [
   [/BadBuildManifest/, () => `Its BuildManifest.plist has no build identity whose variant ends with "Developer Disk Image Cryptex", the only form the installer accepts. Older images, such as the one in Xcode 26.6 (17F113), use a variant containing "Cryptex Developer Disk Image" instead. ${newerImage}`],
-  [/TSS server responded with non-success status \(([^)]*)\)/, detail => `Apple's signing server declined to personalize this image for this iPhone (${detail}). The image may be older than the builds Apple currently signs for this device. ${newerImage}`],
   [/\/System\/Developer \[17: File exists\]/, () => `Another developer disk image is already mounted at /System/Developer on the iPhone. ${restart}`],
 ];
 
@@ -33,8 +33,13 @@ if (await hasDisplay()) {
     ? `${image} has no BuildManifest.plist. Pass the directory that holds the image's BuildManifest.plist and its payloads.`
     : 'Apple DeveloperDiskImages are missing. Install the compatible Apple developer support files before running this command.'));
   console.log(`Installing the Apple-signed developer disk image from ${image} on the selected device…`);
-  const result = await call(['cryptexd', 'install-ddi', image]).catch(error => {
+  const result = await call(['cryptexd', 'install-ddi', image]).catch(async error => {
     const output = `${error.stderr ?? ''}\n${error.stdout ?? ''}`;
+    if (signingRefused(output)) {
+      const ios = await call(['lockdown', 'get', 'ProductVersion']).then(({ stdout }) => JSON.parse(stdout), () => null).catch(() => null);
+      const status = output.match(/STATUS=94[^)\n]*/)?.[0];
+      fail(`Installing ${image} failed. ${await ddiRecovery(ios)}${status ? ` (${status})` : ''}`);
+    }
     for (const [pattern, explain] of installFailures) {
       const match = output.match(pattern);
       if (match) fail(`Installing ${image} failed. ${explain(match[1])}`);
