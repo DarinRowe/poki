@@ -58,7 +58,7 @@ impl Phone {
     pub async fn list() -> Result<Vec<Phone>> {
         let mut mux = UsbmuxdConnection::default().await?;
         let devices = mux.get_devices().await?;
-        let mut phones: Vec<Phone> = devices
+        let phones: Vec<Phone> = devices
             .into_iter()
             .map(|d| Phone {
                 link: match d.connection_type {
