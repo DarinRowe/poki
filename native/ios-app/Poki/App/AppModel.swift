@@ -735,9 +735,9 @@ final class AppModel {
         }
         // The first automation after a restart (or ever) brings up iOS's own passcode screen. With
         // Poki in front, the owner is told first that it is expected and that Poki cannot see it.
-        // In-process, the passcode comes with the session's first open (warmInProcess), not with
-        // turning on: the note waits for that moment.
-        if automationPath != .inProcess, passcodeExpected, passcodeHeadsUpSeen != BootClock.current, inFront, !Self.onSimulator {
+        // Start asks for everything at once: the note now, and on Continue the session's first open
+        // (warmInProcess, as soon as the launcher is ready), which brings up iOS's passcode screen.
+        if passcodeExpected, passcodeHeadsUpSeen != BootClock.current, inFront, !Self.onSimulator {
             passcodeHeadsUpReconnect = reconnectLocal
             passcodeHeadsUp = true
             log.add("runner", "no automation since this iPhone restarted: telling the owner iOS will ask for the passcode")
