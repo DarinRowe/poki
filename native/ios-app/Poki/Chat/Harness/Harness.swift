@@ -1,13 +1,14 @@
 // The chat's prompt and tools are the Mac Poki Agent's, copied from this repository at main 729c77e:
-// - agent-system.md is agent/prompts/system.md byte for byte (the same text as agent/prompts/pi-app.md,
-//   which agent/task-runner.mjs loads);
+// - agent-system.md is agent/prompts/system.md (the same text as agent/prompts/pi-app.md, which
+//   agent/task-runner.mjs loads), except two sentences that named tools the app lacks: a locked phone
+//   is the owner's to unlock and a password prompt is handed to them, and a purchase is a plain tap;
 // - the instructions put PokiCore's own MCP instructions first, as task-runner.mjs puts the MCP server's
 //   instructions first;
 // - look, do and status are PokiCore's tools with their MCP descriptions;
 // - report_plan and finish_task are task-runner.mjs's harness tools (#startModel), descriptions and
 //   schemas unchanged.
 // Not copied, because the app has none of their tools: agent/prompts/call-draft.md and
-// agent/skills/iphone-unlock/SKILL.md, and unlock_device.
+// agent/skills/iphone-unlock/SKILL.md, unlock_device and handle_alert.
 import Foundation
 import PokiCore
 
