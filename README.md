@@ -28,7 +28,7 @@
 
 ### Poki on your iPhone
 
-Tell Claude Code or Codex on your Mac:
+Tell your agent:
 
 ```text
 Install Poki on my iPhone from https://github.com/JosssphZhou/poki
