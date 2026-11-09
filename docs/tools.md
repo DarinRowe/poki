@@ -65,7 +65,10 @@ Poki Agent starts its own stdio process with `POKI_MCP_TOOLS=all`. Its existing 
 - On a simulator, `launch` starts the app with `simctl` the way `launch_app` does, and `type` uses the simulator's own `type_text`: key presses, and for text the keyboard cannot type a paste through the simulator's pasteboard, which keeps that text afterwards.
 - Accessibility gets `POKI_CUA_TREE_MS` (default 2500 ms) per read; after that the screenshot's OCR answers instead. When accessibility names nothing across a third of the screen's height, the screenshot's text it did not name is listed after its elements, and the read says `accessibility + ocr`. Actions and the wait after them get at most `POKI_CUA_ACTION_CAP_MS` (default 4000 ms).
 - A locked or dark phone, or Poki's own app in front, stops the actions.
-- `POKI_CUA_BACKEND=wda` with `POKI_WDA_URL=http://<phone>:8100` reads and acts through a WebDriverAgent runner on the phone instead of the bridge. `look` and `do` answer the same way on either backend.
+- `POKI_CUA_BACKEND=wda` with `POKI_WDA_URL=http://<phone>:8100` reads and acts through a
+  WebDriverAgent runner deliberately launched for network access by the Mac instead of the bridge.
+  That WDA must use a reachable, non-loopback `USE_IP`; Poki's standalone iOS launcher always binds
+  its own runner to `127.0.0.1`. `look` and `do` answer the same way on either backend.
 
 The complete catalog (`POKI_MCP_TOOLS=all`) includes `look` and `do` too.
 

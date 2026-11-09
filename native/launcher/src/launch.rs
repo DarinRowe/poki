@@ -20,6 +20,16 @@ use tokio::{
 struct Quiet;
 impl XCUITestListener for Quiet {}
 
+/// Environment owned by the on-phone launcher. WebDriverAgent listens on every network interface
+/// when USE_IP is absent, so the standalone path must pin both its HTTP and MJPEG listeners to the
+/// phone's loopback. A Mac that deliberately launches its own WDA is a separate path and controls
+/// that process's environment itself.
+pub(crate) fn secure_runner_environment(environment: &mut plist::Dictionary) {
+    environment.insert("POKI_LAUNCHER".into(), "1".into());
+    // Override, rather than preserve, a value inherited from the installed runner's test config.
+    environment.insert("USE_IP".into(), "127.0.0.1".into());
+}
+
 /// The runner's session started after the disk image mounted, so Developer Mode is on.
 pub const RUNNER_BLOCKED_FIX: &str = "Poki Runner did not start. In Settings → Developer, turn on UI Automation; in Settings → General → VPN & Device Management, trust the developer of Poki Runner.";
 
@@ -47,9 +57,11 @@ pub async fn start(device: &mut Device, bundle: &str, ios: &str) -> Result<Sessi
     let mut config = TestConfig::from_installation_proxy(&mut proxy, bundle, None)
         .await
         .map_err(|e| Failure::new(format!("cannot read the runner's install info: {e}")).fix(RUNNER_FIX).code("runner"))?;
-    // The runner checks for this: opened any other way, it does nothing and sends people to Poki.
+    // The runner checks POKI_LAUNCHER: opened any other way, it does nothing and sends people to
+    // Poki. USE_IP keeps this standalone, on-phone path off the LAN; pinned WebDriverAgent applies
+    // it to both the HTTP listener and its MJPEG screenshot listener.
     let mut env = config.runner_env.take().unwrap_or_default();
-    env.insert("POKI_LAUNCHER".into(), "1".into());
+    secure_runner_environment(&mut env);
     config.runner_env = Some(env);
     let mut adapter = device.adapter.clone();
     let handshake = device.rsd.clone();

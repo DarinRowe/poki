@@ -75,9 +75,9 @@ Poki is in English and Simplified Chinese and follows the iPhone's language. The
 - Runner path only (`-automationPath runner`): the runner, and with it the banner, starts only when
   an agent asks, and stops after the idle time (default 60 s), from Stop on the Live Activity or in
   Poki, or when Poki is closed. Only Poki starts the runner; opened by hand, Poki Runner starts no
-  test (PokiRunnerHost, `native/ios-runner/host`) and sends the person to Poki. While it runs, it
-  answers on port 8100 to any device on the same network, with no credentials and without Poki's
-  approvals (`native/ios-runner/README.md`).
+  test (PokiRunnerHost, `native/ios-runner/host`) and sends the person to Poki. While it runs, its
+  HTTP and MJPEG listeners bind to `127.0.0.1`, so only software on the phone can reach it; PokiCore
+  remains the approval boundary (`native/ios-runner/README.md`).
 - The Live Activity starts from the foreground, because iOS does not allow it from the background:
   when Poki turns on, when pairing starts, and when a setup step opens Settings.
 
