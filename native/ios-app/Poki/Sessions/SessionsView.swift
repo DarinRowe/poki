@@ -59,8 +59,8 @@ struct SessionsView: View {
                     }
                 }
             }
-            if let warning = ExpiryWarning(expiry: model.signer.expiry, signedIn: model.signer.signedIn) {
-                ExpiryWarningSection(warning: warning, openSetup: openSetup)
+            if let warning = ExpiryWarning(expiry: model.signer.expiry) {
+                ExpiryWarningSection(warning: warning)
             }
             if store.ordered.isEmpty {
                 // In the list, under the controls (an overlay would sit on top of them).

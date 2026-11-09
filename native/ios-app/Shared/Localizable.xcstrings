@@ -2644,12 +2644,12 @@
         }
       }
     },
-    "Optional. Poki Setup on your Mac renews Poki when this iPhone is connected. Signed in here, Poki can also renew itself with no computer." : {
+    "Optional. To renew Poki without a Mac, sign in to your Apple Account here." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "可选。这台 iPhone 连上 Mac 时，Poki Setup 会为 Poki 续签。在这里登录后，Poki 不用电脑也能自己续签。"
+            "value" : "可选。不连 Mac 也想续签时，可以在这里登录 Apple 账号，让 Poki 自己续签。"
           }
         }
       }
@@ -2847,6 +2847,16 @@
         }
       }
     },
+    "Poki Setup on your Mac renews Poki when this iPhone is connected." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这台 iPhone 连上 Mac 时，Poki Setup 会为 Poki 续签。"
+          }
+        }
+      }
+    },
     "Poki asks you before an agent pays, deletes, sends a message, places a call, types a password or does anything in Wallet: on the Live Activity, in a notification, or here in Poki. Turned off, agents do all of that without asking. Changes take effect the next time Poki opens." : {
       "localizations" : {
         "zh-Hans" : {
@@ -2998,22 +3008,12 @@
         }
       }
     },
-    "Poki stops opening after %@. To renew it, connect this iPhone to your Mac and use Poki Setup, or install the refresh in Setup › Signing." : {
+    "Poki stops opening after %@. Connect this iPhone to your Mac and ask your agent to renew it." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ 之后 Poki 将无法打开。续签办法：把这台 iPhone 连上 Mac，用 Poki Setup 续签；或在「设置引导 › 签名」里安装续签版本。"
-          }
-        }
-      }
-    },
-    "Poki stops opening after %@. To renew it, connect this iPhone to your Mac and use Poki Setup, or sign in to your Apple Account in Setup › Signing." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ 之后 Poki 将无法打开。续签办法：把这台 iPhone 连上 Mac，用 Poki Setup 续签；或在「设置引导 › 签名」里登录 Apple 账号。"
+            "value" : "%@ 之后 Poki 将无法打开。请把这台 iPhone 连上 Mac，让 agent 为它续签。"
           }
         }
       }
@@ -3542,6 +3542,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "签名"
+          }
+        }
+      }
+    },
+    "Signing Options" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "签名选项"
           }
         }
       }

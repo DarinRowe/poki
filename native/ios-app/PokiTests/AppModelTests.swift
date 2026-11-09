@@ -166,9 +166,9 @@ final class AppModelTests: XCTestCase {
     /// installs a build with a new profile, so a renewed Poki has a later expiry and no warning.
     func testExpiryWarningOnlyInTheLastTwoDays() {
         let now = Date()
-        XCTAssertNotNil(ExpiryWarning(expiry: now.addingTimeInterval(86_400), signedIn: false, now: now), "1 day left")
-        XCTAssertNil(ExpiryWarning(expiry: now.addingTimeInterval(3 * 86_400), signedIn: false, now: now), "3 days left")
-        XCTAssertNil(ExpiryWarning(expiry: nil, signedIn: false, now: now), "no profile, as on a simulator")
+        XCTAssertNotNil(ExpiryWarning(expiry: now.addingTimeInterval(86_400), now: now), "1 day left")
+        XCTAssertNil(ExpiryWarning(expiry: now.addingTimeInterval(3 * 86_400), now: now), "3 days left")
+        XCTAssertNil(ExpiryWarning(expiry: nil, now: now), "no profile, as on a simulator")
     }
 
     /// Idle stop setting round-trips and never goes below the floor the picker offers.

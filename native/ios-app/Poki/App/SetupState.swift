@@ -97,7 +97,7 @@ enum AppFiles {
 }
 
 /// The setup steps, in the order a new user does them. The Apple Account is not one (ESP-222): Poki
-/// Setup on a Mac signs and installs Poki, so signing in on the phone is optional, in Setup › Signing.
+/// Setup on a Mac signs and installs Poki, so signing in on the phone is optional, in Signing Options.
 enum SetupStep: String, CaseIterable, Identifiable {
     case runner, developerMode, loopback, pairing, automation, background
     var id: String { rawValue }

@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// The Apple Account, optional (ESP-222): signed in, Poki keeps its own signing with no computer.
-/// Sections of the Apple Account page's Form, opened from Signing.
+/// The Apple Account, optional and out of the way (ESP-222): Poki Setup on a Mac signs Poki, and
+/// signed in here Poki can also renew itself with no computer. Sections of the Apple Account page's Form.
 struct AccountPage: View {
     @Environment(AppModel.self) private var model
     @State private var appleID = ""
@@ -86,19 +86,6 @@ struct SigningSection: View {
 
     var body: some View {
         Section {
-            // The Apple Account Poki signs itself with, if the owner wants Poki to renew without a Mac.
-            NavigationLink {
-                Form { AccountPage() }
-                    .navigationTitle("Apple Account")
-                    .navigationBarTitleDisplayMode(.inline)
-            } label: {
-                LabeledContent {
-                    if signer.signedIn { Text(verbatim: signer.status?.apple_id ?? "") }
-                    else { Text("Optional").foregroundStyle(Color(.secondaryLabel)) }
-                } label: {
-                    Label("Apple Account", systemImage: "person.crop.circle")
-                }
-            }
             LabeledContent {
                 if let expiry = signer.expiry {
                     // One line: the date, and how long is left in the warning colour when it is close.
@@ -125,10 +112,12 @@ struct SigningSection: View {
             } else if let latest = signer.latest, signer.isNewer(latest) {
                 LabeledContent { Text(verbatim: "\(latest.version) (\(latest.build))") } label: { Label("Update Available", systemImage: "sparkles") }
             }
-            Button("Prepare Refresh Now", systemImage: "arrow.clockwise") { Task { await signer.prepare(kind: "refresh") } }
-                .disabled(!signer.signedIn || signer.working != nil)
+            if signer.signedIn {
+                Button("Prepare Refresh Now", systemImage: "arrow.clockwise") { Task { await signer.prepare(kind: "refresh") } }
+                    .disabled(signer.working != nil)
+            }
             NavigationLink { SigningOptionsPage() } label: {
-                LabeledContent { Text(verbatim: signer.channelTitle) } label: { Label("Release Channel", systemImage: "antenna.radiowaves.left.and.right") }
+                Label("Signing Options", systemImage: "slider.horizontal.3")
             }
         } header: {
             Text("Signing")
@@ -144,7 +133,7 @@ struct SigningSection: View {
     }
 
     private var footer: String {
-        if !signer.signedIn { return String(localized: "Optional. Poki Setup on your Mac renews Poki when this iPhone is connected. Signed in here, Poki can also renew itself with no computer.") }
+        if !signer.signedIn { return String(localized: "Poki Setup on your Mac renews Poki when this iPhone is connected.") }
         if signer.next != nil {
             return model.signingIdle
                 ? String(localized: "Installing closes Poki for a moment. Your chats and setup stay.")
@@ -154,48 +143,40 @@ struct SigningSection: View {
     }
 }
 
-/// Home's warning that the installed Poki stops opening soon, with the two ways to renew it (ESP-222).
-/// Renewing installs a build with a new profile, so a renewed Poki has a later expiry and no warning.
+/// Home's warning that the installed Poki stops opening soon (ESP-222). Renewing happens on the Mac:
+/// it installs a build with a new profile, so a renewed Poki has a later expiry and no warning.
 struct ExpiryWarning {
     let expiry: Date
-    let signedIn: Bool
 
-    init?(expiry: Date?, signedIn: Bool, now: Date = .now) {
+    init?(expiry: Date?, now: Date = .now) {
         guard let expiry, expiry.timeIntervalSince(now) <= SelfSigner.warnWithDaysLeft * 86_400 else { return nil }
         self.expiry = expiry
-        self.signedIn = signedIn
     }
 
     var message: String {
         let when = expiry.formatted(date: .abbreviated, time: .shortened)
-        return signedIn
-            ? String(localized: "Poki stops opening after \(when). To renew it, connect this iPhone to your Mac and use Poki Setup, or install the refresh in Setup › Signing.")
-            : String(localized: "Poki stops opening after \(when). To renew it, connect this iPhone to your Mac and use Poki Setup, or sign in to your Apple Account in Setup › Signing.")
+        return String(localized: "Poki stops opening after \(when). Connect this iPhone to your Mac and ask your agent to renew it.")
     }
 }
 
-/// The warning on home, a tap away from Signing.
 struct ExpiryWarningSection: View {
     let warning: ExpiryWarning
-    var openSetup: () -> Void
 
     var body: some View {
         Section {
-            Button(action: openSetup) {
-                Label {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Poki’s signing ends soon").font(Prominent.font(.headline, .semibold)).foregroundStyle(Color(.label))
-                        Text(warning.message).font(.subheadline).foregroundStyle(Color(.secondaryLabel))
-                    }
-                } icon: {
-                    Image(systemName: "clock.badge.exclamationmark.fill").foregroundStyle(.orange)
+            Label {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Poki’s signing ends soon").font(Prominent.font(.headline, .semibold))
+                    Text(warning.message).font(.subheadline).foregroundStyle(Color(.secondaryLabel))
                 }
+            } icon: {
+                Image(systemName: "clock.badge.exclamationmark.fill").foregroundStyle(.orange)
             }
         }
     }
 }
 
-/// The release channel and the anisette server.
+/// The release channel, the anisette server, and the optional Apple Account.
 struct SigningOptionsPage: View {
     @Environment(AppModel.self) private var model
     @State private var anisette = ""
@@ -231,6 +212,22 @@ struct SigningOptionsPage: View {
                 Text("Anisette Server")
             } footer: {
                 Text("Apple’s sign-in needs device headers that only Apple hardware makes. Poki gets them from this anisette server. It never sees your Apple ID or password.")
+            }
+            Section {
+                NavigationLink {
+                    Form { AccountPage() }
+                        .navigationTitle("Apple Account")
+                        .navigationBarTitleDisplayMode(.inline)
+                } label: {
+                    LabeledContent {
+                        if signer.signedIn { Text(verbatim: signer.status?.apple_id ?? "") }
+                        else { Text("Optional").foregroundStyle(Color(.secondaryLabel)) }
+                    } label: {
+                        Label("Apple Account", systemImage: "person.crop.circle")
+                    }
+                }
+            } footer: {
+                Text("Optional. To renew Poki without a Mac, sign in to your Apple Account here.")
             }
             SignerActivityRows(signer: signer)
         }
