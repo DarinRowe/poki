@@ -87,6 +87,11 @@ struct SigningSection: View {
     var body: some View {
         Section {
             LabeledContent {
+                Text(verbatim: "\(signer.installedVersion) (\(signer.installedBuild))")
+            } label: {
+                Label("Poki Version", systemImage: "info.circle")
+            }
+            LabeledContent {
                 if let expiry = signer.expiry {
                     // One line: the date, and how long is left in the warning colour when it is close.
                     (Text(expiry, format: .dateTime.month(.abbreviated).day().year()) + Text(verbatim: " · ") + Text(expiry, style: .relative).foregroundStyle(countdownColor))
@@ -180,6 +185,8 @@ struct ExpiryWarningSection: View {
 struct SigningOptionsPage: View {
     @Environment(AppModel.self) private var model
     @State private var anisette = ""
+    /// The channel's newest build has been looked up (found or not) since the page opened.
+    @State private var checked = false
     private var signer: SelfSigner { model.signer }
 
     /// Shown most stable first, as the person reads them.
@@ -200,6 +207,28 @@ struct SigningOptionsPage: View {
                 Text("Release Channel")
             } footer: {
                 Text("Poki downloads and signs updates from this channel ahead of time, the same way Poki Setup does. Stable gets full releases only; Beta, Alpha and Pre-alpha get earlier builds.")
+            }
+            Section {
+                LabeledContent("Installed") { Text(verbatim: "\(signer.installedVersion) (\(signer.installedBuild))") }
+                LabeledContent("Newest on This Channel") {
+                    if let latest = signer.latest {
+                        Text(verbatim: "\(latest.version) (\(latest.build))")
+                    } else {
+                        (checked ? Text("Not Found") : Text("Checking…")).foregroundStyle(Color(.secondaryLabel))
+                    }
+                }
+                if let latest = signer.latest {
+                    LabeledContent("Status") { signer.isNewer(latest) ? Text("Update Available") : Text("Up to Date") }
+                }
+            } header: {
+                Text("Version")
+            } footer: {
+                Text("Poki looks on GitHub for the newest build on the chosen channel.")
+            }
+            .task(id: signer.status?.channel) {
+                checked = false
+                await signer.checkLatest()
+                checked = true
             }
             Section {
                 TextField("https://new.ani.sidestore.io", text: $anisette)

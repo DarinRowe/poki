@@ -221,6 +221,16 @@ final class SelfSigner {
         }
     }
 
+    /// Looks up the newest build on the chosen channel without preparing it, for the version rows.
+    /// Works without an Apple Account. False when GitHub could not be read.
+    @discardableResult
+    func checkLatest() async -> Bool {
+        guard let rel = try? await SignerBridge.decode(Release.self, ["op": "check_update"]) else { return false }
+        latest = rel
+        lastCheck = Date()
+        return true
+    }
+
     func isNewer(_ rel: Release) -> Bool {
         let installed = (installedVersion, Int(installedBuild) ?? 0)
         switch rel.version.compare(installed.0, options: .numeric) {

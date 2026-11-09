@@ -2161,6 +2161,16 @@
         }
       }
     },
+    "Newest on This Channel" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此通道最新版本"
+          }
+        }
+      }
+    },
     "No Answer" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2250,6 +2260,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "无"
+          }
+        }
+      }
+    },
+    "Not Found" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未找到"
           }
         }
       }
@@ -2879,6 +2899,16 @@
         }
       }
     },
+    "Poki Version" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 版本"
+          }
+        }
+      }
+    },
     "Poki asks you before an agent pays, deletes, sends a message, places a call, types a password or does anything in Wallet: on the Live Activity, in a notification, or here in Poki. Turned off, agents do all of that without asking. Changes take effect the next time Poki opens." : {
       "localizations" : {
         "zh-Hans" : {
@@ -2986,6 +3016,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Poki 日志"
+          }
+        }
+      }
+    },
+    "Poki looks on GitHub for the newest build on the chosen channel." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 会在 GitHub 上查找所选通道的最新版本。"
           }
         }
       }
@@ -4507,6 +4547,26 @@
         }
       }
     },
+    "Up to Date" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已是最新"
+          }
+        }
+      }
+    },
+    "Update Available" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有可用更新"
+          }
+        }
+      }
+    },
     "Update iOS to 17.4 or later." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4554,6 +4614,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "语音"
+          }
+        }
+      }
+    },
+    "Version" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "版本"
           }
         }
       }
