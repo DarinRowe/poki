@@ -11,7 +11,7 @@ import { root } from '../src/config.mjs';
 // The voice bridge in front of a fixture daemon and phone, as the Poki app reaches it.
 async function bridge(t, f) {
   await copyFile(join(root, 'bin/voice-bridge.mjs'), join(f.dir, 'bin/voice-bridge.mjs'));
-  const child = spawn(process.execPath, [join(f.dir, 'bin/voice-bridge.mjs'), '--port', '0', '--host', '127.0.0.1'], { env: { ...f.env, OPENAI_API_KEY: 'unused' }, stdio: ['ignore', 'pipe', 'inherit'] });
+  const child = spawn(process.execPath, [join(f.dir, 'bin/voice-bridge.mjs'), '--port', '0', '--host', '127.0.0.1', '--mac-tools'], { env: { ...f.env, OPENAI_API_KEY: 'unused' }, stdio: ['ignore', 'pipe', 'inherit'] });
   const exited = once(child, 'exit');
   t.after(async () => { child.kill(); await exited; });
   const lines = createInterface({ input: child.stdout });
