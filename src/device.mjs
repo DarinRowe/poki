@@ -148,7 +148,8 @@ export class Devices {
     checkWork();
     if (this.resolved) { this.access(this.resolved); return this.resolved; }
     const list = await this.inventory(true);
-    const query = this.requested ?? this.selected;
+    // A configured default spares every call a device argument when a simulator is also booted.
+    const query = this.requested ?? this.selected ?? (process.env.POKI_MCP_DEVICE || undefined);
     let matches = query ? list.filter(d => names(d, query)) : list.filter(d => d.kind === 'physical' || d.state === 'Booted');
     if (query && !matches.length) {
       for (const d of list.filter(d => d.kind === 'physical')) {
