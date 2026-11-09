@@ -862,7 +862,18 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
         if (!app) { if (code) *code = @"no_front_app"; return nil; }
         NSTimeInterval frontAt = NSProcessInfo.processInfo.systemUptime;
         id root = PKSnapshotTreeBounded(ax, app, maxDepth, maxChildren, code);
-        if (!root) { if (code && !*code) *code = @"no_snapshot"; return nil; }
+        if (!root) {
+            // The app is in front all the same (WeChat on the phone: "Error getting main window"): the
+            // /wda/activeAppInfo PokiCore asks beside this read answers it at once, instead of searching
+            // again with its own snapshot behind this one.
+            if ([info[@"bundleId"] length]) {
+                NSMutableDictionary *front = [info mutableCopy];
+                front[@"name"] = @"";
+                [self rememberFront:front];
+            }
+            if (code && !*code) *code = @"no_snapshot";
+            return nil;
+        }
         [self noteViewport:[root frame]];
         CGRect viewport = self.viewport;
         CGPoint shift = CGRectIsNull(viewport) ? CGPointZero : viewport.origin;

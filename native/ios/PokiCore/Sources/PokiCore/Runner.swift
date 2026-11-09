@@ -20,6 +20,8 @@ public struct RunnerError: Error, CustomStringConvertible, Sendable {
     public var code: String? = nil
     /// No answer at all (refused or timed out), as opposed to an answer that says no.
     public var silent = false
+    /// A tree read that failed: the app the runner says is in front all the same.
+    public var foreground: Foreground? = nil
     public var description: String { message }
 }
 

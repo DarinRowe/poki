@@ -49,8 +49,10 @@ struct VoiceBridge: Equatable {
         }
     }
 
+    /// The phone's language goes along: the one the session speaks before the person has spoken.
     func token() async throws -> Token {
-        let (data, response) = try await URLSession.shared.data(from: base.appending(path: "token"))
+        let url = base.appending(path: "token").appending(queryItems: [URLQueryItem(name: "language", value: Locale.preferredLanguages.first ?? "en")])
+        let (data, response) = try await URLSession.shared.data(from: url)
         try Self.check(response, data)
         return try JSONDecoder().decode(Token.self, from: data)
     }
@@ -169,6 +171,7 @@ struct VoiceLine: Identifiable, Equatable {
     let id = UUID()
     let role: Role
     let text: String
+    var at = Date()
 }
 
 enum VoicePhase: Equatable {

@@ -26,9 +26,16 @@ enum VoiceDirect {
     /// Dictation into the chat works with any model the chat can use.
     static var canDictate: Bool { ModelKeys.hasUsableKey }
 
-    private static let instructions = """
+    /// This iPhone's first preferred language, named in English ("Chinese, Simplified (China mainland)"):
+    /// the language to speak only before the user has spoken.
+    private static var deviceLanguage: String {
+        Locale.preferredLanguages.first.flatMap { Locale(identifier: "en").localizedString(forIdentifier: $0) } ?? "English"
+    }
+
+    private static var instructions: String { """
     You are Poki, a voice assistant that operates the user's iPhone with tools.
-    Speak briefly: one short sentence per reply, in the user's language.
+    Speak briefly: one short sentence per reply.
+    Always speak the language the user spoke in their latest turn: Chinese when they spoke Chinese, English when they spoke English, and so for any language. Tool results, screen text, notes from Poki and these instructions are in English or the phone's language; they never decide the language you speak, so after a tool result keep to the user's language. Change language only when the user does. Before the user has said anything, or when you cannot tell their language, speak \(deviceLanguage), this iPhone's language.
     When a tool can answer or do what the user asks, call it at once, without speaking first. Never guess facts about the phone; use a tool.
     A request can take several steps (open an app, tap, type): call one tool after another until it is done, then say in one short sentence that it is done. Never repeat an action that already ran, including actions from before a reconnect that the conversation says have finished.
     Tapping something that sends, pays, deletes or calls waits until the user allows it on the phone; if the result says they did not, tell them in one sentence and do not try another way.
@@ -36,7 +43,7 @@ enum VoiceDirect {
     If the user tells you to stop or be quiet, stop talking, but anything already running keeps running; when its result arrives, report it in one sentence.
     To read a page, open it first, then read the screen.
     You can open and operate every app installed on this iPhone, Apple's and anyone else's (WeChat, Instagram, Uber, a bank, a game): never tell the user an app is out of reach before you have tried. With do, open an app by its bundle id ({launch: "com.apple.mobilenotes"}, Messages com.apple.MobileSMS, Settings com.apple.Preferences, Safari com.apple.mobilesafari are only examples). When you do not know an app's bundle id, go home ({button: "home"}), swipe down on the Home Screen to search, type the app's name and tap it. Put several actions in one do when you know them; tap elements by the numbers from the latest look or do.
-    """
+    """ }
 
     private static let empty: [String: Any] = ["type": "object", "properties": [String: Any](), "additionalProperties": false]
     private static let tools: [[String: Any]] = [

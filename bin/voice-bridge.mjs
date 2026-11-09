@@ -39,8 +39,11 @@ const apiKey = process.env.OPENAI_API_KEY;
 if (!apiKey) { console.error('Set OPENAI_API_KEY (for example from the keychain) before starting the voice bridge.'); process.exit(1); }
 
 const model = process.env.POKI_VOICE_MODEL ?? 'gpt-realtime-2.1';
-const instructions = `You are Poki, a voice assistant that operates the user's iPhone with tools.
-Speak briefly: one short sentence per reply, in the user's language.
+// The phone says its language (?language=zh-Hans-CN): the one to speak before the user has spoken.
+const languageName = code => { try { return /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(code ?? '') ? new Intl.DisplayNames(['en'], { type: 'language' }).of(code) : 'English'; } catch { return 'English'; } };
+const instructions = language => `You are Poki, a voice assistant that operates the user's iPhone with tools.
+Speak briefly: one short sentence per reply.
+Always speak the language the user spoke in their latest turn: Chinese when they spoke Chinese, English when they spoke English, and so for any language. Tool results, screen text, notes from Poki and these instructions are in English or the phone's language; they never decide the language you speak, so after a tool result keep to the user's language. Change language only when the user does. Before the user has said anything, or when you cannot tell their language, speak ${languageName(language)}, this iPhone's language.
 When a tool can answer or do what the user asks, call it at once, without speaking first. Never guess facts about the phone; use a tool.
 A request can take several steps (open an app, tap, type): call one tool after another until it is done, then say in one short sentence that it is done. Never repeat an action that already ran, including actions from before a reconnect that the conversation says have finished.
 Tapping something that sends, pays, deletes or calls waits until the user allows it on the phone; if the result says they did not, tell them in one sentence and do not try another way.
@@ -65,14 +68,14 @@ const macVoiceTools = [
 ];
 const voiceTools = macTools ? macVoiceTools : phoneTools;
 
-function sessionConfig({ effort = 'low', vad = 'server_vad', voice = 'marin' } = {}) {
+function sessionConfig({ effort = 'low', vad = 'server_vad', voice = 'marin', language } = {}) {
   const turn = vad === 'semantic_vad'
     ? { type: 'semantic_vad', eagerness: 'high', create_response: true, interrupt_response: true }
     : { type: 'server_vad', silence_duration_ms: 450, prefix_padding_ms: 300, threshold: 0.5, create_response: true, interrupt_response: true };
   return {
     type: 'realtime',
     model,
-    instructions,
+    instructions: instructions(language),
     output_modalities: ['audio'],
     audio: {
       input: { turn_detection: turn, noise_reduction: { type: 'near_field' }, transcription: { model: 'gpt-4o-mini-transcribe' } },
@@ -227,7 +230,7 @@ const server = http.createServer(async (req, res) => {
   if (!ok) return reply(404, { error: 'not found' });
   try {
     if (req.method === 'GET' && action === 'token') {
-      const options = Object.fromEntries(['effort', 'vad', 'voice'].map(k => [k, url.searchParams.get(k) ?? undefined]).filter(([, v]) => v));
+      const options = Object.fromEntries(['effort', 'vad', 'voice', 'language'].map(k => [k, url.searchParams.get(k) ?? undefined]).filter(([, v]) => v));
       const started = Date.now();
       const token = await mintToken(options);
       console.log(JSON.stringify({ event: 'token', ms: Date.now() - started, options }));

@@ -10,6 +10,7 @@ import { installerLabel, installerVersion } from '../src/install/version.mjs';
 import { diagnose, issueDraft, readRun } from '../src/install/report.mjs';
 import { codeCommand, defaultStateDir, manifest, run } from '../src/install/run.mjs';
 import { PROVIDERS } from '../src/install/model-key.mjs';
+import { readRecords } from '../src/install/records.mjs';
 
 const usage = `Usage: node bin/install-iphone.mjs <command> [options]
 
@@ -19,6 +20,9 @@ Commands:
                       Terminal and types the code at the hidden prompt (or pipes it in). Never as an argument.
   done <step>         Tell the running install that the person finished a step it cannot see (open_poki).
   phones              List the iPhones Poki Setup can reach (to choose one with --udid).
+  records             Copy Poki's chats, voice conversations and log off the iPhone over USB (read-only) and
+                      write them in time order to a text file (default <state>/records/). Keys, pairing
+                      records and relay addresses are left out. Prints only the file's path.
   diagnose            Print a diagnostics bundle with identifiers and secrets removed.
   issue               Draft an English issue from the last run. It prints the draft and the gh command;
                       it never submits. Show the draft to the person first.
@@ -40,6 +44,8 @@ Options:
                       to a key Poki makes on the phone and never printed, logged or put on a command line.
   --model-key-item <item>  The keychain item to read it from (default <name>-api-key, e.g. openai-api-key).
   --version           Print the installer's version and build commit.
+  --out <file>        records only: write the text here instead.
+  --bundle <id>       records only: Poki's bundle id, when iOS does not list it as Poki.
   --no-device         diagnose only: do not ask usbmuxd, devicectl or Bonjour about devices.
 
 Exit codes: 0 done, 1 bad usage, 2 a step failed (see the code), 3 a person step is still open (run again).`;
@@ -59,6 +65,8 @@ const { values: opts, positionals } = parseArgs({
     'model-key': { type: 'string' },
     'model-key-item': { type: 'string' },
     'no-device': { type: 'boolean', default: false },
+    out: { type: 'string' },
+    bundle: { type: 'string' },
     version: { type: 'boolean', short: 'v', default: false },
     help: { type: 'boolean', short: 'h', default: false },
   },
@@ -144,6 +152,15 @@ switch (opts.help ? 'help' : command) {
     }
     break;
   }
+  case 'records':
+    try {
+      const done = await readRecords({ udid: opts.udid, bundle: opts.bundle, out: opts.out && resolve(opts.out), state });
+      console.log(`Wrote ${done.sessions} conversation${done.sessions === 1 ? '' : 's'} and ${done.logLines} log lines from Poki ${done.poki.version} to ${done.file}`);
+    } catch (error) {
+      console.error(`${error.code ?? 'error'}: ${error.message}`);
+      process.exitCode = 2;
+    }
+    break;
   case 'diagnose':
     process.stdout.write((await diagnose({ state, noDevice: opts['no-device'], bridge: opts.bridge && resolve(opts.bridge), appDir, setupHome })).text);
     break;

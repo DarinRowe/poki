@@ -401,3 +401,45 @@ final class VoiceModelTests: XCTestCase {
         NotificationCenter.default.post(name: UIApplication.willEnterForegroundNotification, object: nil)
     }
 }
+
+/// OpenAI's client_secrets endpoint, served without the network: it keeps the session Poki asked for.
+final class OpenAIStub: URLProtocol {
+    nonisolated(unsafe) static var session: [String: Any]?
+    override class func canInit(with request: URLRequest) -> Bool { request.url?.host() == "api.openai.com" }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        var body = request.httpBody ?? Data()
+        if body.isEmpty, let stream = request.httpBodyStream {
+            stream.open()
+            var buffer = [UInt8](repeating: 0, count: 65_536)
+            while stream.hasBytesAvailable { let n = stream.read(&buffer, maxLength: buffer.count); if n <= 0 { break }; body.append(buffer, count: n) }
+            stream.close()
+        }
+        Self.session = (try? JSONSerialization.jsonObject(with: body) as? [String: Any])?["session"] as? [String: Any]
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(#"{"value":"ek_test"}"#.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
+/// ESP-221: in a Chinese conversation the live voice answered in English right after the phone's
+/// English tool results. The session tells the model the user's latest turn decides the language,
+/// not tool results or notes, and names this iPhone's language only for before the user has spoken.
+/// The transcription has no fixed language, so a user who switches is heard in their own.
+final class VoiceLanguageTests: XCTestCase {
+    func testTheLiveSessionSpeaksTheUsersLanguageAfterEnglishToolResults() async throws {
+        URLProtocol.registerClass(OpenAIStub.self)
+        defer { URLProtocol.unregisterClass(OpenAIStub.self) }
+        _ = try await VoiceDirect.token(apiKey: "sk-test")
+        let session = try XCTUnwrap(OpenAIStub.session)
+        let instructions = try XCTUnwrap(session["instructions"] as? String)
+        XCTAssertTrue(instructions.contains("Always speak the language the user spoke in their latest turn"), instructions)
+        XCTAssertTrue(instructions.contains("they never decide the language you speak, so after a tool result keep to the user's language"), instructions)
+        let language = Locale(identifier: "en").localizedString(forIdentifier: Locale.preferredLanguages[0]) ?? ""
+        XCTAssertTrue(instructions.contains("Before the user has said anything, or when you cannot tell their language, speak \(language), this iPhone's language."), instructions)
+        let transcription = ((session["audio"] as? [String: Any])?["input"] as? [String: Any])?["transcription"] as? [String: Any]
+        XCTAssertNotNil(transcription)
+        XCTAssertNil(transcription?["language"], "a fixed transcription language would mishear a user who switches")
+    }
+}

@@ -100,6 +100,10 @@ The installer exits with code 2. The last `error` event has `code`, `reason` and
 | `model_key_not_taken` | Poki did not take the sealed key in time. | Ask the user to bring Poki to the front, then run again. |
 | `unknown` | Not recognised. | Run `diagnose` and `issue`. |
 
+## Read Poki's records on the Mac
+
+`node bin/install-iphone.mjs records` reads Poki's chats, voice conversations and log off the iPhone over USB and writes them as one text file in time order, by default in `~/Library/Application Support/PokiInstall/records/`. It only copies from Poki's app container (`devicectl device copy from`) and changes nothing on the phone. It prints only the file's path, not the conversations. Keys, pairing records and relay addresses are removed. Use `--udid` when several iPhones are plugged in, `--out <file>` to choose the file, and `--bundle <id>` when iOS does not list Poki by name. The file holds the owner's own messages: show it only to them.
+
 ## When you cannot fix it
 
 1. Run `node bin/install-iphone.mjs diagnose`. It prints a JSON bundle with versions, each step's result, what usbmuxd, USB, `devicectl` and Bonjour see, and Poki Setup's last log lines, with identifiers, names, keys, tokens and addresses removed. Show it to the user.

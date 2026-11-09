@@ -228,17 +228,21 @@ final class SessionStore {
     }
 
     /// A live voice conversation as chat entries: its start time, your words, Poki's answers, its steps.
+    /// Each entry keeps the time its line was said, for the saved record (`install-iphone.mjs records`).
     static func entries(voice lines: [VoiceLine], started: Date) -> [ChatEntry] {
-        var entries = [ChatEntry(.time(started))]
-        for line in lines {
+        var time = ChatEntry(.time(started))
+        time.at = started
+        return [time] + lines.map { line in
+            var entry: ChatEntry
             switch line.role {
-            case .you: entries.append(ChatEntry(.you(line.text, delivered: true)))
-            case .poki: entries.append(ChatEntry(.poki(line.text)))
-            case .tool: entries.append(ChatEntry(.step(line.text, ok: true)))
-            case .note: entries.append(ChatEntry(.note(.problem(line.text))))
+            case .you: entry = ChatEntry(.you(line.text, delivered: true))
+            case .poki: entry = ChatEntry(.poki(line.text))
+            case .tool: entry = ChatEntry(.step(line.text, ok: true))
+            case .note: entry = ChatEntry(.note(.problem(line.text)))
             }
+            entry.at = line.at
+            return entry
         }
-        return entries
     }
 
     func delete(_ id: String) {

@@ -1028,3 +1028,36 @@ final class ReturnToOriginTests: XCTestCase {
         XCTAssertEqual(front.value, "com.apple.weather")
     }
 }
+
+/// ESP-221: WeChat came to the front, but its element tree could not be read (on the phone, in-process:
+/// "Error getting main window kAXError"). The runner still says which app is in front, so that app is
+/// the one in front: the launch answer names it, and a tap in it is sent. Before, the failed read kept
+/// Poki as the app in front, the launch was read again six times as "not in front yet", and every tap
+/// was refused as a tap inside Poki, so the voice model kept saying WeChat was still opening.
+final class UnreadableTreeTests: XCTestCase {
+    func testAnAppWhoseTreeCannotBeReadIsStillTheAppInFront() async {
+        let (core, wda, _) = makeCore()
+        let front = LockedBox("nz.zheha.poki")
+        wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": .string(front.value), "name": ""]]) }
+        for key in ["POST /wda/apps/activate", "POST /wda/apps/launch"] {
+            wda.set(key) { body in front.value = body?["bundleId"]?.string ?? front.value; return (200, ["value": .null]) }
+        }
+        let poki: JSON = ["type": "XCUIElementTypeApplication", "label": "Poki", "rect": ["x": 0, "y": 0, "width": 390, "height": 844],
+                          "children": [["type": "XCUIElementTypeButton", "label": "Talk", "rect": ["x": 16, "y": 700, "width": 358, "height": 44]]]]
+        wda.set("GET /source") { _ in
+            front.value == "com.tencent.xin"
+                ? (500, ["value": ["error": "unknown error", "message": "no element tree: Error getting main window kAXError"]])
+                : (200, ["value": poki])
+        }
+        _ = await core.call("look", [:])
+
+        let opened = await core.call("do", ["actions": [["launch": "com.tencent.xin"]]])
+        XCTAssertTrue(opened.text.hasPrefix("app: com.tencent.xin"), opened.text)
+        XCTAssertFalse(opened.text.contains("was not in front yet"), opened.text)
+        XCTAssertNotNil(opened.jpeg, "the picture is the screen to go by")
+
+        let tapped = await core.call("do", ["actions": [["tap": [200, 300]]]])
+        XCTAssertFalse(tapped.text.contains(CoreConfig.ownAppRefusal), tapped.text)
+        XCTAssertEqual(wda.sent.filter { $0.hasSuffix("/wda/tap") }.count, 1, tapped.text)
+    }
+}
