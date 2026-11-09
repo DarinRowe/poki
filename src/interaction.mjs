@@ -12,16 +12,11 @@ const patienceMs = 5000, ocrAfterMs = 1000, ocrEveryMs = 2000, pollMs = 100, qui
 // cannot read at all is given this much more time before the search is called off.
 const ocrAllowanceMs = 12000;
 const strings = e => [e.label, e.text, e.value, e.identifier, e.placeholder].filter(v => typeof v === 'string');
-// A recognizer may put a space after every Chinese character it reads, and Windows OCR
-// also does it inside numbers and around punctuation ("微信 ( 714 )"). A caller never
-// writes those spaces, so a string that contains CJK loses all of its whitespace before
-// matching; a Latin-only string keeps its word boundaries.
+// Join recognizer-spaced CJK characters without removing English word boundaries
+// or the spaces between CJK and other text.
 const cjk = '\u3400-\u9fff\uf900-\ufaff\u3040-\u30ff';
-const hasCjk = new RegExp(`[${cjk}]`, 'u');
-const normalize = v => {
-  const n = v.normalize('NFKC').toLocaleLowerCase().trim();
-  return hasCjk.test(n) ? n.replace(/\s+/gu, '') : n;
-};
+const betweenCjk = new RegExp(`(?<=[${cjk}])\\s+(?=[${cjk}])`, 'gu');
+const normalize = v => v.normalize('NFKC').toLocaleLowerCase().trim().replace(betweenCjk, '');
 const visible = e => flagOn(e.visible);
 // Alert and prompt text is compared against the Chinese entries in data/interaction.json, and
 // a recognizer writes spaces between those characters, so it needs the same normalisation as

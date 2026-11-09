@@ -203,6 +203,14 @@ test('renewal and rejected management calls preserve SDK cancellation identity',
  }
 });
 
+test('an English query taps a mixed Chinese and English label',async t=>{
+ const f=await fixture(t);await f.set({label:'Sign in 登录',afterInput:{label:'Signed in'}});
+ const result=await f.call('tap_text',{text:'Sign in'});
+ assert.notEqual(result.isError,true,JSON.stringify(result));
+ assert.ok((await f.events()).some(event=>event.op==='tap'),'the matching target must receive the tap');
+ assert.match(JSON.stringify(result),/Signed in/);
+});
+
 test('recognized prompts report their type without forcing a human handoff',async t=>{
  for(const [tool,args,label,kind] of [
   ['handle_alert',{action:'accept'},'Allow Paste','paste'],
@@ -217,6 +225,7 @@ test('recognized prompts report their type without forcing a human handoff',asyn
   ['list_elements',{},'Face ID','face_id'],
   ['list_elements',{},'触控 ID','touch_id'],
   ['list_elements',{},'Touch ID','touch_id'],
+  ['list_elements',{},'Touch ID for “微信”','touch_id'],
   ['list_elements',{},'“VPN”想添加 VPN 配置','vpn'],
   ['list_elements',{},'「VPN」想要加入 VPN 設定','vpn'],
   ['list_elements',{},'安装描述文件','profile'],
