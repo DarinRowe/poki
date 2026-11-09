@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { root } from '../config.mjs';
 import { Bridge } from './bridge.mjs';
-import { knownValues, redactText, redactValue } from './redact.mjs';
+import { knownValues, redactText, redactValue, setupKnownValues } from './redact.mjs';
 import { manifest } from './run.mjs';
 import { findSetupBridge } from './setup-app.mjs';
 import { installerLabel, installerVersion, setupLabel } from './version.mjs';
@@ -66,9 +66,8 @@ async function deviceView(bridgePath, setupHome) {
   return view;
 }
 
-function logCandidates(state, record, setupHome) {
-  return [setupHome, record?.setup_home, join(state, 'setup-home'), join(homedir(), 'Library/Application Support/Poki Setup')]
-    .filter(Boolean).map(dir => join(dir, 'logs/poki-setup.log'));
+function setupHomes(state, record, setupHome) {
+  return [setupHome, record?.setup_home, join(state, 'setup-home'), join(homedir(), 'Library/Application Support/nz.Poki.Poki-Setup')].filter(Boolean);
 }
 
 // The same Poki Setup run used, so the usbmuxd view is never silently missing.
@@ -84,7 +83,8 @@ async function ownerNames() {
 
 export async function diagnose({ state, noDevice, bridge, appDir, setupHome }) {
   const record = await readRun(state);
-  const logFile = logCandidates(state, record, setupHome).find(existsSync);
+  const homes = setupHomes(state, record, setupHome);
+  const logFile = homes.map(dir => join(dir, 'logs/poki-setup.log')).find(existsSync);
   const raw = {
     schema: 'poki.install-diagnostics/1',
     made_at: new Date().toISOString(),
@@ -102,7 +102,7 @@ export async function diagnose({ state, noDevice, bridge, appDir, setupHome }) {
     poki_setup_log: logFile ? await tail(logFile) : null,
     installer_log: await tail(join(state, 'bridge.log')),
   };
-  const known = [...knownValues([record, raw.devices]), ...await ownerNames()];
+  const known = [...knownValues([record, raw.devices]), ...await setupKnownValues(homes), ...await ownerNames()];
   const bundle = redactValue(raw, known);
   bundle.removed = 'UDIDs, ECIDs, serials, device names, Apple Account emails, team names and ids, bundle ids, the Mac name, tokens, keys, passwords, pairing records, relay addresses, IP addresses and the macOS user name';
   const text = `${JSON.stringify(bundle, null, 2)}\n`;

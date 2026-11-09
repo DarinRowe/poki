@@ -1,10 +1,12 @@
 // Takes identifiers and secrets out of text before a person or an issue sees it: UDIDs, ECIDs,
 // serials, device names, Apple Account emails, tokens and keys, pairing records, relay addresses,
 // IP addresses and the macOS user name. Known values go first, then patterns catch the rest.
+import { readFile } from 'node:fs/promises';
 import { homedir, userInfo } from 'node:os';
+import { join } from 'node:path';
 
 const SECRET_KEYS = /^(?:.*(?:token|secret|password|passcode|private|pkcs8|cookie|authorization|api_?key|pairing_record|certificate_der).*)$/i;
-const IDENTIFIER_KEYS = /^(?:udid|unique_chip_id|ecid|serial(?:_number)?|mux_id|apple_id|email|wifi_address|address|phone_name|name|team_name|machine|machine_name|computer_name|hostname|team_id|bundle_id|app_group|relay|url)$/i;
+const IDENTIFIER_KEYS = /^(?:udid|unique_chip_id|ecid|serial(?:_number)?|mux_id|apple_id|email|wifi_address|address|phone_name|name|team_name|machine|machine_name|computer_name|hostname|team_id|certificate_id|cert_request_id|bundle_id|app_group|relay|url)$/i;
 
 const patterns = [
   [/-----BEGIN [A-Z ]+-----[\s\S]*?-----END [A-Z ]+-----/g, '[pem removed]'],
@@ -15,6 +17,9 @@ const patterns = [
   [/\b(sk-(?:ant-|proj-)?[A-Za-z0-9_-]{16,}|AIza[0-9A-Za-z_-]{30,}|gh[pousr]_[A-Za-z0-9]{20,}|xox[abpr]-[A-Za-z0-9-]{10,}|eyJ[\w-]{8,}\.[\w-]{8,}\.[\w-]{8,})/g, '[key removed]'],
   [/\b(token|secret|password|passwd|passcode|api[_-]?key|authorization|cookie)\b(["']?\s*[:=]\s*["']?)[^\s"',}&]+/gi, '$1$2[removed]'],
   [/([?&](?:secret|token|key|sig|code)=)[^&\s"']+/gi, '$1[removed]'],
+  // Poki Setup names the signed app after the Apple team and the phone: "Poki-<team id>-<UDID>.ipa".
+  [/\b(Poki-)[A-Z0-9]{10}(?=-[^\s\/"']*\.ipa\b)/g, '$1[team]'],
+  [/\b(team_id|certificate_id|cert_request_id)(["']?\s*[:=]\s*["']?)[A-Za-z0-9]+/gi, '$1$2[removed]'],
   [/\b[0-9A-F]{8}-[0-9A-F]{16}\b/gi, '[udid]'],
   [/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, '[uuid]'],
   [/\b[0-9a-f]{40}\b/gi, '[udid]'],
@@ -60,6 +65,16 @@ export function knownValues(value, found = []) {
       if (typeof v === 'string' && (IDENTIFIER_KEYS.test(key) || SECRET_KEYS.test(key))) found.push(v);
       else knownValues(v, found);
     }
+  }
+  return found;
+}
+
+// What Poki Setup itself remembers about each phone (state/phones.json under its home): the team id,
+// bundle id, Apple Account and UDID, which its own log repeats.
+export async function setupKnownValues(setupHomes) {
+  const found = [];
+  for (const dir of setupHomes) {
+    try { knownValues(JSON.parse(await readFile(join(dir, 'state/phones.json'), 'utf8')), found); } catch {}
   }
   return found;
 }
