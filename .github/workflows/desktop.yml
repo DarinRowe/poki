@@ -72,6 +72,14 @@ jobs:
           restore-keys: tauri-tools-
       - run: npm ci --no-audit --no-fund --prefer-offline
         working-directory: desktop/app
+      # poki-setup.exe, the command line tool for agents and scripts, installs next to the app
+      # (tauri.windows.conf.json lists it as a resource).
+      - name: Command line tool
+        shell: bash
+        run: |
+          cargo build --release -p poki-setup-cli --manifest-path desktop/Cargo.toml
+          desktop/target/release/poki-setup.exe --version
+          desktop/target/release/poki-setup.exe prompt | grep -q "next --json"
       # Only the NSIS setup.exe is built: it is what people and the self-update download (it
       # carries English and Chinese). The MSIs doubled the bundling time and needed WiX.
       - name: Build the installer

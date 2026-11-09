@@ -68,8 +68,9 @@ pub enum Outcome {
     NeedsCode(Pending),
 }
 
-/// A sign-in waiting for the 2FA code.
-#[derive(Debug, Clone)]
+/// A sign-in waiting for the 2FA code. Serializable so the command line can finish it in a
+/// second run (`poki-setup login --code`); it is kept in the keychain, never in a file.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Pending {
     pub apple_id: String,
     password: String,

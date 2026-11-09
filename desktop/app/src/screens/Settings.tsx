@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, failureText, type Account, type AppInfo, type ChannelInfo, type UpdateInfo } from "../api";
 import { setLang, t, useLang } from "../i18n";
-import { Capsule, Card, ErrorBox, Field } from "../ui";
+import { Capsule, Card, Copy, ErrorBox, Field } from "../ui";
 
 export default function Settings({ info }: { info: AppInfo | null }) {
   const lang = useLang();
@@ -11,8 +11,9 @@ export default function Settings({ info }: { info: AppInfo | null }) {
   const [updating, setUpdating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [channels, setChannels] = useState<ChannelInfo[]>([]);
+  const [prompt, setPrompt] = useState<string | null>(null);
   const load = () => api.account().then((a) => { setAcct(a); if (a.anisette.kind === "remote") setServer(a.anisette.url); }).catch(() => {});
-  useEffect(() => { load(); api.channels().then(setChannels).catch(() => {}); }, []);
+  useEffect(() => { load(); api.channels().then(setChannels).catch(() => {}); api.agentPrompt().then(setPrompt).catch(() => {}); }, []);
   const chosen = channels.find((c) => c.selected);
   const system = acct?.anisette.kind === "system";
   return (
@@ -40,6 +41,11 @@ export default function Settings({ info }: { info: AppInfo | null }) {
           </div>
           <span className="muted small">{chosen?.latest ? `${t("Newest Poki")}: ${chosen.latest.version} (${chosen.latest.build})` : t("None published")}</span>
         </div>
+      </Card>
+      <Card>
+        <h2>{t("Use an agent")}</h2>
+        <p className="muted small">{t("An agent on this computer (Claude Code, Codex or another one) can do the setup with Poki Setup's command line tool. Copy these instructions and paste them into the agent; it tells you when to tap the phone or type your password.")}</p>
+        <div className="row">{prompt && <Copy text={prompt} />}</div>
       </Card>
       <Card>
         <h2>{t("About")}</h2>

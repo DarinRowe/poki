@@ -65,6 +65,8 @@ const zh: Record<string, string> = {
   "This Mac": "这台 Mac",
   "Server": "服务器",
   "Check for updates": "检查更新",
+  "Use an agent": "用智能体安装",
+  "An agent on this computer (Claude Code, Codex or another one) can do the setup with Poki Setup's command line tool. Copy these instructions and paste them into the agent; it tells you when to tap the phone or type your password.": "这台电脑上的智能体（Claude Code、Codex 等）可以用 Poki Setup 的命令行工具完成安装。复制这段说明并粘贴给智能体；需要你在手机上点按或输入密码时，它会告诉你。",
   "Updates": "更新",
   "Channel": "通道",
   "Stable": "稳定版",

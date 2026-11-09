@@ -335,6 +335,18 @@ final class AppModel: ObservableObject {
 
     struct RenewResult: Decodable { var udid: String; var ok: Bool; var error: String? }
 
+    struct AgentPrompt: Decodable { var prompt: String }
+
+    /// Puts the instructions for an agent on this Mac (Claude Code, Codex and the like) on the
+    /// pasteboard; they name the command line tool inside this app.
+    func copyAgentPrompt() async {
+        do {
+            let p: AgentPrompt = try await bridge.call("agent_prompt")
+            copyToPasteboard(p.prompt)
+            banner = "Copied. Paste it into your agent (Claude Code, Codex or another one that runs on this Mac)."
+        } catch { report(error) }
+    }
+
     func forget(udid: String) async {
         do {
             try await bridge.run("forget_phone", ["udid": udid])

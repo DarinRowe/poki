@@ -12,6 +12,7 @@ const answers: Record<string, unknown> = {
   relay_state: { account_id: "x", account_name: "Zhehan's account", address: "https://poki-relay.zhehan.workers.dev", first_deploy: false, deployed_at: now, phone_link: "poki://setup?relay=https%3A%2F%2Fpoki-relay.zhehan.workers.dev" },
   connectors: [{ name: "Claude", url: `https://poki-relay.zhehan.workers.dev/v1/${"a".repeat(52)}/${"s".repeat(43)}/mcp`, added_at: now, last_check: { at: now, ok: true, relay_ok: true, phone_online: true, tools: ["look", "do", "screenshot"], detail: "Working: 12 tools through the phone." } }],
   connector_snippets: [["Claude Code", "claude mcp add --transport http poki \"https://…/mcp\""]],
+  agent_prompt: "You are setting up Poki on my iPhone (or iPad) with Poki Setup's command line tool…",
   check_update: { current: "0.2.1-300", latest: "0.2.1-300", url: null, newer: false, channel: "stable" },
   install_update: { path: "", relaunching: false },
   channels: [

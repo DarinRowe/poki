@@ -26,6 +26,16 @@ desktop/
 | Connectors | keeps links the phone made, runs the OAuth round and `tools/list` through the phone, writes client snippets |
 | Debug | live syslog, developer disk image, support bundle with secrets removed |
 
+## For agents
+
+Poki Setup ships its command line tool, `poki-setup`, inside the app: `/Applications/Poki Setup.app/Contents/MacOS/poki-setup` on macOS and `%LOCALAPPDATA%\Poki Setup\poki-setup.exe` on Windows. An agent on the computer (Claude Code, Codex and the like) can run the whole setup with it:
+
+- `poki-setup next --json` reads the computer's state and lists what is done, what comes next, who has to act and the command to run. It changes nothing.
+- With `--json`, every command prints its result on stdout and its progress on stderr, one JSON object per line. Exit codes: 0 done, 1 failed, 2 a person has to act, 3 waiting for Apple's sign-in code.
+- Sign-in works without a terminal: `login <email> --password-stdin`, then `login --code <code>` when Apple asks for one. The person can also run `login <email>` in their own terminal, which keeps the password out of the agent.
+- `poki-setup update` updates Poki Setup itself on the chosen channel.
+- `poki-setup prompt` prints the instructions to hand an agent ([AGENT-PROMPT.md](AGENT-PROMPT.md)). The app copies the same text: Poki > Copy Prompt for Your Agent on a Mac, Settings > Use an agent on Windows.
+
 ## Build
 
 ```sh

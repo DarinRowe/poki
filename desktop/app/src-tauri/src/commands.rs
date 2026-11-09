@@ -349,6 +349,11 @@ pub async fn support_bundle(udid: Option<String>, out_dir: String) -> R<String> 
 #[tauri::command]
 pub async fn check_update() -> R<release::UpdateInfo> { Ok(release::desktop_update().await?) }
 
+/// The instructions to hand an agent on this computer; they name the poki-setup.exe installed
+/// next to this app.
+#[tauri::command]
+pub fn agent_prompt() -> String { poki_setup_core::agent::prompt_for(poki_setup_core::agent::cli_path().as_deref()) }
+
 /// Downloads the newer Poki Setup and starts its installer in passive mode; the installer
 /// starts Poki Setup again, so this one quits.
 #[tauri::command]

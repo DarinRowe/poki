@@ -116,6 +116,14 @@ jobs:
           name: poki-setup-macos-app
           path: dist/PokiSetup-app.zip
           retention-days: 3
+      - name: Command line tool for agents
+        run: |
+          CLI="$PWD/dist/Poki Setup.app/Contents/MacOS/poki-setup"
+          "$CLI" --version
+          "$CLI" prompt | grep -q "next --json"
+          "$CLI" next --json | python3 -c 'import json,sys; n=json.load(sys.stdin); assert n["steps"], n; print(n["summary"])'
+          set +e; echo "" | "$CLI" login nobody@example.com --password-stdin --json; CODE=$?; set -e
+          test "$CODE" = 2
       - name: Core and bridge check against Apple
         run: python3 desktop/mac/scripts/e2e.py "$PWD/dist/Poki Setup.app/Contents/MacOS/poki-setup-bridge"
       - name: Signing check with Apple's codesign
