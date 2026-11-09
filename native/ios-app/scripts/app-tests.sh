@@ -15,6 +15,8 @@ APP="$DD/Build/Products/Debug-iphonesimulator/Poki.app"
 BUNDLE="$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$APP/Info.plist")"
 xcrun simctl bootstatus "$UDID" -b >/dev/null
 xcrun simctl install "$UDID" "$APP"
+# Setup's last item needs location; the tests check a phone with every item done.
+xcrun simctl privacy "$UDID" grant location-always "$BUNDLE"
 xcrun simctl terminate "$UDID" "$BUNDLE" >/dev/null 2>&1 || true
 
 LOG="$(mktemp)"

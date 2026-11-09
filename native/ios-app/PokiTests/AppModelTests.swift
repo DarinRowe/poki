@@ -138,6 +138,39 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.setup.loopback, .proxy, "a drop does not unchoose the connection")
     }
 
+    /// Poki Setup on a Mac signs and installs Poki, so signing in to an Apple Account on the phone is
+    /// optional (ESP-222): with every other item done and no Apple sign-in, Setup has nothing left,
+    /// which is what clears home's warning, the Setup tab's dot and the paused power button.
+    /// Location comes from the simulator (`simctl privacy grant location-always`, app-tests.sh).
+    func testEverythingDoneWithoutAnAppleAccountLeavesNothingToSetUp() throws {
+        let (model, _) = model()
+        let saved = model.setup
+        defer { model.setup = saved }
+        let pairing = AppFiles.phonePairingFile
+        if !FileManager.default.fileExists(atPath: pairing.path) {
+            try Data("pairing".utf8).write(to: pairing)
+            addTeardownBlock { try? FileManager.default.removeItem(at: pairing) }
+        }
+        model.setup.runnerInstalled = true
+        model.setup.developerMode = true
+        model.setup.uiAutomation = true
+        model.loopback.simulate(.working(ms: 7))
+        XCTAssertTrue(model.background.allowed && model.activitiesEnabled, "the simulator grants location and Live Activities")
+        XCTAssertFalse(model.signer.signedIn)
+
+        XCTAssertTrue(model.setupComplete, "left: \(SetupStep.shown.filter { !model.isDone($0) })")
+        XCTAssertFalse(model.setupStepsLeft)
+    }
+
+    /// Home warns only in the last two days of the installed signing (ESP-222). Signing Poki again
+    /// installs a build with a new profile, so a renewed Poki has a later expiry and no warning.
+    func testExpiryWarningOnlyInTheLastTwoDays() {
+        let now = Date()
+        XCTAssertNotNil(ExpiryWarning(expiry: now.addingTimeInterval(86_400), signedIn: false, now: now), "1 day left")
+        XCTAssertNil(ExpiryWarning(expiry: now.addingTimeInterval(3 * 86_400), signedIn: false, now: now), "3 days left")
+        XCTAssertNil(ExpiryWarning(expiry: nil, signedIn: false, now: now), "no profile, as on a simulator")
+    }
+
     /// Idle stop setting round-trips and never goes below the floor the picker offers.
     func testIdleStopSetting() {
         let (model, _) = model()
