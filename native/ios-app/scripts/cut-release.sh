@@ -2,7 +2,8 @@
 # Cuts a Poki Alpha or Pre-alpha: tags a commit ios-<alpha|prealpha>-<VERSION>-<commit count> and
 # pushes the tag, which starts .github/workflows/channel-release.yml (build, then a GitHub prerelease).
 # The commit must already be on the remote and must contain channel-release.yml. Beta and Stable
-# releases are ios-vX.Y.Z tags (release.yml); see docs/release-channels.md.
+# releases are promotions (propose-promotion.yml); see docs/release-channels.md. Pre-alphas now build on
+# every merge into main (prealpha.yml); this script is the fallback.
 #
 #   native/ios-app/scripts/cut-release.sh alpha|pre-alpha [ref] [remote]   # defaults: origin/poki/ios-integration, origin
 #   DRY_RUN=1 native/ios-app/scripts/cut-release.sh pre-alpha              # print the tag, push nothing
