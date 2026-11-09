@@ -26,6 +26,8 @@
 
 ## Inicio rápido
 
+**Instala Poki App en tu iPhone.** Descarga Poki Setup desde la [versión Alpha](https://github.com/JosssphZhou/poki/releases/tag/app-alpha-latest) y sigue las instrucciones de su ventana. Consulta la [guía de instalación en iPhone](README.md#poki-on-your-iphone).
+
 **Deja que tu agente lo instale.** Copia esto a tu agente:
 
 ```text

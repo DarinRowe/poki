@@ -26,6 +26,8 @@
 
 ## 빠른 시작
 
+**iPhone에 Poki App 설치하기.** [Alpha 릴리스](https://github.com/JosssphZhou/poki/releases/tag/app-alpha-latest)에서 Poki Setup을 다운로드하고 창의 안내를 따르세요. 자세한 내용은 [iPhone 설치 안내](README.md#poki-on-your-iphone)를 참고하세요.
+
 **에이전트에게 설치를 맡기세요.** 아래 내용을 복사해 에이전트에게 전달하세요:
 
 ```text

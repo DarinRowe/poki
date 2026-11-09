@@ -26,6 +26,8 @@
 
 ## 快速開始
 
+**在 iPhone 上安裝 Poki App。** 從 [Alpha 發布頁](https://github.com/JosssphZhou/poki/releases/tag/app-alpha-latest)下載 Poki Setup，依照安裝視窗操作。詳見 [iPhone 安裝說明](README.md#poki-on-your-iphone)。
+
 **讓 agent 幫你安裝。** 把這段貼給你的 agent：
 
 ```text

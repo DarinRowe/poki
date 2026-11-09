@@ -26,6 +26,8 @@
 
 ## クイックスタート
 
+**iPhone に Poki App をインストールする。** [Alpha リリース](https://github.com/JosssphZhou/poki/releases/tag/app-alpha-latest)から Poki Setup をダウンロードし、画面の案内に従ってください。詳しくは [iPhone のインストール手順](README.md#poki-on-your-iphone)を参照してください。
+
 **エージェントにインストールを任せる。** 次の内容をエージェントに渡してください：
 
 ```text
