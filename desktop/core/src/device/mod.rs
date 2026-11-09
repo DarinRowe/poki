@@ -43,12 +43,22 @@ pub struct Phone {
     pub mux_id: Option<u32>,
 }
 
+/// usbmuxd lists a phone once per way it reaches it (a cable and Wi-Fi sync, sometimes two
+/// addresses), all with the same udid. People pick a phone, not a link: keep one entry per udid,
+/// the USB one when there is one, then the order usbmuxd gave.
+fn one_per_phone(mut phones: Vec<Phone>) -> Vec<Phone> {
+    phones.sort_by_key(|p| !matches!(p.link, Link::Usb));
+    let mut seen = std::collections::HashSet::new();
+    phones.retain(|p| seen.insert(p.udid.clone()));
+    phones
+}
+
 impl Phone {
-    /// The phones usbmuxd knows: USB first, then network ones.
+    /// The phones usbmuxd knows, one entry per phone: USB first, then network ones.
     pub async fn list() -> Result<Vec<Phone>> {
         let mut mux = UsbmuxdConnection::default().await?;
         let devices = mux.get_devices().await?;
-        let mut phones: Vec<Phone> = devices
+        let phones: Vec<Phone> = devices
             .into_iter()
             .map(|d| Phone {
                 link: match d.connection_type {
@@ -60,8 +70,7 @@ impl Phone {
                 mux_id: Some(d.device_id),
             })
             .collect();
-        phones.sort_by_key(|p| !matches!(p.link, Link::Usb));
-        Ok(phones)
+        Ok(one_per_phone(phones))
     }
 
     /// A phone on the same Wi-Fi, reached with the pairing record this computer saved for it.
@@ -98,5 +107,21 @@ pub async fn mux_pairing_record(udid: &str) -> Result<Option<PairingFile>> {
         Ok(p) => Ok(Some(p)),
         Err(idevice::IdeviceError::NotFound) => Ok(None),
         Err(e) => Err(e.into()),
+    }
+}
+
+#[cfg(test)]
+mod list_tests {
+    use super::*;
+
+    #[test]
+    fn a_phone_on_cable_and_wifi_is_listed_once_by_cable() {
+        let wifi = |u: &str| Phone { udid: u.into(), link: Link::Muxed { address: "192.168.1.5".parse().unwrap() }, mux_id: Some(2) };
+        let usb = |u: &str| Phone { udid: u.into(), link: Link::Usb, mux_id: Some(1) };
+        let l = one_per_phone(vec![wifi("A"), usb("A"), wifi("B"), wifi("B")]);
+        assert_eq!(l.len(), 2);
+        assert_eq!(l[0].udid, "A");
+        assert!(matches!(l[0].link, Link::Usb));
+        assert_eq!(l[1].udid, "B");
     }
 }

@@ -208,7 +208,7 @@ fn pick_exact(list: &[GhRelease], channel: Channel) -> Option<Release> {
         .filter_map(installable)
         .filter(|(c, _)| channel.includes(*c))
         .max_by(|(ca, a), (cb, b)| {
-            let key = |c: &Channel, r: &Release| (version_key(&r.version), version_key(&r.build), *c == channel, r.published_at.clone());
+            let key = |c: &Channel, r: &Release| (version_key(&full(&r.version, &r.build)), *c == channel, r.published_at.clone());
             key(ca, a).cmp(&key(cb, b))
         })
         .map(|(_, r)| r)
@@ -458,8 +458,34 @@ fn open_installer(path: &std::path::Path) -> Result<()> {
     Ok(())
 }
 
-/// `0.2.1` < `0.2.1-5` < `0.2.2`: numbers compared in order, a build suffix counts after the version.
-fn version_key(s: &str) -> Vec<u64> { s.split(['.', '-']).map(|x| x.parse::<u64>().unwrap_or(0)).collect() }
+/// One dot-separated part of a suffix: numbers compare as numbers and sort before words.
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Ident {
+    Num(u64),
+    Text(String),
+}
+
+/// How a version compares, SemVer-like with Poki's build numbers:
+/// `0.3.0-beta.1` < `0.3.0-beta.2` < `0.3.0` < `0.3.0-700` < `0.3.1`. The numbers before the
+/// first `-` compare in order; then a pre-release suffix (any part that is not a number, like
+/// `beta.1` or `rc.2`) sorts below the plain version, and a build number (`-700`) above it.
+type VersionKey = (Vec<u64>, u8, Vec<Ident>);
+
+fn version_key(s: &str) -> VersionKey {
+    let (core, suffix) = s.split_once('-').unwrap_or((s, ""));
+    let core = core.split('.').map(|x| x.parse::<u64>().unwrap_or(0)).collect();
+    if suffix.is_empty() {
+        return (core, 1, vec![]);
+    }
+    let parts: Vec<Ident> = suffix.split(['.', '-']).map(|x| x.parse::<u64>().map(Ident::Num).unwrap_or_else(|_| Ident::Text(x.to_ascii_lowercase()))).collect();
+    let build = parts.iter().all(|p| matches!(p, Ident::Num(_)));
+    (core, if build { 2 } else { 0 }, parts)
+}
+
+/// A release's version and build as one string for [`version_key`]: `0.3.0`, `0.3.0-beta.1`, `0.2.9-630`.
+fn full(version: &str, build: &str) -> String {
+    if build.is_empty() { version.to_string() } else { format!("{version}-{build}") }
+}
 
 /// Downloads the IPA (and the signing zip) into the cache, checks SHA-256 against SHA256SUMS.
 pub async fn fetch(release: &Release, reporter: &Reporter) -> Result<(PathBuf, Option<PathBuf>)> {
@@ -670,6 +696,46 @@ mod tests {
     fn build_suffix_sorts_after_version() {
         assert!(version_key("0.2.1-5") > version_key("0.2.1"));
         assert!(version_key("0.2.2") > version_key("0.2.1-5"));
+    }
+
+    #[test]
+    fn betas_sort_below_their_stable_and_by_number() {
+        let order = ["0.2.9-630", "0.3.0-beta.1", "0.3.0-beta.2", "0.3.0-rc.1", "0.3.0", "0.3.0-700", "0.3.1-beta.1"];
+        for w in order.windows(2) {
+            assert!(version_key(w[0]) < version_key(w[1]), "{} < {}", w[0], w[1]);
+        }
+        assert!(version_key("0.3.0-beta.10") > version_key("0.3.0-beta.9"));
+        assert_eq!(Channel::of_tag("ios", "ios-v0.3.0-beta.1", true), Some(Channel::Beta));
+        assert_eq!(Channel::of_tag("ios", "ios-v0.3.0", false), Some(Channel::Stable));
+        assert_eq!(Channel::of_tag("desktop", "desktop-v0.3.0-beta.1", true), Some(Channel::Beta));
+        assert_eq!(Channel::of_tag("desktop", "desktop-v0.3.0", false), Some(Channel::Stable));
+    }
+
+    #[test]
+    fn stable_wins_over_its_betas_on_every_channel() {
+        let list = vec![
+            gh("ios-v0.3.0-beta.2", true, "2026-11-12T05:00:00Z", Some("Poki-external-0.3.0-beta.2.ipa")),
+            gh("ios-v0.3.0-beta.1", true, "2026-11-11T05:00:00Z", Some("Poki-external-0.3.0-beta.1.ipa")),
+            gh("ios-v0.3.0", false, "2026-11-10T05:00:00Z", Some("Poki-external-0.3.0.ipa")),
+            gh("ios-alpha-latest", true, "2026-11-08T05:00:00Z", Some("Poki-external-0.3.0-700.ipa")),
+            gh("ios-prealpha-latest", true, "2026-11-08T05:00:00Z", Some("Poki-external-0.2.9-630.ipa")),
+        ];
+        let p = pick(&list, Channel::Stable).unwrap();
+        assert_eq!((p.tag.as_str(), p.version.as_str(), p.build.as_str()), ("ios-v0.3.0", "0.3.0", ""));
+        assert_eq!(pick(&list, Channel::Beta).unwrap().tag, "ios-v0.3.0");
+        assert_eq!(pick(&list[..2], Channel::Beta).unwrap().tag, "ios-v0.3.0-beta.2");
+        assert_eq!(pick(&list, Channel::Alpha).unwrap().build, "700");
+        // Pre-alpha includes every channel: the Alpha 0.3.0-700 is above its own 0.2.9-630.
+        assert_eq!(pick(&list, Channel::PreAlpha).unwrap().build, "700");
+
+        let mut beta = gh("desktop-v0.3.0-beta.1", true, "2026-11-11T05:00:00Z", None);
+        beta.assets.push(GhAsset { name: "PokiSetup-0.3.0-beta.1-macos.dmg".into(), browser_download_url: "https://x/b".into() });
+        let mut stable = gh("desktop-v0.3.0", false, "2026-11-10T05:00:00Z", None);
+        stable.assets.push(GhAsset { name: "PokiSetup-0.3.0-macos.dmg".into(), browser_download_url: "https://x/s".into() });
+        let desk = vec![beta, stable];
+        assert_eq!(pick_desktop(&desk, Channel::Beta, "-macos.dmg").unwrap().2, "0.3.0");
+        assert!(version_key("0.3.0") > version_key("0.3.0-beta.1"));
+        assert!(version_key("0.3.0-beta.1") > version_key("0.2.2-618"));
     }
 }
 
