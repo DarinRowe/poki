@@ -242,12 +242,20 @@ enum ChatTime {
 
 /// Three dots that rise in turn: the model is working on its answer.
 struct TypingBubble: View {
+    /// Dot i's height in 0...1 at time t. Typed step by step: as one expression inside the view
+    /// builder it can exceed the type checker's time limit on a busy CI runner.
+    static func phase(_ t: Double, _ i: Int) -> Double {
+        let angle: Double = t * 2 * Double.pi / 1.2 - Double(i) * 0.9
+        let wave: Double = sin(angle)
+        return (wave + 1) / 2
+    }
+
     var body: some View {
         TimelineView(.animation(minimumInterval: 1 / 30)) { context in
             let t = context.date.timeIntervalSinceReferenceDate
             HStack(spacing: 4) {
                 ForEach(0..<3) { i in
-                    let phase = (sin((t * 2 * .pi / 1.2) - Double(i) * 0.9) + 1) / 2
+                    let phase = TypingBubble.phase(t, i)
                     Circle().fill(ChatColor.secondary.opacity(0.45 + 0.45 * phase)).frame(width: 8, height: 8).offset(y: -3 * phase)
                 }
             }
