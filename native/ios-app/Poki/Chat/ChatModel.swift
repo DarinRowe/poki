@@ -66,8 +66,6 @@ final class ChatModel {
     let requester: String?
     /// The tool calls of this conversation, for "save a routine from this session" (SessionStore.record).
     private(set) var calls: [CallRecord] = []
-    /// Memory and routines (dev/agent-routines): extra instructions for a task, read before pi's first turn.
-    static var beforeTask: (@MainActor (String) -> String)?
     /// Told when a task ends, with its calls and finish_task's verdict.
     static var afterTask: (@MainActor (TaskRecord) -> Void)?
     /// A board's sample conversation, for screenshots.
@@ -79,7 +77,7 @@ final class ChatModel {
     /// For the log's line at the end of each task: when it began, the tool calls, finish_task's verdict.
     private var taskStart = Date()
     private var toolCalls = 0
-    private var finished: Bool?
+    private var taskResult: TaskResult?
     private var client: ModelClient?
     /// The plan the model published with report_plan; the bubble shows its steps up to the current one.
     private var modelPlan: [String]?
@@ -232,6 +230,7 @@ final class ChatModel {
         awaitingModel = true
         stopAsked = false
         planID = nil; noteID = nil; modelPlan = nil
+        let instructions = Harness.instructions(for: text)
         if Self.direct, provider == .anthropic || provider == .openai {
             // Another model starts a new conversation on the model's side; the chat on screen stays.
             if client?.signature != "\(provider.rawValue)/\(model)" {
@@ -241,7 +240,7 @@ final class ChatModel {
             client.say(text)
             began("direct", provider, model)
             task = Task { [weak self] in
-                await self?.run(client, delivered: you.id)
+                await self?.run(client, instructions: instructions, delivered: you.id)
                 self?.logEnd("direct", outcome: nil)
                 self?.running = false
                 self?.awaitingModel = false
@@ -255,7 +254,7 @@ final class ChatModel {
         }
         // Another model starts a new loop that carries the conversation over.
         if loop?.provider != provider || loop?.model.id != piModel.id {
-            loop = PiLoop(provider: provider, model: piModel, instructions: Harness.instructions(for: text), tools: Harness.tools,
+            loop = PiLoop(provider: provider, model: piModel, tools: Harness.tools,
                           carrying: loop?.messages ?? []) { [weak self] call in
                 guard let self else { return PokiCore.ToolAnswer(text: "Task stopped. Action not executed.", jpeg: nil, isError: true) }
                 return await self.perform(call)
@@ -264,7 +263,7 @@ final class ChatModel {
         guard let loop else { return }
         began("pi", provider, model)
         task = Task { [weak self] in
-            let outcome = await loop.run(text, maxTurns: Self.maxTurns) { text in
+            let outcome = await loop.run(text, instructions: instructions, maxTurns: Self.maxTurns) { text in
                 self?.markDelivered(you.id)
                 self?.awaitingModel = false
                 self?.add(.poki(text))
@@ -282,27 +281,26 @@ final class ChatModel {
     private static var direct: Bool { UserDefaults.standard.string(forKey: "chatEngine") == "direct" }
 
     private func began(_ engine: String, _ provider: ModelProvider, _ model: String) {
-        taskStart = Date(); toolCalls = 0; finished = nil
+        taskStart = Date(); toolCalls = 0; taskResult = nil
         AppLog.shared.add("chat", "task started: \(engine), \(provider.rawValue)/\(model)")
     }
 
     private func logEnd(_ engine: String, outcome: PiLoop.Outcome?) {
         let seconds = String(format: "%.1f", Date().timeIntervalSince(taskStart))
-        let verdict = finished.map { $0 ? "success" : "failure" } ?? "not called"
+        let verdict = taskResult.map { $0.success ? "success" : "failure" } ?? "not called"
         let ending = outcome.map { if case .failed = $0 { "failed" } else { "\($0)" } } ?? (stopAsked ? "stopped" : "ended")
         AppLog.shared.add("chat", "task ended: \(engine), \(ending) after \(seconds) s, \(toolCalls) tool calls, finish_task \(verdict)")
-        let record = TaskRecord(session: sessionID, task: lastOwnerText ?? "", calls: Array(calls.suffix(toolCalls)), success: finished,
-                                summary: finishSummary, seconds: Date().timeIntervalSince(taskStart))
+        let record = TaskRecord(session: sessionID, task: lastOwnerText ?? "", calls: Array(calls.suffix(toolCalls)), result: taskResult,
+                                seconds: Date().timeIntervalSince(taskStart))
         Self.afterTask?(record)
-        SessionStore.shared.taskEnded(sessionID, success: finished, stopped: stopAsked)
-        if kind == .poki, finished == true { Haptics.done() }
+        SessionStore.shared.taskEnded(sessionID, success: taskResult?.success, stopped: stopAsked)
+        if kind == .poki, taskResult?.success == true { Haptics.done() }
     }
 
     private var lastOutcome: PiLoop.Outcome?
-    private var finishSummary: String?
 
     /// Runs a task an outside agent handed over (`ask_poki`) and answers with Poki's last words, how the
-    /// task ended, and finish_task's summary.
+    /// task ended, and finish_task's summary and answer.
     func runDelegated(_ task: String) async -> (text: String, success: Bool?) {
         ChatModel.delegatedBusy = requester ?? String(localized: "an agent")
         defer { ChatModel.delegatedBusy = nil }
@@ -311,12 +309,15 @@ final class ChatModel {
         while running { try? await Task.sleep(for: .milliseconds(100)) }
         let replies = entries.compactMap { entry -> String? in if case .poki(let text) = entry.kind { return text }; return nil }
         var lines: [String] = []
-        if let finishSummary { lines.append("result: \(finished == true ? "done" : "not done"): \(finishSummary)") }
+        if let taskResult {
+            lines.append("result: \(taskResult.success ? "done" : "not done"): \(taskResult.summary)")
+            if let answer = taskResult.answerLine { lines.append(answer) }
+        }
         if let last = replies.last { lines.append("Poki said: \(last)") }
         if case .failed(let why)? = lastOutcome { lines.append("error: \(why)") }
         if lastOutcome == nil, let tail = entries.last, case .note(.problem(let why)) = tail.kind { lines.append("error: \(why)") }
         if lines.isEmpty { lines.append("Poki ended without an answer.") }
-        return (lines.joined(separator: "\n"), finished)
+        return (lines.joined(separator: "\n"), taskResult?.success)
     }
 
     /// The display name of the agent whose hand-off is running, while one runs.
@@ -343,11 +344,11 @@ final class ChatModel {
         task?.cancel()
     }
 
-    private func run(_ client: ModelClient, delivered youID: UUID) async {
+    private func run(_ client: ModelClient, instructions: String, delivered youID: UUID) async {
         for _ in 0..<Self.maxTurns {
             let turn: ModelTurn
             do {
-                turn = try await client.next(instructions: Harness.instructions, tools: Harness.tools)
+                turn = try await client.next(instructions: instructions, tools: Harness.tools)
             } catch {
                 client.forgetUnansweredQuestion()
                 if stopAsked || Task.isCancelled { return }
@@ -408,13 +409,12 @@ final class ChatModel {
             showPlan(steps, current: current)
             return PokiCore.ToolAnswer(text: Harness.planPublished, jpeg: nil, isError: false)
         case "finish_task":
-            guard let success = args["success"] as? Bool, let summary = args["summary"] as? String else {
+            guard let result = try? JSONDecoder().decode(TaskResult.self, from: Data(call.arguments.utf8)) else {
                 return PokiCore.ToolAnswer(text: Harness.invalidResult, jpeg: nil, isError: true)
             }
-            finished = success
-            finishSummary = summary
+            taskResult = result
             updatePlan { steps in
-                for i in steps.indices where steps[i].state == .current || steps[i].state == .waiting { steps[i].state = success ? .done : .failed }
+                for i in steps.indices where steps[i].state == .current || steps[i].state == .waiting { steps[i].state = result.success ? .done : .failed }
             }
             return PokiCore.ToolAnswer(text: Harness.resultRecorded, jpeg: nil, isError: false)
         default:
@@ -580,10 +580,55 @@ struct TaskRecord {
     var session: String
     var task: String
     var calls: [CallRecord]
-    /// finish_task's verdict; nil when the model never called it.
-    var success: Bool?
-    var summary: String?
+    /// What finish_task said; nil when the model never called it.
+    var result: TaskResult?
     var seconds: Double
+}
+
+/// finish_task's arguments: the verdict, the summary, the requested facts, and the answer's kind with
+/// the screen elements it read them from.
+struct TaskResult: Decodable, Equatable {
+    struct Detail: Decodable, Equatable {
+        var label: String
+        var value: String
+    }
+    struct Answer: Decodable, Equatable {
+        enum Kind: String, Decodable { case action, field, list }
+        struct Item: Decodable, Equatable {
+            var ref: String
+            var field: String
+            var prefix: String?
+            var suffix: String?
+        }
+        var kind: Kind
+        var items: [Item]?
+        var startRef: String?
+        var endRef: String?
+        enum CodingKeys: String, CodingKey { case kind, items, startRef = "start_ref", endRef = "end_ref" }
+    }
+    var success: Bool
+    var summary: String
+    var details: [Detail]
+    var answer: Answer?
+
+    private enum CodingKeys: String, CodingKey { case success, summary, details, answer }
+
+    /// success and summary are required, as task-runner.mjs requires them; details and answer are kept
+    /// when they are well formed.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        success = try c.decode(Bool.self, forKey: .success)
+        summary = try c.decode(String.self, forKey: .summary)
+        details = (try? c.decodeIfPresent([Detail].self, forKey: .details)) ?? []
+        answer = (try? c.decodeIfPresent(Answer.self, forKey: .answer)) ?? nil
+    }
+
+    /// The requested facts for whoever handed the task over, such as "answer (field): Battery: 81%".
+    var answerLine: String? {
+        let facts = details.map { "\($0.label): \($0.value)" }.joined(separator: "; ")
+        guard let kind = answer?.kind else { return facts.isEmpty ? nil : "details: \(facts)" }
+        return "answer (\(kind.rawValue))" + (facts.isEmpty ? "" : ": \(facts)")
+    }
 }
 
 /// Light taps for the chat, as Messages gives them.

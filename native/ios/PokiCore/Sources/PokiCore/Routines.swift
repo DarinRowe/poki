@@ -365,8 +365,13 @@ public final class RoutineStore: @unchecked Sendable {
 
     // MARK: For the agent
 
-    /// What a model should know at the start of a task: the notes, and the routines that fit it
-    /// best (stale ones left out). Empty when nothing is saved.
+    /// The brief goes into every task's prompt, so it stays this short (in characters); the routines
+    /// tool lists the rest.
+    static let maxBriefLength = 4000
+
+    /// What a model should know at the start of a task: the routines that fit it best (stale ones
+    /// left out) in up to half of `maxBriefLength`, and the newest notes in the rest. Empty when
+    /// nothing is saved.
     public func brief(for task: String, app: String? = nil, limit: Int = 12) -> String {
         let (routines, notes) = withFile { ($0.routines, $0.notes) }
         let words = Set(Self.words(task))
@@ -374,16 +379,23 @@ public final class RoutineStore: @unchecked Sendable {
             let score = Set(Self.words(r.name + " " + r.description)).intersection(words).count * 3 + (app != nil && r.app == app ? 2 : 0)
             return (r, score)
         }.sorted { $0.1 != $1.1 ? $0.1 > $1.1 : $0.0.updated > $1.0.updated }.prefix(limit).map(\.0)
-        var lines: [String] = []
-        if !notes.isEmpty {
-            lines.append("Notes saved about the owner and their phone (use them; the routines tool's remember adds one, forget_note drops one):")
-            lines += notes.suffix(20).map { "- \($0.text)" }
+        var room = Self.maxBriefLength
+        func section(_ header: String, _ items: [String], within limit: Int) -> [String] {
+            var left = min(room, limit) - header.count - 1
+            var taken: [String] = []
+            for item in items where item.count + 1 <= left {
+                taken.append(item)
+                left -= item.count + 1
+            }
+            guard !taken.isEmpty else { return [] }
+            room -= ([header] + taken).reduce(0) { $0 + $1.count + 1 }
+            return [header] + taken
         }
-        if !fit.isEmpty {
-            lines.append("Saved routines: do {run: \"name\"} replays one in a single call and stops cleanly at a screen that differs, so try a routine that fits before stepping by hand (with: {text_1: \"…\"} changes what it types). The routines tool lists, shows, edits and saves them:")
-            lines += fit.map { "- \($0.summary)" }
-        }
-        return lines.joined(separator: "\n")
+        let routineLines = section("Saved routines: do {run: \"name\"} replays one in a single call and stops cleanly at a screen that differs, so try a routine that fits before stepping by hand (with: {text_1: \"…\"} changes what it types). The routines tool lists, shows, edits and saves them:",
+                                   fit.map { "- \($0.summary)" }, within: Self.maxBriefLength / 2)
+        let noteLines = section("Notes saved about the owner and their phone, newest first (use them; the routines tool's remember adds one, forget_note drops one):",
+                                notes.suffix(20).reversed().map { "- \($0.text)" }, within: room)
+        return (noteLines + routineLines).joined(separator: "\n")
     }
 
     static func words(_ text: String) -> [String] {

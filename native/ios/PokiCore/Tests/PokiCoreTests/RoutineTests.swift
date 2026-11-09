@@ -107,6 +107,27 @@ final class RoutineTests: XCTestCase {
         XCTAssertEqual(wda.bodies("POST /wda/tap").count, taps)
     }
 
+    /// The brief goes into every task's prompt: a full memory stays within 4000 characters, and keeps
+    /// the routine that fits the task and the newest note.
+    func testTheBriefStaysShortWhenTheMemoryIsFull() async throws {
+        let store = RoutineStore(url: nil)
+        let (core, _, _) = core(store)
+        _ = await recordAbout(core)
+        var other = try XCTUnwrap(store.routine(named: "iOS version"))
+        for i in 0..<30 {
+            other.name = "errand \(i)"
+            other.description = String(repeating: "an errand the owner runs every week, ", count: 8)
+            store.save(other)
+        }
+        for i in 0..<50 { _ = store.remember("note \(i): " + String(repeating: "a long fact about the owner. ", count: 10), by: "test") }
+
+        let brief = store.brief(for: "what iOS version is this")
+
+        XCTAssertLessThanOrEqual(brief.count, 4000)
+        XCTAssertTrue(brief.contains("- iOS version: read the iOS version in Settings"), brief)
+        XCTAssertTrue(brief.contains("note 49: "), brief)
+    }
+
     func testAStaleRoutineIsNotOfferedAndASaveOverItStartsItsRecordAgain() async {
         let store = RoutineStore(url: nil)
         let (core, _, pages) = core(store)
