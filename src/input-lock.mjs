@@ -48,6 +48,7 @@ class InputLock {
 
   // Resolves to a release function. Rejects with the holder named after waitMs, or when signal aborts.
   acquire(key, holder, signal) {
+    if (signal?.aborted) return Promise.reject(signal.reason);
     const take = () => { const entry = { ...holder, since: performance.now() }; this.holders.set(key, entry); return () => { if (this.holders.get(key) === entry) this.holders.delete(key); this.wake(); }; };
     if (this.free(key) && this.waiters.size === 0) return Promise.resolve(take());
     return new Promise((resolve, reject) => {
@@ -81,6 +82,7 @@ class InputLock {
   }
 
   readSlot(signal) {
+    if (signal?.aborted) return Promise.reject(signal.reason);
     if (this.reads < this.maxReads) { this.reads++; return Promise.resolve(() => this.releaseRead()); }
     return new Promise((resolve, reject) => {
       const waiter = () => { signal?.removeEventListener('abort', aborted); this.reads++; resolve(() => this.releaseRead()); };

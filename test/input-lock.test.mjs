@@ -154,3 +154,44 @@ test('a phone named by one session and given by its UDID in another takes one in
   assert.match(second.content[0].text, /busy with input from another session/);
   assert.equal((await f.events()).filter(event => event.op === 'tap').length, 1);
 });
+
+// A cancellation can arrive while Coordination is still resolving the device or waiting
+// for this session's earlier call, before the lock installs its abort listener.
+test('already cancelled work cannot enter either lock queue', async () => {
+  const lock = lockOn();
+  const controller = new AbortController();
+  controller.abort(new DOMException('cancelled before lock entry', 'AbortError'));
+  await assert.rejects(lock.acquire('phone-a', { session: 'cancelled', tool: 'tap' }, controller.signal), /cancelled before lock entry/);
+  await assert.rejects(lock.readSlot(controller.signal), /cancelled before lock entry/);
+  assert.equal(lock.holders.size, 0);
+  assert.equal(lock.reads, 0);
+  const input = await lock.acquire('phone-a', { session: 'holder', tool: 'tap' });
+  const read = await lock.readSlot();
+  lock.maxReads = 1;
+  try {
+    await assert.rejects(lock.acquire('*', { session: 'cancelled', tool: 'tap' }, controller.signal), /cancelled before lock entry/);
+    await assert.rejects(lock.readSlot(controller.signal), /cancelled before lock entry/);
+    assert.equal(lock.waiters.size, 0);
+    assert.equal(lock.readWaiters.length, 0);
+  } finally { input(); read(); }
+});
+
+test('cancellation during device resolution does not leave a lock waiter behind', async () => {
+  const coordinator = new Coordination(); coordinator.inputLock = lockOn();
+  const log = [], a = session('cancelled', log);
+  let resolveDevice, resolving;
+  const entered = new Promise(resolve => { resolving = resolve; });
+  a.resolveDevice = () => { resolving(); return new Promise(resolve => { resolveDevice = resolve; }); };
+  const held = await coordinator.inputLock.acquire('phone-a', { session: 'holder', tool: 'tap' });
+  const controller = new AbortController();
+  const call = coordinator.call(a, 'tap', { device: 'Phone A' }, controller.signal);
+  await entered;
+  controller.abort(new DOMException('cancelled during resolution', 'AbortError'));
+  await assert.rejects(call, /cancelled during resolution/);
+  resolveDevice('phone-a');
+  await new Promise(resolve => setImmediate(resolve));
+  try {
+    assert.equal(coordinator.inputLock.waiters.size, 0, 'cancelled work must not wait for the device after the client has returned');
+    assert.deepEqual(log, []);
+  } finally { held(); await a.queue; }
+});
