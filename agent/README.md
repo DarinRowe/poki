@@ -149,7 +149,7 @@ The default private state directory is `agent/.runtime/bluebubbles`. Use `--stat
 
 For an isolated MCP and worker lifecycle, run `node agent/scripts/self-chat.mjs --config <private JSON file> --state <private directory>` from the repository root. Add `--check` for a read-only startup check. The supervisor records device-call notifications from this worker. Stopping an idle worker closes its services without acquiring or cleaning up a device. Physical-device runs must still use the shared device lock.
 
-## Telegram: Coming soon
+## Telegram
 
 Local protocol checks pass. A real bot receipt and delivery run has not been verified for this release.
 

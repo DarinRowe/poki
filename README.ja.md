@@ -95,7 +95,7 @@ poki "Search esp32 in Chrome and summarize the top result"
 
 使うほど速くなる：Poki Agent は過去のタスクを記憶し、繰り返し実行するときはより速く動きます。
 
-**チャネル：** 許可済みのチャネルを設定したら、`poki imessage` または `poki telegram` で起動します。設定方法は [Poki Agent](agent/README.md) を参照してください。
+**チャネル：** 許可済みのチャネルを設定したら、`poki imessage` または [`poki telegram`](agent/README.md#telegram) で起動します。設定方法は [Poki Agent](agent/README.md) を参照してください。
 
 **MCP クライアント：** Claude Code、Codex、および `mcpServers` JSON に対応したクライアント。
 
@@ -117,11 +117,11 @@ poki "Search esp32 in Chrome and summarize the top result"
 ## ロードマップ
 
 <p align="center">
-  <img src="docs/images/roadmap.png" width="860" alt="Poki roadmap. Shipped: Poki MCP, Poki Agent, iMessage and Terminal integrations, self-learning routes, remote connections. In Progress: persistent connection performance improvements, Telegram integration, native text input (clipboard-free), simplified tool interface. Planned: Poki App, which runs locally on iPhone and is available while your Mac is powered off. Future: iPhone Duo support, physical device support (no Xcode required), additional model providers.">
+  <img src="docs/images/roadmap.png" width="860" alt="Poki roadmap. Shipped: Poki MCP, Poki Agent, iMessage, Telegram, and Terminal integrations, self-learning routes, remote connections. In Progress: persistent connection performance improvements, native text input (clipboard-free), simplified tool interface. Planned: Poki App, which runs locally on iPhone and is available while your Mac is powered off. Future: iPhone Duo support, physical device support (no Xcode required), additional model providers.">
 </p>
 
-- **リリース済み:** Poki MCP、Poki Agent、iMessage とターミナルの連携、自己学習ルート、リモート接続
-- **開発中:** **常時接続のパフォーマンス改善**、Telegram 連携、ネイティブテキスト入力（クリップボード不使用）、ツールインターフェースの簡素化
+- **リリース済み:** Poki MCP、Poki Agent、iMessage、Telegram とターミナルの連携、自己学習ルート、リモート接続
+- **開発中:** **常時接続のパフォーマンス改善**、ネイティブテキスト入力（クリップボード不使用）、ツールインターフェースの簡素化
 - **計画中:** Poki App：iPhone 上でローカル実行、Mac の電源がオフでも利用可能
 - **将来の予定:** iPhone Duo のサポート、実機サポート（Xcode 不要）、対応モデルプロバイダーの追加
 

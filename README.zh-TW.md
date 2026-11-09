@@ -95,7 +95,7 @@ poki "Search esp32 in Chrome and summarize the top result"
 
 越用越快：Poki Agent 會記住做過的任務，重複執行時速度更快。
 
-**訊息管道：** 設定好已授權的管道後，用 `poki imessage` 或 `poki telegram` 啟動。設定方式請見 [Poki Agent](agent/README.md)。
+**訊息管道：** 設定好已授權的管道後，用 `poki imessage` 或 [`poki telegram`](agent/README.md#telegram) 啟動。設定方式請見 [Poki Agent](agent/README.md)。
 
 **MCP 用戶端：** Claude Code、Codex，以及任何支援 `mcpServers` JSON 的用戶端。
 
@@ -117,11 +117,11 @@ poki "Search esp32 in Chrome and summarize the top result"
 ## 路線圖
 
 <p align="center">
-  <img src="docs/images/roadmap.png" width="860" alt="Poki roadmap. Shipped: Poki MCP, Poki Agent, iMessage and Terminal integrations, self-learning routes, remote connections. In Progress: persistent connection performance improvements, Telegram integration, native text input (clipboard-free), simplified tool interface. Planned: Poki App, which runs locally on iPhone and is available while your Mac is powered off. Future: iPhone Duo support, physical device support (no Xcode required), additional model providers.">
+  <img src="docs/images/roadmap.png" width="860" alt="Poki roadmap. Shipped: Poki MCP, Poki Agent, iMessage, Telegram, and Terminal integrations, self-learning routes, remote connections. In Progress: persistent connection performance improvements, native text input (clipboard-free), simplified tool interface. Planned: Poki App, which runs locally on iPhone and is available while your Mac is powered off. Future: iPhone Duo support, physical device support (no Xcode required), additional model providers.">
 </p>
 
-- **已發布:** Poki MCP、Poki Agent、iMessage 與終端機整合、自我學習路線、遠端連線
-- **開發中:** **長連線效能最佳化**、Telegram 整合、原生文字輸入（不經剪貼簿）、簡化工具介面
+- **已發布:** Poki MCP、Poki Agent、iMessage、Telegram 與終端機整合、自我學習路線、遠端連線
+- **開發中:** **長連線效能最佳化**、原生文字輸入（不經剪貼簿）、簡化工具介面
 - **計畫中:** Poki App：在 iPhone 本機執行，Mac 關機時可用
 - **遠期規劃:** 支援 iPhone Duo、實機支援（無需安裝 Xcode）、更多模型供應商
 

@@ -95,7 +95,7 @@ poki "Search esp32 in Chrome and summarize the top result"
 
 Cada vez más rápido: Poki Agent recuerda las tareas anteriores y las ejecuta más rápido al repetirlas.
 
-**Canales:** Tras configurar un canal autorizado, inícialo con `poki imessage` o `poki telegram`. Consulta [Poki Agent](agent/README.md) para la configuración.
+**Canales:** Tras configurar un canal autorizado, inícialo con `poki imessage` o [`poki telegram`](agent/README.md#telegram). Consulta [Poki Agent](agent/README.md) para la configuración.
 
 **Clientes MCP:** Claude Code, Codex y cualquier cliente compatible con JSON de `mcpServers`.
 
@@ -117,11 +117,11 @@ La compatibilidad con iPhone físico solo se ha verificado en iPhone con la inte
 ## Hoja de ruta
 
 <p align="center">
-  <img src="docs/images/roadmap.png" width="860" alt="Poki roadmap. Shipped: Poki MCP, Poki Agent, iMessage and Terminal integrations, self-learning routes, remote connections. In Progress: persistent connection performance improvements, Telegram integration, native text input (clipboard-free), simplified tool interface. Planned: Poki App, which runs locally on iPhone and is available while your Mac is powered off. Future: iPhone Duo support, physical device support (no Xcode required), additional model providers.">
+  <img src="docs/images/roadmap.png" width="860" alt="Poki roadmap. Shipped: Poki MCP, Poki Agent, iMessage, Telegram, and Terminal integrations, self-learning routes, remote connections. In Progress: persistent connection performance improvements, native text input (clipboard-free), simplified tool interface. Planned: Poki App, which runs locally on iPhone and is available while your Mac is powered off. Future: iPhone Duo support, physical device support (no Xcode required), additional model providers.">
 </p>
 
-- **Publicado:** Poki MCP, Poki Agent, integraciones con iMessage y la terminal, rutas de autoaprendizaje, Conexión remota
-- **En desarrollo:** **mejoras de rendimiento en conexiones persistentes**, integración con Telegram, entrada de texto nativa (sin portapapeles), interfaz de herramientas simplificada
+- **Publicado:** Poki MCP, Poki Agent, integraciones con iMessage, Telegram y la terminal, rutas de autoaprendizaje, Conexión remota
+- **En desarrollo:** **mejoras de rendimiento en conexiones persistentes**, entrada de texto nativa (sin portapapeles), interfaz de herramientas simplificada
 - **Planificado:** Poki App: ejecución local en el iPhone, disponible con el Mac apagado
 - **Futuro:** Compatibilidad con iPhone Duo, compatibilidad con dispositivos físicos (sin Xcode), más proveedores de modelos
 

@@ -95,7 +95,7 @@ poki "Search esp32 in Chrome and summarize the top result"
 
 越用越快：Poki Agent 会记住跑过的任务，再次执行同款任务时速度更快。
 
-**消息渠道：** 配置获授权的渠道后，运行 `poki imessage` 或 `poki telegram`。详见[运行 Poki Agent](agent/README.md)。
+**消息渠道：** 配置获授权的渠道后，运行 `poki imessage` 或 [`poki telegram`](agent/README.md#telegram)。详见[运行 Poki Agent](agent/README.md)。
 
 **MCP 客户端：** Claude Code、Codex，以及任何支持 `mcpServers` JSON 配置的客户端。
 
@@ -117,7 +117,7 @@ poki "Search esp32 in Chrome and summarize the top result"
 ## 路线图
 
 <p align="center">
-  <img src="docs/images/roadmap.zh-CN.png" width="860" alt="Poki 路线图。已发布：Poki MCP、Poki Agent、iMessage 与终端集成、自学习路线、远程连接。开发中：长连接性能优化、Telegram 集成、原生文本输入（不经剪贴板）、简化工具接口。计划中：Poki App，在 iPhone 本地运行，Mac 关机时可用。远期规划：iPhone Duo 支持、真机支持（无需安装 Xcode）、更多模型提供商。">
+  <img src="docs/images/roadmap.zh-CN.png" width="860" alt="Poki 路线图。已发布：Poki MCP、Poki Agent、iMessage、Telegram 与终端集成、自学习路线、远程连接。开发中：长连接性能优化、原生文本输入（不经剪贴板）、简化工具接口。计划中：Poki App，在 iPhone 本地运行，Mac 关机时可用。远期规划：iPhone Duo 支持、真机支持（无需安装 Xcode）、更多模型提供商。">
 </p>
 
 ## Star History

@@ -115,7 +115,7 @@ poki "Search esp32 in Chrome and summarize the top result"
 
 Gets faster with use: Poki Agent remembers past tasks and runs them faster on repeat.
 
-**Channels:** After configuring an authorized channel, start it with `poki imessage` or `poki telegram`. See [Poki Agent](agent/README.md) for setup.
+**Channels:** After configuring an authorized channel, start it with `poki imessage` or [`poki telegram`](agent/README.md#telegram). See [Poki Agent](agent/README.md) for setup.
 
 **MCP clients:** Claude Code, Codex, and any client supporting `mcpServers` JSON.
 
@@ -137,7 +137,7 @@ Physical iPhone support has been verified only on iPhones using the Chinese inte
 ## Roadmap
 
 <p align="center">
-  <img src="docs/images/roadmap.png" width="860" alt="Poki roadmap. Shipped: Poki MCP, Poki Agent, iMessage and Terminal integrations, self-learning routes, remote connections. In Progress: persistent connection performance improvements, Telegram integration, native text input (clipboard-free), simplified tool interface. Planned: Poki App, which runs locally on iPhone and is available while your Mac is powered off. Future: iPhone Duo support, physical device support (no Xcode required), additional model providers.">
+  <img src="docs/images/roadmap.png" width="860" alt="Poki roadmap. Shipped: Poki MCP, Poki Agent, iMessage, Telegram, and Terminal integrations, self-learning routes, remote connections. In Progress: persistent connection performance improvements, native text input (clipboard-free), simplified tool interface. Planned: Poki App, which runs locally on iPhone and is available while your Mac is powered off. Future: iPhone Duo support, physical device support (no Xcode required), additional model providers.">
 </p>
 
 ## Star History
