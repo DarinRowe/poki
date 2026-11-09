@@ -73,7 +73,11 @@ publish_to() {
     gh release upload "$rel" dist/* --clobber
     # The previous build's files that this one did not replace (they carry the old build number).
     new="$(find dist -maxdepth 1 -type f -exec basename {} \;)"
-    echo "$old" | grep -E '^(Poki-.*\.ipa|PokiSetup-.*)$' | grep -vxF -f <(echo "$new") | while read -r name; do
+    # Poki Setup's files are only replaced when this publish brings its own (alpha copies them from
+    # the pre-alpha); a pre-alpha keeps the ones already there, which older Poki Setups update from.
+    stale='^Poki-.*\.ipa$'
+    [ -n "$DESKTOP_FROM" ] && stale='^(Poki-.*\.ipa|PokiSetup-.*)$'
+    echo "$old" | grep -E "$stale" | grep -vxF -f <(echo "$new") | while read -r name; do
       gh release delete-asset "$rel" "$name" --yes
     done
     gh release edit "$rel" --title "Poki v$VERSION ($BUILD) $TITLE" --notes-file "notes-$rel.md" --prerelease --latest=false
