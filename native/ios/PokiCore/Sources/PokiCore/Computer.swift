@@ -531,6 +531,18 @@ final class Computer: @unchecked Sendable {
             return ToolResult(text: "not_sent: \(CoreConfig.ownAppRefusal). Nothing was sent. Leave Poki first ({button: \"home\"} or {launch: \"bundle id\"}).", jpeg: nil, isError: true)
         }
 
+        if config.sensitive.enabled {
+            var scan = SensitiveScan(front: lastForeground, secureOnScreen: lastElements.contains(where: \.isSecure))
+            for (at, action) in actions.enumerated() {
+                if scan.moved, let point = action["tap"] ?? action["long_press"], point.array != nil || point["x"] != nil {
+                    var result = await actNow(actions: Array(actions[..<at]), full: full, finish: false, session: session, answerBy: answerBy)
+                    result.text += "\nnot_sent from action \(at + 1): the screen may have changed. Choose the remaining actions from the fresh screen above and send them in a new do call. Do not repeat the actions already sent."
+                    return result
+                }
+                if sensitive(action, &scan) != nil { break }
+            }
+        }
+
         // The runner's start and the checks above are not the actions' time (seen on the phone: a
         // launch sent while the runner was starting had its 9 s used up before it went). The call's
         // backstop allows `runnerWait` for that, so the shift stops there: a runner that was waited

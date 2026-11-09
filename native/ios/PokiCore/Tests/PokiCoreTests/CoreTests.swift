@@ -563,16 +563,28 @@ final class ApprovalTests: XCTestCase {
         return wda
     }
 
-    /// A tap can open another screen (a conversation, a photo), so a point tapped after it in the same
-    /// do is not judged by the read before it, where nothing was there.
-    func testAPointTappedAfterATapInTheSameDoAsks() async {
-        for (bundle, reason) in [("com.apple.MobileSMS", "sending a message"), ("com.apple.mobileslideshow", "a tap at a point")] {
-            let (core, wda, _) = makeCore(messages(bundle))
+    func testAPointAfterATapReturnsAFreshScreenBeforeChoosingWhetherToAsk() async {
+        for (label, bundle, asks) in [
+            ("查询", "test.travel", false), ("搜索", "test.travel", false),
+            ("筛选", "test.travel", false), ("选日期", "test.travel", false),
+            ("付款", "test.travel", true), ("删除", "test.photos", true),
+            ("发送", "com.apple.MobileSMS", true), ("拨打", "test.contacts", true)
+        ] {
+            let wda = messages(bundle, [("Button", "popClose")])
+            let (core, _, _) = makeCore(wda)
             _ = await core.call("look", [:])
-            let result = await core.call("do", ["actions": [["tap": 1], ["wait": 300], ["tap": [350, 790]]]])
-            XCTAssertTrue(result.text.contains("approval_required"), "\(bundle): \(result.text)")
-            XCTAssertTrue(core.pendingApproval?.reason.hasPrefix(reason) == true, "\(bundle): \(core.pendingApproval?.reason ?? "no request")")
-            XCTAssertEqual(wda.bodies("POST /wda/tap").count, 1, "\(bundle): the first tap goes first, the point after it waits")
+            wda.set("POST /wda/tap") { _ in
+                wda.source([("Button", label)])
+                return (200, ["value": .null])
+            }
+            let result = await core.call("do", ["actions": [["tap": 1], ["tap": [100, 120]]]])
+            XCTAssertNil(core.pendingApproval, label)
+            XCTAssertTrue(result.text.contains("not_sent from action 2"), result.text)
+            XCTAssertTrue(result.text.contains(label), result.text)
+            XCTAssertEqual(wda.bodies("POST /wda/tap").count, 1, "the stale point must not be sent")
+            let retry = await core.call("do", ["actions": [["tap": [100, 120]]]])
+            XCTAssertEqual(core.pendingApproval != nil, asks, "\(label): \(retry.text)")
+            XCTAssertEqual(wda.bodies("POST /wda/tap").count, asks ? 1 : 2, label)
         }
     }
 
