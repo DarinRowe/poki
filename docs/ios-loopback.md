@@ -80,4 +80,5 @@ Before claiming this works on an iPhone, complete section 1 and then sections 2â
 access, denied consent, restart, background/lock survival, Wi-Fi/cellular recovery, external VPN
 coexistence and stop. Simulator VPN startup must report that a physical iPhone is required.
 
-This implementation does not change the known runner port 8100 exposure or deploy a relay.
+The standalone launcher binds the runner's HTTP and MJPEG listeners to `127.0.0.1`; the loopback
+tunnel remains limited to the developer-service routes above and does not expose port 8100.

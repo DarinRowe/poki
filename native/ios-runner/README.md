@@ -29,20 +29,23 @@ The runner does not connect to the relay. PokiCore, inside the Poki app, dials t
 sends WebDriver requests to the runner at `127.0.0.1:8100` on the same phone. PokiLauncher starts the
 runner through the phone's own developer services (`docs/ios-core.md`).
 
-## Known issue: port 8100 is open to the local network
+## Network boundary
 
-The launcher does not set WebDriverAgent's `USE_IP` (`native/launcher/src/launch.rs`), so WebDriverAgent
-listens on port 8100 on every network interface of the phone, not only on 127.0.0.1. It asks for no
-credentials. While the runner runs, any device on the same network can open `http://<phone IP>:8100`,
-take screenshots and tap, and PokiCore's approvals do not apply to those requests. Turn Poki on only on
-networks you trust.
+The standalone app's launcher sets WebDriverAgent's `USE_IP` to `127.0.0.1`
+(`native/launcher/src/launch.rs`). In the pinned WebDriverAgent this binds both port 8100 and the MJPEG
+screenshot server to the phone's loopback, so another device on the Wi-Fi or cellular network cannot
+reach them. PokiCore already connects to `127.0.0.1:8100` on the same phone, so this does not change its
+runner path.
 
-The planned fix pairs the runner with Poki through a pairing code, so that only Poki can control it.
+Mac-hosted control is separate. Poki MCP normally uses the paired native bridge or RemotePairing and
+does not need port 8100. Its explicit `POKI_CUA_BACKEND=wda` mode can still connect to a WDA process
+deliberately launched by the Mac with a non-loopback `USE_IP`; that exposure and its network controls
+belong to that opt-in launch, not to Poki's standalone iOS launcher.
 
 ## Goals
 
-**No unauthenticated control.** Only Poki may control the runner. The known issue above breaks this
-rule today.
+**No unauthenticated control from the network.** The standalone runner is reachable only from the
+phone itself. Poki's approval boundary remains in PokiCore, in front of the runner.
 
 **Minimal third-party tools.** The end state is a store-distributable Poki companion app that installs
 and refreshes the runner itself with the user's Apple ID (the SideStore / StikDebug approach) and

@@ -12,11 +12,11 @@ MCP client ──HTTPS──▶ Cloudflare Worker (relay) ──WebSocket (phone
 Poki app ──TCP 10.7.0.1:* (loopback tunnel)──▶ the phone's own developer services ──▶ WebDriverAgent runner (127.0.0.1:8100)
 ```
 
-Known issue: PokiCore reaches the runner at 127.0.0.1:8100, but the runner listens on port 8100 on
-every network interface of the phone and asks for no credentials. While it runs, any device on the
-same network can take screenshots and tap, and PokiCore's approvals do not apply to those requests.
-Turn Poki on only on networks you trust. The planned fix is a pairing code between Poki and the
-runner (`native/ios-runner/README.md`).
+The standalone launcher sets WebDriverAgent's `USE_IP=127.0.0.1`, which binds its HTTP and MJPEG
+listeners to the phone's loopback. PokiCore reaches the runner at `127.0.0.1:8100`; devices on the
+phone's Wi-Fi or cellular network cannot reach that standalone runner. Mac-hosted control uses the
+native bridge or RemotePairing by default. A Mac may still deliberately launch a separate,
+network-visible WDA for the explicit `POKI_CUA_BACKEND=wda` mode; see `native/ios-runner/README.md`.
 
 Three interfaces, each owned by one side:
 
@@ -27,7 +27,12 @@ Three interfaces, each owned by one side:
 | 3. PokiLauncher C ABI | PokiLauncher (`native/launcher`); used by the app |
 | 4. What the launcher needs from the loopback | PokiTunnel (`native/ios-app/PokiTunnel`), or the user's external VPN |
 
-Version: 1.3 (2026-11-07: the phone goes back to the app a task began in, `do {finish}` and `finishTask()` in section 2). 1.2 (2026-11-07: built-in loopback and separate external-connection build in section 4; 2026-11-06: on-device pairing in section 3, ToolFacts on toolFinished in section 2, tunnel facts in section 4, keep-alive). Every change to a section below bumps its version and is announced to the other threads.
+Version: 1.4 (2026-11-09: the standalone launcher binds the runner's HTTP and MJPEG listeners to
+the phone's loopback). 1.3 (2026-11-07: the phone goes back to the app a task began in, `do {finish}`
+and `finishTask()` in section 2). 1.2 (2026-11-07: built-in loopback and separate external-connection
+build in section 4; 2026-11-06: on-device pairing in section 3, ToolFacts on toolFinished in section
+2, tunnel facts in section 4, keep-alive). Every change to a section below bumps its version and is
+announced to the other threads.
 
 ## 1. Relay frames, v1
 

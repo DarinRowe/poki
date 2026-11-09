@@ -32,6 +32,15 @@ fn config_defaults_to_the_loopback_and_local_runner() {
 }
 
 #[test]
+fn standalone_runner_listens_only_on_the_phone_loopback() {
+    let mut environment = plist::Dictionary::new();
+    environment.insert("USE_IP".into(), "0.0.0.0".into());
+    launch::secure_runner_environment(&mut environment);
+    assert_eq!(environment.get("POKI_LAUNCHER").and_then(plist::Value::as_string), Some("1"));
+    assert_eq!(environment.get("USE_IP").and_then(plist::Value::as_string), Some("127.0.0.1"));
+}
+
+#[test]
 fn pairing_files_of_either_kind_are_told_apart() {
     let path = temp("rp.plist");
     std::fs::write(&path, RpPairingFile::generate("Poki").to_bytes()).unwrap();
