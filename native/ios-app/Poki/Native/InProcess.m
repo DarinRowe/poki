@@ -787,8 +787,11 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
         }
         if (_freshAX) ax = _freshAX;
         if (_accessibilityGeneration != generation && [ax respondsToSelector:@selector(loadAccessibility:)]) {
-            NSNumber *loaded = PKBounded(0, 4, NULL, ^id { NSError *error; return @([ax loadAccessibility:&error]); });
+            __block NSString *why = nil;
+            NSNumber *loaded = PKBounded(0, 4, NULL, ^id { NSError *error; BOOL done = [ax loadAccessibility:&error]; why = error.localizedDescription; return @(done); });
             if (loaded.boolValue) _accessibilityGeneration = generation;
+            // Whether third-party apps can be read at all (kAXErrorServerNotFound without it).
+            NSLog(@"PokiInProcess: accessibility for session generation %llu: %@", generation, loaded.boolValue ? @"loaded" : [NSString stringWithFormat:@"not loaded (%@)", why ?: (loaded ? @"refused" : @"no answer in 4 s")]);
         }
     }
     return ax;

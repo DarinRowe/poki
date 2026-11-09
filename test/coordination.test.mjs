@@ -207,6 +207,8 @@ test('recognized prompts report their type without forcing a human handoff',asyn
  for(const [tool,args,label,kind] of [
   ['handle_alert',{action:'accept'},'Allow Paste','paste'],
   ['handle_alert',{button:'允许粘贴'},'允许粘贴','paste'],
+  // A recognizer can space out what it reads; the button text a caller writes is never spaced.
+  ['handle_alert',{button:'允许粘贴'},'允 许 粘 贴','paste'],
   ['handle_alert',{action:'dismiss'},"Don't Allow Paste",'paste'],
   ['take_screenshot',{},'Enter iPhone Passcode','passcode'],
   ['observe_device',{},'Apple Account Password','apple_account'],

@@ -563,16 +563,28 @@ final class ApprovalTests: XCTestCase {
         return wda
     }
 
-    /// A tap can open another screen (a conversation, a photo), so a point tapped after it in the same
-    /// do is not judged by the read before it, where nothing was there.
-    func testAPointTappedAfterATapInTheSameDoAsks() async {
-        for (bundle, reason) in [("com.apple.MobileSMS", "sending a message"), ("com.apple.mobileslideshow", "a tap at a point")] {
-            let (core, wda, _) = makeCore(messages(bundle))
+    func testAPointAfterATapReturnsAFreshScreenBeforeChoosingWhetherToAsk() async {
+        for (label, bundle, asks) in [
+            ("查询", "test.travel", false), ("搜索", "test.travel", false),
+            ("筛选", "test.travel", false), ("选日期", "test.travel", false),
+            ("付款", "test.travel", true), ("删除", "test.photos", true),
+            ("发送", "com.apple.MobileSMS", true), ("拨打", "test.contacts", true)
+        ] {
+            let wda = messages(bundle, [("Button", "popClose")])
+            let (core, _, _) = makeCore(wda)
             _ = await core.call("look", [:])
-            let result = await core.call("do", ["actions": [["tap": 1], ["wait": 300], ["tap": [350, 790]]]])
-            XCTAssertTrue(result.text.contains("approval_required"), "\(bundle): \(result.text)")
-            XCTAssertTrue(core.pendingApproval?.reason.hasPrefix(reason) == true, "\(bundle): \(core.pendingApproval?.reason ?? "no request")")
-            XCTAssertEqual(wda.bodies("POST /wda/tap").count, 1, "\(bundle): the first tap goes first, the point after it waits")
+            wda.set("POST /wda/tap") { _ in
+                wda.source([("Button", label)])
+                return (200, ["value": .null])
+            }
+            let result = await core.call("do", ["actions": [["tap": 1], ["tap": [100, 120]]]])
+            XCTAssertNil(core.pendingApproval, label)
+            XCTAssertTrue(result.text.contains("not_sent from action 2"), result.text)
+            XCTAssertTrue(result.text.contains(label), result.text)
+            XCTAssertEqual(wda.bodies("POST /wda/tap").count, 1, "the stale point must not be sent")
+            let retry = await core.call("do", ["actions": [["tap": [100, 120]]]])
+            XCTAssertEqual(core.pendingApproval != nil, asks, "\(label): \(retry.text)")
+            XCTAssertEqual(wda.bodies("POST /wda/tap").count, asks ? 1 : 2, label)
         }
     }
 
@@ -1059,5 +1071,44 @@ final class UnreadableTreeTests: XCTestCase {
         let tapped = await core.call("do", ["actions": [["tap": [200, 300]]]])
         XCTAssertFalse(tapped.text.contains(CoreConfig.ownAppRefusal), tapped.text)
         XCTAssertEqual(wda.sent.filter { $0.hasSuffix("/wda/tap") }.count, 1, tapped.text)
+    }
+}
+
+/// ESP-229: on the phone, WeChat's tree failed with "Error getting main window kAXErrorServerNotFound"
+/// for half an hour (no accessibility server in its process), while Settings and Poki read fine; the
+/// same WeChat process read fine later. A call that opened the app and then finds no accessibility
+/// server in it opens the app once more from a fresh start and reads again; a look, which opened
+/// nothing, never ends an app.
+final class AccessibilityServerMissingTests: XCTestCase {
+    func testAnAppOpenedWithoutAnAccessibilityServerIsOpenedAgainFreshAndRead() async {
+        let (core, wda, _) = makeCore()
+        let front = LockedBox("nz.zheha.poki")
+        let restarted = LockedBox(false)
+        wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": .string(front.value), "name": ""]]) }
+        for key in ["POST /wda/apps/activate", "POST /wda/apps/launch"] {
+            wda.set(key) { body in front.value = body?["bundleId"]?.string ?? front.value; return (200, ["value": .null]) }
+        }
+        wda.set("POST /wda/apps/terminate") { _ in restarted.value = true; front.value = "com.apple.springboard"; return (200, ["value": .null]) }
+        let rect: JSON = ["x": 0, "y": 0, "width": 390, "height": 844]
+        let poki: JSON = ["type": "XCUIElementTypeApplication", "label": "Poki", "rect": rect,
+                          "children": [["type": "XCUIElementTypeButton", "label": "Talk", "rect": ["x": 16, "y": 700, "width": 358, "height": 44]]]]
+        let wechat: JSON = ["type": "XCUIElementTypeApplication", "label": "WeChat", "rect": rect,
+                            "children": [["type": "XCUIElementTypeButton", "label": "Chats", "rect": ["x": 16, "y": 790, "width": 80, "height": 44]]]]
+        wda.set("GET /source") { _ in
+            guard front.value == "com.tencent.xin" else { return (200, ["value": poki]) }
+            return restarted.value ? (200, ["value": wechat])
+                : (500, ["value": ["error": "unknown error", "message": "no element tree: Error getting main window kAXErrorServerNotFound"]])
+        }
+        _ = await core.call("look", [:])
+
+        let opened = await core.call("do", ["actions": [["launch": "com.tencent.xin"]]])
+        XCTAssertTrue(opened.text.contains("\"Chats\""), opened.text)
+        XCTAssertTrue(opened.text.contains("opened again from a fresh start"), opened.text)
+        XCTAssertEqual(wda.sent.filter { $0.hasSuffix("/wda/apps/terminate") }.count, 1, opened.text)
+
+        restarted.value = false
+        let looked = await core.call("look", [:])
+        XCTAssertTrue(looked.text.contains("kAXErrorServerNotFound"), looked.text)
+        XCTAssertEqual(wda.sent.filter { $0.hasSuffix("/wda/apps/terminate") }.count, 1, "a look ends no app: \(looked.text)")
     }
 }

@@ -148,7 +148,8 @@ export class Devices {
     checkWork();
     if (this.resolved) { this.access(this.resolved); return this.resolved; }
     const list = await this.inventory(true);
-    const query = this.requested ?? this.selected;
+    // A configured default spares every call a device argument when a simulator is also booted.
+    const query = this.requested ?? this.selected ?? (process.env.POKI_MCP_DEVICE || undefined);
     let matches = query ? list.filter(d => names(d, query)) : list.filter(d => d.kind === 'physical' || d.state === 'Booted');
     if (query && !matches.length) {
       for (const d of list.filter(d => d.kind === 'physical')) {
@@ -393,7 +394,7 @@ export class Devices {
     } catch (error) {
       try { checkWork(); } catch (stop) { return { stopped: true, stop_reason: stoppingReason(stop) }; }
       // Input clears the last read, so one left now was taken after the action: report it rather than nothing.
-      const seen = this.seen?.device === this.resolved?.id && this.seen.elements.length ? this.seen : undefined;
+      const seen = this.seen && this.seen.device === this.resolved?.id && this.seen.elements.length ? this.seen : undefined;
       if (!seen) return { ...screenChange(), screen: { unavailable: error.message } };
       // One read that differs settles a change; a matching one needed a second read to confirm it.
       return { ...screenChange(before, before !== undefined && seen.signature !== before ? seen.signature : undefined), screen: { ...describeScreen(seen), ...(seen.startedAt < this.lastInputAt ? { stale: true } : {}), partial: true, reason: `${error.message}: the screen may still have been changing; this is the last complete read.` } };

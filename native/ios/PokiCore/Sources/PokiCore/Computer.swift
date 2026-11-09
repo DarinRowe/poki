@@ -531,6 +531,18 @@ final class Computer: @unchecked Sendable {
             return ToolResult(text: "not_sent: \(CoreConfig.ownAppRefusal). Nothing was sent. Leave Poki first ({button: \"home\"} or {launch: \"bundle id\"}).", jpeg: nil, isError: true)
         }
 
+        if config.sensitive.enabled {
+            var scan = SensitiveScan(front: lastForeground, secureOnScreen: lastElements.contains(where: \.isSecure))
+            for (at, action) in actions.enumerated() {
+                if scan.moved, let point = action["tap"] ?? action["long_press"], point.array != nil || point["x"] != nil {
+                    var result = await actNow(actions: Array(actions[..<at]), full: full, finish: false, session: session, answerBy: answerBy)
+                    result.text += "\nnot_sent from action \(at + 1): the screen may have changed. Choose the remaining actions from the fresh screen above and send them in a new do call. Do not repeat the actions already sent."
+                    return result
+                }
+                if sensitive(action, &scan) != nil { break }
+            }
+        }
+
         // The runner's start and the checks above are not the actions' time (seen on the phone: a
         // launch sent while the runner was starting had its 9 s used up before it went). The call's
         // backstop allows `runnerWait` for that, so the shift stops there: a runner that was waited
@@ -657,6 +669,26 @@ final class Computer: @unchecked Sendable {
             lastTree = seenTree
             lastPicture = seenPicture
             result = await readAndReply(until: until, full: full, changes: true, did: did, error: error, extra: (approvedNote.map { [$0] } ?? []) + extra + ["the screen was read again (\(rereads)): \(why)"])
+        }
+        // The app this call opened answers no tree because its process has no accessibility server
+        // (on the phone, WeChat for half an hour: "Error getting main window kAXErrorServerNotFound",
+        // while Settings and Poki read; the same WeChat process read fine later). It is opened once
+        // more from a fresh start, which brings up a process with one, and read again. Only an app the
+        // call itself brought forward: ending one the owner was in would lose their place.
+        let cameForward = launched ?? (lastForeground?.bundleID != before?.bundleID ? lastForeground?.bundleID : nil)
+        if let app = cameForward, lastForeground?.bundleID == app, !config.isPoki(lastForeground), app != "com.apple.springboard",
+           result.text.contains("kAXErrorServerNotFound"), until - now() > config.readTimeout + 4 {
+            var how = "it was opened again from a fresh start"
+            do {
+                _ = try await runner.call("POST", "/wda/apps/terminate", ["bundleId": .string(app)], timeout: 6, countsAsMiss: false)
+                _ = try await runner.call("POST", "/wda/apps/launch", ["bundleId": .string(app)], timeout: max(3, min(10, until - now() - config.readTimeout - 0.5)))
+            } catch {
+                how = "opening it again from a fresh start did not answer (\(error))"
+            }
+            await sleep(seconds: 0.4)
+            lastTree = seenTree
+            lastPicture = seenPicture
+            result = await readAndReply(until: until, full: full, changes: true, did: did, error: error, extra: (approvedNote.map { [$0] } ?? []) + extra + ["\(app) answered no element tree (no accessibility server in its process: kAXErrorServerNotFound); \(how), so its earlier page is gone"])
         }
         // A call that took far longer than its parts says where the time went (gym: a wait_until
         // whose parts said 5 s answered after 29.8 s).
