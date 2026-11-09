@@ -26,10 +26,9 @@ enum Harness {
 
     static var instructions: String { [PokiCore.toolInstructions, system].joined(separator: "\n\n") }
 
-    /// The instructions for a task: the above, then what memory and routines know about it (empty
-    /// until dev/agent-routines adds `PokiCore.memoryBrief(for:)` through `ChatModel.beforeTask`).
+    /// The instructions for a task: the above, then the saved notes and the routines that fit it.
     @MainActor static func instructions(for task: String) -> String {
-        let brief = ChatModel.beforeTask?(task) ?? ""
+        let brief = PokiCore.memoryBrief(for: task)
         var parts = [instructions]
         // Poki learns the owner's repeated tasks: a saved routine runs them in one call next time.
         parts.append("Before starting, check whether a saved routine covers this task (routines {action: \"list\"}) and run it with do {run: name} if so. When a task worked and was not a routine yet, save it with routines {action: \"save\", name, description} before finish_task, with a short name the owner would use, so it can be repeated next time.")

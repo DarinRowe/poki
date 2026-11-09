@@ -71,7 +71,7 @@ enum ApprovalClassifier {
         Conversation, oldest first:
         \(String(conversation.suffix(4000)))
         """
-        let loop = PiLoop(provider: provider, model: model, instructions: instructions, tools: []) { _ in
+        let loop = PiLoop(provider: provider, model: model, tools: []) { _ in
             .init(text: "No tools.", jpeg: nil, isError: true)
         }
         // The first of the model's reply and the deadline answers; a late reply is dropped.
@@ -79,7 +79,7 @@ enum ApprovalClassifier {
             let once = Once(done)
             let run = Task { @MainActor in
                 var first: String?
-                _ = await loop.run(prompt, maxTurns: 1) { text in if first == nil { first = text } }
+                _ = await loop.run(prompt, instructions: instructions, maxTurns: 1) { text in if first == nil { first = text } }
                 once.finish(first)
             }
             Task { @MainActor in

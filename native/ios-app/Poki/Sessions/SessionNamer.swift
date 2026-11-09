@@ -12,11 +12,11 @@ enum SessionNamer {
         You name chat conversations. Reply with only a short title of two to four words for the conversation \
         that starts with the user's message, in the user's language. No quotes, no punctuation at the end, no emoji.
         """
-        let loop = PiLoop(provider: provider, model: model, instructions: instructions, tools: []) { _ in
+        let loop = PiLoop(provider: provider, model: model, tools: []) { _ in
             .init(text: "No tools.", jpeg: nil, isError: true)
         }
         let reply = Reply()
-        let outcome = await loop.run(String(message.prefix(500)), maxTurns: 1) { text in if reply.text == nil { reply.text = text } }
+        let outcome = await loop.run(String(message.prefix(500)), instructions: instructions, maxTurns: 1) { text in if reply.text == nil { reply.text = text } }
         guard outcome == .done, var name = reply.text?.split(separator: "\n").first.map(String.init) else { return nil }
         name = name.trimmingCharacters(in: CharacterSet(charactersIn: " \"'“”‘’.。*#"))
         guard !name.isEmpty, name.count <= 48 else { return nil }

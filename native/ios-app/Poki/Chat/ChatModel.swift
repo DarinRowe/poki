@@ -66,8 +66,6 @@ final class ChatModel {
     let requester: String?
     /// The tool calls of this conversation, for "save a routine from this session" (SessionStore.record).
     private(set) var calls: [CallRecord] = []
-    /// Memory and routines (dev/agent-routines): extra instructions for a task, read before pi's first turn.
-    static var beforeTask: (@MainActor (String) -> String)?
     /// Told when a task ends, with its calls and finish_task's verdict.
     static var afterTask: (@MainActor (TaskRecord) -> Void)?
     /// A board's sample conversation, for screenshots.
@@ -232,6 +230,7 @@ final class ChatModel {
         awaitingModel = true
         stopAsked = false
         planID = nil; noteID = nil; modelPlan = nil
+        let instructions = Harness.instructions(for: text)
         if Self.direct, provider == .anthropic || provider == .openai {
             // Another model starts a new conversation on the model's side; the chat on screen stays.
             if client?.signature != "\(provider.rawValue)/\(model)" {
@@ -241,7 +240,7 @@ final class ChatModel {
             client.say(text)
             began("direct", provider, model)
             task = Task { [weak self] in
-                await self?.run(client, delivered: you.id)
+                await self?.run(client, instructions: instructions, delivered: you.id)
                 self?.logEnd("direct", outcome: nil)
                 self?.running = false
                 self?.awaitingModel = false
@@ -255,7 +254,7 @@ final class ChatModel {
         }
         // Another model starts a new loop that carries the conversation over.
         if loop?.provider != provider || loop?.model.id != piModel.id {
-            loop = PiLoop(provider: provider, model: piModel, instructions: Harness.instructions(for: text), tools: Harness.tools,
+            loop = PiLoop(provider: provider, model: piModel, tools: Harness.tools,
                           carrying: loop?.messages ?? []) { [weak self] call in
                 guard let self else { return PokiCore.ToolAnswer(text: "Task stopped. Action not executed.", jpeg: nil, isError: true) }
                 return await self.perform(call)
@@ -264,7 +263,7 @@ final class ChatModel {
         guard let loop else { return }
         began("pi", provider, model)
         task = Task { [weak self] in
-            let outcome = await loop.run(text, maxTurns: Self.maxTurns) { text in
+            let outcome = await loop.run(text, instructions: instructions, maxTurns: Self.maxTurns) { text in
                 self?.markDelivered(you.id)
                 self?.awaitingModel = false
                 self?.add(.poki(text))
@@ -343,11 +342,11 @@ final class ChatModel {
         task?.cancel()
     }
 
-    private func run(_ client: ModelClient, delivered youID: UUID) async {
+    private func run(_ client: ModelClient, instructions: String, delivered youID: UUID) async {
         for _ in 0..<Self.maxTurns {
             let turn: ModelTurn
             do {
-                turn = try await client.next(instructions: Harness.instructions, tools: Harness.tools)
+                turn = try await client.next(instructions: instructions, tools: Harness.tools)
             } catch {
                 client.forgetUnansweredQuestion()
                 if stopAsked || Task.isCancelled { return }

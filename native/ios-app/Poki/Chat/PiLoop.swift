@@ -23,7 +23,7 @@ final class PiLoop {
     var signature: String { "pi:\(provider.rawValue)/\(model.id)" }
     var messages: [AgentMessage] { agent.state.messages }
 
-    init(provider: ModelProvider, model: Model, instructions: String, tools: [ToolSpec], carrying messages: [AgentMessage] = [],
+    init(provider: ModelProvider, model: Model, tools: [ToolSpec], carrying messages: [AgentMessage] = [],
          perform: @escaping @MainActor (ToolCall) async -> PokiCore.ToolAnswer) {
         self.provider = provider
         self.model = model
@@ -37,16 +37,17 @@ final class PiLoop {
         }
         // agent/pi-session.mjs: low thinking, one tool call at a time.
         agent = Agent(AgentOptions(
-            initialState: AgentState(systemPrompt: instructions, model: model, thinkingLevel: .low, tools: agentTools, messages: messages),
+            initialState: AgentState(model: model, thinkingLevel: .low, tools: agentTools, messages: messages),
             getApiKey: { _ in await ModelCredential.apiKey(for: provider) },
             toolExecution: .sequential
         ))
     }
 
-    /// The owner's message, then pi's loop until the model answers without tools, `stop()` or `maxTurns`
-    /// model turns. `onText` gets each finished text block.
-    func run(_ text: String, maxTurns: Int, onText: @escaping @MainActor (String) -> Void) async -> Outcome {
+    /// The owner's message under this task's instructions, then pi's loop until the model answers
+    /// without tools, `stop()` or `maxTurns` model turns. `onText` gets each finished text block.
+    func run(_ text: String, instructions: String, maxTurns: Int, onText: @escaping @MainActor (String) -> Void) async -> Outcome {
         gate.reset()
+        use(instructions)
         let turns = Counter()
         let failure = Box()
         let agent = self.agent
@@ -85,6 +86,19 @@ final class PiLoop {
     func stop() {
         gate.stop()
         agent.abort()
+    }
+
+    /// The leading system message holds the instructions and declares the tools. pi keeps it when a loop
+    /// carries messages over, so each task puts its own text in it and leaves the tools as they are.
+    private func use(_ instructions: String) {
+        var messages = agent.messages
+        if case .system(var system)? = messages.first {
+            system.content = .text(instructions)
+            messages[0] = .system(system)
+        } else if let system = createInitialSystemMessage(instructions, nil) {
+            messages.insert(.system(system), at: 0)
+        }
+        agent.messages = messages
     }
 
     private nonisolated static func result(_ answer: PokiCore.ToolAnswer) -> AgentToolResult {
