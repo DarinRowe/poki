@@ -21,6 +21,7 @@ final class ChatHarnessTests: XCTestCase {
     override func tearDown() async throws {
         for key in Self.settings { UserDefaults.standard.set(saved[key] ?? nil, forKey: key) }
         for text in notes { _ = await app?.runTool("routines", arguments: Self.json(["action": "forget_note", "id": text])) }
+        ChatModel.afterTask = nil
     }
 
     /// A conversation handed over by an outside agent, on the fake endpoint. The phone's tools answer
@@ -60,7 +61,8 @@ final class ChatHarnessTests: XCTestCase {
         XCTAssertTrue(FakeCompletions.system(requests[3]).contains(note), "the second task's prompt has the note the first saved")
     }
 
-    /// finish_task's requested facts and the kind of answer go back to the agent that handed the task over.
+    /// finish_task's requested facts and the kind of answer go back to the agent that handed the task
+    /// over, and the task's record keeps the answer with the element it was read from.
     func testTheFinishedTaskAnswersWithTheRequestedFacts() async throws {
         let server = try FakeCompletions(replies: [
             FakeCompletions.tool("finish_task", [
@@ -71,11 +73,17 @@ final class ChatHarnessTests: XCTestCase {
             FakeCompletions.text("Done."),
         ])
         let chat = chat(on: server)
+        var records: [TaskRecord] = []
+        ChatModel.afterTask = { records.append($0) }
 
         let reply = await chat.runDelegated("What is the battery level?")
 
         XCTAssertEqual(reply.success, true)
         XCTAssertTrue(reply.text.contains("answer (field): Battery: 81%"), reply.text)
+        let result = try XCTUnwrap(records.last?.result)
+        XCTAssertEqual(result.answer?.kind, .field)
+        XCTAssertEqual(result.answer?.items?.map(\.ref), ["7"])
+        XCTAssertEqual(result.details, [TaskResult.Detail(label: "Battery", value: "81%")])
     }
 
     /// The system prompt names no tool the model does not have (the app has no unlock_device or
