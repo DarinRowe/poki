@@ -9,7 +9,7 @@ import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { Bridge, BridgeError } from './bridge.mjs';
-import { ensureSetupApp, SetupError } from './setup-app.mjs';
+import { ensureSetupApp, downloadIpa, SetupError } from './setup-app.mjs';
 import { containerAccess, readHello, SEALED_KEY } from './container.mjs';
 import { phoneKey, readKeychainKey, seal } from './model-key.mjs';
 import { installerLabel, installerVersion } from './version.mjs';
@@ -129,6 +129,7 @@ class Run {
     this.opts = opts;
     this.state = opts.state;
     this.inbox = join(opts.state, 'inbox');
+    this.unverified = [];
     this.record = { started_at: new Date().toISOString(), channel: opts.channel, dry_run: !!opts.dryRun, setup_home: opts.setupHome ?? null, steps: {} };
   }
 
@@ -242,6 +243,8 @@ class Run {
   async channel() {
     const rows = await this.bridge.request('set_channel', { channel: this.opts.channel });
     const chosen = rows.find(r => r.selected) ?? rows[0];
+    this.releaseTag = chosen?.latest?.tag;
+    this.releaseIpaName = chosen?.latest?.ipa_name;
     return `${this.opts.channel}: Poki ${chosen?.latest?.version ?? '?'} (${chosen?.latest?.build ?? '?'})`;
   }
 
@@ -379,12 +382,13 @@ class Run {
     if (this.doneBefore('install') && !this.opts.reinstall) {
       const records = await this.bridge.request('records');
       const installed = records.find(r => r.udid === this.udid);
-      if (installed) {
+      if (installed && installed.profile_expires_at > Date.now() / 1000) {
         this.bundleId = installed.bundle_id;
         return { skipped: 'Poki is already installed from this computer (pass --reinstall to sign and install again)' };
       }
     }
     const retries = {};
+    let localIpa;
     for (;;) {
       try {
         const onProgress = data => {
@@ -398,7 +402,7 @@ class Run {
           else if (data.kind === 'note') this.emit({ event: 'note', text: data.text });
           else if (data.kind === 'done' && !['all', 'phone'].includes(data.id)) this.emit({ event: 'progress', id: data.id, title: `${data.id} done`, detail: data.detail });
         };
-        const done = await this.bridge.request('install', { udid: this.udid, seed_ddi: true }, { onProgress });
+        const done = await this.bridge.request('install', { udid: this.udid, seed_ddi: true, ...(localIpa ? { ipa: localIpa } : {}) }, { onProgress });
         for (const note of done.notes ?? []) this.emit({ event: 'note', text: note });
         if (done.handoff?.link) this.emit({ event: 'wait', wait: 'pairing_file', who: 'phone', say: `${manifest.waits.pairing_file.say} Or open ${done.handoff.link} on the iPhone.` });
         this.installed = done.record;
@@ -407,6 +411,11 @@ class Run {
         return `Poki ${done.record.version} (${done.record.build}) installed, signed for ${Math.round((done.record.profile_expires_at - Date.now() / 1000) / 86400)} days`;
       } catch (error) {
         const failure = classify('install', error);
+        if (!localIpa && error.kind === 'http' && this.releaseTag) {
+          this.emit({ event: 'note', text: 'Poki Setup could not download the release. Downloading and verifying a local IPA with its matching signing archive.' });
+          localIpa = await downloadIpa(this.releaseTag, join(this.state, 'downloads'), this.releaseIpaName);
+          continue;
+        }
         const limit = manifest.errors[failure.code].retry;
         retries[failure.code] = (retries[failure.code] ?? 0) + 1;
         if (!['trust_not_answered', 'developer_mode_off', 'phone_locked', 'install_failed', 'network'].includes(failure.code) || retries[failure.code] > limit) throw failure;
@@ -432,7 +441,7 @@ class Run {
 
   // Poki writes Documents/PokiSetup/poki-hello.json each time it starts, so a new one is Poki open.
   async open_poki() {
-    if (this.doneBefore('open_poki') && !this.opts.reinstall) return { skipped: 'Poki was opened on an earlier run' };
+    if (this.doneBefore('open_poki') && !this.opts.reinstall && !this.installed) return { skipped: 'Poki was opened on an earlier run' };
     const access = await this.access();
     if (!access) {
       await this.waitFor('open_poki_tell', () => this.takeInbox('open_poki'));
@@ -458,9 +467,9 @@ class Run {
     if (!provider) return { skipped: 'not asked to give Poki a model key (pass --model-key openai to carry the Mac keychain item openai-api-key)' };
     const typeIt = `ask the person to type the key in Poki: Agents > Accounts and Models`;
     const access = await this.access();
-    if (!access) return { skipped: `this Mac cannot reach Poki's files (this Poki Setup has no container commands and Xcode's devicectl is not installed); ${typeIt}` };
+    if (!access) return { manual: true, skipped: `this Mac cannot reach Poki's files (this Poki Setup has no container commands and Xcode's devicectl is not installed); ${typeIt}` };
     const phone = phoneKey((await readHello(access)) ?? this.hello);
-    if (!phone) return { skipped: `this Poki takes no key from the Mac yet; ${typeIt}` };
+    if (!phone) return { manual: true, skipped: `this Poki takes no key from the Mac yet; ${typeIt}` };
     const item = this.opts.modelKeyItem ?? `${provider}-api-key`;
     let secret = await readKeychainKey(item);
     if (!secret) throw new StepFailure('model_key_missing', `the login keychain has no key in the item ${item}`);
@@ -480,9 +489,9 @@ class Run {
   async loopback() {
     const tell = manifest.waits.loopback.say.replace(/ I see by myself when it works\.$/, '');
     const access = await this.access();
-    if (!access) return { skipped: `this Mac cannot read Poki's state; tell the person: ${tell}` };
+    if (!access) return { manual: true, skipped: `this Mac cannot read Poki's state; tell the person: ${tell}` };
     const hello = (await readHello(access)) ?? this.hello;
-    if (!hello?.loopback) return { skipped: `this Poki does not say whether its connection answers; tell the person: ${tell}` };
+    if (!hello?.loopback) return { manual: true, skipped: `this Poki does not say whether its connection answers; tell the person: ${tell}` };
     if (hello.loopback.working) return 'Poki\'s local connection (10.7.0.1) answers';
     // Poki's own sentence for the VPN app it found; device text is kept to one plain line.
     const fromPoki = String(hello.loopback.say ?? '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, 400);
@@ -525,6 +534,7 @@ class Run {
     this.checkResult = check;
     if (check.poki) this.record.poki = check.poki;
     const bad = Object.entries(check).filter(([key, value]) => value === null || value === false || (key === 'relay' && value === 'not answering')).map(([key]) => key);
+    if (!(record?.profile_expires_at > Date.now() / 1000)) bad.push('signing_expired');
     if (bad.length) throw new StepFailure('check_failed', `not ready: ${bad.join(', ')}`);
     return `Poki ${check.poki}, Developer Mode on, paired, developer disk image mounted, ${check.days_left} days of signing left`;
   }
@@ -549,7 +559,11 @@ class Run {
           const out = await (step.id === 'bridge' ? this.bridge_step() : this[step.id]());
           if (out && typeof out === 'object' && out.skipped) {
             this.emit({ event: 'skipped', step: step.id, reason: out.skipped });
-            await this.mark(step.id, this.previous?.steps?.[step.id]?.status === 'ok' ? 'ok' : 'skipped', { detail: out.skipped });
+            if (out.manual) {
+              this.unverified.push({ step: step.id, say: out.skipped });
+              this.emit({ event: 'note', text: `Action required: ${out.skipped}` });
+            }
+            await this.mark(step.id, out.manual ? 'manual' : this.previous?.steps?.[step.id]?.status === 'ok' ? 'ok' : 'skipped', { detail: out.skipped });
           } else {
             this.emit({ event: 'done', step: step.id, detail: out });
             await this.mark(step.id, 'ok', { detail: out });
@@ -569,8 +583,8 @@ class Run {
       }
       this.record.finished_at = new Date().toISOString();
       await this.save();
-      this.emit({ event: 'result', ok: true, check: this.checkResult, dry_run: !!this.opts.dryRun });
-      return 0;
+      this.emit({ event: 'result', ok: this.unverified.length === 0, check: this.checkResult, dry_run: !!this.opts.dryRun, ...(this.unverified.length ? { unverified: this.unverified } : {}) });
+      return this.unverified.length ? 3 : 0;
     } finally {
       this.bridge?.close();
     }

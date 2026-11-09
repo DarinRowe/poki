@@ -27,7 +27,7 @@
     "loopback": { "who": "phone", "say": "Poki needs a VPN app on the iPhone that lets it reach 10.7.0.1. In Poki, open Setup > Connect to this iPhone and follow the one line for your VPN app. I see by myself when it works." }
   },
   "errors": {
-    "setup_download_failed": { "reason": "The Poki Setup DMG or its checksum file could not be downloaded from GitHub.", "agent_fix": "Retry; if it keeps failing, check that github.com and objects.githubusercontent.com are reachable.", "retry": 3 },
+    "setup_download_failed": { "reason": "A release asset or its metadata could not be downloaded from GitHub.", "agent_fix": "Requests make at most 3 attempts; assets switch to the release asset API after a 5xx or connection failure. If both routes fail, report the URL/status and rerun later.", "retry": 3 },
     "setup_checksum_mismatch": { "reason": "The downloaded DMG does not match SHA256SUMS-desktop.txt.", "agent_fix": "The download is deleted and fetched again once. If it still does not match, stop and report it; never run the file.", "retry": 1 },
     "setup_signature_invalid": { "reason": "Poki Setup is not signed with Poki's Developer ID (team Q64ZL36CJN) or is not notarized.", "agent_fix": "Stop. Do not run the app. Report it with the diagnostics bundle.", "retry": 0 },
     "setup_app_missing": { "reason": "No Poki Setup.app where the installer looks (the run's folder, ~/Applications, /Applications).", "agent_fix": "Run node bin/install-iphone.mjs run, which downloads and checks Poki Setup, or pass --app-dir or --bridge to say where it is.", "retry": 0 },

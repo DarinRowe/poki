@@ -13,7 +13,7 @@ The installer does the work. You start it, relay its person stops, and report it
 ## Before you start
 
 1. Find or make a Poki checkout. In a checkout, `bin/install-iphone.mjs` exists. Otherwise run `git clone --branch standalone https://github.com/JosssphZhou/poki.git` and work in that folder.
-2. Check: a Mac with macOS 14 or later, Node.js 24 or later, an iPhone on iOS 18 or later, a USB data cable, and the user's Apple Account. A free account works. Xcode is not required. With Xcode installed, the installer can see when Poki opens and give it the model key even with an older Poki Setup.
+2. Check: a Mac with macOS 14 or later, Node.js 24 or later, an iPhone on iOS 18 or later, a USB data cable, and the user's Apple Account. A free account works with 7-day signing; it must be renewed before it expires. The iPhone also needs a compatible VPN/proxy app that routes 10.7.0.1 back to the iPhone (for example Karing or Shadowrocket configured as Poki's Setup page directs). Xcode is not required. With Xcode installed, the installer can see when Poki opens and give it the model key even with an older Poki Setup.
 3. Ask the user one question: "Should I also give Poki on the iPhone your model API key from this Mac's keychain?" Default is no. On yes, ask which provider (`openai`, `anthropic`, `deepseek`, `gemini` or `openrouter`) and add `--model-key <provider>` below. The installer reads the keychain item `<provider>-api-key` (for example `openai-api-key`; another name with `--model-key-item <item>`). Never read the key yourself and never ask for it in chat.
 
 ## Run it
@@ -30,7 +30,8 @@ Each line is one JSON event with an `at` time:
 - `{"event":"wait","wait":"pair","who":"phone","say":"..."}` is a person stop. Tell the user `say` word for word. `who` is `phone` (tap on the iPhone) or `input` (type into a window on the Mac). The installer sees when it is done and continues.
 - `{"event":"note","text":"..."}` is information. Pass it on when it asks something of the user.
 - `{"event":"error","code":"...","reason":"...","agent_fix":"...","retrying":true}` is a failure. With `retrying` true, the installer is already trying again.
-- `{"event":"result","ok":true,"check":{...}}` is the last line.
+- `{"event":"result","ok":true,"check":{...}}` is the last line only when the checks passed without manual steps left unverified.
+- A result with `ok:false` and `unverified` exits with code 3. Relay every entry's `say`, including instructions from skipped steps. Have the user finish them in Poki and confirm each result. Report what was manually confirmed and what remains unverified; do not call the phone ready just because the app was installed. Older Poki Setup without Xcode can require manual model-key entry and loopback setup.
 
 Several iPhones plugged in: list them with `node bin/install-iphone.mjs phones` and add `--udid <udid>`.
 
@@ -68,7 +69,7 @@ Poki turns itself on after this install, and ticks Developer Mode and UI Automat
 | `open_poki_tell` | Tell the user `say`. When they say Poki is open, run `node bin/install-iphone.mjs done open_poki`. |
 | `loopback` | Tell the user `say`. It names their VPN app and the one thing to set. The installer sees when it answers. |
 
-A person stop waits 15 minutes, then the installer exits with code 3 and `{"event":"result","ok":false,"waiting":"..."}`. Run the same command again when the user is ready; it continues from that step.
+A person stop waits 15 minutes, then the installer exits with code 3 and `{"event":"result","ok":false,"waiting":"..."}`. Run the same command again when the user is ready; it rechecks the steps and reuses an unexpired install. If Poki says it is no longer available or signing has expired, run `node bin/install-iphone.mjs run --reinstall` with the same options. The installer renews expired records automatically; `--reinstall` also covers a revoked signature whose recorded expiry is still in the future.
 
 ## When a step fails
 
@@ -76,7 +77,7 @@ The installer exits with code 2. The last `error` event has `code`, `reason` and
 
 | Code | Meaning | What you do |
 |---|---|---|
-| `setup_download_failed` | GitHub did not serve the DMG or its checksum file. | Retried 3 times. Then check the network and run again. |
+| `setup_download_failed` | GitHub did not serve a release asset or its metadata. | Each request makes at most 3 attempts. Asset requests switch to the release asset API after a 5xx or connection failure. Report the failed URL/status and rerun later if both routes fail. |
 | `setup_checksum_mismatch` | The DMG does not match `SHA256SUMS-desktop.txt`. | Fetched again once. Then stop and report. Never open the file. |
 | `setup_signature_invalid` | Poki Setup is not signed by team `Q64ZL36CJN` or not notarized. | Stop. Do not run it. Report it. |
 | `setup_app_missing` | `phones` or `diagnose` cannot find Poki Setup.app. | Run `run`, which installs it, or pass `--app-dir` or `--bridge`. |
@@ -99,6 +100,14 @@ The installer exits with code 2. The last `error` event has `code`, `reason` and
 | `model_key_missing` | `--model-key` was given, but the keychain item is missing or empty. | Tell the user the item name. They add it in their own Terminal (`security add-generic-password -U -s <item> -a "$USER" -w`) or type the key in Poki: Agents > Accounts and Models. |
 | `model_key_not_taken` | Poki did not take the sealed key in time. | Ask the user to bring Poki to the front, then run again. |
 | `unknown` | Not recognised. | Run `diagnose` and `issue`. |
+
+## Download and upgrade recovery
+
+When Poki Setup reports an HTTP error during installation, the installer downloads the selected release's external IPA, SHA256SUMS and Poki-signing.zip into a fresh folder. It checks the IPA's SHA-256, then passes the local IPA to the helper; the helper reads the signing zip beside it. Current releases do not list the signing zip in SHA256SUMS, so its integrity is provided by HTTPS, not a published checksum. If a release lists its checksum, the installer checks it too. Local installation records use a `local:` tag. No desktop update is required for this fallback.
+
+If both download routes fail, do not skip checksum checks or substitute another release's signing zip. A manual recovery can use `gh release download <selected-tag> --repo JosssphZhou/poki --pattern '<selected-IPA-name>' --pattern SHA256SUMS --pattern Poki-signing.zip --dir <new-empty-folder>`. Check the IPA against that release's SHA256SUMS before using Poki Setup's local IPA install. This is a manual fallback, not an installer success.
+
+Before an upgrade, ask the user to save their work and close the old Poki. If installation stalls, retry with the phone unlocked and the old app closed. Do not delete Poki or revoke certificates without explaining the data/signing impact and getting permission. An unavailable old app is not proof that its data is lost.
 
 ## Read Poki's records on the Mac
 

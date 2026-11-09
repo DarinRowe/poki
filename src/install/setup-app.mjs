@@ -32,8 +32,7 @@ function channelOf(tag, prerelease) {
 }
 
 async function github(path) {
-  const response = await fetch(`https://api.github.com/repos/${REPO}${path}`, { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'poki-install-iphone' } });
-  if (!response.ok) throw new SetupError('setup_download_failed', `GitHub answered ${response.status} for ${path}`);
+  const response = await request(`https://api.github.com/repos/${REPO}${path}`, 'application/vnd.github+json');
   return response.json();
 }
 
@@ -48,7 +47,7 @@ export async function latestSetup(channel) {
       const match = /^PokiSetup-(.+)-(\d+)-macos\.dmg$/.exec(asset.name);
       if (!match || (best && Number(match[2]) <= best.build)) continue;
       const sums = release.assets.find(a => a.name === 'SHA256SUMS-desktop.txt');
-      best = { tag: release.tag_name, name: asset.name, version: match[1], build: Number(match[2]), url: asset.browser_download_url, sums: sums?.browser_download_url };
+      best = { tag: release.tag_name, name: asset.name, version: match[1], build: Number(match[2]), url: asset.browser_download_url, apiUrl: asset.url, sums: sums?.browser_download_url, sumsApiUrl: sums?.url };
     }
   }
   if (!best) throw new SetupError('setup_download_failed', `No Poki Setup for macOS on the ${channel} channel`);
@@ -56,10 +55,56 @@ export async function latestSetup(channel) {
   return best;
 }
 
-async function download(url, file) {
-  const response = await fetch(url, { headers: { 'User-Agent': 'poki-install-iphone' } });
-  if (!response.ok) throw new SetupError('setup_download_failed', `${url} answered ${response.status}`);
-  await writeFile(file, Buffer.from(await response.arrayBuffer()));
+async function request(url, accept, apiUrl, consume = response => response) {
+  let last;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const response = await fetch(url, { headers: { Accept: accept, 'User-Agent': 'poki-install-iphone' }, signal: AbortSignal.timeout(120000) });
+      if (response.ok) return await consume(response);
+      last = `${url} answered ${response.status}`;
+      if (response.status < 500) break;
+      if (apiUrl) { url = apiUrl; accept = 'application/octet-stream'; }
+    } catch (error) {
+      last = `${url}: ${error.message}`;
+      if (apiUrl) { url = apiUrl; accept = 'application/octet-stream'; }
+    }
+  }
+  throw new SetupError('setup_download_failed', last);
+}
+
+async function download(url, file, apiUrl) {
+  const bytes = await request(url, 'application/octet-stream', apiUrl, response => response.arrayBuffer());
+  await writeFile(file, Buffer.from(bytes));
+}
+
+export async function downloadIpa(tag, downloads, ipaName) {
+  const release = await github(`/releases/tags/${encodeURIComponent(tag)}`);
+  const ipa = release.assets.find(a => ipaName ? a.name === ipaName : /^Poki-external-.+\.ipa$/.test(a.name));
+  const signing = release.assets.find(a => a.name === 'Poki-signing.zip');
+  const sums = release.assets.find(a => a.name === 'SHA256SUMS');
+  if (!ipa || !signing || !sums) throw new SetupError('setup_download_failed', `${tag} needs an external IPA, Poki-signing.zip and SHA256SUMS`);
+  await mkdir(downloads, { recursive: true });
+  const dir = await mkdtemp(join(downloads, 'iphone-'));
+  try {
+    for (const asset of [sums, ipa, signing]) {
+      if (asset.name.includes('/') || asset.name.includes('\\')) throw new SetupError('setup_download_failed', 'Invalid release asset name');
+      await download(asset.browser_download_url, join(dir, asset.name), asset.url);
+    }
+    const hashes = new Map((await readFile(join(dir, sums.name), 'utf8')).trim().split('\n').map(line => {
+      const [hash, name] = line.trim().split(/\s+/);
+      return [name?.replace(/^\*/, ''), hash];
+    }));
+    for (const asset of [ipa, signing]) {
+      const expected = hashes.get(asset.name);
+      // Current releases list the IPA but not the signing archive in SHA256SUMS.
+      if (!expected && asset === signing) continue;
+      if (!expected || await sha256(join(dir, asset.name)) !== expected.toLowerCase()) throw new SetupError('setup_checksum_mismatch', `${asset.name} does not match SHA256SUMS`);
+    }
+    return join(dir, ipa.name);
+  } catch (error) {
+    await rm(dir, { recursive: true, force: true });
+    throw error;
+  }
 }
 
 async function sha256(file) {
@@ -120,8 +165,8 @@ export async function ensureSetupApp({ channel, into = join(homedir(), 'Applicat
   const sumsFile = join(downloads, `${release.tag}-SHA256SUMS-desktop.txt`);
   for (let attempt = 0; ; attempt++) {
     onNote(`Downloading ${release.name} from ${release.tag}`);
-    await download(release.url, dmg);
-    await download(release.sums, sumsFile);
+    await download(release.url, dmg, release.apiUrl);
+    await download(release.sums, sumsFile, release.sumsApiUrl);
     const want = (await readFile(sumsFile, 'utf8')).split('\n').map(line => line.trim().split(/\s+/)).find(([, name]) => name === release.name)?.[0];
     if (!want) throw new SetupError('setup_checksum_mismatch', `${release.name} is not listed in SHA256SUMS-desktop.txt`);
     if ((await sha256(dmg)) === want) break;
