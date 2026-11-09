@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Setup's Apple Account step: sign in once, so Poki can keep its own signing. Sections of the
-/// step's Form, like the other steps.
+/// The Apple Account, optional (ESP-222): signed in, Poki keeps its own signing with no computer.
+/// Sections of the Apple Account page's Form, opened from Signing.
 struct AccountPage: View {
     @Environment(AppModel.self) private var model
     @State private var appleID = ""
@@ -86,11 +86,15 @@ struct SigningSection: View {
 
     var body: some View {
         Section {
-            // The Apple Account Poki signs itself with: Setup's account step, opened from here.
-            NavigationLink(value: SetupStep.account) {
+            // The Apple Account Poki signs itself with, if the owner wants Poki to renew without a Mac.
+            NavigationLink {
+                Form { AccountPage() }
+                    .navigationTitle("Apple Account")
+                    .navigationBarTitleDisplayMode(.inline)
+            } label: {
                 LabeledContent {
                     if signer.signedIn { Text(verbatim: signer.status?.apple_id ?? "") }
-                    else { Text("Sign In").foregroundStyle(.orange) }
+                    else { Text("Optional").foregroundStyle(Color(.secondaryLabel)) }
                 } label: {
                     Label("Apple Account", systemImage: "person.crop.circle")
                 }
@@ -140,13 +144,54 @@ struct SigningSection: View {
     }
 
     private var footer: String {
-        if !signer.signedIn { return String(localized: "Sign in to your Apple Account in Setup so Poki can sign itself again before it expires.") }
+        if !signer.signedIn { return String(localized: "Optional. Poki Setup on your Mac renews Poki when this iPhone is connected. Signed in here, Poki can also renew itself with no computer.") }
         if signer.next != nil {
             return model.signingIdle
                 ? String(localized: "Installing closes Poki for a moment. Your chats and setup stay.")
                 : (model.signingBusyReason ?? "") + " " + String(localized: "Install is available when Poki isn’t running a task.")
         }
         return String(localized: "Poki gets the next build ready by itself, \(Int(SelfSigner.refreshWithDaysLeft)) days before it expires or when your channel has an update. It installs only when you tap Install.")
+    }
+}
+
+/// Home's warning that the installed Poki stops opening soon, with the two ways to renew it (ESP-222).
+/// Renewing installs a build with a new profile, so a renewed Poki has a later expiry and no warning.
+struct ExpiryWarning {
+    let expiry: Date
+    let signedIn: Bool
+
+    init?(expiry: Date?, signedIn: Bool, now: Date = .now) {
+        guard let expiry, expiry.timeIntervalSince(now) <= SelfSigner.warnWithDaysLeft * 86_400 else { return nil }
+        self.expiry = expiry
+        self.signedIn = signedIn
+    }
+
+    var message: String {
+        let when = expiry.formatted(date: .abbreviated, time: .shortened)
+        return signedIn
+            ? String(localized: "Poki stops opening after \(when). To renew it, connect this iPhone to your Mac and use Poki Setup, or install the refresh in Setup › Signing.")
+            : String(localized: "Poki stops opening after \(when). To renew it, connect this iPhone to your Mac and use Poki Setup, or sign in to your Apple Account in Setup › Signing.")
+    }
+}
+
+/// The warning on home, a tap away from Signing.
+struct ExpiryWarningSection: View {
+    let warning: ExpiryWarning
+    var openSetup: () -> Void
+
+    var body: some View {
+        Section {
+            Button(action: openSetup) {
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Poki’s signing ends soon").font(Prominent.font(.headline, .semibold)).foregroundStyle(Color(.label))
+                        Text(warning.message).font(.subheadline).foregroundStyle(Color(.secondaryLabel))
+                    }
+                } icon: {
+                    Image(systemName: "clock.badge.exclamationmark.fill").foregroundStyle(.orange)
+                }
+            }
+        }
     }
 }
 

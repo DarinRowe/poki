@@ -62,6 +62,8 @@ final class SelfSigner {
 
     /// Prepare a fresh build when the installed profile has this many days left or fewer.
     static let refreshWithDaysLeft: Double = 3
+    /// Home warns, and a notification reminds once a day, when the installed profile has this many days left.
+    static let warnWithDaysLeft: Double = 2
 
     private(set) var status: Status?
     private(set) var teams: [Team] = []
@@ -73,7 +75,7 @@ final class SelfSigner {
     private(set) var lastError: String?
     private(set) var lastCheck: Date?
     /// When the installed Poki stops opening: its own profile's expiry. Nil when it has none (simulator).
-    let expiry: Date? = SelfSigner.installedProfileExpiry()
+    let expiry: Date? = SelfSigner.installedProfileExpiry() ?? SelfSigner.screenshotExpiry
     let installedVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
     let installedBuild = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
 
@@ -350,13 +352,23 @@ final class SelfSigner {
 
     /// Once a day in the last two days: the build is ready (or can't be made) and nothing installed it.
     private func remindIfExpiring() {
-        guard let days = daysLeft, days <= 2 else { return }
+        guard let days = daysLeft, days <= Self.warnWithDaysLeft else { return }
         let key = "signing.reminded"
         if let last = UserDefaults.standard.object(forKey: key) as? Date, Date().timeIntervalSince(last) < 20 * 3600 { return }
         UserDefaults.standard.set(Date(), forKey: key)
         let when = expiry.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? ""
         notify(title: String(localized: "Poki Expires Soon"),
                body: next != nil ? String(localized: "A refreshed Poki is ready. Open Setup and tap Install before \(when).") : String(localized: "Open Setup to refresh Poki before \(when)."))
+    }
+
+    /// `-pokiSigningDays 1`: a simulator has no profile, so a screenshot gives Poki one that ends then.
+    nonisolated private static var screenshotExpiry: Date? {
+        #if targetEnvironment(simulator)
+        guard UserDefaults.standard.object(forKey: "pokiSigningDays") != nil else { return nil }
+        return Date().addingTimeInterval(UserDefaults.standard.double(forKey: "pokiSigningDays") * 86_400)
+        #else
+        nil
+        #endif
     }
 
     /// The ExpirationDate of Poki's own embedded.mobileprovision (a CMS envelope around a plist).

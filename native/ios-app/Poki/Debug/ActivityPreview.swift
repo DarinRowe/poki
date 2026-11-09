@@ -128,7 +128,7 @@ struct ActivityPreview: View {
         pairCode.pin = "482913"
 
         var setup = PokiState(phase: .setup, headline: "Setting up Poki", thumbnailVersion: 0)
-        setup.guide = .init(number: 2, count: 6, title: SetupStep.developerMode.activityTitle)
+        setup.guide = .init(number: 2, count: SetupStep.shown.count, title: SetupStep.developerMode.activityTitle)
 
         return [("start", start), ("working", working), ("step", step), ("approval", approval), ("deciding", deciding), ("yourturn", yourTurn), ("passcode", passcode), ("done", done),
                 ("ready", ready), ("idle", idle), ("problem", problem), ("pairing", pairWait), ("code", pairCode), ("setup", setup)]
