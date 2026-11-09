@@ -1207,7 +1207,7 @@ final class GymTests: XCTestCase {
         XCTAssertTrue(result.text.contains("scroll_to \"Row 45\": 4 swipes, found at [16,320,358,44]"), result.text)
         XCTAssertTrue(result.text.contains("found by scroll_to:") && result.text.contains("Cell \"Row 45\" [16,320,358,44] (tap "), result.text)
         XCTAssertGreaterThan(Date().timeIntervalSince(started), 3.5, "four 1 s swipes outlast the 3 s action cap: scroll_to has 12 s")
-        XCTAssertTrue(wda.bodies("POST /wda/pressAndDragWithVelocity").allSatisfy { $0["holdDuration"]?.double == 0.2 }, "a resting drag")
+        XCTAssertTrue(wda.bodies("POST /wda/pressAndDragWithVelocity").allSatisfy { $0["holdDuration"]?.double == 0.25 }, "a drag with a slow tail before the lift")
     }
 
     /// 300 rows in the gym: a swipe sent while the runner was still serving the read after the last
@@ -1309,7 +1309,7 @@ final class GymTests: XCTestCase {
         XCTAssertGreaterThan(sent[1].3, sent[1].1, "the corrective drag goes down")
         XCTAssertLessThan(abs(sent[1].3 - sent[1].1), abs(sent[0].3 - sent[0].1), "the drag back is the shorter")
         let bodies = wda.bodies("POST /wda/pressAndDragWithVelocity")
-        XCTAssertEqual(bodies.first?["holdDuration"]?.double, 0.2, "a resting drag, not a flick")
+        XCTAssertEqual(bodies.first?["holdDuration"]?.double, 0.25, "a drag with a slow tail before the lift, not a flick")
         XCTAssertGreaterThan(abs((bodies.first?["toY"]?.double ?? 0) - (bodies.first?["fromY"]?.double ?? 0)), 500, "a long drag (72 % of the list's area), not 60 %")
     }
 
@@ -1411,6 +1411,68 @@ final class GymTests: XCTestCase {
         XCTAssertGreaterThan(drags.value.first?.0 ?? 0, 400, "and still low in the page: \(result.text)")
         XCTAssertTrue(result.text.contains("1 swipes, \"Learn more\" not found: the last swipe changed the screen (it shows TextView \"TabOverview\", Button \"Example Domain\", Button \"Close\"): the list is gone, so the scroll stopped"), result.text)
         XCTAssertFalse(result.text.contains("stopped moving"), result.text)
+    }
+
+    /// The in-process path moved a whole screen on a 72 % drag (gym: 2x slower scroll_to, a drag back
+    /// after every swipe). Every scroll_to answer now says how far the list moved on each swipe, from
+    /// the rows the reads share, so the path's drag can be measured without a probe.
+    func testScrollToSaysHowFarEachSwipeMovedTheList() async {
+        let (core, wda, _) = makeCore()
+        let shift = LockedBox(0.0)
+        @Sendable func rows() -> [Node] { [Node("Table", nil, [0, 100, 390, 744], (0..<60).map { Node("Cell", "Row \($0)", [16, Double(100 + $0 * 44) - shift.value, 358, 44]) })] }
+        wda.tree(rows(), app: "Gym")
+        wda.set("POST /wda/pressAndDragWithVelocity") { _ in
+            shift.update { $0 += 400 }
+            wda.tree(rows(), app: "Gym")
+            return (200, ["value": .null])
+        }
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["scroll_to": "Row 30"]]])
+        XCTAssertTrue(result.text.contains("2 swipes, found at"), result.text)
+        XCTAssertTrue(result.text.contains("(the list moved 400, 400 pt on the swipes)"), result.text)
+        XCTAssertFalse(result.text.contains("more than a screen"), result.text)
+        let drag = wda.bodies("POST /wda/pressAndDragWithVelocity").first
+        XCTAssertEqual(drag?["w3c"]?.bool, true, "the scroll's drag goes as W3C actions with a slow tail: \(String(describing: drag))")
+    }
+
+    /// The gym's list on WebDriverAgent: a 482 pt drag moved the list 762 pt (17 rows for 15 on
+    /// screen), and the title and the status line inside the area made every read share something,
+    /// so the overshoot was never seen and the movement read 0. Now the still elements are chrome:
+    /// the overshoot is caught, a short drag back follows, and the figure is the rows' shift.
+    func testStillChromeInsideTheListAreaDoesNotHideAnOvershoot() async {
+        let (core, wda, _) = makeCore()
+        let shift = LockedBox(0.0)
+        @Sendable func screen() -> [Node] {
+            [Node("NavigationBar", "_TtGC7SwiftUI32NavigationStackHosting", [0, 56, 390, 45], [Node("Button", "Menu", [16, 64, 51, 29])]),
+             Node("StaticText", "Gym: list", [156, 108, 90, 27]),
+             Node("Table", nil, [0, 134, 390, 675], (0..<300).map { Node("Button", "Row \($0 + 1)", [20, Double(169 + $0 * 44) - shift.value, 362, 45]) }),
+             Node("Other", "Vertical scroll bar, 20 pages", [369, 134, 30, 675]),
+             Node("StaticText", "state: ready", [0, 808, 390, 66])]
+        }
+        wda.tree(screen(), app: "Gym")
+        wda.set("POST /wda/pressAndDragWithVelocity") { body in
+            let up = (body?["fromY"]?.double ?? 0) > (body?["toY"]?.double ?? 0)
+            shift.update { $0 += up ? 762 : -300 }
+            wda.tree(screen(), app: "Gym")
+            return (200, ["value": .null])
+        }
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["scroll_to": ["text": "Row 250", "max_swipes": 2]]]])
+        XCTAssertTrue(result.text.contains("the list moved more than a screen after 1 swipe, so a short drag back followed each"), result.text)
+        XCTAssertTrue(result.text.contains("(the list moved a screen or more, -300 pt on the swipes)"), result.text)
+    }
+
+    /// In-process, the snapshot under an alert holds the alert alone (its accessibility is modal; the
+    /// gym's look listed three elements and nothing of the app), where WebDriverAgent lists the
+    /// screen behind too. The read says so, so the model does not take the app for gone.
+    func testALookAtAnAlertAloneSaysTheScreenBehindItIsNotListed() async {
+        let (core, wda, _) = makeCore()
+        wda.tree([Node("Alert", nil, [20, 300, 350, 200], [Node("StaticText", "Just a moment", [40, 320, 310, 40]), Node("Button", "Not now", [40, 440, 150, 44]), Node("Button", "OK", [200, 440, 150, 44])])], app: "Gym")
+        let alone = await core.call("look", [:])
+        XCTAssertTrue(alone.text.contains("note: the tree lists the alert only, not the screen behind it (it is still there, under the picture's dimming): answer or dismiss it to list the screen again"), alone.text)
+        wda.tree([Node("Table", nil, [0, 100, 390, 700], (0..<10).map { Node("Cell", "Row \($0)", [16, Double(100 + $0 * 44), 358, 44]) }), Node("Alert", nil, [20, 300, 350, 200], [Node("StaticText", "Just a moment", [40, 320, 310, 40]), Node("Button", "Not now", [40, 440, 150, 44])])], app: "Gym")
+        let behind = await core.call("look", [:])
+        XCTAssertFalse(behind.text.contains("lists the alert only"), behind.text)
     }
 
     /// Photos' home: the Library grid is one Button of 402x586 with the photos nowhere in the tree

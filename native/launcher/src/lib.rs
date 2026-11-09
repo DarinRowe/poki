@@ -6,6 +6,7 @@ pub mod device;
 pub mod launch;
 pub mod pair;
 pub mod remote;
+pub mod signer;
 pub mod supervisor;
 
 use serde_json::Value;
@@ -17,7 +18,19 @@ use std::{
 pub use supervisor::{Config, Launcher};
 
 /// One runtime for everything the library does, on two worker threads.
+/// aws-lc as the process's rustls provider, before anything makes a TLS connection. idevice's
+/// lockdown and tunnel sessions use it; the signer's anisette client would otherwise install ring for
+/// the whole process (it ignores the error when one is already set), and the phone's lockdown TLS then
+/// fails with "device socket io failed".
+pub(crate) fn pin_crypto_provider() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+    });
+}
+
 pub(crate) fn runtime() -> &'static tokio::runtime::Runtime {
+    pin_crypto_provider();
     static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
     RUNTIME.get_or_init(|| {
         tokio::runtime::Builder::new_multi_thread()
@@ -26,6 +39,19 @@ pub(crate) fn runtime() -> &'static tokio::runtime::Runtime {
             .enable_all()
             .build()
             .expect("the launcher's runtime")
+    })
+}
+
+fn pair_runtime() -> &'static tokio::runtime::Runtime {
+    pin_crypto_provider();
+    static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+    RUNTIME.get_or_init(|| {
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .thread_name("poki-pairing")
+            .enable_all()
+            .build()
+            .expect("the pairing runtime")
     })
 }
 
@@ -62,6 +88,7 @@ pub struct PokiLauncher {
 /// Makes a launcher from its JSON config; null when the config is unreadable.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn poki_launcher_new(config_json: *const c_char, cb: EventCallback, context: *mut c_void) -> *mut PokiLauncher {
+    pin_crypto_provider();
     let Some(text) = (unsafe { read_str(config_json) }) else { return std::ptr::null_mut() };
     let Ok(config) = serde_json::from_str::<Config>(&text) else { return std::ptr::null_mut() };
     let callback = Callback { function: cb, context };
@@ -123,6 +150,7 @@ pub struct PokiPairing {
 /// paired {path}, failed {detail}. Null when the config is unreadable.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn poki_pair_start(config_json: *const c_char, cb: EventCallback, context: *mut c_void) -> *mut PokiPairing {
+    pin_crypto_provider();
     let Some(text) = (unsafe { read_str(config_json) }) else { return std::ptr::null_mut() };
     let Ok(value) = serde_json::from_str::<Value>(&text) else { return std::ptr::null_mut() };
     let Some(out_path) = value["out_path"].as_str() else { return std::ptr::null_mut() };
@@ -132,7 +160,9 @@ pub unsafe extern "C" fn poki_pair_start(config_json: *const c_char, cb: EventCa
         identity_path: value["identity_path"].as_str().map(Into::into),
     };
     let callback = Callback { function: cb, context };
-    let task = runtime().spawn(pair::run(config, move |event| callback.call(&event)));
+    // Its own runtime: the signer (downloads, re-signing) and the launcher share the main one, and a
+    // pairing must answer Settings at once, whatever else is running.
+    let task = pair_runtime().spawn(pair::run(config, move |event| callback.call(&event)));
     Box::into_raw(Box::new(PokiPairing { task }))
 }
 
@@ -143,6 +173,82 @@ pub unsafe extern "C" fn poki_pair_cancel(pairing: *mut PokiPairing) {
         let pairing = unsafe { Box::from_raw(pairing) };
         pairing.task.abort();
     }
+}
+
+/// The app's Keychain, as three callbacks. get returns a malloc'd, NUL-terminated base64 string
+/// (Rust frees it with free) or null when there is no item; set and delete return 0 on success.
+pub type VaultGet = extern "C" fn(context: *mut c_void, name: *const c_char) -> *mut c_char;
+pub type VaultSet = extern "C" fn(context: *mut c_void, name: *const c_char, value_base64: *const c_char) -> i32;
+pub type VaultDelete = extern "C" fn(context: *mut c_void, name: *const c_char) -> i32;
+
+unsafe extern "C" {
+    fn free(pointer: *mut c_void);
+}
+
+struct KeychainVault {
+    get: VaultGet,
+    set: VaultSet,
+    delete: VaultDelete,
+    context: *mut c_void,
+}
+unsafe impl Send for KeychainVault {}
+unsafe impl Sync for KeychainVault {}
+
+impl poki_setup_core::vault::Vault for KeychainVault {
+    fn get(&self, name: &str) -> poki_setup_core::Result<Option<Vec<u8>>> {
+        use base64::Engine;
+        let name = CString::new(name).map_err(|e| poki_setup_core::Error::msg(e.to_string()))?;
+        let raw = (self.get)(self.context, name.as_ptr());
+        if raw.is_null() {
+            return Ok(None);
+        }
+        let text = unsafe { CStr::from_ptr(raw) }.to_string_lossy().to_string();
+        unsafe { free(raw.cast()) };
+        base64::engine::general_purpose::STANDARD.decode(text.trim()).map(Some).map_err(|e| poki_setup_core::Error::msg(format!("keychain item {name:?}: {e}")))
+    }
+    fn set(&self, name: &str, value: &[u8]) -> poki_setup_core::Result<()> {
+        use base64::Engine;
+        let name_c = CString::new(name).map_err(|e| poki_setup_core::Error::msg(e.to_string()))?;
+        let value = CString::new(base64::engine::general_purpose::STANDARD.encode(value)).unwrap();
+        match (self.set)(self.context, name_c.as_ptr(), value.as_ptr()) {
+            0 => Ok(()),
+            code => Err(poki_setup_core::Error::msg(format!("Could not write {name} to the Keychain ({code})."))),
+        }
+    }
+    fn delete(&self, name: &str) -> poki_setup_core::Result<()> {
+        let name_c = CString::new(name).map_err(|e| poki_setup_core::Error::msg(e.to_string()))?;
+        match (self.delete)(self.context, name_c.as_ptr()) {
+            0 => Ok(()),
+            code => Err(poki_setup_core::Error::msg(format!("Could not delete {name} from the Keychain ({code})."))),
+        }
+    }
+}
+
+/// Installs the Keychain for the signer, once per process; 0 when installed, 1 when one already was.
+#[unsafe(no_mangle)]
+pub extern "C" fn poki_signer_set_vault(get: VaultGet, set: VaultSet, delete: VaultDelete, context: *mut c_void) -> i32 {
+    pin_crypto_provider();
+    if poki_setup_core::vault::install(Box::new(KeychainVault { get, set, delete, context })) { 0 } else { 1 }
+}
+
+/// Runs one signer request (signer.rs) on the launcher's runtime. Events: {"event":"progress",
+/// "progress":{...}} while it runs, then exactly one {"event":"result","ok":true,"value":...} or
+/// {"event":"result","ok":false,"error":"...","code":"..."}. -1 when the request is unreadable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn poki_signer_call(request_json: *const c_char, cb: EventCallback, context: *mut c_void) -> i32 {
+    pin_crypto_provider();
+    let Some(text) = (unsafe { read_str(request_json) }) else { return -1 };
+    let Ok(request) = serde_json::from_str::<Value>(&text) else { return -1 };
+    let callback = Callback { function: cb, context };
+    runtime().spawn(async move {
+        let result = signer::handle(request, move |event| callback.call(&event)).await;
+        let event = match result {
+            Ok(value) => serde_json::json!({"event": "result", "ok": true, "value": value}),
+            Err(e) => serde_json::json!({"event": "result", "ok": false, "error": e.message, "code": e.code}),
+        };
+        callback.call(&event);
+    });
+    0
 }
 
 #[cfg(test)]

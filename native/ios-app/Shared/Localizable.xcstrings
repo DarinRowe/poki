@@ -221,6 +221,17 @@
         }
       }
     },
+    "10.7.0.1 takes the connection, but the phone's remote pairing service does not answer through it, so this page can show Working while Poki cannot connect. Reconnect your proxy app or LocalDevVPN, then pair again in Setup › Pairing." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "10.7.0.1 接受了连接，但手机的远程配对服务没有通过它回应，所以本页可能显示“正常”而 Poki 仍连不上。请重新连接代理 App 或 LocalDevVPN，然后到“设置引导 › 配对”重新配对。"
+          }
+        }
+      }
+    },
     "2 minutes" : {
       "localizations" : {
         "zh-Hans" : {
@@ -643,6 +654,16 @@
         }
       }
     },
+    "Apple Account" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple 账号"
+          }
+        }
+      }
+    },
     "Approval" : {
       "localizations" : {
         "zh-Hans" : {
@@ -663,12 +684,32 @@
         }
       }
     },
-    "Approved in the Dynamic Island, %@" : {
+    "Approvals" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已在灵动岛批准：%@"
+            "value" : "批准"
+          }
+        }
+      }
+    },
+    "Approved, %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已批准：%@"
+          }
+        }
+      }
+    },
+    "Ask Before Sensitive Steps" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "敏感步骤先问我"
           }
         }
       }
@@ -779,6 +820,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "修改地址"
+          }
+        }
+      }
+    },
+    "Check that Developer Mode is on (Settings → Privacy & Security → Developer Mode) and that iOS is 17.4 or later." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请确认开发者模式已开启（设置 › 隐私与安全性 › 开发者模式），并且 iOS 是 17.4 或更高版本。"
           }
         }
       }
@@ -2109,6 +2161,16 @@
         }
       }
     },
+    "Newest on This Channel" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此通道最新版本"
+          }
+        }
+      }
+    },
     "No Answer" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2198,6 +2260,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "无"
+          }
+        }
+      }
+    },
+    "Not Found" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未找到"
           }
         }
       }
@@ -2439,6 +2511,17 @@
         }
       }
     },
+    "Open Setup › Loopback and check the loopback, then pair this iPhone again in Setup › Pairing with the loopback on." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开“设置引导 › 回环”检查回环，然后在回环开着时到“设置引导 › 配对”重新配对这台 iPhone。"
+          }
+        }
+      }
+    },
     "Open Shadowrocket." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2578,6 +2661,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在打开隧道"
+          }
+        }
+      }
+    },
+    "Optional" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "可选"
+          }
+        }
+      }
+    },
+    "Optional. To renew Poki without a Mac, sign in to your Apple Account here." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "可选。不连 Mac 也想续签时，可以在这里登录 Apple 账号，让 Poki 自己续签。"
           }
         }
       }
@@ -2754,6 +2857,17 @@
         }
       }
     },
+    "Poki Runner did not start. In Settings → Developer, turn on UI Automation; in Settings → General → VPN & Device Management, trust the developer of Poki Runner." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki Runner 没有启动。请在“设置 › 开发者”中开启 UI 自动化，并在“设置 › 通用 › VPN 与设备管理”中信任 Poki Runner 的开发者。"
+          }
+        }
+      }
+    },
     "Poki Runner is installed and trusted" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2771,6 +2885,47 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "停止后 Poki Runner 仍在运行。请在 App 切换器中将它划掉，自动化横幅会随之消失。"
+          }
+        }
+      }
+    },
+    "Poki Setup on your Mac renews Poki when this iPhone is connected." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这台 iPhone 连上 Mac 时，Poki Setup 会为 Poki 续签。"
+          }
+        }
+      }
+    },
+    "Poki Version" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 版本"
+          }
+        }
+      }
+    },
+    "Poki asks you before an agent pays, deletes, sends a message, places a call, types a password or does anything in Wallet: on the Live Activity, in a notification, or here in Poki. Turned off, agents do all of that without asking. Changes take effect the next time Poki opens." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "代理付款、删除、发消息、打电话、输入密码或在钱包里操作之前，Poki 会先问你：在实时活动、通知或 Poki 里批准。关掉后，这些操作都不再询问。更改在下次打开 Poki 时生效。"
+          }
+        }
+      }
+    },
+    "Poki can't reach this iPhone. Check in this order: Setup › Loopback (your proxy app or LocalDevVPN is connected, with 10.7.0.1 set), then Setup › Pairing (pair again with the loopback on), then Developer Mode in Settings → Privacy & Security." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 连不上这台 iPhone。请按顺序检查：“设置引导 › 回环”（代理 App 或 LocalDevVPN 已连接，并已设好 10.7.0.1），然后“设置引导 › 配对”（在回环开着时重新配对），最后是“设置 › 隐私与安全性”里的开发者模式。"
           }
         }
       }
@@ -2865,6 +3020,16 @@
         }
       }
     },
+    "Poki looks on GitHub for the newest build on the chosen channel." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 会在 GitHub 上查找所选通道的最新版本。"
+          }
+        }
+      }
+    },
     "Poki needs attention" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2916,6 +3081,16 @@
         }
       }
     },
+    "Poki stops opening after %@. Connect this iPhone to your Mac and ask your agent to renew it." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 之后 Poki 将无法打开。请把这台 iPhone 连上 Mac，让 agent 为它续签。"
+          }
+        }
+      }
+    },
     "Poki uses your ChatGPT plan, the way Codex does. The sign-in stays in this iPhone’s Keychain." : {
       "localizations" : {
         "zh-Hans" : {
@@ -2943,6 +3118,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Poki 详情"
+          }
+        }
+      }
+    },
+    "Poki’s signing ends soon" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 的签名快到期了"
           }
         }
       }
@@ -3420,6 +3605,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已登录"
+          }
+        }
+      }
+    },
+    "Signing" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "签名"
+          }
+        }
+      }
+    },
+    "Signing Options" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "签名选项"
           }
         }
       }
@@ -3932,12 +4137,13 @@
         }
       }
     },
-    "The local interface is present, but this iPhone's developer services do not answer. Check Developer Mode and Wi-Fi, then reconnect the local connection." : {
+    "The local interface is present, but this iPhone does not answer at 10.7.0.1. Reconnect the local connection and check Wi-Fi. If it still does not answer, pair again in Setup › Pairing, then check Developer Mode." : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "本机接口已存在，但此 iPhone 的开发者服务没有应答。请检查开发者模式和无线局域网，然后重新连接本机连接。"
+            "value" : "本机接口已存在，但此 iPhone 在 10.7.0.1 没有应答。请重新连接本机连接并检查无线局域网；仍没有应答时，到“设置引导 › 配对”重新配对，然后再检查开发者模式。"
           }
         }
       }
@@ -4238,17 +4444,6 @@
         }
       }
     },
-    "Turn on Developer Mode: Settings → Privacy & Security → Developer Mode, then restart the phone. If it is on: in Settings → General → VPN & Device Management, trust the developer of Poki Runner." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "开启开发者模式：设置 › 隐私与安全性 › 开发者模式，然后重启手机。如果已开启：在“设置 › 通用 › VPN 与设备管理”中信任 Poki Runner 的开发者。"
-          }
-        }
-      }
-    },
     "Turn on Enhanced Mode (required for loopback)." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4352,6 +4547,37 @@
         }
       }
     },
+    "Up to Date" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已是最新"
+          }
+        }
+      }
+    },
+    "Update Available" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有可用更新"
+          }
+        }
+      }
+    },
+    "Update iOS to 17.4 or later." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请把 iOS 更新到 17.4 或更高版本。"
+          }
+        }
+      }
+    },
     "Use Poki's local connection, or a compatible VPN app you already have." : {
       "localizations" : {
         "zh-Hans" : {
@@ -4388,6 +4614,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "语音"
+          }
+        }
+      }
+    },
+    "Version" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "版本"
           }
         }
       }
@@ -4483,12 +4719,12 @@
         }
       }
     },
-    "Waiting for you to approve in the Dynamic Island" : {
+    "Waiting for your approval" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "等待在灵动岛批准"
+            "value" : "等待你批准"
           }
         }
       }
@@ -4620,6 +4856,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Poki Runner 被强制退出或 iPhone 重新启动后，iOS 会先要求输入锁屏密码，再允许 UI 自动化。只需输入一次，Poki 会自动继续。"
+          }
+        }
+      }
+    },
+    "iOS asks for the passcode to allow UI Automation after Poki restarts, or 8 hours after it was last entered. Enter it once; Poki carries on by itself." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 重启后，或距上次输入密码超过 8 小时，iOS 会要求输入密码以允许 UI 自动化。输入一次即可，Poki 会自己继续。"
           }
         }
       }

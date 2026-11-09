@@ -6,7 +6,8 @@
 # (native/simulator.m) reports for the same screen. With --apps it instead launches the fixture, launches
 # Settings, activates the fixture (the same process returns), launches it again (a new process) and
 # terminates it. With --cycle the field check runs after the session was closed and opened again, as Poki
-# does when it is idle, and a touch sent while closed has to be refused. The simulator is deleted afterwards.
+# does when it is idle. POKI_CHECK_IPAD=1 runs the same check on an iPad. (An iPhone-only app on iPad reports
+# its elements in its own scaled coordinates with the origin at 0,0, so taps from its tree miss: not handled yet); a touch sent while closed must not use the closed session (refused, or a new one). The simulator is deleted afterwards.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 MODE=field
@@ -40,7 +41,8 @@ FIXTURE="$WORK/fixture/Build/Products/Debug-iphonesimulator/PokiMCPFixture.app"
 read -r RUNTIME TYPE < <(xcrun simctl list runtimes -j | python3 -c '
 import json, sys
 r = [x for x in json.load(sys.stdin)["runtimes"] if x["platform"] == "iOS" and x["isAvailable"]][-1]
-print(r["identifier"], next(t["identifier"] for t in r["supportedDeviceTypes"] if t["productFamily"] == "iPhone"))')
+family = "iPad" if sys.argv[1] else "iPhone"
+print(r["identifier"], next(t["identifier"] for t in r["supportedDeviceTypes"] if t["productFamily"] == family))' "${POKI_CHECK_IPAD:-}")
 UDID="$(xcrun simctl create poki-inprocess-check "$TYPE" "$RUNTIME")"
 xcrun simctl boot "$UDID"
 xcrun simctl bootstatus "$UDID" -b >/dev/null
@@ -98,10 +100,10 @@ r = json.load(open(sys.argv[1]))
 assert r["prepare"].get("ok"), f"no session: {r['prepare']}"
 if sys.argv[3] == "cycle":
     assert r["close"].get("closed"), f"close found no session: {r['close']}"
-    assert r["closed_touch"]["delivery"] == 0, f"a touch after close was not refused: {r['closed_touch']}"
+    t = r["closed_touch"]
+    assert t["delivery"] == 0 or t["generation_after"] > t["generation_before"], f"a touch after close went through the closed session: {t}"
     assert r["prepare2"].get("ok"), f"the session did not open again: {r['prepare2']}"
     assert r["prepare2"]["generation"] > r["prepare"]["generation"], f"the reopened session kept generation {r['prepare2']['generation']}"
-    assert r["prepare2"]["reused"] is False, f"prepare said the closed session was reused: {r['prepare2']}"
     assert "source_code2" not in r, f"no element tree after reopening: {r['source_code2']}"
     assert r["front2"].get("bundleId") == "local.pokimcp.fixture", f"front app after reopening: {r['front2']}"
 assert "source_code" not in r, f"no element tree: {r['source_code']}"
@@ -109,5 +111,7 @@ assert r["front"].get("bundleId") == "local.pokimcp.fixture", f"front app: {r['f
 assert r.get("tap") == 1 and r.get("type") == 1, f"tap {r.get('tap')} type {r.get('type')}"
 assert r.get("focus", {}).get("value") == sys.argv[2], f"focused field reads {r.get('focus')}"
 PY
-python3 "$HERE/compare.py" "$DOCS/field-after.xml" "$WORK/reference.json"
+SHIFT="$(python3 -c 'import json,sys,re;v=json.load(open(sys.argv[1])).get("viewport","");m=re.findall(r"-?[0-9.]+",v);print(m[0],m[1]) if m else print("0 0")' "$DOCS/field.json")"
+[ "$SHIFT" != "0 0" ] && echo "viewport origin: $SHIFT"
+python3 "$HERE/compare.py" "$DOCS/field-after.xml" "$WORK/reference.json" $SHIFT
 if [ "$MODE" = cycle ]; then echo "in-process close, reopen (generation $(python3 -c "import json;print(json.load(open('$DOCS/field.json'))['prepare2']['generation'])")), read, tap, type and read-back passed"; else echo "in-process read, tap, type and read-back passed"; fi

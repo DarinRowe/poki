@@ -11,7 +11,28 @@ struct ConnectorSecret: Codable, Identifiable, Hashable {
     var name: String
     var secret: String
     var created: Date
+    /// The owner named it: an agent connecting later keeps that name.
+    var named = false
+    /// The first agent that connected through it ("Claude", "Cursor"): its name (unless the owner
+    /// named it) and its icon.
+    var agent: String?
     var hash: String { SHA256.hash(data: Data(secret.utf8)).map { String(format: "%02x", $0) }.joined() }
+
+    init(name: String, secret: String, created: Date, named: Bool = false, agent: String? = nil) {
+        self.name = name; self.secret = secret; self.created = created; self.named = named; self.agent = agent
+    }
+
+    // Connectors saved before these fields were added: a name other than "Connector N" was the owner's.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decode(String.self, forKey: .name)
+        secret = try c.decode(String.self, forKey: .secret)
+        created = try c.decode(Date.self, forKey: .created)
+        agent = try c.decodeIfPresent(String.self, forKey: .agent)
+        named = try c.decodeIfPresent(Bool.self, forKey: .named) ?? !Self.isDefault(name)
+    }
+
+    static func isDefault(_ name: String) -> Bool { name.range(of: #"^Connector \d+$"#, options: .regularExpression) != nil }
 }
 
 @MainActor
@@ -43,10 +64,37 @@ final class RelayIdentity {
     func addSecret(name: String) -> ConnectorSecret {
         var bytes = [UInt8](repeating: 0, count: 32)
         _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
-        let secret = ConnectorSecret(name: name.isEmpty ? "Connector \(secrets.count + 1)" : name, secret: Data(bytes).base64URL, created: Date())
+        let taken = Set(secrets.map(\.name))
+        var next = 1
+        while taken.contains("Connector \(next)") { next += 1 }
+        let secret = ConnectorSecret(name: name.isEmpty ? "Connector \(next)" : name, secret: Data(bytes).base64URL, created: Date(), named: !name.isEmpty)
         secrets.append(secret)
         save()
         return secret
+    }
+
+    /// The owner's own name for it; an agent connecting later does not change it.
+    func rename(_ secret: ConnectorSecret, to name: String) {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, let i = secrets.firstIndex(where: { $0.secret == secret.secret }) else { return }
+        secrets[i].name = name
+        secrets[i].named = true
+        save()
+    }
+
+    /// An agent connected through the connector with this hash: the first one gives it its icon, and
+    /// its name unless the owner named it.
+    func noteAgent(hash: String, client: String) {
+        let client = client.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !client.isEmpty, let i = secrets.firstIndex(where: { $0.hash == hash }), secrets[i].agent == nil else { return }
+        secrets[i].agent = client
+        if !secrets[i].named {
+            let taken = Set(secrets.enumerated().filter { $0.offset != i }.map(\.element.name))
+            var name = client, n = 2
+            while taken.contains(name) { name = "\(client) \(n)"; n += 1 }
+            secrets[i].name = name
+        }
+        save()
     }
 
     func revoke(_ secret: ConnectorSecret) {
@@ -113,5 +161,11 @@ extension RelayAddress {
 }
 
 extension Data {
+    /// base64url (RFC 4648 §5) without padding, as `base64URL` makes it.
+    init?(base64URL text: String) {
+        var s = text.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        while s.count % 4 != 0 { s += "=" }
+        self.init(base64Encoded: s)
+    }
     var base64URL: String { base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "") }
 }

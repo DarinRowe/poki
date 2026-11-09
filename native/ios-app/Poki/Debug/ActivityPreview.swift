@@ -15,21 +15,30 @@ struct ActivityPreview: View {
     init() { if Thumbnail.previewImage == nil { Thumbnail.previewImage = Self.sampleScreen() } }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
+        // A list of the Live Activity's states; each row starts the real one on this iPhone, which iOS
+        // draws on the Lock Screen and in the Dynamic Island.
+        List {
+            Section {
                 ForEach(Self.samples.filter { only == nil || $0.0 == only }, id: \.0) { name, state in
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text(name).font(.footnote.weight(.semibold)).foregroundStyle(.secondary).textCase(.uppercase)
-                        LockScreenFrame(state: state)
-                        IslandExpandedFrame(state: state)
-                        IslandCompactFrame(state: state)
+                    Button { Task.detached { await DemoActivity.run(state) } } label: {
+                        LabeledContent {
+                            Image(systemName: "play.circle.fill").foregroundStyle(.blue).imageScale(.large)
+                        } label: {
+                            Label { Text(verbatim: Self.title(name)) } icon: { Image(systemName: state.face.symbol) }
+                        }
                     }
+                    .foregroundStyle(Color(.label))
+                }
+            } footer: {
+                Text("Starts that Live Activity on this iPhone. Lock the phone or go to the Home Screen to see it; the next one replaces it.")
+            }
+            Section {
+                Button("End Live Activity", systemImage: "stop.circle", role: .destructive) {
+                    Task.detached { for old in Activity<PokiActivityAttributes>.activities { await old.end(nil, dismissalPolicy: .immediate) } }
                 }
             }
-            .padding(.vertical).padding(.horizontal, 16)
-            .frame(maxWidth: .infinity)
         }
-        .background(Color(red: 0.36, green: 0.40, blue: 0.56).ignoresSafeArea())
+        .listStyle(.insetGrouped)
         .navigationTitle("Live Activity")
         .navigationBarTitleDisplayMode(.inline)
         .task {
@@ -37,6 +46,26 @@ struct ActivityPreview: View {
                 // Detached: going to the background must not cancel the demo's wait for its alert.
                 Task.detached { await DemoActivity.run(state) }
             }
+        }
+    }
+
+    private static func title(_ name: String) -> String {
+        switch name {
+        case "start": String(localized: "Task Started")
+        case "working": String(localized: "Working")
+        case "step": String(localized: "Next Step")
+        case "approval": String(localized: "Approval")
+        case "deciding": String(localized: "Approved")
+        case "yourturn": String(localized: "Your Turn")
+        case "passcode": String(localized: "Passcode")
+        case "done": String(localized: "Done")
+        case "ready": String(localized: "Ready")
+        case "idle": String(localized: "Runner Asleep")
+        case "problem": String(localized: "Problem")
+        case "pairing": String(localized: "Pairing")
+        case "code": String(localized: "Pairing Code")
+        case "setup": String(localized: "Setup")
+        default: name.capitalized
         }
     }
 
@@ -76,7 +105,7 @@ struct ActivityPreview: View {
         yourTurn.stepCount = 9
         yourTurn.handoff = .init(id: "h1", kind: .payment, text: "Confirm the $42.10 order with Face ID", app: "Amazon", since: now.addingTimeInterval(-20))
         var passcode = PokiState(phase: .handoff, headline: "Your turn", thumbnailVersion: 0)
-        passcode.handoff = .init(id: "h2", kind: .runnerPasscode, text: nil, app: nil, since: now.addingTimeInterval(-6))
+        passcode.handoff = .init(id: "h2", kind: AutomationPath.current == .inProcess ? .automationPasscode : .runnerPasscode, text: nil, app: nil, since: now.addingTimeInterval(-6))
 
         var done = PokiState(phase: .done, headline: "Finished", thumbnailVersion: 1)
         done.app = "Messages"
@@ -89,7 +118,7 @@ struct ActivityPreview: View {
         idle.runnerPaused = true
         ready.runnerPaused = false
 
-        let title = AppModel.problemText("Turn on the loopback in your proxy app: the Poki module in Surge or Loon.")
+        let title = AppModel.problemText(code: "loopback", fix: "Turn on the loopback in your proxy app: the Poki module in Surge or Loon.")
         var problem = PokiState(phase: .problem, headline: title, thumbnailVersion: 0)
         problem.label = "Runner Stopped"
         problem.stepCount = 6
@@ -99,7 +128,7 @@ struct ActivityPreview: View {
         pairCode.pin = "482913"
 
         var setup = PokiState(phase: .setup, headline: "Setting up Poki", thumbnailVersion: 0)
-        setup.guide = .init(number: 2, count: 6, title: SetupStep.developerMode.activityTitle)
+        setup.guide = .init(number: 2, count: SetupStep.shown.count, title: SetupStep.developerMode.activityTitle)
 
         return [("start", start), ("working", working), ("step", step), ("approval", approval), ("deciding", deciding), ("yourturn", yourTurn), ("passcode", passcode), ("done", done),
                 ("ready", ready), ("idle", idle), ("problem", problem), ("pairing", pairWait), ("code", pairCode), ("setup", setup)]
@@ -131,13 +160,12 @@ private struct LockScreenFrame: View {
     var state: PokiState
     var body: some View {
         let card = RoundedRectangle(cornerRadius: ActivityMetrics.lockCorner, style: .continuous)
-        LockScreenCard(state: state)
+        LockScreenCard(face: state.face)
             .frame(maxWidth: 371)
-            .background(ActivityTheme.current.lockBackground, in: card)
+            .background(ActivityTheme.current.lockBackground ?? Color(.secondarySystemGroupedBackground), in: card)
             .containerShape(card)
             .clipShape(card)
             .overlay(alignment: .bottomTrailing) { HeightBadge() }
-            .environment(\.colorScheme, .dark)
     }
 }
 
@@ -152,11 +180,11 @@ private struct IslandExpandedFrame: View {
         // iPhone 17 Pro simulator), so the height badge matches the real island.
         VStack(spacing: 4) {
             HStack(spacing: 0) {
-                IslandLeading(state: state).frame(width: 110, height: 25)
+                IslandLeading(face: state.face).frame(width: 110, height: 25)
                 Spacer(minLength: 120)
-                IslandTrailing(state: state).frame(width: 110, height: 25)
+                IslandTrailing(face: state.face).frame(width: 110, height: 25)
             }
-            IslandBottom(state: state)
+            IslandBottom(face: state.face)
         }
         .padding(insets)
         .frame(maxWidth: 371)
@@ -174,14 +202,14 @@ private struct IslandCompactFrame: View {
     var body: some View {
         HStack(spacing: 12) {
             HStack(spacing: 0) {
-                CompactLeading(state: state).frame(width: 44, alignment: .leading)
+                CompactLeading(face: state.face).frame(width: 44, alignment: .leading)
                 Color.clear.frame(width: 120)
-                CompactTrailing(state: state).frame(width: 60, alignment: .trailing)
+                CompactTrailing(face: state.face).frame(width: 60, alignment: .trailing)
             }
             .padding(.horizontal, 8).frame(height: 37)
             .background(.black, in: .capsule)
             .overlay { if state.face.outlined { Capsule().strokeBorder(ActivityTheme.current.approvalOutline, lineWidth: 1.5) } }
-            MinimalView(state: state).frame(width: 37, height: 37).background(.black, in: .circle)
+            MinimalView(face: state.face).frame(width: 37, height: 37).background(.black, in: .circle)
         }
         .environment(\.colorScheme, .dark)
     }

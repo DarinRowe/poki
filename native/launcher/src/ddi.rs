@@ -26,7 +26,7 @@ pub fn files_present(dir: &str) -> bool {
 /// a new tunnel afterwards to use the services.
 pub async fn mount(device: &mut Device, dir: &str) -> Result<()> {
     if !device.rsd.services.contains_key(CRYPTEXD) {
-        return Err(Failure::new("the phone does not offer cryptexd (it needs iOS 17.4 or later with Developer Mode on)").fix(DEVELOPER_MODE_FIX));
+        return Err(without_cryptexd(device.developer_mode().await));
     }
     if !files_present(dir) {
         return Err(Failure::new("the developer disk image has not been downloaded").fix("Open Poki and let it download the developer disk image (about 20 MB), once."));
@@ -34,6 +34,15 @@ pub async fn mount(device: &mut Device, dir: &str) -> Result<()> {
     let assets = Cryptex1Assets::load(dir).await.map_err(|e| Failure::new(format!("the developer disk image in the app is unreadable: {e}")).fix("Open Poki and download the developer disk image again."))?;
     install_ddi(&mut device.adapter, &mut device.rsd, &assets).await.map_err(|e| classify(&e))?;
     Ok(())
+}
+
+/// The phone's services list has no cryptexd, with what the phone said about Developer Mode.
+pub(crate) fn without_cryptexd(developer_mode: Option<bool>) -> Failure {
+    match developer_mode {
+        Some(false) => Failure::new("the phone does not offer cryptexd: it says Developer Mode is off").fix(DEVELOPER_MODE_FIX).code("developer_mode"),
+        Some(true) => Failure::new("the phone does not offer cryptexd with Developer Mode on: it needs iOS 17.4 or later").fix("Update iOS to 17.4 or later.").code("ios_too_old"),
+        None => Failure::new("the phone does not offer cryptexd, and it did not say whether Developer Mode is on").fix("Check that Developer Mode is on (Settings → Privacy & Security → Developer Mode) and that iOS is 17.4 or later.").code("no_cryptexd"),
+    }
 }
 
 /// What went wrong with an install, and the one thing to do about it.

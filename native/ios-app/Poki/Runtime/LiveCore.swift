@@ -18,13 +18,22 @@ final class LiveCore: CoreSession {
         var config = CoreConfig()
         // Signing tools may rename the app; its own id is Poki too.
         if let own = Bundle.main.bundleIdentifier { config.ownApps.append(own) }
+        // Sensitive steps wait for the owner unless they turned asking off in Agents › Approvals; the
+        // auto-classifier (Diagnostics › Testing) answers in their place when it is on.
+        config.sensitive.enabled = Self.asksBeforeSensitiveSteps || ApprovalClassifier.isOn
         core = PokiCore(config: config, host: host, transport: transport)
         (events, continuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(64))
         let continuation = self.continuation
         pump = Task { [core] in
             for await event in core.events { continuation.yield(Self.map(event)) }
         }
+        core.onSession { signal in continuation.yield(.session(signal)) }
     }
+
+    /// Agents › Approvals › Ask Before Sensitive Steps. Read when Poki starts.
+    static let askKey = "approvals.ask"
+    /// On unless the owner turned it off: a phone that never chose asks.
+    static var asksBeforeSensitiveSteps: Bool { UserDefaults.standard.object(forKey: askKey) as? Bool ?? true }
 
     deinit { pump?.cancel() }
 
@@ -37,6 +46,8 @@ final class LiveCore: CoreSession {
         await core.clearTap(on: text, inApp: bundleID, named: name, waiting: seconds)
     }
     func accessChanged() { core.accessChanged() }
+    /// The app's own MCP tools (ask_poki), after look, do and status.
+    func setHostTools(_ tools: [HostTool]) { core.setHostTools(tools) }
     func tool(_ name: String, arguments: String) async -> ToolResult { await core.tool(name, arguments: arguments) }
     /// `look`, `do` or `status` for the chat's model loop inside the app.
     func callTool(_ name: String, arguments: String) async -> PokiCore.ToolAnswer { await core.callTool(name, arguments: arguments) }
@@ -49,11 +60,11 @@ final class LiveCore: CoreSession {
         case .relay(.connecting): return .relay(.connecting)
         case .relay(.ready): return .relay(.ready)
         case .relay(.offline(let why)): return .relay(.offline(why))
-        case .toolStarted(let activity): return .toolStarted(name: activity.name, summary: activity.summary)
+        case .toolStarted(let activity): return .toolStarted(name: activity.name, summary: activity.summary, session: activity.session)
         case .toolFinished(let activity, let outcome, let facts):
             let delivery: String
             switch outcome { case .done(let text): delivery = text; case .failed(let text): delivery = "failed: \(text)" }
-            return .toolFinished(summary: activity.summary, delivery: delivery, app: facts.app, thumbnail: facts.thumbnail, error: facts.error)
+            return .toolFinished(summary: activity.summary, delivery: delivery, app: facts.app, thumbnail: facts.thumbnail, error: facts.error, session: activity.session)
         case .approvalRequested(let approval):
             return .approvalRequested(PendingApproval(id: approval.id, app: approval.app, summary: approval.summary, reason: approval.reason, expires: approval.expires))
         case .approvalEnded(let id, let approved): return .approvalEnded(id: id, approved: approved)
@@ -90,7 +101,7 @@ final class AppCoreHost: CoreHost, @unchecked Sendable {
     func onRestart(_ action: @escaping @Sendable () -> Void) { lock.withLock { restart = action } }
     func onWake(_ action: @escaping @Sendable () -> Void) { lock.withLock { wake = action } }
     func onWarmUp(_ action: @escaping @Sendable () -> Void) { lock.withLock { warm = action } }
-    /// A tool call found automation failed: the app may try again (the in-process session, ESP-152).
+    /// A tool call found automation failed or not open yet: the app may try again (the in-process session, ESP-152).
     func onRetry(_ action: @escaping @Sendable () -> Void) { lock.withLock { retry = action } }
     /// MCP initialize: a paused runner starts now, and the app gets the session ready.
     func warmUp() {
@@ -105,13 +116,24 @@ final class AppCoreHost: CoreHost, @unchecked Sendable {
         return DeviceKey(key: key)
     }
     func accessHashes() -> [String] { lock.withLock { hashes } }
+    private var consent: (@Sendable (String, String, String) async -> Bool)?
+    /// The owner's OK for a client outside the relay's known list (AppModel.askToConnect).
+    func onConsent(_ action: @escaping @Sendable (String, String, String) async -> Bool) { lock.withLock { consent = action } }
+    func approveConnection(client: String, callback: String, connector: String) async -> Bool {
+        guard let ask = lock.withLock({ consent }) else { return false }
+        return await ask(client, callback, connector)
+    }
     /// PokiCore asks before every device tool. A paused runner is started here, so the call answers
     /// "starting" and the next one finds it running. A failed one is answered as it is, and the app
     /// is asked to try again for the next call.
     func runnerState() -> RunnerState {
         let (state, then) = lock.withLock { () -> (RunnerState, (@Sendable () -> Void)?) in
             guard paused else {
+                // Failed, or still starting: the app is asked to (re)open its session. Opening is
+                // idempotent and the app ignores the ask while an open is under way, so a call that
+                // waits on "starting" can never wait on an open nobody started.
                 if case .failed = runner { return (runner, retry) }
+                if case .starting = runner { return (runner, retry) }
                 return (runner, nil)
             }
             paused = false

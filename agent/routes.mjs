@@ -6,7 +6,7 @@ import { matching, conditionsMatch, planSchema, selectorFor } from './fast/task.
 import { flagOn } from '../src/element-flags.mjs';
 import { learnReadout, readCurrent } from './readout.mjs';
 
-const observationTools = new Set(['observe_device', 'list_elements']);
+const observationTools = new Set(['observe_device', 'list_elements', 'post_action_observation']);
 const passiveTools = new Set(['poki_mcp_status', 'list_apps', 'get_foreground_app', 'take_screenshot', 'acquire_device', 'renew_device', 'release_device']);
 const label = e => e.label ?? e.text ?? '';
 const role = e => e.role ?? e.type;
@@ -91,7 +91,7 @@ function fillConditions(when, action, before, after, text) {
 function parameterizedPlan(compiled, texts) {
   const bindings = new Map();
   const parameterize = (condition, observation) => {
-    const element = matching(observation.elements, condition)[0];
+    const element = observation && matching(observation.elements, condition)[0];
     const fields = element && bindings.get(elementKey(element));
     const result = { ...condition };
     for (const [field, binding] of Object.entries(fields ?? {})) {
@@ -131,6 +131,17 @@ function conditions(observation, preferStates = true) {
   const states = candidates.filter(condition => /Heading|StaticText|TextField|TextView|TextArea|SearchField/.test(condition.role ?? '') || typeof condition.checked === 'boolean');
   return (preferStates && states.length ? states : candidates).slice(0, 20);
 }
+// Counts, times, percentages and capacities change between runs, so step conditions avoid them when the page has other text.
+function stable(list) {
+  const kept = list.filter(condition => !/\d/.test(`${condition.label}${condition.value ?? ''}`));
+  return kept.length ? kept : list;
+}
+// A scroll changes which rows are on screen, not the headings, so it is confirmed by a few rows it brought into view.
+function revealed(before, after) {
+  const shown = stable(conditions(after, false)).filter(condition => !matching(before.elements, { label: condition.label, role: condition.role }).length);
+  const middle = Math.max(0, Math.floor(shown.length / 2) - 1);
+  return shown.slice(middle, middle + 3);
+}
 function resultMatches(observation, details) {
   const candidates = conditions(observation, false);
   const selected = [];
@@ -153,7 +164,7 @@ function resultConditions(observation, details) {
   return details.length && unique.length <= 20 ? unique : null;
 }
 function navigationConditions({ action, before, after }) {
-  if (action.op !== 'tap' || action.role !== 'Button' || !action.label) return null;
+  if (!before || !after || action.op !== 'tap' || action.role !== 'Button' || !action.label) return null;
   const isHeading = e => role(e) === 'Heading' || e.trait_names?.includes('Header');
   const headings = after.elements.filter(e => label(e) === action.label && isHeading(e));
   if (headings.length !== 1) return null;
@@ -191,33 +202,114 @@ function actionFor(entry, before, id) {
     ...(entry.tool === 'fill' ? identity : {}),
     ...(args.direction ? { direction: args.direction } : {}), arguments: args };
 }
+// A page as an action's own readback describes it: text lines, without frames or references. It stands in
+// for an observation only when none followed the action, and a list cut short stands in for nothing.
+function readback(result) {
+  const screen = result?.screen;
+  if (screen?.source !== 'accessibility' || screen.more || !Array.isArray(screen.text) || !screen.text.length) return null;
+  const elements = [];
+  for (const line of screen.text) {
+    const match = /^(\w+): (.*?)(?: \(focused\))?$/su.exec(line);
+    if (!match) return null;
+    const parts = match[2].split(' = ');
+    const empty = /^\(empty, placeholder (".*")\)$/su.exec(parts.at(-1));
+    let placeholder;
+    if (empty) {
+      try { placeholder = JSON.parse(empty[1]); } catch { return null; }
+      parts.pop();
+    }
+    if (parts.length > 2) return null;
+    elements.push({ role: match[1], label: parts[0] ?? '', ...(parts.length === 2 ? { value: parts[1] } : {}), ...(placeholder === undefined ? {} : { placeholder }) });
+  }
+  return { elements, readback: true };
+}
+// Whether two screens show the same page: the same rows with the same values. A label with digits, such as a
+// time or free space, may change by itself and is left out, and so is a number in a value; a switch's 0 or 1 is kept.
+function pageRows(observation) {
+  return new Set(observation.elements.filter(e => flagOn(e.visible) && !/\d/.test(label(e))).flatMap(e => {
+    const value = typeof e.value === 'string' && e.value !== e.placeholder && e.value !== label(e) ? e.value : '';
+    const parts = [label(e), /\d/.test(value) && !/^[01]$/.test(value) ? '#' : value].filter(Boolean);
+    return parts.length ? [`${role(e)}: ${parts.join(' = ')}`] : [];
+  }));
+}
+function samePage(one, two) {
+  const first = pageRows(one), second = pageRows(two);
+  return first.size === second.size && [...first].every(row => second.has(row));
+}
 function compile(trace) {
-  let current, pending;
+  // current: the screen the next action starts from. pending: the last action, until a screen shows where it
+  // led. doubt: after a failed step, the screen it was sent to, or null when the route has no screen yet.
+  let current = null, pending = null, doubt;
   const steps = [];
+  const close = after => {
+    const { before, readback: _readback, ...step } = pending;
+    pending = null;
+    const complete = before && ['scroll', 'swipe'].includes(step.action.op) ? revealed(before, after) : stable(conditions(after));
+    if (!complete.length) return false;
+    if (!before || !conditionsMatch(step.when, after) || !conditionsMatch(complete, before)) steps.push({ ...step, complete, before, after });
+    current = after;
+    return true;
+  };
+  const see = (screen, observed) => {
+    if (doubt !== undefined) {
+      // A failed step is left out only when the screen after it is the one it was sent to.
+      if (doubt && !samePage(doubt, screen)) return false;
+      current = !observed && doubt ? doubt : screen;
+      doubt = undefined;
+      return true;
+    }
+    if (pending) {
+      if (observed) return close(screen);
+      pending.readback = screen;
+      return true;
+    }
+    if (observed || !current || !samePage(current, screen)) current = screen;
+    return true;
+  };
   for (const entry of trace) {
     if (passiveTools.has(entry.tool)) continue;
-    if (entry.tool === 'launch_app') { if (steps.length || pending) return null; current = null; continue; }
-    if (entry.error) return null;
-    if (entry.tool === 'hide_keyboard' && entry.result?.hidden === true && entry.result?.already_hidden === true) continue;
-    if (observationTools.has(entry.tool) && entry.result?.elements?.length) {
-      if (pending) {
-        const complete = conditions(entry.result);
-        if (!complete.length) return null;
-        const { before, ...step } = pending;
-        if (!conditionsMatch(step.when, entry.result) || !conditionsMatch(complete, before)) steps.push({ ...step, complete, before, after: entry.result });
-        pending = null;
-      }
-      current = entry.result;
+    if (entry.tool === 'launch_app') { if (steps.length || pending) return null; current = null; doubt = undefined; continue; }
+    if (observationTools.has(entry.tool)) {
+      if (!entry.error && entry.result?.elements?.length && !see(entry.result, true)) return null;
       continue;
     }
-    if (!current || pending) return null;
+    // A batch that stopped is traced after its steps, with the screen it ended on.
+    if (entry.tool === 'batch_commands') {
+      const screen = readback(entry.result);
+      if (screen && !see(screen, false)) return null;
+      continue;
+    }
+    if (entry.error) {
+      if (pending && (!pending.readback || !close(pending.readback))) return null;
+      if (doubt === undefined) {
+        if (!current && steps.length) return null;
+        doubt = current;
+      }
+      current = null;
+      continue;
+    }
+    if (entry.tool === 'hide_keyboard' && entry.result?.hidden === true && entry.result?.already_hidden === true) continue;
+    if (pending && !pending.readback) {
+      // Taps sent together, with no screen read between them: the row the next tap names is what confirms
+      // the step before it. Any other action needs the screen it starts from.
+      const { device, text, ...args } = entry.args;
+      if (entry.tool !== 'tap_text' || typeof text !== 'string' || !text || pending.action.arguments.text !== undefined) return null;
+      const { before, readback: _readback, ...step } = pending, named = [{ label: text }];
+      steps.push({ ...step, complete: named, before, after: null });
+      pending = { before: null, when: named, action: { id: `step_${steps.length + 1}`, op: 'tap', label: text, arguments: args } };
+      continue;
+    }
+    if (pending && !close(pending.readback)) return null;
+    if (!current) return null;
     const action = actionFor(entry, current, `step_${steps.length + 1}`);
-    const when = conditions(current).slice(0, 10);
+    const when = stable(conditions(current)).slice(0, 10);
     if (!action || !when.length) return null;
     pending = { before: current, when, action };
+    const screen = readback(entry.result);
+    if (screen) pending.readback = screen;
     current = null;
   }
-  if (pending || !steps.length || !current) return null;
+  if (pending || !steps.length || !current || current.readback) return null;
   const success = conditions(current);
   if (!success.length || !conditionsMatch(success, current)) return null;
   return { steps, success, final: current };
@@ -306,7 +398,7 @@ export class RouteStore {
         if (!navigation) continue;
         step.complete = navigation;
         const next = compiled.steps[index + 1];
-        if (next && conditionsMatch(navigation, next.before)) next.when = navigation;
+        if (next?.before && conditionsMatch(navigation, next.before)) next.when = navigation;
       }
     }
     const plan = parameterizedPlan(compiled, texts);

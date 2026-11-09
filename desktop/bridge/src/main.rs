@@ -48,6 +48,18 @@ type R = Result<Value, Failure>;
 /// Where Poki keeps its agent backup, inside its container.
 const AGENT_BACKUP: &str = "Documents/AgentBackup/poki-agent-backup.json";
 
+/// The files Poki and the installer (bin/install-iphone.mjs) hand each other in Poki's container:
+/// Poki's hello (its version, a public key and how its connection is) and a model key sealed to that
+/// key. Only these names, so the commands cannot reach anything else in Poki's sandbox.
+const HANDOFF_FILES: [&str; 2] = ["poki-hello.json", "model-key.json"];
+
+fn handoff_path(name: &str) -> Result<String, Failure> {
+    if !HANDOFF_FILES.contains(&name) {
+        return Err(Failure { kind: "bad_request", message: format!("not a Poki hand-off file: {name}") });
+    }
+    Ok(format!("Documents/PokiSetup/{name}"))
+}
+
 fn time_stamp() -> String {
     let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
     secs.to_string()
@@ -345,6 +357,25 @@ async fn dispatch(state: &Shared, out: &Out, cmd: &str, a: &Value) -> R {
             device::container::write_file(&phone, &rec.bundle_id, AGENT_BACKUP, &bytes).await?;
             ok(true)
         }
+        "container_read" => {
+            use base64::Engine;
+            let udid: String = arg(a, "udid")?;
+            let path = handoff_path(&arg::<String>(a, "name")?)?;
+            let rec = keeper::get(&udid)?.ok_or_else(|| Error::msg("Set up Poki on this iPhone with Poki Setup first."))?;
+            let phone = setup::pick_phone(Some(&udid)).await?;
+            let bytes = device::container::read_file(&phone, &rec.bundle_id, &path).await?;
+            ok(base64::engine::general_purpose::STANDARD.encode(bytes))
+        }
+        "container_write" => {
+            use base64::Engine;
+            let udid: String = arg(a, "udid")?;
+            let path = handoff_path(&arg::<String>(a, "name")?)?;
+            let bytes = base64::engine::general_purpose::STANDARD.decode(arg::<String>(a, "data")?).map_err(|e| Failure { kind: "bad_request", message: format!("data: {e}") })?;
+            let rec = keeper::get(&udid)?.ok_or_else(|| Error::msg("Set up Poki on this iPhone with Poki Setup first."))?;
+            let phone = setup::pick_phone(Some(&udid)).await?;
+            device::container::write_file(&phone, &rec.bundle_id, &path, &bytes).await?;
+            ok(true)
+        }
         "latest_release" => ok(release::latest().await?),
         // Every channel with its newest release, the chosen one marked (Settings' picker).
         "channels" => ok(release::channels().await?),
@@ -478,6 +509,20 @@ impl std::io::Write for FileOrSink {
         match &mut self.0 {
             Some(f) => f.flush(),
             None => Ok(()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::handoff_path;
+
+    #[test]
+    fn the_container_commands_reach_only_the_two_hand_off_files() {
+        assert_eq!(handoff_path("poki-hello.json").ok().as_deref(), Some("Documents/PokiSetup/poki-hello.json"));
+        assert_eq!(handoff_path("model-key.json").ok().as_deref(), Some("Documents/PokiSetup/model-key.json"));
+        for name in ["signing-identity.json", "../Library/Application Support/Poki/pairing.plist", "/etc/passwd", "", "poki-hello.json/.."] {
+            assert!(handoff_path(name).is_err(), "{name} is refused");
         }
     }
 }

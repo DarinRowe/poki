@@ -90,6 +90,19 @@ struct InterruptScreen: View {
     }
 }
 
+/// A payment button: PokiCore holds the tap for the owner's approval (the app's Allow), then sends
+/// it in the same call; the state shows whether the tap landed.
+struct PayScreen: View {
+    @EnvironmentObject var state: GymState
+    var body: some View {
+        VStack(spacing: 20) {
+            Text("Total: $12.00").font(.title3)
+            Button("Pay now") { state.set("Pay now tapped") }.buttonStyle(.borderedProminent)
+            Button("Cancel order") { state.set("Cancel order tapped") }
+        }
+    }
+}
+
 struct SheetScreen: View {
     @EnvironmentObject var state: GymState
     @State private var open = false

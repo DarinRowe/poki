@@ -20,10 +20,12 @@
 
 pub mod agent;
 pub mod apple;
+#[cfg(feature = "device")]
 pub mod device;
 pub mod error;
 pub mod keeper;
 pub mod mcp;
+#[cfg(feature = "device")]
 pub mod pairshare;
 pub mod paths;
 pub mod progress;
@@ -31,7 +33,9 @@ pub mod relay;
 pub mod release;
 pub mod setup;
 pub mod sign;
+#[cfg(feature = "device")]
 pub mod support;
+pub mod vault;
 
 pub use error::{Error, Result};
 pub use progress::{Progress, Reporter};

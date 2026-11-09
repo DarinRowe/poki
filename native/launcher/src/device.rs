@@ -23,7 +23,8 @@ pub type Result<T> = std::result::Result<T, Failure>;
 pub struct Failure {
     pub detail: String,
     pub fix: Option<String>,
-    /// A short code the app acts on (for example `ddi_bad`: delete the image and download it again).
+    /// A short code the app acts on instead of the fix's words (for example `ddi_bad`: delete the
+    /// image and download it again; `pairing`: the phone refused the pairing).
     pub code: Option<&'static str>,
 }
 
@@ -53,6 +54,14 @@ pub const DDI_TIMEOUT_FIX: &str = "Mounting the developer disk image timed out. 
 pub const DDI_REFUSED_FIX: &str = "This iOS version needs a newer developer disk image. Open Poki's setup to download the latest image, or update Poki.";
 pub const DDI_BAD_FIX: &str = "The developer disk image did not install. Poki downloads it again by itself.";
 pub const PAIRING_FIX: &str = "Pair again in Poki's setup.";
+/// The loopback took the connection, then the phone's remote pairing service did not answer, before
+/// the pairing was checked. Seen with Developer Mode on (GitHub issue 69): the loopback, or a new
+/// pairing made over it, is the fix.
+pub const HANDSHAKE_FIX: &str = "Open Setup › Loopback and check the loopback, then pair this iPhone again in Setup › Pairing with the loopback on.";
+/// After pair-verify, the listener, the tunnel or the RSD handshake failed. Nothing said why, so the
+/// checks go in order, most likely first; Developer Mode only after the loopback and the pairing.
+pub const UNREACHABLE_FIX: &str = "Poki can't reach this iPhone. Check in this order: Setup › Loopback (your proxy app or LocalDevVPN is connected, with 10.7.0.1 set), then Setup › Pairing (pair again with the loopback on), then Developer Mode in Settings → Privacy & Security.";
+/// Only when the phone said Developer Mode is off.
 pub const DEVELOPER_MODE_FIX: &str = "Turn on Developer Mode: Settings → Privacy & Security → Developer Mode, then restart the phone.";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -86,16 +95,27 @@ impl Pairing {
     /// Reads a pairing file of either kind: an RPPairing file (public_key, private_key, identifier)
     /// or a lockdown pairing plist (HostID, certificates, keys).
     pub fn read(path: &Path, host_name: Option<&str>) -> Result<Self> {
-        let bytes = std::fs::read(path).map_err(|e| Failure::new(format!("cannot read the pairing file: {e}")).fix(PAIRING_FIX))?;
+        let bytes = std::fs::read(path).map_err(|e| Failure::new(format!("cannot read the pairing file: {e}")).fix(PAIRING_FIX).code("pairing"))?;
         if let Ok(file) = RpPairingFile::from_bytes(&bytes) {
             let name = remote::sending_host(&bytes).or_else(|| host_name.map(String::from)).unwrap_or_else(|| "Poki".into());
             return Ok(Self::Remote { file, host_name: name });
         }
         match PairingFile::from_bytes(&bytes) {
             Ok(file) => Ok(Self::Lockdown(file)),
-            Err(e) => Err(Failure::new(format!("the pairing file is neither a remote pairing file nor a lockdown pairing record ({e})")).fix(PAIRING_FIX)),
+            Err(e) => Err(Failure::new(format!("the pairing file is neither a remote pairing file nor a lockdown pairing record ({e})")).fix(PAIRING_FIX).code("pairing")),
         }
     }
+}
+
+/// What a failed remote pairing connection tells the owner to do.
+pub(crate) fn remote_failure(error: remote::RemoteError) -> Failure {
+    let (fix, code) = match error.stage {
+        remote::Stage::Connect => (LOOPBACK_FIX, "loopback"),
+        remote::Stage::Handshake => (HANDSHAKE_FIX, "handshake"),
+        remote::Stage::PairVerify => (PAIRING_FIX, "pairing"),
+        remote::Stage::Listener | remote::Stage::Tunnel | remote::Stage::Rsd => (UNREACHABLE_FIX, "unreachable"),
+    };
+    Failure::new(error.to_string()).fix(fix).code(code)
 }
 
 /// An open tunnel. Dropping it closes everything that runs through it, the runner's session included.
@@ -109,29 +129,23 @@ impl Device {
     pub async fn open(address: IpAddr, pairing: &mut Pairing, timeout: Duration) -> Result<Self> {
         match tokio::time::timeout(timeout, Self::open_inner(address, pairing)).await {
             Ok(result) => result,
-            Err(_) => Err(Failure::new(format!("the phone's developer services did not answer within {} s", timeout.as_secs())).fix(LOOPBACK_FIX)),
+            Err(_) => Err(Failure::new(format!("the phone's developer services did not answer within {} s", timeout.as_secs())).fix(LOOPBACK_FIX).code("loopback")),
         }
     }
 
     async fn open_inner(address: IpAddr, pairing: &mut Pairing) -> Result<Self> {
         match pairing {
             Pairing::Remote { file, host_name } => {
-                let (adapter, rsd, control) = remote::connect(address, file, host_name, |_| {}).await.map_err(|e| {
-                    let fix = match e.stage {
-                        remote::Stage::Connect => LOOPBACK_FIX,
-                        remote::Stage::PairVerify => PAIRING_FIX,
-                        _ => DEVELOPER_MODE_FIX,
-                    };
-                    Failure::new(e.to_string()).fix(fix)
-                })?;
+                let (adapter, rsd, control) = remote::connect(address, file, host_name, |_| {}).await.map_err(remote_failure)?;
                 Ok(Self { adapter, rsd, _control: Some(control) })
             }
             Pairing::Lockdown(file) => {
                 let provider = TcpProvider { addr: address, scope_id: None, pairing_file: file.clone(), label: "Poki".into() };
                 let proxy = CoreDeviceProxy::connect(&provider).await.map_err(|e| {
                     let text = e.to_string();
-                    let fix = if text.contains("onnect") || text.contains("refused") || text.contains("timed out") { LOOPBACK_FIX } else { PAIRING_FIX };
-                    Failure::new(format!("lockdown on {address}:62078 failed: {text}")).fix(fix)
+                    // A socket or TLS failure is the path to the phone, not the phone refusing the pairing.
+                    let (fix, code) = if text.contains("onnect") || text.contains("refused") || text.contains("timed out") || text.contains("socket") || text.to_lowercase().contains("tls") { (LOOPBACK_FIX, "loopback") } else { (PAIRING_FIX, "pairing") };
+                    Failure::new(format!("lockdown on {address}:62078 failed: {text}")).fix(fix).code(code)
                 })?;
                 let port = proxy.tunnel_info().server_rsd_port;
                 let mut adapter = proxy.create_software_tunnel().map_err(|e| Failure::new(format!("the tunnel did not come up: {e}")))?.to_async_handle();
@@ -144,6 +158,12 @@ impl Device {
 
     pub async fn connect<S: RsdService>(&mut self) -> std::result::Result<S, idevice::IdeviceError> {
         S::connect_rsd(&mut self.adapter, &mut self.rsd).await
+    }
+
+    /// What the phone says about Developer Mode; None when it could not be read.
+    pub async fn developer_mode(&mut self) -> Option<bool> {
+        let mut lockdown: LockdownClient = self.connect().await.ok()?;
+        lockdown.get_value(Some("DeveloperModeStatus"), Some("com.apple.security.mac.amfi")).await.ok()?.as_boolean()
     }
 
     pub async fn ios_version(&mut self) -> Result<String> {

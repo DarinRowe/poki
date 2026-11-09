@@ -20,6 +20,9 @@ use tokio::{
 struct Quiet;
 impl XCUITestListener for Quiet {}
 
+/// The runner's session started after the disk image mounted, so Developer Mode is on.
+pub const RUNNER_BLOCKED_FIX: &str = "Poki Runner did not start. In Settings → Developer, turn on UI Automation; in Settings → General → VPN & Device Management, trust the developer of Poki Runner.";
+
 pub const RUNNER_FIX: &str = "Install Poki Runner (poki-runner-unsigned.ipa) with the same signing tool and Apple ID as Poki, then trust its developer in Settings → General → VPN & Device Management.";
 
 /// The runner: the configured bundle, else the installed user app whose id names a WebDriverAgent
@@ -32,7 +35,7 @@ pub async fn find_runner(device: &mut Device, configured: Option<&str>) -> Resul
     let apps = proxy.get_apps(Some("User"), None).await?;
     let mut ids: Vec<String> = apps.keys().filter(|id| id.contains("WebDriverAgentRunner") && id.contains("xctrunner")).cloned().collect();
     ids.sort();
-    ids.into_iter().next().ok_or_else(|| Failure::new("Poki Runner is not installed").fix(RUNNER_FIX))
+    ids.into_iter().next().ok_or_else(|| Failure::new("Poki Runner is not installed").fix(RUNNER_FIX).code("runner"))
 }
 
 pub type Session = JoinHandle<std::result::Result<(), idevice::IdeviceError>>;
@@ -43,7 +46,7 @@ pub async fn start(device: &mut Device, bundle: &str, ios: &str) -> Result<Sessi
     let mut proxy = device.installation_proxy().await?;
     let mut config = TestConfig::from_installation_proxy(&mut proxy, bundle, None)
         .await
-        .map_err(|e| Failure::new(format!("cannot read the runner's install info: {e}")).fix(RUNNER_FIX))?;
+        .map_err(|e| Failure::new(format!("cannot read the runner's install info: {e}")).fix(RUNNER_FIX).code("runner"))?;
     // The runner checks for this: opened any other way, it does nothing and sends people to Poki.
     let mut env = config.runner_env.take().unwrap_or_default();
     env.insert("POKI_LAUNCHER".into(), "1".into());
@@ -70,11 +73,7 @@ pub async fn wait_ready(session: &mut Session, wda: SocketAddr, limit: Duration,
         }
         if session.is_finished() {
             let result = session.await.map_err(|e| Failure::new(e.to_string()))?;
-            let detail = match result {
-                Ok(()) => "the runner's test session ended before WebDriverAgent answered".to_string(),
-                Err(e) => format!("the runner did not start: {e}"),
-            };
-            return Err(Failure::new(detail).fix(format!("{DEVELOPER_MODE_FIX} If it is on: in Settings → General → VPN & Device Management, trust the developer of Poki Runner.")));
+            return Err(ended_before_ready(result));
         }
         if status(wda, Duration::from_secs(2)).await {
             return Ok(());
@@ -84,6 +83,15 @@ pub async fn wait_ready(session: &mut Session, wda: SocketAddr, limit: Duration,
             return Err(Failure::new(format!("WebDriverAgent did not answer on port {} within {} s", wda.port(), limit.as_secs())));
         }
         tokio::time::sleep(Duration::from_millis(300)).await;
+    }
+}
+
+/// The runner's test session ended before WebDriverAgent answered.
+pub(crate) fn ended_before_ready(result: std::result::Result<(), idevice::IdeviceError>) -> Failure {
+    match result {
+        Ok(()) => Failure::new("the runner's test session ended before WebDriverAgent answered").fix(RUNNER_BLOCKED_FIX).code("runner_blocked"),
+        Err(e @ idevice::IdeviceError::DeveloperModeNotEnabled) => Failure::new(format!("the runner did not start: {e}")).fix(DEVELOPER_MODE_FIX).code("developer_mode"),
+        Err(e) => Failure::new(format!("the runner did not start: {e}")).fix(RUNNER_BLOCKED_FIX).code("runner_blocked"),
     }
 }
 

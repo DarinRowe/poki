@@ -19,6 +19,24 @@
         }
       }
     },
+    "NSCameraUsageDescription": {
+      "comment": "Info.plist",
+      "extractionState": "extracted_with_value",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Poki uses the camera only to scan the pairing code Poki Setup shows on your computer."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Poki 只用相机扫描电脑上 Poki Setup 显示的配对码。"
+          }
+        }
+      }
+    },
     "NSLocalNetworkUsageDescription": {
       "comment": "Info.plist",
       "extractionState": "extracted_with_value",

@@ -39,7 +39,50 @@ handles TCP only, which is all Poki needs. Reference:
 ## Shadowrocket
 
 No file is needed: turn on Settings > Other > "Include route 10.7.0.1/32". (Taken from the app's
-settings as reported to us; not checked against Shadowrocket documentation.)
+settings as reported to us; not checked against Shadowrocket documentation. The SideStore community
+reports the same switch: [shadowrocket-sidestore-rules #1](https://github.com/nikiz24/shadowrocket-sidestore-rules/pull/1).)
+
+## Quantumult X (reported, not documented)
+
+Add `reflected_routes = 10.7.0.1/32` to the `[general]` section of the profile and reconnect.
+Reported by WrapPin's users ([WrapPin issue 36](https://github.com/suversal/WrapPin/issues/36),
+October 2026); Quantumult X's own sample configuration and App Store notes do not list the key, and
+its minimum version is unknown. The App Store lists 1.8.1 (October 2026) as the current version.
+
+## Stash (reported, not documented)
+
+Users tell us Stash has the loopback built in. Stash is mihomo-based, so the setting is expected
+where Clash Mi has it: in the `tun` section of an override, `loopback-address: [10.7.0.1]`. Stash's
+documentation (release notes through 3.4.0, the example configuration, the LAN proxy page) does not
+mention it, so the app's own TUN or override settings are the place to look. Poki shows the
+override lines and marks the entry "as reported".
+
+## Clash Mi and other mihomo apps (reported, not documented)
+
+Add to the profile's `tun` section:
+
+```yaml
+tun:
+  loopback-address:
+    - 10.7.0.1
+```
+
+Import the profile and connect. The key is not in the mihomo TUN documentation; it is reported
+working for SideStore on iOS 26.3 and failing on 26.4 ([SideStore issue 1200](https://github.com/SideStore/SideStore/issues/1200)),
+and a SideInstaller user reports the same on other mihomo-kernel apps
+([SideInstaller issue 30](https://github.com/FrizzleM/SideInstaller/issues/30)). Poki's live check tells.
+
+## Egern
+
+WrapPin lists Egern among the apps that can carry the 10.7.0.1 tunnel, but Egern's configuration
+reference documents only `vif_included_routes` and no reflect or loopback option, so Poki has no
+Egern entry yet. If you know the setting, open an issue with it.
+
+## LocalDevVPN and StosVPN
+
+Not proxy apps: dedicated loopback VPNs from the SideStore community (LocalDevVPN is on the App
+Store, id6755608044; StosVPN is its predecessor). Either replaces the proxy-app setup when the person
+runs no proxy, at the cost of taking the phone's one VPN slot.
 
 ## Karing
 

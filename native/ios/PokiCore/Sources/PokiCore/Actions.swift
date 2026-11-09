@@ -126,15 +126,29 @@ extension Computer {
     /// moving; a rest = the list stops where the finger stopped). XCTest's own press-drag through
     /// WDA's pressAndDragWithVelocity; its time limit is the gesture's own and a slow answer is not
     /// taken as the runner being gone.
+    /// Shaped after a person's drag when `humanize` is on (`Humanize.drag`: minimum-jerk movement, a
+    /// slight arc, uneven sampling; a flick still lifts at speed, a resting drag still ends still), sent
+    /// as W3C pointer actions; a runner without `/actions` gets the two-point press-drag.
     func gesture(_ path: (Double, Double, Double, Double), seconds: Double, hold: Double = 0, rest: Double = 0, until: Double) async throws {
         let distance = max(1, hypot(path.2 - path.0, path.3 - path.1))
         let velocity = distance / max(0.05, seconds)
-        let expected = hold + distance / velocity + rest
+        let expected = hold + distance / velocity + rest + (humanize.enabled ? 0.04 : 0)
         // The runner's answer needs the gesture's own time and a margin for XCTest's own wait after
         // it (gym: a 0.85 s drag given 1 s near the end of a scroll came back unconfirmed).
         let timeout = max(expected + 1.5, min(expected + 5, until - now() - 0.2))
         do {
-            _ = try await runner.call("POST", "/wda/pressAndDragWithVelocity", ["fromX": .number(path.0), "fromY": .number(path.1), "toX": .number(path.2), "toY": .number(path.3), "pressDuration": .number(hold), "holdDuration": .number(rest), "velocity": .number(velocity.rounded())], timeout: timeout, countsAsMiss: false)
+            var shaped = humanize.enabled
+            if shaped {
+                let finger = humanize.drag(from: (path.0, path.1), to: (path.2, path.3), seconds: seconds, hold: hold, rest: rest)
+                do {
+                    _ = try await runner.call("POST", "/actions", Humanize.actions([finger]), timeout: timeout, countsAsMiss: false)
+                } catch let e as RunnerError where e.code == "unknown command" || e.code == "unknown method" {
+                    shaped = false
+                }
+            }
+            if !shaped {
+                _ = try await runner.call("POST", "/wda/pressAndDragWithVelocity", ["fromX": .number(path.0), "fromY": .number(path.1), "toX": .number(path.2), "toY": .number(path.3), "pressDuration": .number(hold), "holdDuration": .number(rest), "velocity": .number(velocity.rounded())], timeout: timeout, countsAsMiss: false)
+            }
             swipeUnread = true
         } catch let e as RunnerError where e.code == "unknown command" || e.code == "unknown method" {
             // A runner older than pressAndDragWithVelocity.
@@ -142,6 +156,48 @@ extension Computer {
             swipeUnread = true
         } catch let e as RunnerError where e.delivery == .unknown {
             // The runner may still carry it out: the screen is read before anything is swiped again.
+            swipeUnread = true
+            throw e
+        }
+    }
+
+    /// A scroll's drag: the finger moves at a steady speed for `seconds`, then the last 12 points
+    /// over `rest` seconds, and lifts. XCTest's press-drag ends with a hold that is a move to the same
+    /// point, which synthesis can drop, and the list took the lift as a flick: a 482 pt drag moved
+    /// the gym's list 762 pt on both paths (17 rows for 15 on screen, 2 passed unread each swipe).
+    /// The slow tail is real motion, so the lift finds a finger that all but stopped. Sent as W3C
+    /// pointer actions, which both WebDriverAgent and the in-process path take; a runner without
+    /// them gets the press-drag.
+    func scrollDrag(_ path: (Double, Double, Double, Double), seconds: Double, rest: Double, until: Double) async throws {
+        let distance = max(1, hypot(path.2 - path.0, path.3 - path.1))
+        // The slow tail with shaped input too: the shaped resting drag moved the gym's list 392-640 pt
+        // per swipe where the slow tail moved a steady 442-471 (run 42435103942), and scroll_to's
+        // overshoot check fired on the spread. Shaped input varies the tail's points by a point or
+        // two and its times by up to 10 %, so no two swipes are alike.
+        guard distance > 24 else { return try await gesture(path, seconds: seconds, rest: rest, until: until) }
+        var path = path, seconds = seconds, rest = rest
+        if humanize.enabled {
+            path = (path.0 + humanize.uniform(-2, 2), path.1 + humanize.uniform(-2, 2), path.2 + humanize.uniform(-2, 2), path.3 + humanize.uniform(-2, 2))
+            seconds *= humanize.uniform(0.92, 1.08)
+            rest *= humanize.uniform(0.92, 1.08)
+        }
+        let tail = 12.0
+        let near = (x: path.2 - (path.2 - path.0) / distance * tail, y: path.3 - (path.3 - path.1) / distance * tail)
+        let expected = seconds + rest
+        let timeout = max(expected + 1.5, min(expected + 5, until - now() - 0.2))
+        let finger: JSON = ["type": "pointer", "id": "f1", "parameters": ["pointerType": "touch"], "actions": [
+            ["type": "pointerMove", "duration": 0, "x": .number(path.0.rounded()), "y": .number(path.1.rounded())],
+            ["type": "pointerDown", "button": 0],
+            ["type": "pointerMove", "duration": .number((seconds * 1000).rounded()), "x": .number(near.x.rounded()), "y": .number(near.y.rounded())],
+            ["type": "pointerMove", "duration": .number((rest * 1000).rounded()), "x": .number(path.2.rounded()), "y": .number(path.3.rounded())],
+            ["type": "pointerUp", "button": 0],
+        ]]
+        do {
+            _ = try await runner.call("POST", "/actions", ["actions": [finger]], timeout: timeout, countsAsMiss: false)
+            swipeUnread = true
+        } catch let e as RunnerError where e.code == "unknown command" || e.code == "unknown method" {
+            try await gesture(path, seconds: seconds, rest: rest, until: until)
+        } catch let e as RunnerError where e.delivery == .unknown {
             swipeUnread = true
             throw e
         }
@@ -156,21 +212,59 @@ extension Computer {
         return "; a bare host in Safari's address field: the Go key did not open it in tests, so type it with its scheme (\"https://\(t)\") before the key"
     }
 
-    func tap(_ p: (x: Double, y: Double)) async throws {
-        _ = try await runner.call("POST", "/wda/tap", ["x": .number(p.x), "y": .number(p.y)], timeout: 3)
+    /// A tap at `p`, shaped after a person's when `humanize` is on (`Humanize.tap`: a press of 50-140 ms,
+    /// a point or two of scatter kept inside `frame`'s middle, a drift before the lift); a runner
+    /// without `/actions` gets WDA's tap.
+    func tap(_ p: (x: Double, y: Double), within frame: Rect? = nil) async throws {
+        guard humanize.enabled else {
+            _ = try await runner.call("POST", "/wda/tap", ["x": .number(p.x), "y": .number(p.y)], timeout: 3)
+            return
+        }
+        try await touch([humanize.tap(at: p, within: frame)], timeout: 3) { [self] in
+            _ = try await runner.call("POST", "/wda/tap", ["x": .number(p.x), "y": .number(p.y)], timeout: 3)
+        }
+    }
+
+    /// A finger held at `p` for `seconds` (shaped as `Humanize.longPress` when on; the hold is exact).
+    func longPress(_ p: (x: Double, y: Double), seconds: Double, within frame: Rect? = nil) async throws {
+        guard humanize.enabled else {
+            _ = try await runner.call("POST", "/wda/touchAndHold", ["x": .number(p.x), "y": .number(p.y), "duration": .number(seconds)], timeout: 3 + seconds)
+            return
+        }
+        try await touch([humanize.longPress(at: p, seconds: seconds, within: frame)], timeout: 3 + seconds) { [self] in
+            _ = try await runner.call("POST", "/wda/touchAndHold", ["x": .number(p.x), "y": .number(p.y), "duration": .number(seconds)], timeout: 3 + seconds)
+        }
+    }
+
+    /// Fingers as W3C pointer actions; a runner that has no `/actions` gets `legacy` instead.
+    func touch(_ fingers: [[Humanize.Sample]], timeout: Double, legacy: () async throws -> Void) async throws {
+        do {
+            _ = try await runner.call("POST", "/actions", Humanize.actions(fingers), timeout: timeout)
+        } catch let e as RunnerError where e.code == "unknown command" || e.code == "unknown method" {
+            try await legacy()
+        }
+    }
+
+    /// The frame of the element a target names, for the tap's scatter to stay inside; nil for a point.
+    func frame(of spec: JSON?) -> Rect? {
+        guard let spec, let ref = spec.int ?? spec["ref"]?.int else { return nil }
+        return refs[ref]?.frame
     }
 
     /// Returns the action's kind (for the settle pause) and what it did.
     func perform(_ action: JSON, until: Double) async throws -> (String, String) {
+        if let spec = action["run"] {
+            return ("run", try await runRoutine(spec, until: until))
+        }
         if let spec = action["tap"] {
             let p = try point(spec)
-            try await tap(p)
+            try await tap(p, within: frame(of: spec))
             return ("tap", "tap \(describe(action))\(offCentre(spec, p))\(fillsScreen(spec, p))\(container(spec))")
         }
         if let text = action["type"]?.text {
             let target: Element? = try action["ref"]?.int.map(element)
             if let ref = action["ref"] {
-                try await tap(try point(ref))
+                try await tap(try point(ref), within: frame(of: ref))
             }
             // Keys go to the focused field; a tap takes a moment to focus one (seen on the phone:
             // text typed right after the tap went nowhere). Wait for a field to be focused, up to
@@ -223,7 +317,7 @@ extension Computer {
             // Return as the keyboard's own key when one is up: the "\n" key event left Safari's
             // address bar with its suggestions on one gym run (the keyboard's Go key submits).
             if text == "\n", let go = await keyboardReturnKey(timeout: min(1, max(0.3, until - now() - 1))) {
-                try await tap(go.frame.centre)
+                try await tap(go.frame.centre, within: go.frame)
                 return ("key", "key \(key): tapped the keyboard's \"\(go.text)\" key at [\(Int(go.frame.centre.x)), \(Int(go.frame.centre.y))]")
             }
             _ = try await runner.call("POST", "/wda/keys", ["value": [.string(text)]], timeout: 3)
@@ -242,7 +336,7 @@ extension Computer {
         if let spec = action["long_press"] {
             let p = try point(spec)
             let ms = min(5000, max(100, spec["ms"]?.double ?? action["ms"]?.double ?? 600))
-            _ = try await runner.call("POST", "/wda/touchAndHold", ["x": .number(p.x), "y": .number(p.y), "duration": .number(ms / 1000)], timeout: 3 + ms / 1000)
+            try await longPress(p, seconds: ms / 1000, within: frame(of: spec))
             return ("long_press", "long_press \(spec.serialized()) \(Int(ms)) ms")
         }
         if let spec = action["drag"] {
@@ -262,16 +356,10 @@ extension Computer {
             let screen = try await screenSize(until: until)
             let scale = min(4, max(0.25, spec["scale"]?.double ?? action["scale"]?.double ?? 2))
             let start = min(screen.width, screen.height) * (scale > 1 ? 0.12 : 0.3)
-            let a = start / 2, b = start * scale / 2, ms = 500.0
-            func finger(_ id: String, _ sign: Double) -> JSON {
-                ["type": "pointer", "id": .string(id), "parameters": ["pointerType": "touch"], "actions": [
-                    ["type": "pointerMove", "duration": 0, "x": .number((p.x + sign * a).rounded()), "y": .number(p.y.rounded())],
-                    ["type": "pointerDown", "button": 0],
-                    ["type": "pointerMove", "duration": .number(ms), "x": .number((p.x + sign * b).rounded()), "y": .number(p.y.rounded())],
-                    ["type": "pointerUp", "button": 0],
-                ]]
-            }
-            _ = try await runner.call("POST", "/actions", ["actions": [finger("f1", -1), finger("f2", 1)]], timeout: 4)
+            let a = start / 2, b = start * scale / 2
+            // Two fingers either side of the point, each a drag of its own (shaped as a person's when
+            // humanize is on), in 500 ms.
+            _ = try await runner.call("POST", "/actions", Humanize.actions(humanize.pinch(at: (p.x.rounded(), p.y.rounded()), from: a, to: b, seconds: 0.5)), timeout: 4)
             return ("pinch", "pinch \(spec.serialized()) x\(scale)")
         }
         if let name = action["button"]?.text {
@@ -304,10 +392,11 @@ extension Computer {
                 do { _ = try await runner.call("POST", "/wda/apps/terminate", ["bundleId": .string(bundle)], timeout: 6, countsAsMiss: false) }
                 catch let e as RunnerError where e.delivery == .notSent {}
                 catch let e as RunnerError { note = "; ending the app first did not answer in time (\(e.message)); the launch was sent anyway" }
-                do { _ = try await runner.call("POST", "/wda/apps/launch", ["bundleId": .string(bundle)], timeout: max(3, min(8, until - now() - 0.3))) }
+                // In-process a launch answers once the app is in front, 9 s for a cold Photos (gym finding 39).
+                do { _ = try await runner.call("POST", "/wda/apps/launch", ["bundleId": .string(bundle)], timeout: max(3, min(10, until - now() - 0.3))) }
                 catch let e as RunnerError where e.delivery == .notSent { throw Self.launchRefused(bundle, e) }
             } else {
-                do { _ = try await runner.call("POST", "/wda/apps/activate", ["bundleId": .string(bundle)], timeout: 8) }
+                do { _ = try await runner.call("POST", "/wda/apps/activate", ["bundleId": .string(bundle)], timeout: max(3, min(10, until - now() - 0.3))) }
                 catch let e as RunnerError where e.delivery == .notSent { throw Self.launchRefused(bundle, e) }
             }
             return ("launch", "launch \(bundle)\(fresh ? " (fresh)" : "")\(note)")
@@ -368,7 +457,7 @@ extension Computer {
         guard until - now() >= 1.2 else {
             throw ActionFailure(message: "nothing was typed: the action's time ran out while the runner was busy (\(Int(((until - now()) * 1000).rounded())) ms left, the keys need more). Send the type again.", delivery: .notSent)
         }
-        _ = try await runner.call("POST", "/wda/keys", ["value": .array(keys.map(JSON.string))], timeout: 3 + 0.06 * Double(keys.count))
+        try await sendKeys(deletes: deletes, text: text, until: until)
         guard clear, before != nil else { return "" }
         guard let after = await fieldValue(target: target, holding: text, timeout: 1), after != text, !after.isEmpty, after != before else { return "" }
         // Something is left that the deletes did not remove (the cursor was not at the end): as many
@@ -378,6 +467,53 @@ extension Computer {
         _ = try await runner.call("POST", "/wda/keys", ["value": .array(again.map(JSON.string))], timeout: 3 + 0.06 * Double(again.count))
         return "; clear: the field still held \(hidden ? "\(after.count) characters" : "\"\(after.prefix(60))\"") after \(deletes) deletes, so \(min(400, after.count)) more deletes and the text were sent again"
     }
+
+    /// The deletes, then the text: in one call at the keyboard's fixed pace when `humanize` is off or
+    /// the action has no time for more; else in word-sized bursts at an uneven pace with pauses
+    /// between them (`Humanize.typing`), each burst one `/wda/keys` call with its `frequency`
+    /// (characters a second; WDA's default is 60, the in-process table's 120). The bursts are at most
+    /// `maxBursts` calls, and each call's own cost on the runner counts: a loaded WebDriverAgent
+    /// answers each key call only once the app is idle (CI simulator: "Wi-Fi 你好" in bursts ran past
+    /// a 9 s action half-typed, where one call took 7.9 s). When the bursts so far show the rest
+    /// would not fit, the rest goes in one call at the fixed pace.
+    func sendKeys(deletes: Int, text: String, until: Double) async throws {
+        let backspaces = Array(repeating: "\u{8}", count: deletes)
+        let plan = humanize.enabled ? Humanize.merged(humanize.typing(text), into: Self.maxBursts) : []
+        func oneCall(_ keys: [String]) async throws {
+            _ = try await runner.call("POST", "/wda/keys", ["value": .array(keys.map(JSON.string))], timeout: 3 + 0.06 * Double(keys.count))
+        }
+        // Bursts only with room for the plan, a guessed cost per call and the read after.
+        let budget = until - now() - 0.8
+        if plan.isEmpty || Humanize.seconds(of: plan) + Self.burstCallCost * Double(plan.count) + 0.06 * Double(deletes) > budget {
+            try await oneCall(backspaces + text.map(String.init))
+            return
+        }
+        if deletes > 0 {
+            _ = try await runner.call("POST", "/wda/keys", ["value": .array(backspaces.map(JSON.string))], timeout: 3 + 0.06 * Double(deletes))
+        }
+        var overhead = Self.burstCallCost
+        for (i, burst) in plan.enumerated() {
+            let rest = Array(plan[i...])
+            // The calls so far say what a call costs on this runner; the rest in one call when the
+            // bursts left would not fit.
+            if i > 0, Humanize.seconds(of: rest) + overhead * Double(rest.count) > until - now() - 0.8 {
+                try await oneCall(rest.flatMap { $0.text.map(String.init) })
+                return
+            }
+            if burst.gapBefore > 0 { await sleep(seconds: burst.gapBefore) }
+            let keys: [JSON] = burst.text.map { .string(String($0)) }
+            let body: JSON = ["value": .array(keys), "frequency": .number(Double(burst.frequency))]
+            let sent = now()
+            _ = try await runner.call("POST", "/wda/keys", body, timeout: 3 + Double(burst.text.count) / Double(burst.frequency))
+            let took = now() - sent - Double(burst.text.count) / Double(max(1, burst.frequency))
+            overhead = i == 0 ? max(0, took) : max(overhead, took)
+        }
+    }
+
+    /// At most this many key calls for one text when it goes in bursts.
+    static let maxBursts = 4
+    /// The guessed cost of one key call beyond its keys, before any has been measured.
+    static let burstCallCost = 0.35
 
     static let fieldTypes: Set<String> = ["TextField", "SecureTextField", "SearchField", "TextView"]
 
@@ -443,7 +579,7 @@ extension Computer {
         }.sorted { ($0.frame.y, $0.frame.x) < ($1.frame.y, $1.frame.x) }
         if let button = top.first {
             let p = (x: button.frame.x + button.frame.width / 2, y: button.frame.y + button.frame.height / 2)
-            try await tap(p)
+            try await tap(p, within: button.frame)
             return "back: tapped the top-left button \(button.text.isEmpty ? "" : "\"\(button.text)\" ")at [\(Int(p.x)), \(Int(p.y))]\(sheetNote)"
         }
         let y = screen.height / 2
@@ -530,7 +666,7 @@ extension Computer {
                 await restore()
                 throw ActionFailure(message: "the clipboard could not be set to the text (the runner's write did not take), so nothing was pasted; type the text instead", delivery: .notSent)
             }
-            _ = try await runner.call("POST", "/wda/touchAndHold", ["x": .number(x + w / 2), "y": .number(y + h / 2), "duration": .number(0.7)], timeout: 4)
+            try await longPress((x + w / 2, y + h / 2), seconds: 0.7, within: field.frame)
             var item: Element?
             let menuBy = min(until - 0.3, now() + 2)
             while item == nil, now() < menuBy {
@@ -543,7 +679,7 @@ extension Computer {
                 await restore()
                 throw ActionFailure(message: "the field's menu showed no Paste item; the text was not pasted (a long press was sent)", delivery: .sent)
             }
-            try await tap(item.frame.centre)
+            try await tap(item.frame.centre, within: item.frame)
             // The paste has landed when the field shows the text; until then the clipboard stays.
             let landedBy = min(until - 0.3, now() + 2.5)
             var landed = false
@@ -609,7 +745,13 @@ extension Computer {
         // After a swipe whose read shares nothing with the read before (the list moved more than a
         // screen), the next swipe is a short one back, so nothing is passed unread.
         var corrective = false, corrected = false, overshoots = 0
-        func overshot() -> String { overshoots == 0 ? "" : " (the list moved more than a screen after \(overshoots) swipe\(overshoots == 1 ? "" : "s"), so a short drag back followed each)" }
+        // How far the list moved on each swipe, from the elements the two reads share (the in-process
+        // path moved a screen on a 72 % drag where WebDriverAgent moved 72 %: the figure tells which).
+        var moved: [String] = []
+        func overshot() -> String {
+            let per = moved.isEmpty ? "" : " (the list moved \(moved.joined(separator: ", ")) pt on the swipes)"
+            return overshoots == 0 ? per : " (the list moved more than a screen after \(overshoots) swipe\(overshoots == 1 ? "" : "s"), so a short drag back followed each)" + per
+        }
         // An alert over the list takes the drags (gym: "the list stopped moving" under a permission
         // prompt): the answer names it.
         func alertNote() -> String { alertOnScreen().map { "; an alert is over the list (\($0)): answer it first" } ?? "" }
@@ -641,6 +783,7 @@ extension Computer {
                 }
                 corrective = !corrected && scrolledPastAScreen(from: all, to: seen.elements, in: region)
                 if corrective { overshoots += 1 }
+                moved.append(listMovement(from: all, to: seen.elements, in: region, fingerGoes: fingerGoes).map { String(Int($0.rounded())) } ?? (corrective ? "a screen or more" : "?"))
                 let signature = seen.elements.map { "\($0.key)@\(Int($0.frame.y))" }.joined(separator: ";")
                 if signature == last, !waited {
                     // The end is declared only when two swipes in a row, each sent to a free runner and
@@ -670,7 +813,7 @@ extension Computer {
             // overlap, under the navigation bar, and the drag back fired on every call: 8 calls).
             let path = corrective ? try swipePath(region, ["up": "down", "down": "up", "left": "right", "right": "left"][fingerGoes] ?? "down", "short") : try swipePath(region, fingerGoes, "scroll")
             do {
-                try await gesture(path, seconds: 0.4, rest: 0.2, until: until - 0.8)
+                try await scrollDrag(path, seconds: 0.4, rest: 0.25, until: until - 0.8)
             } catch let e as RunnerError where e.delivery == .unknown {
                 return notYet("the runner did not confirm the last swipe in time (\(e.message)), so it may still land")
             }
@@ -691,8 +834,45 @@ extension Computer {
                 return f.x < region.maxX && f.maxX > region.x && f.y < region.maxY && f.maxY > region.y && !e.text.isEmpty && !Self.containers.contains(e.type)
             }.map(\.key))
         }
-        let a = inside(before), b = inside(after)
+        // What stood still between the reads (a title, a status line, a scroll bar inside the area) is
+        // chrome, not the list: without this the gym's "Gym: list" and "state: ready" lines made every
+        // read share something, and a swipe that passed a whole screen counted as an overlap.
+        let fixed = Self.fixedBetween(before, after)
+        let a = inside(before).subtracting(fixed), b = inside(after).subtracting(fixed)
         return a.count >= 4 && b.count >= 4 && a.isDisjoint(with: b)
+    }
+
+    /// The keys of the elements both reads list at the same place.
+    static func fixedBetween(_ before: [Element], _ after: [Element]) -> Set<String> {
+        let was = Dictionary(before.map { ($0.key, $0.frame) }, uniquingKeysWith: { a, _ in a })
+        return Set(after.filter { e in was[e.key].map { abs($0.y - e.frame.y) < 2 && abs($0.x - e.frame.x) < 2 } ?? false }.map(\.key))
+    }
+
+    /// How far the list moved between two reads, in points along the swipe's axis, positive in the
+    /// direction the finger went (the content follows the finger): the median shift of the elements
+    /// both reads list inside the region. nil when they share none.
+    func listMovement(from before: [Element], to after: [Element], in region: Rect, fingerGoes: String) -> Double? {
+        func meets(_ f: Rect) -> Bool { f.x < region.maxX && f.maxX > region.x && f.y < region.maxY && f.maxY > region.y }
+        let horizontal = fingerGoes == "left" || fingerGoes == "right"
+        func positions(_ es: [Element]) -> [String: Double] {
+            var out: [String: Double] = [:], twice = Set<String>()
+            for e in es where meets(e.frame) && !e.text.isEmpty && !Self.containers.contains(e.type) {
+                if out[e.key] != nil { twice.insert(e.key) }
+                out[e.key] = horizontal ? e.frame.x : e.frame.y
+            }
+            for k in twice { out[k] = nil }
+            return out
+        }
+        let a = positions(before), b = positions(after)
+        let shifts = a.compactMap { k, y in b[k].map { y - $0 } }
+        guard !shifts.isEmpty else { return nil }
+        let sign: Double = fingerGoes == "up" || fingerGoes == "left" ? 1 : -1
+        // What moved tells the distance; what stood still is chrome (a title, a status line). All
+        // still and the same elements: the list did not move. All still and others came or went: it
+        // moved more than the reads share.
+        let moving = shifts.filter { abs($0) >= 2 }.sorted()
+        if !moving.isEmpty { return sign * moving[moving.count / 2] }
+        return Set(a.keys) == Set(b.keys) ? 0 : nil
     }
 
     /// A swipe that did something other than scroll (gym: a drag that started on Safari's address

@@ -255,7 +255,7 @@ pub fn token_or_saved(given: Option<String>) -> Result<String> {
     given.filter(|t| !t.trim().is_empty()).or_else(saved_token).ok_or_else(|| Error::msg("Paste a Cloudflare API token first."))
 }
 
-pub fn phone_link(address: &str) -> String { format!("poki://setup?relay={}", crate::pairshare::urlencode(address)) }
+pub fn phone_link(address: &str) -> String { format!("poki://setup?relay={}", urlencode(address)) }
 
 fn path() -> Result<std::path::PathBuf> { Ok(crate::paths::state_dir()?.join("relay.json")) }
 pub fn remembered() -> Result<Option<Deployed>> { Ok(std::fs::read_to_string(path()?).ok().and_then(|t| serde_json::from_str(&t).ok())) }
@@ -272,4 +272,15 @@ mod tests {
         assert!(super::WORKER_JS.len() > 10_000);
         assert_eq!(super::phone_link("https://poki-relay.me.workers.dev"), "poki://setup?relay=https%3A%2F%2Fpoki-relay.me.workers.dev");
     }
+}
+
+fn urlencode(s: &str) -> String {
+    let mut out = String::new();
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(b as char),
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
 }

@@ -1,6 +1,6 @@
 # Install
 
-For experimental access across networks, see [iPhone over Tailscale](remote-iphone.md). The iPhone needs the Tailscale app and an initial trusted USB setup.
+For remote access, see [Remote iPhone over LAN or Tailscale](remote-iphone.md). Both paths require initial trusted USB setup; cross-network access also requires Tailscale.
 
 ## Requirements
 

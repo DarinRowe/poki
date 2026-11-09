@@ -112,10 +112,15 @@ final class ActivityController {
         worker?.cancel(); worker = nil; plainWaiting = false
         guard let activity else { return }
         self.activity = nil
+        // A finished run or a problem stays on the Lock Screen with its final content for a while (HIG:
+        // end at once, keep the outcome readable); anything else goes at once.
+        let final: ActivityContent<PokiState>? = state.phase == .done || state.phase == .problem
+            ? ActivityContent(state: state, staleDate: nil, relevanceScore: 0) : nil
+        let policy: ActivityUIDismissalPolicy = final == nil ? .immediate : .after(.now.addingTimeInterval(15 * 60))
         state.outcomes = []; state.guide = nil; state.pin = nil; state.since = nil; state.event = nil
         state.stepCount = 0; state.failedCount = 0; state.endedAt = nil; state.decision = nil
         let previous = tail
-        tail = Task { await previous?.value; await activity.end(nil, dismissalPolicy: .immediate) }
+        tail = Task { await previous?.value; await activity.end(final, dismissalPolicy: policy) }
     }
 
     func update(_ change: (inout PokiState) -> Void) {
@@ -123,8 +128,17 @@ final class ActivityController {
         change(&state)
         ActivityUpdatePolicy.settle(&state, over: old)
         let alert = transition(from: old)
+        // Something needs the person and there is no Live Activity to pop up: a banner instead (an
+        // approval and a pairing code have their own).
+        if let banner = attention, activity == nil {
+            AttentionNotice.post(title: banner.title, body: banner.body)
+        }
+        attention = nil
+        if state.handoff == nil, state.phase != .problem, old.handoff != nil || old.phase == .problem { AttentionNotice.clear() }
         send(alert: alert, critical: Self.isCritical(state, after: old))
     }
+    /// The hand-off or problem this change pops up for (`update` posts a banner when no activity runs).
+    private var attention: (title: String, body: String)?
 
     /// Writes a thumbnail, at most about 160 points wide, to the App Group container for the widget.
     func setThumbnail(_ jpeg: Data?) {
@@ -168,6 +182,7 @@ final class ActivityController {
         if let handoff = state.handoff, handoff.id != old.handoff?.id {
             setEvent(.handoff, "Your turn")
             alert = critical(handoff.title, handoff.detail)
+            attention = (handoff.title, handoff.detail)
         }
         if state.handoff == nil, old.handoff != nil, state.phase == .working {
             setEvent(.resumed, "Carrying on")
@@ -185,6 +200,7 @@ final class ActivityController {
         if state.phase == .problem, old.phase != .problem {
             setEvent(.problem, state.label ?? "Problem")
             alert = critical(String(activity: "Poki needs attention"), ActivityWords.local(state.headline))
+            attention = (String(activity: "Poki needs attention"), ActivityWords.local(state.headline))
         }
         if let pin = state.pin, pin != old.pin {
             setEvent(.code, "Code ready")
@@ -328,7 +344,10 @@ final class ActivityController {
     private func content() -> ActivityContent<PokiState> {
         trimToFit()
         // Approvals are urgent; everything else is not. An approval goes stale when it expires.
-        return ActivityContent(state: state, staleDate: state.approval?.expires, relevanceScore: state.approval == nil && state.handoff == nil ? 50 : 100)
+        // An approval goes stale when it expires. A run goes stale when no update has come for ten
+        // minutes (Poki was closed or suspended), and then says it is not updating.
+        let stale = state.approval?.expires ?? (state.phase == .working ? Date.now.addingTimeInterval(600) : nil)
+        return ActivityContent(state: state, staleDate: stale, relevanceScore: state.approval == nil && state.handoff == nil ? 50 : 100)
     }
 
     private static func shrink(_ data: Data, maxPixels: Int) -> Data? {

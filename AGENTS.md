@@ -1,5 +1,7 @@
 # Install Poki for your client
 
+To install the Poki app on the user's iPhone (the standalone app with Poki Setup), follow the skill [skills/install-poki/SKILL.md](skills/install-poki/SKILL.md) instead. This file installs Poki MCP for an MCP client.
+
 Choose the installation path first:
 
 - **MCP only.** If the user already uses Claude Code, Codex, or another MCP client and only asks to install this repository, connect Poki MCP to that client. Use the user's existing subscription and model. No extra model account or Poki login is needed. Follow steps 1–5 and the MCP checks in step 7, then end the installation. Skip step 6, including model login and the optional unlock question.
@@ -44,3 +46,57 @@ After a successful source update, reinstall Poki Agent dependencies with `npm ci
 Poki checks `https://api.github.com/repos/JosssphZhou/poki/releases/latest` at service startup and once per day. This anonymous request sends no token, device information, or conversation data. Results and failed attempts are cached for 24 hours in `POKI_MCP_STATE_DIR/update-check.json`. With the default state directory, this file is in `~/Library/Application Support/PokiMCP`. Startup does not wait for the request. Requests time out after 1.5 seconds, and failures stay silent. Status includes a newer stable version, the first sentence of its release notes, a release link, and `poki update`. Tell the user when that notice appears.
 
 To disable checks and notices, set `POKI_NO_UPDATE_CHECK=1` before starting the service. Set it in your terminal too to hide notices in `poki status` from an already running service.
+
+## File an issue
+
+When the user asks you to report a problem or request a feature, file the issue so it matches one of the [issue forms](.github/ISSUE_TEMPLATE). `gh issue create --body` skips the forms, so write the body in the form's shape yourself. A check on new issues labels any issue that matches no form `needs-template` and asks for an edit.
+
+1. **Search first.** Run `gh issue list --repo JosssphZhou/poki --state all --search "<key words>"`. If an issue already covers the problem, add a comment with your new evidence instead of opening another one.
+2. **Pick one form.** One problem per issue.
+
+   | Form | Use it for | Required headings, in order |
+   | --- | --- | --- |
+   | `bug_report.yml` | Poki MCP, Poki Agent, iMessage or Telegram, setup, native helper, relay on a computer | What happened, Steps to reproduce, Component, Connection, Versions |
+   | `ios_app_bug.yml` | The standalone Poki iPhone app (Alpha or Pre-alpha) or Poki Setup | What happened, Steps to reproduce, Area, App version, Installed with, iPhone and iOS |
+   | `task_failure.yml` | The tools work, but a real task in a specific app does not finish | Task, Where it stopped, Driven by, Versions |
+   | `feature_request.yml` | A capability, speed-up, or design proposal | What you want to do, What happens today, Area |
+   | `field_report.yml` | A working setup, port, install path, or test results, with no fix requested | Summary, Environment |
+
+3. **Write the body.** Read the chosen form file. Make one `### <label>` heading for each field, using the label exactly as written in English, in the form's order. Put the answer under each heading. For a dropdown, use one of its options verbatim. Leave out no required heading. Write `_No response_` under an optional heading you cannot fill. The answers can be in the user's language.
+4. **Keep it reviewable.** State what you observed and what you inferred separately. Give versions and commits from `poki_mcp_status` or the app's Settings. Quote exact error text. Remove passcodes, tokens, Apple account details, pairing records, phone numbers, and private screen contents.
+5. **Create it.** Write the body to a file and run `gh issue create --repo JosssphZhou/poki --title "<specific title>" --body-file <file>`. Ask the user before creating it, and show them the title and body. Report vulnerabilities through [private reporting](https://github.com/JosssphZhou/poki/security/advisories/new), never in an issue.
+
+If the check flags an issue you filed, edit that issue with `gh issue edit <number> --body-file <file>`. Do not open a duplicate. The label comes off once the body matches a form.
+
+Example body for `bug_report.yml`:
+
+```markdown
+### What happened
+
+`terminate_app` returned `already_stopped: true`, but Calculator stayed in the foreground with the same PID.
+
+### Steps to reproduce
+
+1. `launch_app` with `com.apple.calculator`.
+2. `terminate_app` with the same bundle ID.
+
+### Component
+
+Poki MCP
+
+### Connection
+
+Physical iPhone over USB
+
+### Versions
+
+0.1.1 f4fd51e, macOS 27.0, Xcode 27.1, iPhone 15 Pro, iOS 27.3
+
+### Logs
+
+_No response_
+
+### Suspected cause or fix
+
+_No response_
+```

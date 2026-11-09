@@ -3,7 +3,7 @@ name: Poki
 options:
   bundleIdPrefix: nz.zheha.poki
   deploymentTarget:
-    iOS: "26.0"
+    iOS: "18.0"
   createIntermediateGroups: true
 packages:
   PokiCore:
@@ -25,7 +25,9 @@ settings:
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "5.0"
-    TARGETED_DEVICE_FAMILY: "1"
+    # iPhone and iPad; on iPad (windows, Stage Manager) and on the iPhone Duo's inner display Poki
+    # sits beside the app it drives, so iPad takes every orientation and any window size.
+    TARGETED_DEVICE_FAMILY: "1,2"
     DEBUG_INFORMATION_FORMAT: dwarf
     ENABLE_USER_SCRIPT_SANDBOXING: NO
 targets:
@@ -35,6 +37,9 @@ targets:
     sources:
       - path: Poki
       - path: Shared
+      # The gym scorecard (native/ios-gym/check), run in-process by the Debug probe's `gym` mode.
+      - path: ../ios-gym/check/GymScorecard.swift
+        group: Poki/Debug
     info:
       path: Poki/Info.plist
       properties:
@@ -53,6 +58,7 @@ targets:
           UIColorName: AccentColor
           UIImageName: Bear
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
         NSSupportsLiveActivities: true
@@ -63,19 +69,37 @@ targets:
         # While Poki is on, background location (with the blue location pill) keeps the app, and with it
         # the relay connection and the launcher, running; silent audio is the fallback. Poki never reads
         # or sends the location itself.
-        UIBackgroundModes: [location, audio]
+        UIBackgroundModes: [location, audio, processing]
+        # iOS 26: the continued processing task that keeps Poki up while it is on (ContinuedRun). The
+        # signer rewrites the nz.zheha.poki prefix to the signed bundle id.
+        BGTaskSchedulerPermittedIdentifiers: ["$(POKI_BUNDLE_ID).run.*"]
+        # Documents/AgentBackup holds the agent's memory backup, which Poki Setup copies off and puts back.
+        UIFileSharingEnabled: true
         NSLocationWhenInUseUsageDescription: Poki keeps running in the background while it is on, so agents can reach this iPhone. Poki does not record or send your location.
         NSLocationAlwaysAndWhenInUseUsageDescription: Poki keeps running in the background while it is on, so agents can reach this iPhone. Poki does not record or send your location.
         CFBundleURLTypes:
           - CFBundleURLName: nz.zheha.poki
             CFBundleURLSchemes: [poki]
         NSLocalNetworkUsageDescription: Poki connects to this iPhone's own developer services to pair with it and to run the automation, and to the voice bridge on your Mac.
+        NSCameraUsageDescription: Poki uses the camera only to scan the pairing code Poki Setup shows on your computer.
         NSMicrophoneUsageDescription: Poki listens while you talk to it in Voice, and sends that audio to OpenAI to understand what you ask.
+        NSSpeechRecognitionUsageDescription: Without an OpenAI key, Poki turns what you say in Voice into text on this iPhone and sends the text to your chosen model.
         # The voice bridge runs on the person's Mac on the local network, over plain HTTP.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
         NSBonjourServices: [_remotepairing-pairable-host._tcp, _remotepairing-manual-pairing._tcp]
-        LSApplicationQueriesSchemes: [karing, surge, loon, shadowrocket, sing-box]
+        LSApplicationQueriesSchemes: [karing, surge, loon, shadowrocket, sing-box, stash, quantumult-x, clashmi]
+        # A pairing file sent by AirDrop, Files or Poki Setup opens in Poki (Setup > Pair This iPhone).
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Pairing File
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [nz.zheha.poki.pairing, com.apple.property-list]
+        UTImportedTypeDeclarations:
+          - UTTypeIdentifier: nz.zheha.poki.pairing
+            UTTypeDescription: iPhone pairing file
+            UTTypeConformsTo: [public.data]
+            UTTypeTagSpecification:
+              public.filename-extension: [mobiledevicepairing]
         ITSAppUsesNonExemptEncryption: false
     entitlements:
       path: Poki/Poki.entitlements
@@ -92,6 +116,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(POKI_BUNDLE_ID)
+        # The app draws with the system's colours; the Live Activity keeps the website's blue (Site).
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) POKI_APP
         # PokiLauncher: the Rust static library from native/launcher, built for aarch64-apple-ios
         # before this project (see .github/workflows/ios-app.yml).
         SWIFT_OBJC_BRIDGING_HEADER: Poki/Runtime/Poki-Bridging-Header.h

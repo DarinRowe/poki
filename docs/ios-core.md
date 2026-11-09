@@ -189,6 +189,7 @@ The computer-use profile, ported from `src/cua.mjs` and `src/cua-wda.mjs`:
 
 - `look {full?}`: read the screen now.
 - `do {actions: [...], full?, finish?}`: run actions in order, then read the screen.
+- `routines {action, ...}`: the phone's saved routines and the owner's notes (see below), without touching the device.
 - `status`: the relay, the runner and pending approvals, without touching the device.
 
 Each answer is facts only: the app in front, numbered elements, what each action did (`sent`,
@@ -322,6 +323,31 @@ Each answer is facts only: the app in front, numbered elements, what each action
   `{wait_until: {settled: true, ms}}` reads the tree every 250 ms until the text appears or goes, or
   two reads match (default 3 s, at most 10 s, within the action time). Not seeing it is reported, not
   an error. There is no "paused" line after a wait.
+
+### Routines and notes (memory shared by every agent)
+
+Every `do` action of a task is recorded by what it touched (role, label, identifier and the point),
+never by its number. `routines {action: "save", name, description, read?, expect?}` keeps that path
+on the phone; the next first `look` of a task in that app names the saved routines, and
+`do {actions: [{run: "name"}]}` (or `{run: {name, with: {text_1: "…"}}}`) repeats it in one call.
+
+- **A run waits for each target and never guesses.** Each step reads the tree until exactly one
+  element matches (or the nearest of several is within 40 points of the recorded one and the next
+  is twice as far); a screen that differs stops the run before anything more is sent, and the answer
+  says which step and why, with the screen as usual. A sensitive step stops and hands back.
+- **The end check** is up to three labels new on the last screen (or `expect`); `read: ["label"]`
+  answers `label = value` from the last screen, so a lookup is one call.
+- **Typed text becomes a parameter** (`{{text_1}}`); text typed into a secure field is never kept.
+- **Self-learning**: runs, successes and the last stop are counted; two stops in a row mark a routine
+  stale and it is no longer offered until it is saved again. `finish` offers to save a task of two or
+  more steps that no routine ran. Any MCP client can list, show, save, edit, rename, forget, export and
+  import routines, and `remember`/`forget_note` the owner's notes (`PokiCore.memoryBrief(for:)` gives
+  the on-device chat the same brief).
+- **Moving and backing up**: `export` answers the whole memory as JSON (schema
+  `poki.agent-backup/1`); `import {data}` merges one in (newer wins). The app keeps a copy at
+  `Documents/AgentBackup/poki-agent-backup.json`, which Poki Setup copies off and puts back; a copy put
+  back is merged in at launch. Maintainers get `debugBundle()` (schema `poki.agent-debug/1`, with the
+  run log) from Settings › Memory › Advanced.
 
 ### Deadlines (no hangs)
 
@@ -541,6 +567,83 @@ Each answer is facts only: the app in front, numbered elements, what each action
 - **The host's screenshot beside a busy runner gets 6 s, not 15.** A look under a wedged runner
   waited 18 s before it fell back; an answer at 6 s with the picture and the runner's state keeps
   the model moving. The 15 s stay for the path taken after a runner that was free gave none.
+- **A failed type reads the field through GET /element/active, in-process too.** In the
+  in-process session that request is the same accessibility snapshot as a tree read (InProcessWDA
+  takes the focused field out of `sourceXML`'s focus out-param, and the value and placeholder
+  lookups after it come from that cached dict), not the XCTest query that hung the runner for
+  19 s, so reading the field from the tree instead would save nothing there and would need the
+  in-process XML to carry focused and placeholder attributes it does not have. The focus wait
+  before typing stays on tree reads. Checked Nov 7 2026 against poki/ios-integration ea223c5.
+- **scroll_to says how far the list moved on each swipe.** "(the list moved 540, 530 pt on the
+  swipes)" from the elements the two reads share inside the area (the median shift along the
+  swipe's axis, positive the way the finger went); "a screen or more" when they share none. The
+  in-process gym (run 42411678488) netted 190 pt a swipe on a 72 % drag of 550 pt, with "more
+  than a screen" and a drag back after every forward swipe, where WebDriverAgent moved 72 %: the
+  figure tells which path moves what, without a probe.
+- **A scroll's drag ends with a slow tail, on both paths.** The gym's WebDriverAgent run on
+  dc53779 showed the same 1.5x on the runner path: a 482 pt press-drag moved the list 762 pt (17
+  rows for 15 on screen, so 2 rows passed unread on every swipe), and the "moved" figure read 0
+  because the title and the status line inside the area are listed in every read. XCTest's hold at
+  the end of pressAndDragWithVelocity is a move to the same point, which synthesis can drop, so the
+  lift is a flick. scroll_to now sends its drag as W3C pointer actions (`scrollDrag`): the finger
+  moves for 0.4 s, then the last 12 points over 0.25 s, and lifts almost still; a runner without
+  /actions gets the press-drag. The movement figure and the overshoot check now set aside what
+  stood still between the reads (`fixedBetween`): the moving elements' median shift is the
+  figure, "a screen or more" when the reads share nothing that moved, 0 when the same elements
+  stood where they were.
+- **A declined answer carries the picture.** "not_sent from action 1: the owner declined on the
+  phone ... Nothing was sent." is followed by a read of the screen it was refused on (the gym: the
+  one answer without a picture).
+- **A new in-process session warms its first snapshot and screenshot.** The agent's first look
+  after `prepare` took 8.1 s in the gym and came with no tree and no picture (GET /source and
+  GET /screenshot both past 4.5 s; the next read took 1.6 s): the accessibility client's first
+  snapshot and XCUIScreen's first screenshot cost seconds each. `prepare` now pays them itself
+  when the session is new (a depth-3, 30-children snapshot of the front app and one screenshot),
+  reports `warm_seconds`, and the first agent read is an ordinary one.
+- **The in-process drag holds still before it lifts.** InProcessWDA's pressAndDragWithVelocity
+  ends with a move to one point short of the end, then to the end over the hold time, so the
+  scroll view sees a finger that stopped before it lifted (a hold given as a move to the same
+  point can be no event at all, and the list coasted on as from a flick). Unmeasured in-process
+  until the gym's next run; the figure above shows it.
+- **A read under an alert says the tree lists the alert only.** In-process the snapshot holds the
+  modal alert or sheet alone (its accessibility is modal; a look under the gym's alert listed its
+  three elements and nothing of the app), where WebDriverAgent keeps the screen behind. When
+  nothing named lies outside the alert the note says the screen is still there, under the dimming,
+  and that answering it lists the screen again.
+- **In-process, an empty field shows its placeholder as its value**, as WebDriverAgent's source
+  does (UIKit's accessibilityValue of an empty UITextField is its placeholder). `sourceXML` falls
+  back to `placeholderValue` for *Field and TextView nodes whose value is empty; the focused
+  field's dict keeps value and placeholder apart, so a failed type still tells them apart.
+- **In-process reads honour snapshotMaxDepth and snapshotMaxChildren.** POST /appium/settings was a
+  no-op there, so after a read that timed out PokiCore's smaller next read (fewer children, then
+  half the depth) was as big as the first, and the gym's 1,500-element screen stalled the queue
+  until the wedge watchdog fired (GET /source over 4.5 s; the next look: "still finishing an
+  earlier GET /wda/activeAppInfo from 9 s ago"). InProcessWDA keeps the two settings and
+  `sourceXML:maxDepth:maxChildren:` passes them to the AX snapshot request (maxDepth, maxChildren,
+  maxArrayCount). What the watchdog does in-process: `forgetRunner` drops the session and
+  `onUnhealthy` reaches AppModel's restart hook, which closes the in-process session and opens a
+  new one (`closeInProcess` + `warmInProcess`), so the session comes back on its own. The stalled
+  snapshot held InProcessWDA's one serial queue, though, and every request after it (the gym's
+  dense screen: GET /source over 4.5 s, then a screenshot and an activeAppInfo 9 s old, until the
+  run was killed), as a wedged WebDriverAgent holds its thread: now the POST /session that opens
+  the new session gets a new queue when the request in flight is older than 8 s, and the held
+  request is left to end on its own, as a restarted runner leaves its old process.
+- **In-process, every accessibility request has a deadline, and an app that does not answer is
+  left alone until it does.** The gym's finding 36: Settings bringing up its keyboard on the CI
+  simulator stopped answering accessibility requests, and the synchronous snapshot request to it
+  never returned (not in 12 minutes). Every read, picture (its viewport frame) and launch (its
+  front-app poll) queued behind it, and so did each new session the watchdog opened: 42 restarts,
+  101 calls with no tree and no picture. XCTest asks an app to confirm its run loop is responsive
+  within 2 s before a snapshot; `InProcess.m` now runs each request (snapshot, active
+  applications, hit test, loadAccessibility) on its own thread and gives it up after a deadline
+  (6 s for a tree, 3 s for a one-element frame, 4 s for the server): the caller gets
+  `app_unresponsive: the app in front (pid N) has not answered ... the picture still shows the
+  screen and a tap on a point of it works`, and nothing more is asked of that pid until the
+  abandoned request returns (one hung thread per app at most). The picture no longer depends on
+  the snapshot (the viewport keeps its last value), and `frontApp` reports the bundle id and pid
+  from the active applications even when the app's snapshot does not come, so a launch sees its
+  app arrive. PokiCore treats the refusal as it treats WebDriverAgent's "did not confirm its main
+  run loop is responsive": one more try within the read, then the note with the picture.
 - **A type waits for a busy runner as long as its action allows.** A type gave up after 3 s with
   "the runner is still finishing an earlier GET /source" while 7 s of its 9 s were left; the
   runner was serving this side's own leftover read from the look before, and the model paid a
@@ -629,6 +732,32 @@ swipe or drag (its synthesised touch runs its full duration on the main thread),
 pause and the read. The first read after a keyboard or a cold launch is over 4 s on the simulator
 and falls back to the picture.
 
+### Touches and typing shaped after a person's
+
+The owner's own apps must take Poki's input as the owner's. Some apps watch for scripted input (a
+tap that holds for exactly 50 ms without moving, drags in a straight line at one speed, text that
+arrives at a fixed 120 characters a second) and answer the owner's session with a captcha, a silent
+refusal or a logged-out account. `Humanize` (PokiCore, on by default) shapes each action after
+measured human movement and sends it as W3C pointer actions (`POST /actions`), which WebDriverAgent
+and Poki's in-process table both turn into one XCPointerEventPath with those waypoints:
+
+| Action | Plain | Shaped |
+|---|---|---|
+| tap | one point, 50 ms still | contact a normal 0.8 pt (at most 2) off the point, kept inside the element's middle half (a point chosen off the centre for a covered element keeps within 1 pt); press log-normal, median 75 ms, 50-140 ms; under 1 pt of drift before the lift |
+| swipe (flick) | two points, constant speed, 250 ms | the first 62 % of a minimum-jerk reach rescaled to arrive, so the finger lifts at 1.4× its mean speed and the list coasts; a 0.4-1.5 % sideways arc (≤ 6 pt), sub-point drift, samples every ~16 ms at uneven spacing; 15-40 ms of contact before it moves; the movement time is kept |
+| drag, scroll_to's drags (a rest after) | two points, then still | the full minimum-jerk profile, so the finger slows to a stop, then exactly still for the rest (the list stops where the finger stopped, as `scroll_to` assumes) |
+| long_press | one point for the time asked | the tap's contact scatter and drift; the hold exact |
+| pinch | two straight fingers, 500 ms | two shaped drags, the axis turned up to ±0.25 rad |
+| type | one `/wda/keys` call at 120 characters a second (in-process) or 60 (WDA) | word-sized bursts, each a `/wda/keys` call with a `frequency`: up to 40 characters, 12-40 a second (median 22) with 40-220 ms between words; longer, 40-80 a second with 20-60 ms gaps; text without spaces in bursts of 2-4; deletes in one burst at the keyboard's pace. When the bursts do not fit the action's time, one call as before |
+
+Speed is kept: a tap gains ~25 ms of hold, a drag 15-40 ms of contact; the settle pauses and reads
+are unchanged. Typing is the one trade (a 15-character phrase takes about a second instead of
+0.15 s); the in-process table reads the burst's `frequency` as XCTest's typingSpeed. A runner without
+`/actions` gets the plain endpoints. `POKI_HUMANIZE=off` (or `CoreConfig.humanize = false`) sends
+the exact plain schedules, which the gym runs beside the shaped ones; `POKI_HUMANIZE_SEED=<n>` makes
+a run repeatable. The MCP bridge on a Mac has the same idea behind `POKI_HUMANIZE` in upstream
+PR #11 for HID input; this is its counterpart for the phone's own XCTest path.
+
 ### Sensitive actions
 
 `SensitivityRules` (user-editable in the app, sensible defaults):
@@ -639,7 +768,13 @@ and falls back to the picture.
 | Tapping an element whose label starts with a payment word, or is a short label (four words or fewer) holding one (Pay, Buy, Purchase, Subscribe, Transfer, Send money, 支付, 付款, 购买, 转账, …); a name inside a longer text is not an action (`Contact photo for Best Buy`) | approval |
 | Deleting (Delete, Remove, Erase, Reset, 删除, 移除, 抹掉, …) | approval |
 | Sending a message or mail (Send, 发送 in Messages, Mail, WeChat, WhatsApp, Telegram, …) | approval |
-| Apps on a list (banking, wallets; by bundle id) | approval for every input |
+| Apps on a list (banking, wallets; by bundle id) | approval for every tap, long press, typing, key and drag, and for running a routine there; waiting, handing the screen to the owner, swipes, pinches, `scroll_to`, `back`, the hardware buttons, Home and launches go without asking |
+| Any tap in Phone or FaceTime, also on a point with nothing readable under it | approval |
+| Return in a messaging app, as a key or a newline in typed text (WeChat, WhatsApp and Telegram send on it), except in a search field (the one tapped, or typed into by its number, in that `do` before any action in it may have changed the screen) | approval |
+
+The app each action lands in is followed through the `launch`, Home and `run` actions before it in the same `do`, as for the Poki check, and the actions after one of them are checked against that app. After a `launch` or `run` its screen has not been read, so any tap there asks (a tap on the home screen after Home does not). After a tap, key, swipe or drag in the same `do` the screen may have changed: a tap at a point asks, and in a messaging app any tap does. A routine run checks each step it sends by the same rules, on the screen read just before the step (for a step on an element, the read that found it), and stops there so the agent sends that step as an ordinary `do` and the owner is asked. An unanswered request ends by itself when its 120 s are up (`approvalEnded` with no answer), whether or not another call comes.
+
+The app turns these rules on unless the owner switched off Agents › Approvals › Ask Before Sensitive Steps (on by default; before this, alpha builds had it off). The auto-classifier (Diagnostics › Testing, off) answers in the owner's place when it is on.
 
 When an action matches, the plain actions before it in that `do` are sent first (seen on the phone:
 a last selection tap held back with the Delete after it meant the Delete, once approved, would have

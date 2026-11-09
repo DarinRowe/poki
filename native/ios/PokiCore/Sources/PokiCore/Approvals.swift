@@ -43,7 +43,12 @@ public struct SensitivityRules: Sendable, Equatable {
         guard enabled else { return nil }
         if let bundle = app?.bundleID, guardedApps.contains(bundle) { return "input in \(app?.describe ?? bundle)" }
         if typing, secureFields, element?.isSecure == true || (element == nil && secureOnScreen) { return "typing into a password field" }
-        guard let element, !typing else { return nil }
+        guard !typing else { return nil }
+        guard let element else {
+            // A tap in Phone rings whatever it lands on, also where nothing can be read.
+            if let bundle = app?.bundleID, callingApps.contains(bundle) { return "a call (in \(app?.describe ?? bundle))" }
+            return nil
+        }
         let texts = [element.text, element.identifier ?? ""]
         func match(_ words: [String]) -> String? { texts.lazy.compactMap { Self.matches($0, words) }.first }
         if let word = match(payments) { return "a payment (\"\(word)\")" }
@@ -152,6 +157,12 @@ final class Approvals: @unchecked Sendable {
         lock.unlock()
         replaced.forEach { emit(.approvalEnded(id: $0.approval.id, approved: nil)) }
         emit(.approvalRequested(approval))
+        // The request ends when its time is up even if no call comes to sweep it: the app holds its
+        // card, the idle stop and Stop Runner until it hears so.
+        Task { [weak self, lifetime] in
+            await sleep(seconds: lifetime + 0.05)
+            _ = self?.pending
+        }
         return approval
     }
 

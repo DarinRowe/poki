@@ -34,6 +34,21 @@ void poki_string_free(char *text);
 PokiPairing *poki_pair_start(const char *config_json, poki_event_cb cb, void *context);
 void poki_pair_cancel(PokiPairing *pairing);
 
+// Poki keeps its own signing (native/launcher/src/signer.rs, Poki Setup's core). The vault is the
+// app's Keychain: get returns a malloc'd base64 string (freed by the library) or NULL; set and
+// delete return 0 on success. Install it once at launch, before the first call.
+typedef char *(*poki_vault_get_cb)(void *context, const char *name);
+typedef int32_t (*poki_vault_set_cb)(void *context, const char *name, const char *value_base64);
+typedef int32_t (*poki_vault_delete_cb)(void *context, const char *name);
+int32_t poki_signer_set_vault(poki_vault_get_cb get, poki_vault_set_cb set, poki_vault_delete_cb del, void *context);
+
+// request_json: {"op": "configure|status|sign_in|finish_sign_in|sign_out|teams|choose_team|
+//   set_anisette|set_channel|import_identity|check_update|udid|prepare|install", ...}.
+// Events: {"event": "progress", "progress": {...}} while it runs, then one
+// {"event": "result", "ok": true, "value": ...} or {"event": "result", "ok": false, "error": "...", "code": "..."}.
+// Returns -1 when the request is unreadable (no events follow), else 0.
+int32_t poki_signer_call(const char *request_json, poki_event_cb cb, void *context);
+
 #ifdef __cplusplus
 }
 #endif

@@ -187,17 +187,25 @@ extension Runner {
         await ensureSettings(timeout: min(timeout, 3))
         async let source = raw("GET", "/source?format=\(xml ? "xml" : "json")&excluded_attributes=visible,accessible,enabled,index", timeout: timeout)
         async let app = try? raw("GET", "/wda/activeAppInfo", timeout: min(timeout, 2))
-        let (sourceValue, appValue) = (try await source, await app)
+        let appValue = await app
+        let bundleID = appValue?["bundleId"]?.string.flatMap { $0.isEmpty ? nil : $0 }
         let appName = appValue?["name"]?.string.flatMap { $0.isEmpty ? nil : $0 }
+        let sourceValue: JSON
+        do { sourceValue = try await source } catch var error as RunnerError {
+            // An app whose tree cannot be read is still the app in front (on the phone, WeChat's in-process
+            // read: "Error getting main window kAXError"); without it the app read before stays in front.
+            if bundleID != nil || appName != nil { error.foreground = Foreground(bundleID: bundleID, name: appName) }
+            throw error
+        }
         if xml {
             guard let text = sourceValue.string, let parsed = flattenXML(Data(text.utf8)) else {
                 throw RunnerError(message: "the runner's XML tree could not be read", delivery: .notSent)
             }
-            return (parsed.elements, Foreground(bundleID: appValue?["bundleId"]?.string, name: appName ?? parsed.root.label ?? parsed.root.name))
+            return (parsed.elements, Foreground(bundleID: bundleID, name: appName ?? parsed.root.label ?? parsed.root.name))
         }
         let root = (try? sourceValue.string.map(JSON.parse)) ?? sourceValue
         let name = appName ?? root["label"]?.text ?? root["name"]?.text
-        return (flatten(root), Foreground(bundleID: appValue?["bundleId"]?.string, name: name))
+        return (flatten(root), Foreground(bundleID: bundleID, name: name))
     }
 
     func screenshot(timeout: Double) async throws -> Data {
@@ -251,6 +259,7 @@ extension Runner {
         switch await treePart {
         case .success(let t): reading.elements = t.elements; reading.foreground = t.foreground; treeCame = true
         case .failure(let e):
+            reading.foreground = (e as? RunnerError)?.foreground
             // A snapshot the runner refused at once (the app's main loop was busy for the moment:
             // "did not confirm its main run loop is responsive", a transition still running) is
             // asked for once more within the read's time. A timed-out one is not: the runner is

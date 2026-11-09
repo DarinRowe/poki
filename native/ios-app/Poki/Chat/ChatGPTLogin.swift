@@ -2,16 +2,14 @@ import AuthenticationServices
 import Foundation
 import PiSwiftAI
 import SwiftUI
+import WebKit
 
-/// The ChatGPT sign-in: the same OAuth client and flow as pi's `/login` › ChatGPT on the Mac
-/// (openai-codex), so the chat runs on the owner's ChatGPT subscription.
-///
-/// - Browser: PiSwiftAI's `loginOpenAICodex` listens on localhost:1455, the only redirect the client
-///   accepts; the sign-in page opens in ASWebAuthenticationSession on this iPhone and redirects to that
-///   listener inside Poki.
-/// - Code: pi-ai's device code flow (`@earendil-works/pi-ai` 1.5.0, `dist/auth/oauth/openai-codex.js`,
-///   MIT), ported below. It needs no redirect; the owner turns on device code sign-in for Codex in
-///   ChatGPT's Security settings first.
+/// The ChatGPT sign-in: OpenAI's Sign in with ChatGPT for open-source apps
+/// (developers.openai.com/siwc/token-sharing-open-source), through PiSwiftAI's `loginOpenAIChatGPT`.
+/// The first sign-in registers Poki with `dynamic_agent_client` and this installation's id; the page
+/// opens in ASWebAuthenticationSession and redirects to a listener inside Poki on
+/// http://127.0.0.1:1455/auth/callback, the only redirect the flow accepts. The chat then runs on the
+/// OpenAI API (Responses, store off) on the owner's ChatGPT plan. Poki does not use Codex's own client.
 ///
 /// The tokens go into the keychain as one JSON item and are never printed or logged.
 enum ChatGPTAccount {
@@ -24,11 +22,26 @@ enum ChatGPTAccount {
         try ModelKeys.save(String(decoding: data, as: UTF8.self), for: .chatgpt)
     }
 
-    static var signedIn: Bool { ModelKeys.key(.chatgpt).flatMap(decode) != nil }
+    static var signedIn: Bool { ModelKeys.key(.chatgpt).flatMap(decode)?.clientId?.isEmpty == false }
+
+    /// This installation's id for OpenAI's registration (`ext_agent_host_id`), made once.
+    static var installationID: String {
+        if let id = UserDefaults.standard.string(forKey: "chat.installationID") { return id }
+        let id = UUID().uuidString.lowercased()
+        UserDefaults.standard.set(id, forKey: "chat.installationID")
+        return id
+    }
 }
 
 @MainActor
 final class ChatGPTBrowserLogin: NSObject, ASWebAuthenticationPresentationContextProviding {
+    /// In-app: OpenAI's page opens in Poki's own sheet, which hands the last redirect (to Poki's listener
+    /// on 127.0.0.1) straight to the listener, so no browser ever loads that local address (Safari tried
+    /// it over https first and showed a certificate warning). Off: the system sign-in sheet.
+    var inApp = true
+    /// The page to show in the in-app sheet; set while signing in.
+    var pageURL: URL?
+    var onPage: ((URL?) -> Void)?
     private var session: ASWebAuthenticationSession?
     private var manual: CheckedContinuation<String, Error>?
     private let cancel = CancellationToken()
@@ -42,14 +55,17 @@ final class ChatGPTBrowserLogin: NSObject, ASWebAuthenticationPresentationContex
             onPrompt: { [weak self] _ in
                 try await withCheckedThrowingContinuation { continuation in self?.manual = continuation }
             },
-            signal: cancel
+            signal: cancel,
+            getDeviceId: { [id = ChatGPTAccount.installationID] in id },
+            agentName: "Poki"
         )
         defer { finish() }
-        return try await loginOpenAICodex(callbacks)
+        return try await loginOpenAIChatGPT(callbacks)
     }
 
     private func open(_ address: String) {
         guard let url = URL(string: address) else { return }
+        if inApp { pageURL = url; onPage?(url); return }
         let session = ASWebAuthenticationSession(url: url, callback: .customScheme("poki")) { [weak self] _, _ in
             // Closed by the owner (the redirect goes to the listener, not to this callback).
             Task { @MainActor in self?.closed() }
@@ -66,7 +82,16 @@ final class ChatGPTBrowserLogin: NSObject, ASWebAuthenticationPresentationContex
         cancel.cancel()
     }
 
+    /// The in-app sheet was closed before the sign-in finished.
+    func pageClosed() {
+        guard pageURL != nil else { return }
+        pageURL = nil
+        closed()
+    }
+
     private func finish() {
+        pageURL = nil
+        onPage?(nil)
         session?.cancel()
         session = nil
         manual?.resume(throwing: Cancelled())
@@ -80,125 +105,23 @@ final class ChatGPTBrowserLogin: NSObject, ASWebAuthenticationPresentationContex
     }
 }
 
-/// pi-ai's OpenAI Codex device code sign-in (openai-codex.js: startOpenAICodexDeviceAuth,
-/// pollOpenAICodexDeviceAuth, exchangeAuthorizationCode).
-enum ChatGPTDeviceLogin {
-    static let clientID = "app_EMoamEEZ73f0CkXaXp7hrann"
-    static let verificationURL = URL(string: "https://auth.openai.com/codex/device")!
-    private static let userCodeURL = URL(string: "https://auth.openai.com/api/accounts/deviceauth/usercode")!
-    private static let tokenURL = URL(string: "https://auth.openai.com/api/accounts/deviceauth/token")!
-    private static let oauthTokenURL = URL(string: "https://auth.openai.com/oauth/token")!
-    private static let redirectURI = "https://auth.openai.com/deviceauth/callback"
-    private static let timeout: TimeInterval = 15 * 60
-
-    struct Device: Sendable { let id: String; let userCode: String; let interval: Double }
-
-    struct Failure: LocalizedError { let errorDescription: String? }
-
-    static func start() async throws -> Device {
-        let (data, status) = try await post(userCodeURL, json: ["client_id": clientID])
-        if status == 404 { throw Failure(errorDescription: String(localized: "OpenAI has not turned on code sign-in for this account. Use the browser sign-in.")) }
-        guard (200..<300).contains(status), let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let id = json["device_auth_id"] as? String, let code = json["user_code"] as? String else {
-            throw Failure(errorDescription: String(localized: "OpenAI did not give a sign-in code (\(status))."))
-        }
-        let interval = (json["interval"] as? NSNumber)?.doubleValue ?? Double((json["interval"] as? String)?.trimmingCharacters(in: .whitespaces) ?? "") ?? 5
-        return Device(id: id, userCode: code, interval: max(interval, 1))
-    }
-
-    /// Polls until the owner approves the code, then exchanges it for tokens.
-    static func finish(_ device: Device) async throws -> OAuthCredentials {
-        let until = Date().addingTimeInterval(timeout)
-        var interval = device.interval
-        while Date() < until {
-            try await Task.sleep(for: .seconds(interval))
-            let (data, status) = try await post(tokenURL, json: ["device_auth_id": device.id, "user_code": device.userCode])
-            if (200..<300).contains(status) {
-                guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      let code = json["authorization_code"] as? String, let verifier = json["code_verifier"] as? String else {
-                    throw Failure(errorDescription: String(localized: "OpenAI's answer to the sign-in code was not readable."))
-                }
-                return try await exchange(code: code, verifier: verifier)
-            }
-            if status == 403 || status == 404 { continue }
-            let error = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["error"]
-            let code = (error as? [String: Any])?["code"] as? String ?? error as? String
-            if code == "deviceauth_authorization_pending" { continue }
-            if code == "slow_down" { interval += 5; continue }
-            throw Failure(errorDescription: String(localized: "OpenAI refused the sign-in code (\(status))."))
-        }
-        throw Failure(errorDescription: String(localized: "The sign-in code ran out. Start again."))
-    }
-
-    private static func exchange(code: String, verifier: String) async throws -> OAuthCredentials {
-        var request = URLRequest(url: oauthTokenURL)
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        var form = URLComponents()
-        form.queryItems = [URLQueryItem(name: "grant_type", value: "authorization_code"), URLQueryItem(name: "client_id", value: clientID),
-                           URLQueryItem(name: "code", value: code), URLQueryItem(name: "code_verifier", value: verifier),
-                           URLQueryItem(name: "redirect_uri", value: redirectURI)]
-        request.httpBody = Data((form.percentEncodedQuery ?? "").utf8)
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard (response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) == true,
-              let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let access = json["access_token"] as? String, let refresh = json["refresh_token"] as? String,
-              let expiresIn = (json["expires_in"] as? NSNumber)?.doubleValue,
-              let account = accountID(access) else {
-            throw Failure(errorDescription: String(localized: "OpenAI did not hand over the sign-in."))
-        }
-        return OAuthCredentials(refresh: refresh, access: access, expires: Date().timeIntervalSince1970 * 1000 + expiresIn * 1000, accountId: account)
-    }
-
-    /// The ChatGPT account id in the access token's claims (pi-ai `getAccountId`).
-    static func accountID(_ token: String) -> String? {
-        let parts = token.split(separator: ".")
-        guard parts.count == 3 else { return nil }
-        var payload = String(parts[1]).replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
-        payload += String(repeating: "=", count: (4 - payload.count % 4) % 4)
-        guard let data = Data(base64Encoded: payload), let claims = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let auth = claims["https://api.openai.com/auth"] as? [String: Any], let id = auth["chatgpt_account_id"] as? String, !id.isEmpty else { return nil }
-        return id
-    }
-
-    private static func post(_ url: URL, json: [String: String]) async throws -> (Data, Int) {
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: json)
-        let (data, response) = try await URLSession.shared.data(for: request)
-        return (data, (response as? HTTPURLResponse)?.statusCode ?? 0)
-    }
-}
-
-/// The ChatGPT row's sheet: sign in with the browser, or with a code, or sign out.
+/// The ChatGPT row's sheet: sign in, or sign out.
 struct ChatGPTSignIn: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
     @State private var working = false
-    @State private var device: ChatGPTDeviceLogin.Device?
     @State private var problem: String?
     @State private var login = ChatGPTBrowserLogin()
-    @State private var polling: Task<Void, Never>?
+    @State private var page: URL?
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    Button("Sign In with ChatGPT") { run { try await login.signIn() } }.disabled(working)
+                    Button("Continue with ChatGPT") { login.inApp = true; run { try await login.signIn() } }.disabled(working)
+                    Button("Continue in Safari") { login.inApp = false; run { try await login.signIn() } }.disabled(working)
                 } footer: {
-                    Text("Poki uses your ChatGPT plan, the way Codex does. The sign-in stays in this iPhone’s Keychain.")
-                }
-                Section {
-                    if let device {
-                        Text(verbatim: device.userCode).font(.system(size: 28, weight: .semibold, design: .monospaced)).textSelection(.enabled)
-                            .accessibilityLabel(Text("Sign-in code \(device.userCode)"))
-                        Button("Open the Sign-In Page") { openURL(ChatGPTDeviceLogin.verificationURL) }
-                    } else {
-                        Button("Use a Code Instead") { startCode() }.disabled(working)
-                    }
-                } footer: {
-                    Text("For a code, first turn on device code sign-in for Codex in ChatGPT › Settings › Security. Then enter the code on auth.openai.com/codex/device.")
+                    Text("Poki uses your ChatGPT Plus or Pro plan through OpenAI’s Sign in with ChatGPT. The sign-in stays in this iPhone’s Keychain. An OpenAI API key works too, as a backup: add it under OpenAI.")
                 }
                 if let problem { Text(verbatim: problem).foregroundStyle(Color(.systemRed)) }
                 if ChatGPTAccount.signedIn {
@@ -207,25 +130,17 @@ struct ChatGPTSignIn: View {
             }
             .navigationTitle(Text(verbatim: "ChatGPT"))
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { polling?.cancel(); dismiss() } } }
-        }
-    }
-
-    private func startCode() {
-        problem = nil
-        working = true
-        polling = Task {
-            do {
-                let started = try await ChatGPTDeviceLogin.start()
-                device = started
-                let credentials = try await ChatGPTDeviceLogin.finish(started)
-                done(credentials)
-            } catch is CancellationError {
-            } catch {
-                problem = error.localizedDescription
-                device = nil
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+            .onAppear { login.onPage = { page = $0 } }
+            .sheet(item: $page, onDismiss: { login.pageClosed() }) { url in
+                NavigationStack {
+                    SignInPage(url: url)
+                        .ignoresSafeArea(edges: .bottom)
+                        .navigationTitle(Text(verbatim: "ChatGPT"))
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { page = nil } } }
+                }
             }
-            working = false
         }
     }
 
@@ -246,6 +161,40 @@ struct ChatGPTSignIn: View {
         } catch {
             problem = String(localized: "The keychain did not take the sign-in. Try again.")
         }
+    }
+}
+
+extension URL: @retroactive Identifiable { public var id: String { absoluteString } }
+
+/// OpenAI's sign-in page in Poki. The redirect to Poki's own listener (127.0.0.1 or localhost, port
+/// 1455, http or https) is not loaded: it is sent to the listener over plain http from here, which ends
+/// the sign-in and closes this sheet.
+struct SignInPage: UIViewRepresentable {
+    var url: URL
+
+    func makeCoordinator() -> SignInRedirect { SignInRedirect() }
+
+    func makeUIView(context: UIViewRepresentableContext<SignInPage>) -> WKWebView {
+        let view = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
+        view.navigationDelegate = context.coordinator
+        view.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
+        view.load(URLRequest(url: url))
+        return view
+    }
+
+    func updateUIView(_ view: WKWebView, context: UIViewRepresentableContext<SignInPage>) {}
+}
+
+/// Hands the redirect to Poki's own listener instead of loading it.
+final class SignInRedirect: NSObject, WKNavigationDelegate {
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
+                 decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
+        guard let target = navigationAction.request.url, ["127.0.0.1", "localhost"].contains(target.host() ?? ""), target.port == 1455,
+              var parts = URLComponents(url: target, resolvingAgainstBaseURL: false) else { decisionHandler(.allow); return }
+        parts.scheme = "http"
+        parts.host = "127.0.0.1"
+        if let local = parts.url { URLSession.shared.dataTask(with: local).resume() }
+        decisionHandler(.cancel)
     }
 }
 

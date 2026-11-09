@@ -2,11 +2,47 @@
 
 What changed in each round, and what still needs the phone. Newest first.
 
+## Developer Mode only when the phone says so (2026-11-09, on standalone)
+
+Changed:
+- Poki says Developer Mode is off only when the phone says so. A listener, tunnel or RSD failure after pair-verify says Poki can't reach this iPhone and lists the checks in order: Setup › Loopback, Setup › Pairing, then Developer Mode; the Live Activity says Can’t Reach iPhone. A phone without cryptexd is asked for DeveloperModeStatus first. A runner that stops before it answers points to UI Automation and to trusting Poki Runner's developer (#69).
+- The Loopback page's text for a local interface with no answer says to reconnect and check Wi-Fi, then to pair again, then to check Developer Mode.
+- The app acts on the launcher's failure code, not on words in its message. `-pokiLoopback noanswer` shows that Loopback state on a simulator.
+
+Needs the phone:
+- Reading DeveloperModeStatus through the tunnel's lockdown service.
+- Home and the Live Activity after a listener, tunnel or RSD failure, for example with the proxy app turned off mid-connection.
+
+## Remote pairing that does not answer (2026-11-09, on standalone)
+
+Changed:
+- When the loopback takes the connection but the phone's remote pairing service does not answer, Poki no longer says to turn on Developer Mode. It points to Setup › Loopback, then to pairing again in Setup › Pairing with the loopback on; Home offers Open Setup and the Live Activity says Loopback or Pairing (#69).
+- The Loopback page no longer shows only Working in that case: the loopback probe only connects, and a proxy app can take the connection even when it cannot reach the phone, so the page says the remote pairing service is not answering through it.
+- That failure names the I/O error under "device socket io failed" and how long the connection was held, and the pairing check and the first runner failure log the loopback kind, the local VPN state, Wi-Fi and the network path.
+
+Needs the phone:
+- The failure in #69 itself: automation that stops after about 25 minutes idle with a proxy app carrying the loopback. Its cause is not known yet.
+
+## From poki/ios-integration (2026-11-08, onto standalone)
+
+Changed:
+- In-process path: an open of the automation session that has not answered in 5 s is waiting on iOS's passcode prompt. The Live Activity shows Passcode for automation, Poki's home asks the owner, and the agent reads that only the owner can enter the iPhone passcode; when iOS gives up, the call fails with that reason (from #48).
+- Live voice stops after its answer: 8 s with nobody speaking ends the conversation, lets go of the microphone and turns the orange dot off; speaking within the 8 s goes on in the same conversation, and one opened within 5 minutes of the last conversation with something said in it is told the last turns. In the background Poki stops listening, also while connecting, unless a step it was asked for is running or its answer is still to be said, and then ends once that is said (from #50, #51).
+- Live voice does not wait for the server for ever: an answer, the end of speech or the end of the audio that does not come (say, an error that names no request) ends the conversation after 60 s without a server event, or 30 s after Poki went to the background. A running step is not cut off (from #52).
+
+Needs the phone:
+- The passcode card when Automation Mode comes back on more than 8 hours after the passcode was last entered.
+- Live voice with a person speaking: the end 8 s after the answer, and the background stop.
+
 ## Round 10 (2026-11-07, on poki/ios-integration), version 0.2.8
 
 Changed:
 - In-process path: the automation session is closed after the idle time, from Stop and when Poki is turned off, so iOS's "Automation Running" banner shows only while an agent works, as on the runner path. The next agent request opens a new session (new generation; an action meant for the old one is refused). A restart PokiCore asks for closes and reopens the session instead of being ignored. `scripts/inprocess-sim/check.sh --cycle` checks close, refusal while closed, reopen, read, tap and type on a simulator, and CI runs all three check modes.
 - The idle stop applies to the in-process path too (Settings > Stop When Idle For).
+- Setup, loopback page: the chosen app's tag is live (Working while 10.7.0.1 answers, Not Answering while it does not, with a line saying what to do); Stash, Quantumult X and Clash Mi added as users report them (marked "as reported", with the lines to add); Egern left out for want of a documented setting.
+- Setup, pairing page: on iOS 26 and earlier, where the phone cannot pair with itself, the page shows pairing from a computer (Poki Setup) and the ways to send the file; Start Pairing and Pair Again appear only on iOS 27 and later. A pairing file opened from AirDrop or Files, or sent by `poki://pairing?url=…&sha256=…` from Poki Setup, lands in Poki; `poki://setup?relay=…` sets the relay.
+- The pairing file and the setup state are kept in the Keychain as well, so a reinstall or a re-sign by a sideloading tool does not send the owner through setup again.
+- iPad is in the device family with every orientation, and CI screenshots home, setup and connect on an iPad Pro 11 simulator. Beside another app (the iPhone Duo's side-by-side apps, iPad windows) Poki's own process is never the front app; the driven app's part of the screen is the agent's screen: the tree's frames and the screenshot are relative to it and touches are moved back onto the screen (`PKInProcess.viewport`).
 
 Needs the phone:
 - That the banner goes within seconds of the idle stop, and that reopening asks for no passcode within the same boot.

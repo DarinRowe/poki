@@ -1,3 +1,4 @@
+import PokiCore
 import SwiftUI
 import UIKit
 
@@ -14,7 +15,10 @@ import UIKit
 /// `-pokiInProcess apps -pokiProbeApp BUNDLE` launches that app, launches Settings, activates the app,
 /// launches it again and terminates it, noting the front app and its pid after each;
 /// `-pokiInProcess tools -pokiProbeApp BUNDLE` runs PokiCore's look and do as an agent would: open
-/// the app, tap its first field and type, open Settings and swipe, press Home, looking after each.
+/// the app, tap its first field and type, open Settings and swipe, press Home, looking after each;
+/// `-pokiInProcess gym` runs the whole Poki Gym scorecard (native/ios-gym/check) through PokiCore on
+/// this path, answering approvals as the owner would, into Documents/gym-scorecard.txt and
+/// Documents/gym-pictures (the gym workflow's scorecard-inprocess job).
 @MainActor
 final class InProcessProbe: ObservableObject {
     static let shared = InProcessProbe()
@@ -48,6 +52,8 @@ final class InProcessProbe: ObservableObject {
             case "source": await sourceBothPaths(model: model)
             case "apps": await appsCycle(defaults.string(forKey: "pokiProbeApp") ?? "local.pokimcp.fixture")
             case "tools": await toolsCycle(model: model, app: defaults.string(forKey: "pokiProbeApp") ?? "local.pokimcp.fixture")
+            case "gym": await gymScorecard(model: model)
+            case "chat": await chatCycle(model: model)
             case "bench": await benchmark(model: model, rounds: defaults.integer(forKey: "pokiBenchRounds") > 0 ? defaults.integer(forKey: "pokiBenchRounds") : 5)
             default: await prepareOnly()
             }
@@ -234,6 +240,95 @@ final class InProcessProbe: ObservableObject {
         let result = await probe(label: "8100", host: "127.0.0.1", port: 8100, timeout: 2)
         note("127.0.0.1:8100: \(result.outcome) \(result.detail) after \(result.milliseconds) ms", ["step": "port_8100", "outcome": result.outcome, "detail": result.detail])
     }
+
+    /// The gym scorecard on the in-process path: the same scenarios and checks as the runner path's
+    /// executable, through this app's PokiCore and InProcessWDA. Approvals are answered the way the
+    /// owner would on the Live Activity (the scorecard says when and how).
+    func gymScorecard(model: AppModel) async {
+        guard begin("gym scorecard") else { return }
+        defer { end() }
+        guard await prepare() else { return }
+        model.inProcessReadyForProbe()
+        let background = UIApplication.shared.beginBackgroundTask(withName: "Gym scorecard")
+        defer { UIApplication.shared.endBackgroundTask(background) }
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
+        let transcript = GymTranscript()
+        // The owner's side of approvals: PokiCore asks, the approver answers after the delay the
+        // scorecard set (there is no session on, so the app's own list does not see them).
+        let asked = GymAskedApprovals()
+        let approver = GymApprover { id, approved in
+            if let approval = asked.byID[id] { model.resolve(approval, approved: approved) }
+        }
+        model.onProbeApproval = { approval in
+            asked.byID[approval.id] = approval
+            NSLog("PokiGym approval asked: %@ (%@)", approval.summary, approval.reason)
+            approver.requested(id: approval.id)
+        }
+        defer { model.onProbeApproval = nil }
+        var env = GymEnvironment(call: { name, args in
+            let answer = await model.phoneToolWithPicture(name, arguments: args.serialized())
+            return (answer.text, answer.jpeg.map { [$0] } ?? [])
+        }, log: { line in
+            transcript.lines.append(line)
+            NSLog("PokiGym %@", String(line.prefix(900)))
+        })
+        env.pictures = documents.appendingPathComponent("gym-pictures")
+        env.approveNext = { approver.next($0) }
+        env.path = "in-process"
+        let scorecard = GymScorecard(env: env)
+        await scorecard.run()
+        let report = scorecard.report
+        transcript.lines.append(report)
+        NSLog("PokiGym %@", report)
+        note("gym scorecard: \(scorecard.rows.filter { $0.ms > 0 }.count) calls, \(scorecard.failures.count) failures", ["step": "gym", "failures": scorecard.failures])
+        try? transcript.lines.joined(separator: "\n").write(to: documents.appendingPathComponent("gym-scorecard.txt"), atomically: true, encoding: .utf8)
+    }
+
+    /// `-pokiInProcess chat -pokiProbeModelURL http://127.0.0.1:8765/v1`: Poki's own agent end to end on
+    /// this path. The chat is pointed at an OpenAI-compatible endpoint (on CI, a scripted model on the
+    /// Mac), the owner sends a task, pi runs it with look and do on the phone, the session is saved; then an
+    /// outside agent's `ask_poki` runs a second task as a hand-off. Into Documents/inprocess-probe.json.
+    func chatCycle(model: AppModel) async {
+        guard begin("chat with Poki's agent") else { return }
+        defer { end() }
+        guard await prepare() else { return }
+        model.inProcessReadyForProbe()
+        let background = UIApplication.shared.beginBackgroundTask(withName: "Chat probe")
+        defer { UIApplication.shared.endBackgroundTask(background) }
+        let defaults = UserDefaults.standard
+        ModelKeys.customURL = defaults.string(forKey: "pokiProbeModelURL") ?? "http://127.0.0.1:8765/v1"
+        ModelKeys.customModel = defaults.string(forKey: "pokiProbeModel") ?? "poki-mock"
+        ModelKeys.selectedProvider = .custom
+        AskPoki.refresh()
+        guard let chat = AskPoki.chat else { note("no chat", ["step": "chat_missing"]); return }
+        chat.newConversation()
+        let task = defaults.string(forKey: "pokiProbeTask") ?? "Open the Poki fixture app and tell me what it shows."
+        let t0 = ProcessInfo.processInfo.systemUptime
+        chat.send(task)
+        for _ in 0..<1200 where chat.running { try? await Task.sleep(for: .milliseconds(250)) }
+        let seconds = ProcessInfo.processInfo.systemUptime - t0
+        let replies: [String] = chat.entries.compactMap { if case .poki(let text) = $0.kind { text } else { nil } }
+        let problems: [String] = chat.entries.compactMap { if case .note(.problem(let why)) = $0.kind { why } else { nil } }
+        note("chat task: \(chat.calls.count) tool calls in \(String(format: "%.1f", seconds)) s, \(replies.count) replies, \(problems.count) problems",
+             ["step": "chat", "running": chat.running, "seconds": seconds, "calls": chat.calls.map { ["name": $0.name, "ok": $0.ok, "ms": $0.ms] },
+              "replies": replies, "problems": problems])
+        // Saved like any conversation: the Sessions list shows it.
+        try? await Task.sleep(for: .seconds(1))
+        let saved = SessionStore.shared.session(chat.sessionID)
+        note("chat session saved: \(saved != nil)", ["step": "chat_saved", "saved": saved != nil, "entries": saved?.entries.count ?? 0, "calls": saved?.calls.count ?? 0])
+        // An outside agent hands a task over.
+        let t1 = ProcessInfo.processInfo.systemUptime
+        let handoff = await model.phoneToolWithPicture("ask_poki", arguments: "{\"task\":\"Open the Poki fixture app and tell me what it shows.\"}")
+        note("ask_poki: \(handoff.isError ? "failed" : "ok") in \(String(format: "%.1f", ProcessInfo.processInfo.systemUptime - t1)) s",
+             ["step": "ask_poki", "error": handoff.isError, "text": String(handoff.text.prefix(4000))])
+        let handoffs = SessionStore.shared.sessions.filter { $0.kind == .handoff }
+        note("hand-off sessions saved: \(handoffs.count)", ["step": "handoff_saved", "count": handoffs.count, "entries": handoffs.first?.entries.count ?? 0])
+    }
+
+    /// The scorecard's log, kept for Documents/gym-scorecard.txt.
+    private final class GymTranscript { var lines: [String] = [] }
+    /// The approvals PokiCore asked for during the scorecard, by id.
+    private final class GymAskedApprovals { var byID: [String: PendingApproval] = [:] }
 
     // MARK: Steps
 

@@ -70,7 +70,11 @@ struct Issue: Identifiable {
             let runner = model.runner
             if runner.state == "failed", model.pairingTrouble == nil {
                 let fix = runner.fix ?? ""
-                let kind: Fix = fix.contains("Install Poki Runner") || fix.contains("Pair again") || fix.contains("setup") ? .setup : fix.contains("Developer Mode") ? .settings : .retry
+                let kind: Fix = switch runner.code {
+                case "runner", "pairing", "handshake", "unreachable", "ddi_refused": .setup
+                case "developer_mode", "no_cryptexd", "ios_too_old", "runner_blocked": .settings
+                default: .retry
+                }
                 out.append(Issue(id: "runner", title: String(localized: "The runner stopped"),
                                  text: fix.isEmpty ? (runner.detail.map { "\($0.prefix(1).uppercased())\($0.dropFirst())." } ?? String(localized: "Poki starts it again on the next agent request.")) : local(fix), fix: kind))
             } else if runner.state == "waiting_network", let fix = runner.fix, fix.contains("internet") {
@@ -90,7 +94,9 @@ struct Issue: Identifiable {
             }
             if model.passcodeHint {
                 out.append(Issue(id: "passcode", title: String(localized: "Enter the passcode if the iPhone asks"),
-                                 text: String(localized: "iOS asks for the passcode before UI Automation after Poki Runner was force-closed or the iPhone restarted. Enter it once; Poki carries on by itself."), fix: .none))
+                                 text: model.automationPath == .inProcess
+                                    ? String(localized: "iOS asks for the passcode to allow UI Automation after Poki restarts, or 8 hours after it was last entered. Enter it once; Poki carries on by itself.")
+                                    : String(localized: "iOS asks for the passcode before UI Automation after Poki Runner was force-closed or the iPhone restarted. Enter it once; Poki carries on by itself."), fix: .none))
             }
             if let text = model.handoffText {
                 out.append(Issue(id: "handoff", title: String(localized: "Your turn"),

@@ -1,6 +1,8 @@
 #import "RecoveredNative.h"
 #import <dlfcn.h>
 #import <unistd.h>
+#import <objc/runtime.h>
+#import <objc/message.h>
 
 // Selectors found by inspecting XCTest private classes at run time (NativeHIDProbe), not the public SDK.
 @interface NSObject (SRObservedPrivateAPI)
@@ -25,6 +27,33 @@
 - (id)connection;
 - (void)invalidate;
 @end
+
+/// The session of Poki's own opened after a close. XCTest's accessibility client
+/// (XCUIDevice.accessibilityInterface) and XCUIScreen reach testmanagerd through
+/// +[XCTRunnerDaemonSession sharedSession], which keeps answering the session that was closed: on the
+/// phone (0.2.8 build 144) every tree read after a stand-by and reopen hung there while the new
+/// session answered. While Poki holds a session of its own, sharedSession answers that one.
+static id SROwnedSharedSession;
+static NSLock *SROwnedLock(void) {
+    static NSLock *lock; static dispatch_once_t once;
+    dispatch_once(&once, ^{ lock = [NSLock new]; });
+    return lock;
+}
+static void SRUseAsSharedSession(Class cls, id session) {
+    [SROwnedLock() lock]; SROwnedSharedSession = session; [SROwnedLock() unlock];
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        Method method = class_getClassMethod(cls, NSSelectorFromString(@"sharedSession"));
+        if (!method) { NSLog(@"SRNativeSession: no +sharedSession to point at the owned session"); return; }
+        IMP original = method_getImplementation(method);
+        IMP replacement = imp_implementationWithBlock(^id(id self) {
+            [SROwnedLock() lock]; id owned = SROwnedSharedSession; [SROwnedLock() unlock];
+            return owned ?: ((id (*)(id, SEL))original)(self, NSSelectorFromString(@"sharedSession"));
+        });
+        method_setImplementation(method, replacement);
+        NSLog(@"SRNativeSession: +sharedSession now answers the owned session");
+    });
+}
 
 static BOOL SRFail(NSError **error, NSString *code) {
     if (error) *error = [NSError errorWithDomain:@"RecoveredNative" code:1
@@ -100,8 +129,14 @@ static BOOL SRABI(id target, SEL selector, const char *result, NSArray<NSString 
     NSRecursiveLock *_lifecycleLock;
     id _observed, _token, _enabled;
     uint64_t _generation, _enabledGeneration;
-    BOOL _invalidated, _reused;
+    BOOL _invalidated, _reused, _handlerFired;
+    NSString *_closeDetail;
     NSMutableSet<NSString *> *_loaded;
+    /// An open of this process's own session still under way: a prepare that gave up waiting for
+    /// it leaves it running, and the next prepare waits for the same one instead of starting another.
+    dispatch_semaphore_t _opening;
+    id _openedSession;
+    NSError *_openFailure;
 }
 - (instancetype)init {
     if ((self = [super init])) {
@@ -128,12 +163,81 @@ static BOOL SRABI(id target, SEL selector, const char *result, NSArray<NSString 
     [_lifecycleLock lock];
     id session = _observed;
     BOOL open = session && !_invalidated && _token != nil;
-    _invalidated = YES; _enabled = nil; _enabledGeneration = 0;
+    _invalidated = YES; _enabled = nil; _enabledGeneration = 0; _handlerFired = NO;
     [_lifecycleLock unlock];
     if (!open) return NO;
     id link = [session respondsToSelector:@selector(connection)] ? [session connection] : nil;
-    if ([link respondsToSelector:@selector(invalidate)]) [link invalidate];
+    BOOL invalidated = [link respondsToSelector:@selector(invalidate)];
+    if (invalidated) [link invalidate];
+    // testmanagerd's side of the connection going away is what ends Automation Mode: the session's
+    // invalidation handler fires when it does. Waited for briefly, and reported (closeDetail).
+    BOOL fired = NO;
+    for (int i = 0; i < 100 && !fired; i++) {
+        [_lifecycleLock lock]; fired = _handlerFired; [_lifecycleLock unlock];
+        if (!fired) usleep(10000);
+    }
+    [_lifecycleLock lock];
+    _closeDetail = [NSString stringWithFormat:@"link=%@ invalidate=%@ handler_fired=%@",
+                    link ? NSStringFromClass([link class]) : @"none", invalidated ? @"yes" : @"no", fired ? @"yes" : @"no"];
+    [_lifecycleLock unlock];
+    NSLog(@"SRNativeSession close: %@", _closeDetail);
     return YES;
+}
+/// Selectors on `cls` (and its superclasses up to NSObject) whose name has `part`.
+static NSArray<NSString *> *SRSelectorsWith(Class cls, NSString *part) {
+    NSMutableArray *found = [NSMutableArray array];
+    for (Class c = cls; c && c != NSObject.class; c = class_getSuperclass(c)) {
+        unsigned int count = 0;
+        Method *methods = class_copyMethodList(c, &count);
+        for (unsigned int i = 0; i < count; i++) {
+            NSString *name = NSStringFromSelector(method_getName(methods[i]));
+            if ([name rangeOfString:part options:NSCaseInsensitiveSearch].location != NSNotFound) [found addObject:name];
+        }
+        free(methods);
+    }
+    return found;
+}
+
+- (NSDictionary<NSString *, id> *)pauseAutomation {
+    [_lifecycleLock lock];
+    id session = _observed;
+    BOOL open = session && !_invalidated && _token != nil;
+    [_lifecycleLock unlock];
+    if (!open) return @{@"paused": @NO, @"how": @"no session"};
+    NSArray *offered = SRSelectorsWith([session class], @"utomation");
+    BOOL paused = NO;
+    NSString *how = @"none offered";
+    // XCTRunnerDaemonSession's own counterpart of enableAutomationModeWithError:, where it has one.
+    SEL direct = NSSelectorFromString(@"disableAutomationModeWithError:");
+    if ([session respondsToSelector:direct] && SRABI(session, direct, "B", @[@"^@"])) {
+        NSError *error = nil;
+        paused = ((BOOL (*)(id, SEL, NSError **))objc_msgSend)(session, direct, &error);
+        how = paused ? @"disableAutomationModeWithError:" : [NSString stringWithFormat:@"disableAutomationModeWithError: failed: %@", error.localizedDescription ?: @"?"];
+    } else {
+        // testmanagerd's message for it, on the session's daemon proxy; the reply's arguments are
+        // not touched, so its exact shape does not matter.
+        id proxy = [session respondsToSelector:@selector(daemonProxy)] ? [session daemonProxy] : nil;
+        SEL message = NSSelectorFromString(@"_XCT_disableAutomationModeWithReply:");
+        NSMethodSignature *signature = [proxy methodSignatureForSelector:message];
+        if (proxy && signature && signature.numberOfArguments == 3 && !strcmp([signature getArgumentTypeAtIndex:2], "@?")) {
+            dispatch_semaphore_t done = dispatch_semaphore_create(0);
+            __block BOOL answered = NO;
+            void (^reply)(void) = ^{ answered = YES; dispatch_semaphore_signal(done); };
+            ((void (*)(id, SEL, id))objc_msgSend)(proxy, message, reply);
+            dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC));
+            paused = answered;
+            how = answered ? @"_XCT_disableAutomationModeWithReply:" : @"_XCT_disableAutomationModeWithReply: no answer";
+        }
+    }
+    if (paused) {
+        [_lifecycleLock lock]; _enabled = nil; _enabledGeneration = 0; [_lifecycleLock unlock];
+    }
+    NSLog(@"SRNativeSession pauseAutomation: %@ (%@)", how, [offered componentsJoinedByString:@", "]);
+    return @{@"paused": @(paused), @"how": how, @"selectors": [offered componentsJoinedByString:@", "]};
+}
+
+- (NSString *)closeDetail {
+    [_lifecycleLock lock]; NSString *value = _closeDetail; [_lifecycleLock unlock]; return value;
 }
 - (id)prepare:(NSError **)error {
     [_prepareLock lock];
@@ -151,9 +255,13 @@ static BOOL SRABI(id target, SEL selector, const char *result, NSArray<NSString 
     // A simulator has no Developer disk image: the same files are in Xcode's simulator platform.
     NSString *root = NSProcessInfo.processInfo.environment[@"POKI_SIMULATOR_DEVELOPER_DIR"];
     if (root.length) {
+        // Xcode 26.3's simulator platform ships no lib_TestingInterop.dylib (XCTestCore loads without
+        // it there); a file that is not in the platform is left out rather than failing the session.
         NSMutableArray *moved = [NSMutableArray array];
-        for (NSString *path in paths)
-            [moved addObject:[root stringByAppendingString:[path substringFromIndex:@"/System/Developer".length]]];
+        for (NSString *path in paths) {
+            NSString *inPlatform = [root stringByAppendingString:[path substringFromIndex:@"/System/Developer".length]];
+            if ([NSFileManager.defaultManager fileExistsAtPath:inPlatform]) [moved addObject:inPlatform];
+        }
         paths = moved;
     }
 #endif
@@ -168,22 +276,39 @@ static BOOL SRABI(id target, SEL selector, const char *result, NSArray<NSString 
     if (![cls respondsToSelector:@selector(sharedSessionPromiseAndImplicitlyInitiateSession:)]) {
         SRFail(error, @"session_api_unavailable"); return nil;
     }
-    id promise = [cls sharedSessionPromiseAndImplicitlyInitiateSession:YES];
-    for (NSString *selector in @[@"promiseFulfilled", @"value", @"error"])
-        if (![promise respondsToSelector:NSSelectorFromString(selector)]) {
-            SRFail(error, @"promise_api_unavailable"); return nil;
-        }
-    for (NSUInteger i = 0; i < 300 && ![promise promiseFulfilled]; i++) usleep(10000);
-    if (![promise promiseFulfilled]) { SRFail(error, @"session_timeout"); return nil; }
-    if ([promise error]) { if (error) *error = [promise error]; return nil; }
-    id session = [promise value];
-    [_lifecycleLock lock];
-    BOOL closed = _invalidated && session == _observed;
-    // With POKI_INPROCESS_OWNED_SESSION set, the shared session is never used for automation: a
-    // session of this process's own is opened, kept while it is current, and reopened after close.
+    // The shared promise is read only while this process has had no session yet: a session in use
+    // is reused as it is, and after a close a session of this process's own is opened (the promise
+    // keeps holding the closed one). Waiting on the promise on every call cost 3 s per prepare once
+    // it stopped fulfilling (the app check on CI: "prepare reused at 3.0 s"), and that wait plus the
+    // owned open's wait ran past PokiCore's 8 s for opening a session.
     BOOL owned = getenv("POKI_INPROCESS_OWNED_SESSION") != NULL;
-    if (owned && _observed && !_invalidated && _token) session = _observed;
-    else if (owned) closed = YES;
+    [_lifecycleLock lock];
+    BOOL hadSession = _observed != nil;
+    [_lifecycleLock unlock];
+    id session = nil;
+    BOOL late = NO;
+    if (!hadSession && !owned) {
+        id promise = [cls sharedSessionPromiseAndImplicitlyInitiateSession:YES];
+        for (NSString *selector in @[@"promiseFulfilled", @"value", @"error"])
+            if (![promise respondsToSelector:NSSelectorFromString(selector)]) {
+                SRFail(error, @"promise_api_unavailable"); return nil;
+            }
+        for (NSUInteger i = 0; i < 300 && ![promise promiseFulfilled]; i++) usleep(10000);
+        // A shared session that is not there after 3 s (a busy testmanagerd) is not waited for further:
+        // a session of this process's own is opened instead, as after a close.
+        late = ![promise promiseFulfilled];
+        if (!late && [promise error]) { if (error) *error = [promise error]; return nil; }
+        session = late ? nil : [promise value];
+    }
+    [_lifecycleLock lock];
+    // The session in use stays in use while it is current, whether it is XCTest's shared one or one
+    // of this process's own; the shared promise is read only for the first session. After a close
+    // (ours, or testmanagerd's) a session of this process's own is opened: the shared promise keeps
+    // holding the closed one, and enabling automation on it again hangs for a minute. With
+    // POKI_INPROCESS_OWNED_SESSION set, the shared session is never used at all.
+    BOOL closed;
+    if (_observed && !_invalidated && _token) { session = _observed; closed = NO; }
+    else closed = (_observed != nil && _invalidated) || owned || late || !session;
     [_lifecycleLock unlock];
     if (closed) {
         // The shared promise still holds the session that was closed: open one of this process's
@@ -192,13 +317,28 @@ static BOOL SRABI(id target, SEL selector, const char *result, NSArray<NSString 
             ![cls respondsToSelector:@selector(sessionWithConnection:completion:)]) {
             SRFail(error, @"session_reopen_api_unavailable"); return nil;
         }
-        id connection = [cls connectionForInitiatingSharedSession];
-        __block id opened; __block NSError *failure;
-        dispatch_semaphore_t ready = dispatch_semaphore_create(0);
-        [cls sessionWithConnection:connection completion:^(id s, NSError *e) { opened = s; failure = e; dispatch_semaphore_signal(ready); }];
-        if (dispatch_semaphore_wait(ready, dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC))) { SRFail(error, @"session_timeout"); return nil; }
+        // One open at a time: a prepare that gives up waiting (session_timeout) leaves the open
+        // running, and the next prepare waits for that same open rather than starting a second
+        // one beside it (the app check on CI: the open answered after the 5 s wait, and the prepare
+        // after it would have started over).
+        if (!_opening) {
+            _opening = dispatch_semaphore_create(0);
+            _openedSession = nil; _openFailure = nil;
+            dispatch_semaphore_t ready = _opening;
+            id connection = [cls connectionForInitiatingSharedSession];
+            __weak SRNativeSession *weakSelf = self;
+            [cls sessionWithConnection:connection completion:^(id s, NSError *e) {
+                SRNativeSession *owner = weakSelf;
+                if (owner) { owner->_openedSession = s; owner->_openFailure = e; }
+                dispatch_semaphore_signal(ready);
+            }];
+        }
+        if (dispatch_semaphore_wait(_opening, dispatch_time(DISPATCH_TIME_NOW, 6 * NSEC_PER_SEC))) { SRFail(error, @"session_timeout"); return nil; }
+        id opened = _openedSession; NSError *failure = _openFailure;
+        _opening = nil; _openedSession = nil; _openFailure = nil;
         if (!opened) { if (error) *error = failure ?: [NSError errorWithDomain:@"RecoveredNative" code:1 userInfo:@{NSLocalizedDescriptionKey: @"session_reopen_failed"}]; return nil; }
         session = opened;
+        SRUseAsSharedSession(cls, opened);
     }
     if (![session respondsToSelector:@selector(supportsAutomationMode)] ||
         ![session supportsAutomationMode] ||
@@ -222,6 +362,7 @@ static BOOL SRABI(id target, SEL selector, const char *result, NSArray<NSString 
             [owner->_lifecycleLock lock];
             if (owner->_generation == generation) {
                 owner->_invalidated = YES; owner->_enabled = nil; owner->_enabledGeneration = 0;
+                owner->_handlerFired = YES;
             }
             [owner->_lifecycleLock unlock];
         }];
@@ -245,6 +386,10 @@ static BOOL SRABI(id target, SEL selector, const char *result, NSArray<NSString 
 @end
 
 NSDictionary *SRInsertText(id session, NSString *text, SRActionContext *context, NSError **error) {
+    return SRInsertTextAtSpeed(session, text, 120, context, error);
+}
+
+NSDictionary *SRInsertTextAtSpeed(id session, NSString *text, NSUInteger speed, SRActionContext *context, NSError **error) {
     if (!text.length || [text lengthOfBytesUsingEncoding:NSUTF8StringEncoding] > 1024 * 1024) {
         SRFail(error, @"invalid_text"); return nil;
     }
@@ -266,7 +411,8 @@ NSDictionary *SRInsertText(id session, NSString *text, SRActionContext *context,
         !SRABI(path, typing, "v", @[@"@", @"d", speedType, boolType])) {
         SRFail(error, @"text_event_abi_mismatch"); return nil;
     }
-    [path typeText:text atOffset:0 typingSpeed:120 shouldRedact:YES];
+    // typingSpeed is characters a second (1-240 kept; XCTest's own default is 60).
+    [path typeText:text atOffset:0 typingSpeed:MIN(240, MAX(1, speed)) shouldRedact:YES];
     id record = [[recordClass alloc] initWithName:@"Recovered text"];
     if (![record respondsToSelector:@selector(addPointerEventPath:)] ||
         ![session respondsToSelector:@selector(daemonProxy)]) {

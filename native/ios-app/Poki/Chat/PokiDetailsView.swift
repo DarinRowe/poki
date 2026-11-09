@@ -12,121 +12,81 @@ struct PokiDetailsView: View {
     @Environment(\.dismiss) private var dismiss
     var openVoice: () -> Void
     var openSetup: () -> Void
-    var start: [DetailsRoute] = []
-    @State private var path: [DetailsRoute] = []
-    @State private var sheet: DetailsSheet?
+    /// Opens a run in Chats (from the Activity Log).
+    var openSession: (String) -> Void = { _ in }
+    /// The Poki tab's pages: Accounts, History, Voice, Agents and the rest are pushed here, never shown
+    /// as overlays; Chats opens them by setting this path.
+    @Binding var path: NavigationPath
+    var inTab = true
 
     var body: some View {
         NavigationStack(path: $path) {
-            ScrollView {
-                VStack(spacing: 0) {
-                    HStack { Spacer(); Button("Done") { dismiss() }.font(.system(size: 17, weight: .semibold)).foregroundStyle(Site.blue) }
-                        .padding(.horizontal, 20).padding(.top, 4)
-                    header
-                    actions.padding(.horizontal, 16).padding(.bottom, 22)
-                    NavigationLink(value: DetailsRoute.model) { modelRow }
-                        .buttonStyle(.plain)
-                        .groupCard().padding(.horizontal, 16).padding(.bottom, 20)
-                    GroupedSection(title: "STATUS") { status }
-                        .padding(.horizontal, 16).padding(.bottom, 20)
-                    VStack(spacing: 0) {
-                        ChevronRow(title: "Voice and Speech") { sheet = .voice }
-                        ChevronRow(title: "Notifications") { openNotificationSettings() }
-                        ChevronRow(title: "All Settings", divider: false) { sheet = .settings([]) }
+            List {
+                Section {
+                    let issues = Issue.current(model)
+                    Toggle("Poki", isOn: Binding(get: { model.sessionOn }, set: { $0 ? model.startSession() : model.stopSession() }))
+                    // The in-process path has no Poki Runner (ESP-152): its row is hidden, the code kept.
+                    HealthRow(title: "Relay", health: Health.relay(model))
+                    if model.automationPath == .runner { HealthRow(title: "Runner", health: Health.runner(model)) }
+                    if model.recentSteps.last != nil {
+                        NavigationLink(value: DetailsRoute.history) { LabeledContent("Last Action", value: lastRun) }
                     }
-                    .groupCard().padding(.horizontal, 16).padding(.bottom, 32)
+                    if model.sessionOn && !model.runnerPaused || chat.running {
+                        Button("Pause", systemImage: "pause.fill") { chat.stop(); model.pauseRunner() }
+                    } else if model.sessionOn {
+                        Button("Resume", systemImage: "play.fill") { model.wakeRunner() }
+                    }
+                    ForEach(issues) { issue in
+                        IssueRow(issue: issue, openSetup: openSetup)
+                    }
+                } header: {
+                    Text("Status")
+                }
+
+                Section {
+                    NavigationLink(value: DetailsRoute.model) {
+                        let provider = ModelKeys.selectedProvider
+                        let hasKey = ModelKeys.hasKey(provider)
+                        LabeledContent {
+                            Text(hasKey ? ModelKeys.selectedModelName : String(localized: "Add Key")).foregroundStyle(hasKey ? Color.secondary : Color.orange)
+                        } label: {
+                            Label { Text("Accounts") } icon: { ProviderTile(provider: provider, size: 29) }
+                        }
+                    }
+                    .id(ModelKeys.saved)
+                    NavigationLink(value: DetailsRoute.voice) { Label("Voice", systemImage: "waveform") }
+                    NavigationLink(value: DetailsRoute.history) { Label("Activity Log", systemImage: "list.bullet.rectangle") }
+                }
+
+                Section {
+                    NavigationLink(value: DetailsRoute.settings) { Label("Agents and Relay", systemImage: "point.3.connected.trianglepath.dotted") }
+                    NavigationLink(value: SettingsRoute.memory) { Label("Memory", systemImage: "brain") }
+                    NavigationLink(value: DetailsRoute.setup) {
+                        LabeledContent {
+                            Text(model.setupComplete ? String(localized: "Done") : String(localized: "\(SetupStep.shown.filter { !model.isDone($0) }.count) Needed"))
+                                .foregroundStyle(model.setupComplete ? Color.secondary : Color.orange)
+                        } label: { Label("Setup", systemImage: "checklist") }
+                    }
+                    Button { openNotificationSettings() } label: { Label("Notifications", systemImage: "bell.badge") }
+                    NavigationLink(value: SettingsRoute.diagnostics) { Label("Diagnostics", systemImage: "stethoscope") }
                 }
             }
-            .background(Color(.systemGroupedBackground))
-            .toolbar(.hidden, for: .navigationBar)
+            .listStyle(.insetGrouped)
+            .navigationTitle(Text(verbatim: "Poki"))
+            .navigationBarTitleDisplayMode(.large)
             .navigationDestination(for: DetailsRoute.self) { route in
                 switch route {
-                case .model: ModelSettingsView(openAgents: { sheet = .settings([]) })
-                case .history: AllStepsView()
+                case .model: ModelSettingsView()
+                case .history: ActionLogView(openSession: openSession)
+                case .voice: VoiceView(embedded: true)
+                case .settings: SettingsHome(push: { path.append($0) }, openSetup: openSetup)
+                case .setup: SetupChecklist()
                 }
             }
-        }
-        .onAppear { if path.isEmpty, !start.isEmpty { path = start } }
-        .sheet(item: $sheet) { which in
-            switch which {
-            case .voice: VoiceView()
-            case .settings(let start):
-                SettingsView(start: start, openSetup: { sheet = nil; dismiss(); Task { try? await Task.sleep(for: .milliseconds(450)); openSetup() } })
+            .navigationDestination(for: SetupStep.self) { SetupStepPage(step: $0) }
+            .navigationDestination(for: SettingsRoute.self) { route in
+                SettingsDestination(route: route, push: { path.append($0) }, pop: { if !path.isEmpty { path.removeLast() } })
             }
-        }
-    }
-
-    private var header: some View {
-        VStack(spacing: 6) {
-            PokiAvatar(size: 96)
-            Text(verbatim: "Poki").font(.system(size: 28, weight: .semibold)).foregroundStyle(Color(.label))
-            Text("Taps and types on this iPhone for you").font(.system(size: 15)).foregroundStyle(ChatColor.secondary)
-        }
-        .padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 16)
-    }
-
-    private var actions: some View {
-        HStack(spacing: 8) {
-            // Pause: the task in the chat stops and the runner sleeps until the next request.
-            if model.sessionOn && !model.runnerPaused || chat.running {
-                ActionTile(title: "Pause", symbol: "pause.fill") { chat.stop(); model.pauseRunner() }
-            } else {
-                ActionTile(title: model.sessionOn ? "Resume" : "Turn On", symbol: "play.fill") {
-                    if model.sessionOn { model.wakeRunner() } else { model.startSession() }
-                }
-            }
-            ActionTile(title: "Voice", symbol: "mic.fill") { dismiss(); openVoice() }
-            ActionTile(title: "History", symbol: "clock") { path.append(.history) }
-        }
-    }
-
-    private var modelRow: some View {
-        let provider = ModelKeys.selectedProvider
-        let hasKey = ModelKeys.hasKey(provider)
-        return HStack(spacing: 12) {
-            ProviderTile(provider: provider, size: 30)
-            VStack(alignment: .leading, spacing: 0) {
-                Text("Model").font(.system(size: 17)).foregroundStyle(Color(.label))
-                Text(hasKey ? String(localized: "\(ModelKeys.selectedModelName), your \(provider.name) key") : String(localized: "Add your key to chat with Poki"))
-                    .font(.system(size: 13)).foregroundStyle(hasKey ? ChatColor.secondary : Color(.systemOrange))
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            Chevron()
-        }
-        .padding(.vertical, 11).padding(.horizontal, 16)
-        .contentShape(.rect)
-        .id(ModelKeys.saved)
-    }
-
-    @ViewBuilder private var status: some View {
-        let issues = Issue.current(model)
-        Toggle(isOn: Binding(get: { model.sessionOn }, set: { $0 ? model.startSession() : model.stopSession() })) {
-            Text(verbatim: "Poki").font(.system(size: 17))
-        }
-        .tint(ChatColor.green)
-        .padding(.vertical, 6.5).padding(.horizontal, 16)
-        .rowDivider()
-        // The in-process path has no Poki Runner (ESP-152): its row is hidden, the code kept.
-        if model.automationPath == .runner {
-            ValueRow(title: "Relay", health: Health.relay(model))
-            ValueRow(title: "Runner", health: Health.runner(model), divider: model.recentSteps.last != nil || !issues.isEmpty)
-        } else {
-            ValueRow(title: "Relay", health: Health.relay(model), divider: model.recentSteps.last != nil || !issues.isEmpty)
-        }
-        if model.recentSteps.last != nil {
-            Button { path.append(.history) } label: {
-                HStack {
-                    Text("Last Run").font(.system(size: 17)).foregroundStyle(Color(.label))
-                    Spacer()
-                    Text(verbatim: "\(lastRun) ›").font(.system(size: 17)).foregroundStyle(ChatColor.secondary)
-                }
-                .padding(.vertical, 11).padding(.horizontal, 16).frame(minHeight: 44).contentShape(.rect)
-            }
-            .buttonStyle(.plain)
-            .rowDivider(!issues.isEmpty)
-        }
-        ForEach(Array(issues.enumerated()), id: \.element.id) { i, issue in
-            IssueRow(issue: issue, openSetup: { dismiss(); openSetup() }).rowDivider(i < issues.count - 1)
         }
     }
 
@@ -144,12 +104,7 @@ struct PokiDetailsView: View {
     }
 }
 
-enum DetailsRoute: Hashable { case model, history }
-
-private enum DetailsSheet: Identifiable {
-    case voice, settings([SettingsRoute])
-    var id: String { switch self { case .voice: "voice"; case .settings: "settings" } }
-}
+enum DetailsRoute: Hashable { case model, history, voice, settings, setup }
 
 // MARK: Rows
 
@@ -234,22 +189,30 @@ private struct ValueRow: View {
     }
 }
 
+private struct HealthRow: View {
+    var title: LocalizedStringKey
+    var health: Health
+    var body: some View {
+        LabeledContent(title) {
+            Label { Text(health.word) } icon: { Image(systemName: "circle.fill").font(.system(size: 9)).foregroundStyle(ValueRow.dot(health.color)) }
+        }
+    }
+}
+
 private struct IssueRow: View {
     @Environment(AppModel.self) private var model
     var issue: Issue
     var openSetup: () -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 4) { Text(verbatim: "●").foregroundStyle(Color(.systemRed)); Text(issue.title) }
-                .font(.system(size: 15, weight: .semibold)).foregroundStyle(Color(.label))
-            Text(issue.text).font(.system(size: 15)).foregroundStyle(ChatColor.secondary).fixedSize(horizontal: false, vertical: true)
+            Label(issue.title, systemImage: "exclamationmark.triangle.fill").font(.subheadline.weight(.semibold))
+                .symbolRenderingMode(.multicolor)
+            Text(issue.text).font(.subheadline).foregroundStyle(Color(.secondaryLabel))
             if let button = issue.button {
-                Button { issue.act(model, openSetup: openSetup) } label: { Text(button).font(.system(size: 15, weight: .semibold)).foregroundStyle(Site.blue) }
-                    .buttonStyle(.plain).padding(.top, 2)
+                Button(button) { issue.act(model, openSetup: openSetup) }.font(.subheadline.weight(.semibold)).buttonStyle(.borderless)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 11).padding(.horizontal, 16)
+        .padding(.vertical, 2)
     }
 }
 
@@ -276,11 +239,30 @@ struct ProviderTile: View {
     var provider: ModelProvider
     var size: CGFloat = 29
     var body: some View {
-        Text(verbatim: provider.mark)
-            .font(.system(size: provider == .custom ? 11 : 13, weight: .bold))
-            .foregroundStyle(.white)
-            .frame(width: size, height: size)
-            .background(Color(hex: provider.tile), in: .rect(cornerRadius: 7, style: .continuous))
-            .accessibilityHidden(true)
+        Group {
+            if let logo = provider.logo {
+                Image(logo).renderingMode(.template).resizable().scaledToFit().padding(size * 0.2)
+            } else {
+                Image(systemName: "server.rack").font(.system(size: size * 0.45, weight: .semibold))
+            }
+        }
+        .foregroundStyle(.white)
+        .frame(width: size, height: size)
+        .background(Color(hex: provider.tile), in: .rect(cornerRadius: size * 0.225, style: .continuous))
+        .accessibilityHidden(true)
+    }
+}
+
+extension ModelProvider {
+    /// The provider's own logo in the asset catalog (Poki/ProviderIcons).
+    var logo: String? {
+        switch self {
+        case .anthropic: "Provider-anthropic"
+        case .openai, .chatgpt: "Provider-openai"
+        case .gemini: "Provider-googlegemini"
+        case .deepseek: "Provider-deepseek"
+        case .openrouter: "Provider-openrouter"
+        case .custom: nil
+        }
     }
 }

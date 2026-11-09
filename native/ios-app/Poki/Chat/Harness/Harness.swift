@@ -1,13 +1,14 @@
 // The chat's prompt and tools are the Mac Poki Agent's, copied from this repository at main 729c77e:
-// - agent-system.md is agent/prompts/system.md byte for byte (the same text as agent/prompts/pi-app.md,
-//   which agent/task-runner.mjs loads);
+// - agent-system.md is agent/prompts/system.md (the same text as agent/prompts/pi-app.md, which
+//   agent/task-runner.mjs loads), except two sentences that named tools the app lacks: a locked phone
+//   is the owner's to unlock and a password prompt is handed to them, and a purchase is a plain tap;
 // - the instructions put PokiCore's own MCP instructions first, as task-runner.mjs puts the MCP server's
 //   instructions first;
 // - look, do and status are PokiCore's tools with their MCP descriptions;
 // - report_plan and finish_task are task-runner.mjs's harness tools (#startModel), descriptions and
 //   schemas unchanged.
 // Not copied, because the app has none of their tools: agent/prompts/call-draft.md and
-// agent/skills/iphone-unlock/SKILL.md, and unlock_device.
+// agent/skills/iphone-unlock/SKILL.md, unlock_device and handle_alert.
 import Foundation
 import PokiCore
 
@@ -25,6 +26,21 @@ enum Harness {
     }()
 
     static var instructions: String { [PokiCore.toolInstructions, system].joined(separator: "\n\n") }
+
+    /// The instructions for a task: the above, then the saved notes and the routines that fit it.
+    @MainActor static func instructions(for task: String) -> String {
+        let brief = PokiCore.memoryBrief(for: task)
+        var parts = [instructions]
+        // Poki learns the owner's repeated tasks: a saved routine runs them in one call next time.
+        parts.append("Before starting, check whether a saved routine covers this task (routines {action: \"list\"}) and run it with do {run: name} if so. When a task worked and was not a routine yet, save it with routines {action: \"save\", name, description} before finish_task, with a short name the owner would use, so it can be repeated next time.")
+        // Testing: a model decides approvals from what the owner said. A refused step goes through
+        // once the owner says yes to it, so the agent asks in words and tries again.
+        if ApprovalClassifier.isOn {
+            parts.append("Approvals here are decided automatically from what the owner said in this chat. When a step is refused (declined), do not tell the owner to tap anything: ask them in plain words whether they want that step done, and if they say yes, send the same step again.")
+        }
+        if !brief.isEmpty { parts.append(brief) }
+        return parts.joined(separator: "\n\n")
+    }
 
     static let tools: [ToolSpec] = phoneTools + [reportPlan, finishTask]
 

@@ -31,8 +31,8 @@ PokiCore (Swift, `native/ios/PokiCore`) and PokiLauncher (Rust with a C ABI, `na
 
 ## Build
 
-GitHub Actions (`.github/workflows/ios-app.yml`) builds `Poki-unsigned.ipa` on demand and for
-`ios-v*` release tags, runs it on the iOS Simulator and uploads a screenshot of every screen in light and
+GitHub Actions (`.github/workflows/ios-app.yml`) builds `Poki-unsigned.ipa` on demand, for
+`ios-v*` release tags and for `ios-alpha-*` / `ios-prealpha-*` tags (see `docs/release-channels.md`), runs it on the iOS Simulator and uploads a screenshot of every screen in light and
 dark mode (artifact `simulator-smoke`, folder `shots`). Locally on a Mac with Xcode 26 or later:
 
 ```sh
@@ -43,7 +43,7 @@ open native/ios-app/Poki.xcodeproj
 
 `native/ios-app/scripts/app-tests.sh SIMULATOR_UDID` builds `PokiTests` and runs it inside Poki on a booted simulator (the in-process transport's clipboard and session answers).
 
-`-pokiScreen home|setup|connect|debug|activity|steps|status|connector|details|model|voice` opens that screen at launch (home is the chat, setup its full-screen flow, connect the Settings sheet, debug Diagnostics inside it, details Poki's details, steps its history); `-pokiChat empty|working|approved` and `-pokiVoice ready|listening|working` show the ESP-171 boards' sample chat and voice faces; `-pokiSetupStep N` opens setup at step N, and `-pokiSample B|C` fills the status, history and Live Activity with sample steps and an approval, and `-pokiSample PIN` shows a sample pairing code, for screenshots only; on a simulator `-pokiLoopback cellular` forces the cellular-only loopback hint.
+`-pokiScreen home|setup|connect|debug|activity|steps|status|connector|details|model|voice` opens that screen at launch (home is the chat, setup its full-screen flow, connect the Settings sheet, debug Diagnostics inside it, details Poki's details, steps its history); `-pokiChat empty|working|approved` and `-pokiVoice ready|listening|working` show the ESP-171 boards' sample chat and voice faces; `-pokiSetupStep N` opens setup at step N, and `-pokiSample B|C` fills the status, history and Live Activity with sample steps and an approval, and `-pokiSample PIN` shows a sample pairing code, for screenshots only; on a simulator `-pokiLoopback cellular` forces the cellular-only loopback hint, `-pokiLoopback working` a loopback that answers, and `-pokiSigningDays 1` a signing that ends in a day.
 
 Poki is in English and Simplified Chinese and follows the iPhone's language. The app's screens use the String Catalog `Shared/Localizable.xcstrings`, the Live Activity its own table `Shared/LiveActivity.xcstrings` (see `Shared/ActivityWords.swift`), and the permission prompts `Poki/InfoPlist.xcstrings`. Poki's own status words stay in English inside the app (the code compares them and the agent reads them) and are looked up where they reach the screen; the launcher's fix sentences have entries too. Steps an agent reports, logs and diagnostics output stay as they come. Add `-AppleLanguages '(zh-Hans)'` to a launch to see Chinese without changing the simulator's language.
 
@@ -55,7 +55,11 @@ Poki is in English and Simplified Chinese and follows the iPhone's language. The
   the idle time (default 60 s), from Stop on the Live Activity or in Poki, and when Poki is turned off;
   the next agent request opens a new one (a few seconds; iOS asks for the passcode only once per
   boot). If it cannot be opened, an agent's call answers at once with the reason, and the next call,
-  Poki coming to the front, or an agent connecting tries again.
+  Poki coming to the front, or an agent connecting tries again. An open that has not answered in 5 s
+  is waiting on iOS's passcode prompt (after Poki restarts, and 8 hours after the passcode was last
+  entered): the Live Activity shows Passcode for automation, Poki's home asks the owner, and the agent
+  reads that only the owner can enter it. When iOS gives up, after about a minute, the call fails with
+  that reason.
 - Nothing listens on a port: PokiCore's requests are answered inside Poki.
 - The built-in local connection dials itself again when it fails or drops while Poki is on: 1, 2, 4, 8,
   16, 30, 30, 30 s, then it stops until the owner taps Enable Local Connection in Setup. Opening Poki
@@ -113,6 +117,17 @@ the bridge runs the tools that move the phone (`open_settings`, `read_screen`, `
 - A dropped connection sends nothing again. A call outlives the session that asked for it; the next
   session is told how it ended instead of asking for it again.
 - Stop talking (or speaking over Poki) cancels the reply, never the step running on the phone.
+- Once an answer has played and no step it asked for is running, the conversation waits 8 s for the
+  person to go on in the same session. After 8 s of silence it ends and lets go of the microphone, so
+  iOS's orange dot goes off; a conversation opened with nothing said ends the same way. A
+  conversation opened within 5 minutes of the last end is told up to 6 lines said in that last
+  conversation with something said in it (a conversation nobody spoke in changes nothing), from
+  memory (the chat keeps its own copy as before). In the background Poki stops listening at once, also
+  while connecting, unless a step is running or its answer is still to be said (the step brings another
+  app to the front); that conversation ends as soon as that is said.
+  A conversation never waits for the server for ever: when it owes something (the end of the person's
+  speech, an answer, the end of the audio) and the server says nothing for 60 s, or 30 s after Poki went
+  to the background, it ends. A step that is running is not counted; its result starts a new wait.
 - A `poki://voice` link, from a web page or another app, only opens Voice: a link never
   changes the bridge and never turns on the microphone. The person enters the address and taps Talk
   to Poki.
@@ -174,9 +189,12 @@ connection explicitly; an existing service response alone does not finish the se
   change an external VPN configuration or start its local VPN merely because the app opened. While
   Poki is on, its own tunnel is dialled again after a failure (see above), and stops when it detects another VPN (best effort, as above).
 - **Proxy app**: Surge (module, `surge:///install-module?url=`), Loon (plugin,
-  `loon://import?plugin=`), Shadowrocket (its "Include route 10.7.0.1/32" toggle) or sing-box (one
-  line in the tun inbound). Files in `deploy/proxy-modules/`, served from the fork's raw GitHub URL
-  for now (`ProxyApps.modulesBase`).
+  `loon://import?plugin=`), Shadowrocket (its "Include route 10.7.0.1/32" toggle), sing-box (one
+  line in the tun inbound), and, as users report rather than as their makers document, Stash and
+  Clash Mi (`loopback-address` in the tun section) and Quantumult X (`reflected_routes` in
+  `[general]`); those entries say so on the page. Files and sources in `deploy/proxy-modules/`,
+  served from the fork's raw GitHub URL for now (`ProxyApps.modulesBase`). Each row's tag is live:
+  the chosen app reads Working while 10.7.0.1 answers and Not Answering while it does not.
 - **External build without a proxy app**: LocalDevVPN (App Store). This is an additional app and
   must be tested with the installed iOS version. It may displace another packet-tunnel VPN.
 
@@ -184,6 +202,38 @@ The setup step completes only when a TCP connection to the phone's RemotePairing
 service succeeds. Selecting an app, saving a profile or a VPN's Connected label alone never completes
 it. Built-in VPN transport cannot be validated in the Simulator. See [the design and acceptance
 checks](../../docs/ios-loopback.md).
+
+## iPad, iPhone Duo: Poki beside the app it drives
+
+Poki builds for iPhone and iPad (every orientation on iPad; the iPhone Duo's inner display is
+regular width, laid out like an iPad). The point of the larger screens is Poki, or any agent chat,
+beside the app being driven: on the Duo's inner display in landscape iOS 27.1 puts two apps side by
+side (a fixed 50/50 Split View, with app pairs); on iPadOS 26 apps are resizable windows, with
+Stage Manager. The in-process path keys on the driven app's frame, not on either layout: with
+several apps on screen Poki's own process is never the front app, and when the front app's frame
+is smaller than the screen (its half of the Duo, its window on the iPad) that frame is the viewport
+(`PKInProcess.viewport`): the element tree's frames and the screenshot are relative to it,
+`/wda/screen` reports its size, and touches are moved back onto the screen. An app that fills the
+screen has no viewport. Not yet checked in the gym on an iPad simulator with two windows.
+
+## Pairing by iOS version, and the pairing file's life
+
+Pairing on the phone itself (Settings > Privacy & Security > Developer Mode > Pair with Poki) exists
+from iOS 27 (`SetupStep.onDevicePairing`). On earlier versions the pairing page shows the other way
+only: pair from a computer with Poki Setup (or pymobiledevice3, jitterbugpair, StikPair), then send
+the file to the phone. Poki takes a pairing file three ways besides Import Pairing File:
+
+- A file opened with Poki from AirDrop or Files (`CFBundleDocumentTypes`: property lists and
+  `.mobiledevicepairing`).
+- `poki://pairing?url=http://<computer on the LAN>:<port>/<file>&sha256=<hex>`: Poki fetches the
+  file over the local network and checks the digest; Poki Setup shows this link as a code for the
+  Camera. `poki://pairing?data=<base64url>` carries a small file in the link itself.
+- `poki://setup?relay=<origin>` sets the relay address Poki Setup configured.
+
+The pairing file and the setup state are mirrored into the Keychain (`SetupVault`,
+`ThisDeviceOnly`). An update keeps the container anyway; a delete-and-reinstall, or a sideloading
+tool that could not keep the container, gets both back on the first launch as long as the same team
+signs the app, so the owner is not sent through setup again.
 
 ## Device test checklist
 

@@ -56,6 +56,9 @@ final class RustPairing: NSObject, DevicePairing, NetServiceDelegate {
             case "advertise":
                 DispatchQueue.main.async { self?.publish(value) }
                 onEvent(.advertising)
+            case "connected":
+                let peer = value["peer"] as? String ?? "?"
+                Task { @MainActor in AppLog.shared.add("pairing", "Settings connected (\(peer)); making the code") }
             case "pin": onEvent(.pin(value["pin"] as? String ?? ""))
             case "paired":
                 DispatchQueue.main.async { self?.unpublish() }
@@ -97,7 +100,8 @@ final class RustPairing: NSObject, DevicePairing, NetServiceDelegate {
         service.delegate = self
         service.publish()
         self.service = service
-        Task { @MainActor in AppLog.shared.add("pairing", "Bonjour publication requested") }
+        let listening = value["listening"] as? String ?? "port \(port)"
+        Task { @MainActor in AppLog.shared.add("pairing", "listening on \(listening); Bonjour publication requested") }
     }
 
     private func unpublish() { service?.stop(); service = nil }

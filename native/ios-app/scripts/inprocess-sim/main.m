@@ -25,8 +25,11 @@ static NSDictionary *Run(NSString *mode, NSString *tag, NSString *text) {
         progress(@"read");
         out[@"close"] = [PKInProcess.shared close];
         progress(@"closed");
+        // A touch after close must not go through the closed session: it is refused, or it goes
+        // through a session opened for it (a new generation), as touch prepares one itself.
+        uint64_t beforeTouch = [PKInProcess.shared generation];
         PKOutcome *refused = [PKInProcess.shared touch:@[@[[PKTouchPoint at:CGPointMake(10, 10) offset:0], [PKTouchPoint at:CGPointMake(10, 10) offset:0.05]]] timeout:2];
-        out[@"closed_touch"] = @{@"delivery": @(refused.delivery), @"code": refused.code ?: @""};
+        out[@"closed_touch"] = @{@"delivery": @(refused.delivery), @"code": refused.code ?: @"", @"generation_before": @(beforeTouch), @"generation_after": @([PKInProcess.shared generation])};
         progress(@"touch refused");
         [NSThread sleepForTimeInterval:2];
         out[@"prepare2"] = [PKInProcess.shared prepare];
@@ -44,6 +47,13 @@ static NSDictionary *Run(NSString *mode, NSString *tag, NSString *text) {
     double v[4];
     for (int i = 0; i < 4; i++) v[i] = [[before substringWithRange:[m rangeAtIndex:i + 1]] doubleValue];
     CGPoint c = CGPointMake(v[0] + v[2] / 2, v[1] + v[3] / 2);
+    // The tree's frames are relative to the front app's part of the screen (viewport); a touch is
+    // on the whole screen, as InProcessWDA moves it.
+    CGRect viewport = PKInProcess.shared.viewport;
+    if (!CGRectIsNull(viewport)) {
+        out[@"viewport"] = NSStringFromCGRect(viewport);
+        c.x += viewport.origin.x; c.y += viewport.origin.y;
+    }
     PKOutcome *tap = [PKInProcess.shared touch:@[@[[PKTouchPoint at:c offset:0], [PKTouchPoint at:c offset:0.05]]] timeout:5];
     out[@"tap"] = @(tap.delivery);
     [NSThread sleepForTimeInterval:1];

@@ -16,7 +16,7 @@ use std::{
     fmt,
     net::{IpAddr, SocketAddr},
     path::Path,
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tokio::net::TcpStream;
 
@@ -83,7 +83,16 @@ impl std::error::Error for RemoteError {}
 fn fail(stage: Stage) -> impl FnOnce(IdeviceError) -> RemoteError {
     move |error| RemoteError {
         stage,
-        detail: error.to_string(),
+        detail: describe(&error),
+    }
+}
+
+/// idevice's socket error reads only "device socket io failed"; the I/O error under it tells an
+/// end of stream from a reset.
+fn describe(error: &IdeviceError) -> String {
+    match error {
+        IdeviceError::Socket(io) => format!("{error}: {io}"),
+        _ => error.to_string(),
     }
 }
 
@@ -143,10 +152,16 @@ pub async fn connect(
     let stream = connect_tcp(addr).await?;
     let mut control = RemotePairingClient::new(RpPairingSocket::new(stream), sending_host);
     trace("remote pairing handshake");
+    let asked = Instant::now();
     control
         .attempt_pair_verify()
         .await
-        .map_err(fail(Stage::Handshake))?;
+        .map_err(|error| RemoteError {
+            stage: Stage::Handshake,
+            // How long the other side held the connection before it ended tells the phone's own
+            // refusal (at once) from a proxy app that gave up reaching the phone (its dial timeout).
+            detail: format!("{}, after {:.1} s", describe(&error), asked.elapsed().as_secs_f64()),
+        })?;
     trace("pair-verify");
     // No fallback to pair-setup: the bridge never prompts, and a rejected file needs a new pairing.
     control

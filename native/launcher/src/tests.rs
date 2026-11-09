@@ -1,5 +1,5 @@
 use super::*;
-use crate::device::{LOOPBACK_FIX, PAIRING_FIX, Pairing, PairingKind};
+use crate::device::{Device, LOOPBACK_FIX, PAIRING_FIX, Pairing, PairingKind};
 use idevice::remote_pairing::RpPairingFile;
 use serde_json::json;
 use std::{
@@ -42,8 +42,12 @@ fn pairing_files_of_either_kind_are_told_apart() {
     std::fs::remove_file(&path).unwrap();
 }
 
+/// The tests that need 127.0.0.1:49152 free, or that listen on it, take turns.
+static PORT_49152_TAKEN: Mutex<()> = Mutex::new(());
+
 #[test]
 fn without_the_loopback_it_waits_for_the_network_and_keeps_trying() {
+    let _port = PORT_49152_TAKEN.lock().unwrap_or_else(|e| e.into_inner());
     let path = temp("rp2.plist");
     std::fs::write(&path, RpPairingFile::generate("Poki").to_bytes()).unwrap();
     // Nothing listens on 127.0.0.1:49152 here, as on a phone whose loopback is off.
@@ -59,6 +63,33 @@ fn without_the_loopback_it_waits_for_the_network_and_keeps_trying() {
     launcher.stop();
     assert_eq!(launcher.status()["state"], "idle");
     std::fs::remove_file(&path).unwrap();
+}
+
+/// GitHub issue 69: the loopback takes the connection, then the phone's remote pairing service never
+/// answers. Developer Mode is on (it cannot go off without a restart), so that is not the fix, and
+/// the pairing was never checked, so the app must not read it as refused.
+#[tokio::test]
+async fn a_remote_pairing_service_that_takes_the_connection_and_never_answers_is_not_called_developer_mode() {
+    let _port = PORT_49152_TAKEN.lock().unwrap_or_else(|e| e.into_inner());
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", crate::remote::REMOTE_PAIRING_PORT)).await.unwrap();
+    tokio::spawn(async move {
+        while let Ok((stream, _)) = listener.accept().await {
+            drop(stream);
+        }
+    });
+    let path = temp("rp-silent.plist");
+    std::fs::write(&path, RpPairingFile::generate("Poki").to_bytes()).unwrap();
+    let mut pairing = Pairing::read(&path, None).unwrap();
+    let failure = match Device::open("127.0.0.1".parse().unwrap(), &mut pairing, Duration::from_secs(5)).await {
+        Ok(_) => panic!("a service that closes every connection opened a tunnel"),
+        Err(failure) => failure,
+    };
+    std::fs::remove_file(&path).unwrap();
+    assert!(failure.detail.starts_with("remote pairing handshake failed"), "{}", failure.detail);
+    let fix = failure.fix.expect("the owner is told what to do");
+    assert!(!fix.contains("Developer Mode"), "{fix}");
+    // The app reads "Pair again" as the phone refusing the pairing (AppModel.verifyPairing, runnerChanged).
+    assert!(!fix.contains("Pair again"), "{fix}");
 }
 
 #[test]
@@ -145,4 +176,36 @@ fn disk_image_failures_name_their_own_fix() {
     let network = classify(&IdeviceError::Http("connection refused".into()));
     assert_eq!(network.code, Some("network"));
     assert_eq!(network.fix.as_deref(), Some(crate::device::NETWORK_FIX));
+}
+
+/// GitHub issue 69 and ESP-225: a failure on the way to the phone is not Developer Mode. Only the
+/// phone saying so (DeveloperModeStatus false, or its "Developer mode is not enabled" error) is.
+/// Anything else that cannot be told apart is "can't reach this iPhone", with the loopback first.
+#[test]
+fn only_the_phone_saying_so_is_called_developer_mode_off() {
+    use crate::remote::{RemoteError, Stage};
+    use idevice::IdeviceError;
+    let says_developer_mode_off = |failure: &crate::device::Failure| {
+        failure.code == Some("developer_mode") || failure.fix.as_deref().is_some_and(|fix| fix.starts_with("Turn on Developer Mode"))
+    };
+    for stage in [Stage::Connect, Stage::Handshake, Stage::PairVerify, Stage::Listener, Stage::Tunnel, Stage::Rsd] {
+        let failure = crate::device::remote_failure(RemoteError { stage, detail: "device socket io failed".into() });
+        assert!(!says_developer_mode_off(&failure), "{stage:?}: {:?}", failure.fix);
+    }
+    for stage in [Stage::Listener, Stage::Tunnel, Stage::Rsd] {
+        let failure = crate::device::remote_failure(RemoteError { stage, detail: "x".into() });
+        assert_eq!(failure.code, Some("unreachable"), "{stage:?}");
+        let fix = failure.fix.unwrap();
+        let order: Vec<usize> = ["Setup › Loopback", "Setup › Pairing", "Developer Mode"].iter().map(|step| fix.find(step).unwrap_or_else(|| panic!("{step} in {fix}"))).collect();
+        assert!(order.windows(2).all(|pair| pair[0] < pair[1]), "loopback, then pairing, then Developer Mode: {fix}");
+    }
+
+    assert!(says_developer_mode_off(&crate::ddi::without_cryptexd(Some(false))));
+    assert!(!says_developer_mode_off(&crate::ddi::without_cryptexd(Some(true))));
+    assert!(!says_developer_mode_off(&crate::ddi::without_cryptexd(None)));
+
+    // The runner's session ends after the disk image mounted, which needs Developer Mode on.
+    assert!(!says_developer_mode_off(&launch::ended_before_ready(Ok(()))));
+    assert!(!says_developer_mode_off(&launch::ended_before_ready(Err(IdeviceError::UnexpectedResponse("test failed".into())))));
+    assert!(says_developer_mode_off(&launch::ended_before_ready(Err(IdeviceError::DeveloperModeNotEnabled))));
 }

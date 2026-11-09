@@ -41,21 +41,34 @@ typedef NS_ENUM(NSInteger, PKDelivery) {
 /// stays up. Keys: closed (whether one was open), generation (the one that ended), seconds. The next
 /// prepare opens a new session; iOS asks for no passcode again within the same boot.
 - (NSDictionary<NSString *, id> *)close;
+/// Automation Mode (and its banner) off with the session kept open, where iOS offers a way; the next
+/// prepare turns it on again. Keys: paused, how, selectors.
+- (NSDictionary<NSString *, id> *)pauseAutomation;
 /// One or more fingers, each a path pressed at its first point and lifted at its last, sent as one
 /// event. Waits up to `timeout` for the daemon's reply; a dispatched event is never sent again.
 - (PKOutcome *)touch:(NSArray<NSArray<PKTouchPoint *> *> *)fingers timeout:(double)timeout;
 /// Types into whatever field has the keyboard focus. Does not focus or clear.
 - (PKOutcome *)type:(NSString *)text timeout:(double)timeout;
+/// The same at `speed` characters a second (PokiCore sends a `frequency` per burst; 120 without one).
+- (PKOutcome *)type:(NSString *)text typingSpeed:(NSUInteger)speed timeout:(double)timeout;
 /// Whether the screen can be read from here: the front app (accessibility), its element tree, and a
 /// screenshot, each timed. Keys per part: *_ok, *_seconds, *_error, and counts.
 - (NSDictionary<NSString *, id> *)readProbe;
-/// A PNG of the main screen, or nil and why.
+/// A picture of the main screen (a JPEG through XCTest's quality API where it exists, else a PNG), or nil and why.
 - (nullable NSData *)screenshot:(NSString *_Nullable *_Nullable)code;
 /// The app in front: bundleId, name, pid. Empty when accessibility gives none.
 - (NSDictionary<NSString *, id> *)frontApp;
+/// The front app's frame when it does not fill the screen (its half of the iPhone Duo's inner
+/// display, its window on an iPad, with Poki beside it), else CGRectNull. Set by the last tree read, front
+/// read or screenshot. The tree's frames and the screenshot are relative to it, and touches are
+/// offset by it, so the agent sees and drives the one app as if it had the screen.
+@property (nonatomic, readonly) CGRect viewport;
 /// The front app's elements in WebDriverAgent's XML source format, and the element with the
 /// keyboard focus (keys value, x, y, width, height) when there is one.
 - (nullable NSString *)sourceXML:(NSDictionary *_Nullable *_Nullable)focused code:(NSString *_Nullable *_Nullable)code;
+/// The same, bounded as WebDriverAgent's snapshotMaxDepth and snapshotMaxChildren settings bound
+/// it (0 for either: no bound beyond the AX server's own), so a dense screen reads in time.
+- (nullable NSString *)sourceXML:(NSDictionary *_Nullable *_Nullable)focused maxDepth:(NSInteger)maxDepth maxChildren:(NSInteger)maxChildren code:(NSString *_Nullable *_Nullable)code;
 /// home, lock, volumeUp or volumeDown. Nil when pressed, else why not.
 - (nullable NSString *)press:(NSString *)name;
 /// launch, activate or terminate an app by its bundle id. Nil when done, else why not.

@@ -4,6 +4,8 @@
 #import <notify.h>
 #import <objc/message.h>
 #import <objc/runtime.h>
+#import <unistd.h>
+#import <UIKit/UIKit.h>
 
 @interface NSObject (PKObservedPrivateAPI)
 - (id)initForTouchAtPoint:(CGPoint)point offset:(double)offset;
@@ -25,6 +27,8 @@
 - (id)screenshot;
 - (NSData *)PNGRepresentation;
 - (void)_XCT_requestBundleIDForPID:(int)pid reply:(void (^)(NSString *, NSError *))reply;
+- (void)_XCT_requestScreenshotOfScreenWithID:(long long)screenID withRect:(CGRect)rect uti:(NSString *)uti compressionQuality:(double)quality withReply:(void (^)(NSData *, NSError *))reply;
+- (long long)displayID;
 - (NSArray *)children;
 - (long long)elementType;
 - (CGRect)frame;
@@ -88,6 +92,65 @@ typedef id (*PKMapAttributes)(id, SEL, id, BOOL);
 /// XCUIApplication refuses to exist outside a UI test bundle ("Device is not configured for UI
 /// testing"), so the screen is read the way WebDriverAgent's FBXCAXClientProxy does: the AX client's
 /// own elements and snapshot request, which testmanagerd answers for any process with a session.
+/// Synchronous accessibility requests have no deadline of their own. One to an app whose main thread
+/// was busy (Settings bringing up its keyboard on the CI simulator) had not returned after 12 minutes,
+/// and every read, picture and launch queued behind it hung with it, the watchdog's new sessions
+/// included: the agent was blind for the rest of the run (the gym's finding 36). XCTest asks an app
+/// to confirm its run loop is responsive within 2 s before it asks for a snapshot; here each request
+/// runs on its own thread and is given up after `seconds`: the caller gets nil and a code at once,
+/// the thread ends when the app answers, and until then nothing else is asked of that pid (it would
+/// hang the same way). `pid` 0 stands for the accessibility server itself.
+static NSObject *PKHungLock(void) {
+    static NSObject *lock;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ lock = [NSObject new]; });
+    return lock;
+}
+static NSMutableDictionary<NSNumber *, NSNumber *> *PKHungSince(void) {
+    static NSMutableDictionary *since;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ since = [NSMutableDictionary dictionary]; });
+    return since;
+}
+static NSString *PKUnresponsive(int pid, NSTimeInterval seconds) {
+    if (pid <= 0) return [NSString stringWithFormat:@"accessibility_unresponsive: the accessibility server has not answered for %.0f s", seconds];
+    return [NSString stringWithFormat:@"app_unresponsive: the app in front (pid %d) has not answered an accessibility request for %.0f s (its main thread is busy); the picture still shows the screen and a tap on a point of it works; the tree comes back when the app answers", pid, seconds];
+}
+static id PKBounded(int pid, NSTimeInterval seconds, NSString **code, id (^work)(void)) {
+    NSObject *lock = PKHungLock();
+    NSTimeInterval now = NSProcessInfo.processInfo.systemUptime;
+    @synchronized (lock) {
+        NSNumber *since = PKHungSince()[@(pid)];
+        if (since) { if (code) *code = PKUnresponsive(pid, now - since.doubleValue); return nil; }
+    }
+    dispatch_semaphore_t done = dispatch_semaphore_create(0);
+    __block id result = nil;
+    __block BOOL finished = NO, abandoned = NO;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        id value = nil;
+        @try { value = work(); } @catch (__unused NSException *e) {}
+        @synchronized (lock) {
+            finished = YES;
+            if (abandoned) {
+                [PKHungSince() removeObjectForKey:@(pid)];
+                NSLog(@"PokiInProcess: pid %d answered after %.1f s; it is asked again", pid, NSProcessInfo.processInfo.systemUptime - now);
+            } else {
+                result = value;
+            }
+        }
+        dispatch_semaphore_signal(done);
+    });
+    if (dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(seconds * NSEC_PER_SEC))) == 0) return result;
+    @synchronized (lock) {
+        if (finished) return result;
+        abandoned = YES;
+        PKHungSince()[@(pid)] = @(now);
+    }
+    NSLog(@"PokiInProcess: pid %d did not answer an accessibility request within %.1f s; given up, nothing more is asked of it until it answers", pid, seconds);
+    if (code) *code = PKUnresponsive(pid, seconds);
+    return nil;
+}
+
 static id PKAXClient(void) {
     id device = [NSClassFromString(@"XCUIDevice") sharedDevice];
     return [device respondsToSelector:@selector(accessibilityInterface)] ? [device accessibilityInterface] : nil;
@@ -102,16 +165,47 @@ static int PKAXPid(id element) {
 }
 
 static NSArray *PKActiveApplications(id ax) {
-    id active = [ax respondsToSelector:@selector(activeApplications)] ? [ax activeApplications] : nil;
+    if (![ax respondsToSelector:@selector(activeApplications)]) return @[];
+    id active = PKBounded(0, 4, NULL, ^id { return [ax activeApplications]; });
     return [active isKindOfClass:NSArray.class] ? active : @[];
 }
 
 static id PKRequestSnapshot(id ax, id element, NSInteger maxDepth, NSInteger maxNodes, NSString **code);
+static id PKRequestSnapshotWithin(NSTimeInterval seconds, id ax, id element, NSInteger maxDepth, NSInteger maxNodes, NSString **code);
 
 /// The front app's AX element. One active app is the front one. Several (an alert over an app, split
 /// screen, picture in picture): SpringBoard set aside, the one owning the screen's centre.
+/// The system app's frame (the screen in its current orientation), read again after 5 s: one AX
+/// round trip on every read before.
+static CGRect PKScreenFrame(id ax, id system) {
+    static CGRect frame;
+    static NSTimeInterval at = -100;
+    static NSObject *lock;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ lock = [NSObject new]; frame = CGRectNull; });
+    NSTimeInterval now = NSProcessInfo.processInfo.systemUptime;
+    @synchronized (lock) { if (now - at < 5 && !CGRectIsEmpty(frame)) return frame; }
+    id root = system ? PKRequestSnapshotWithin(3, ax, system, 1, 1, NULL) : nil;
+    CGRect read = root ? [root frame] : CGRectNull;
+    @synchronized (lock) { if (!CGRectIsEmpty(read)) { frame = read; at = now; } }
+    return read;
+}
+
+static id PKForegroundElementTimed(id ax, NSString *(^bundleForPID)(int));
+
 static id PKForegroundElement(id ax, NSString *(^bundleForPID)(int)) {
+    NSTimeInterval started = NSProcessInfo.processInfo.systemUptime;
+    id chosen = PKForegroundElementTimed(ax, bundleForPID);
+    int ms = (int)lround((NSProcessInfo.processInfo.systemUptime - started) * 1000);
+    if (ms > 60) NSLog(@"PokiInProcess timing: foreground %d ms", ms);
+    return chosen;
+}
+
+static id PKForegroundElementTimed(id ax, NSString *(^bundleForPID)(int)) {
+    NSTimeInterval started = NSProcessInfo.processInfo.systemUptime;
     NSArray *active = PKActiveApplications(ax);
+    int activeMs = (int)lround((NSProcessInfo.processInfo.systemUptime - started) * 1000);
+    if (activeMs > 60) NSLog(@"PokiInProcess timing: active apps %d ms, %lu", activeMs, (unsigned long)active.count);
     if (active.count == 1 && PKAXPid(active.firstObject) > 0) return active.firstObject;
     id system = [ax respondsToSelector:@selector(systemApplication)] ? [ax systemApplication] : nil;
     int springBoardPID = PKAXPid(system);
@@ -125,16 +219,33 @@ static id PKForegroundElement(id ax, NSString *(^bundleForPID)(int)) {
     }
     if (candidates.count == 1) return candidates.firstObject;
     if (!candidates.count) return springBoard ?: system;
+    CGRect screen = PKScreenFrame(ax, system);
+    // The app under the screen's centre is the front one. Poki's own process is the answer only when
+    // it is there and fills the screen; beside the target app (the iPhone Duo's side-by-side apps,
+    // iPad windows) the centre can fall on Poki, and the other app is the one being driven. (A
+    // process in the background still reports a full-screen frame, so the frame alone says nothing.)
+    id own = nil;
+    for (id element in candidates) if (PKAXPid(element) == getpid()) own = element;
+    NSMutableArray *others = [candidates mutableCopy];
+    if (own) [others removeObject:own];
     SEL hitTest = NSSelectorFromString(@"accessibilityElementForElementAtPoint:error:");
-    CGRect screen = system ? [PKRequestSnapshot(ax, system, 1, 1, NULL) frame] : CGRectNull;
+    int hitPID = 0;
     if (!CGRectIsEmpty(screen) && [ax respondsToSelector:hitTest]) {
-        NSError *error;
-        id hit = nil;
-        @try { hit = ((PKElementAtPoint)objc_msgSend)(ax, hitTest, CGPointMake(CGRectGetMidX(screen), CGRectGetMidY(screen)), &error); }
-        @catch (__unused NSException *e) {}
-        int hitPID = PKAXPid(hit);
-        for (id element in candidates) if (hitPID > 0 && PKAXPid(element) == hitPID) return element;
+        id hit = PKBounded(0, 3, NULL, ^id {
+            NSError *error;
+            return ((PKElementAtPoint)objc_msgSend)(ax, hitTest, CGPointMake(CGRectGetMidX(screen), CGRectGetMidY(screen)), &error);
+        });
+        hitPID = PKAXPid(hit);
     }
+    for (id element in others) if (hitPID > 0 && PKAXPid(element) == hitPID) return element;
+    if (own && hitPID == getpid()) {
+        id ownRoot = PKRequestSnapshotWithin(3, ax, own, 1, 1, NULL);
+        CGRect frame = ownRoot ? [ownRoot frame] : CGRectNull;
+        BOOL fullScreen = !CGRectIsEmpty(screen) && !CGRectIsEmpty(frame)
+            && frame.size.width >= screen.size.width - 8 && frame.size.height >= screen.size.height - 8;
+        if (fullScreen || !others.count) return own;
+    }
+    if (others.count) return others.firstObject;
     return candidates.firstObject;
 }
 
@@ -168,7 +279,13 @@ static NSArray *PKSnapshotAttributes(void) {
     return attributes;
 }
 
+/// A full tree is given 6 s (PokiCore gives up on the read at 4.5 s and asks for a smaller one once
+/// the queue is free; a slow but answering app is through by then). A one-element frame gets 3 s.
 static id PKRequestSnapshot(id ax, id element, NSInteger maxDepth, NSInteger maxNodes, NSString **code) {
+    return PKRequestSnapshotWithin(6, ax, element, maxDepth, maxNodes, code);
+}
+
+static id PKRequestSnapshotWithin(NSTimeInterval seconds, id ax, id element, NSInteger maxDepth, NSInteger maxNodes, NSString **code) {
     SEL selector = @selector(requestSnapshotForElement:attributes:parameters:error:);
     if (![ax respondsToSelector:selector] || !PKMatches([ax methodSignatureForSelector:selector], "@", @[@"@", @"@", @"@", @"^@"])) {
         if (code) *code = @"snapshot_api_unavailable";
@@ -181,16 +298,21 @@ static id PKRequestSnapshot(id ax, id element, NSInteger maxDepth, NSInteger max
     parameters[@"maxChildren"] = @(MAX(1, maxNodes));
     parameters[@"maxArrayCount"] = @(MAX(1, maxNodes));
     parameters[@"traverseFromParentsToChildren"] = @YES;
-    NSError *error;
-    id result = nil;
-    @try {
-        result = ((PKSnapshotRequest)objc_msgSend)(ax, selector, element, PKSnapshotAttributes(), parameters.copy, &error);
-    } @catch (NSException *e) {
-        if (code) *code = [NSString stringWithFormat:@"%@: %@", e.name, e.reason];
-        return nil;
-    }
+    __block NSError *error = nil;
+    __block NSString *thrown = nil;
+    NSArray *attributes = PKSnapshotAttributes();
+    NSDictionary *frozen = parameters.copy;
+    NSString *given = nil;
+    id result = PKBounded(PKAXPid(element), seconds, &given, ^id {
+        @try {
+            return ((PKSnapshotRequest)objc_msgSend)(ax, selector, element, attributes, frozen, &error);
+        } @catch (NSException *e) {
+            thrown = [NSString stringWithFormat:@"%@: %@", e.name, e.reason];
+            return nil;
+        }
+    });
     if (!result) {
-        if (code) *code = error.localizedDescription ?: @"no_snapshot";
+        if (code) *code = given ?: thrown ?: error.localizedDescription ?: @"no_snapshot";
         return nil;
     }
     id root = nil;
@@ -199,12 +321,26 @@ static id PKRequestSnapshot(id ax, id element, NSInteger maxDepth, NSInteger max
 }
 
 /// The AX server can refuse a deep request; each shallower depth is tried once before giving up.
-static id PKSnapshotTree(id ax, id element, NSString **code) {
+/// `maxDepth` and `maxChildren` bound the request as WebDriverAgent's settings do (0: no bound of
+/// PokiCore's): after a read that took too long PokiCore asks for fewer children, then less depth,
+/// and a dense screen (1,500 elements in the gym) stops stalling the queue.
+static id PKSnapshotTreeBounded(id ax, id element, NSInteger maxDepth, NSInteger maxChildren, NSString **code) {
+    NSInteger nodes = maxChildren > 0 ? MIN(maxChildren, 10000) : 10000;
+    NSMutableArray<NSNumber *> *depths = [NSMutableArray array];
+    if (maxDepth > 0 && maxDepth < 64) [depths addObject:@(maxDepth)];
     for (NSNumber *depth in @[@64, @56, @40, @24, @12]) {
-        id root = PKRequestSnapshot(ax, element, depth.integerValue, 10000, code);
+        if (maxDepth > 0 && depth.integerValue >= maxDepth) continue;
+        [depths addObject:depth];
+    }
+    for (NSNumber *depth in depths) {
+        id root = PKRequestSnapshot(ax, element, depth.integerValue, nodes, code);
         if (root) { if (code) *code = nil; return root; }
     }
     return nil;
+}
+
+static id PKSnapshotTree(id ax, id element, NSString **code) {
+    return PKSnapshotTreeBounded(ax, element, 0, 0, code);
 }
 
 static NSUInteger PKCount(id node) {
@@ -256,9 +392,52 @@ static BOOL PKInstanceSignature(Class cls, SEL selector, const char *result, NSA
 }
 @end
 
+/// The screenshot cut to the viewport: the picture is in pixels, the viewport in points.
+static NSData *PKCropped(NSData *png, CGRect viewport) {
+    UIImage *image = [UIImage imageWithData:png];
+    CGFloat points = UIScreen.mainScreen.bounds.size.width;
+    if (!image.CGImage || points <= 0) return png;
+    CGFloat scale = image.size.width / points;
+    CGRect rect = CGRectIntegral(CGRectMake(viewport.origin.x * scale, viewport.origin.y * scale, viewport.size.width * scale, viewport.size.height * scale));
+    rect = CGRectIntersection(rect, CGRectMake(0, 0, image.size.width, image.size.height));
+    if (CGRectIsEmpty(rect)) return png;
+    CGImageRef part = CGImageCreateWithImageInRect(image.CGImage, rect);
+    if (!part) return png;
+    NSData *out = UIImagePNGRepresentation([UIImage imageWithCGImage:part]);
+    CGImageRelease(part);
+    return out.length ? out : png;
+}
+
+/// One front-app search shared by the tree read and the screenshot PokiCore asks for together.
+@interface PKFrontSearch : NSObject
+@property (nonatomic) NSTimeInterval started;
+@property (nonatomic) NSTimeInterval ended;
+@property (nonatomic) uint64_t inputs;
+@property (nonatomic, strong) dispatch_group_t done;
+@property (nonatomic, strong, nullable) id element;
+@property (nonatomic, strong, nullable) id ax;
+@property (nonatomic, copy, nullable) NSDictionary *info;
+@end
+@implementation PKFrontSearch
+@end
+
 @implementation PKInProcess {
     SRNativeSession *_sessions;
     uint64_t _accessibilityGeneration;
+    /// The AX client made for a session reopened after a close (nil while the first session lasts).
+    id _freshAX;
+    CGRect _viewport;
+    /// Bundle ids by pid, asked of testmanagerd once per process (a round trip each, on every read before).
+    NSMutableDictionary<NSNumber *, NSString *> *_bundleByPID;
+    uint64_t _bundleGeneration;
+    /// What the last tree read found in front, for /wda/activeAppInfo asked right after it (PokiCore
+    /// asks for both at once; the second lookup repeated the first's accessibility and daemon round trips).
+    NSDictionary<NSString *, id> *_lastFront;
+    NSTimeInterval _lastFrontAt;
+    uint64_t _lastFrontGeneration;
+    /// Counts touches, keys, buttons and app changes; a shared search from before one is not reused.
+    uint64_t _inputs;
+    PKFrontSearch *_search;
 }
 
 + (instancetype)shared {
@@ -269,7 +448,7 @@ static BOOL PKInstanceSignature(Class cls, SEL selector, const char *result, NSA
 }
 
 - (instancetype)init {
-    if ((self = [super init])) _sessions = [SRNativeSession new];
+    if ((self = [super init])) { _sessions = [SRNativeSession new]; _viewport = CGRectNull; }
     return self;
 }
 
@@ -292,15 +471,34 @@ static BOOL PKInstanceSignature(Class cls, SEL selector, const char *result, NSA
         NSString *code = [error.domain isEqualToString:@"RecoveredNative"] ? error.localizedDescription : [NSString stringWithFormat:@"%@ %ld", error.domain ?: @"unknown", (long)error.code];
         return @{@"ok": @NO, @"code": code ?: @"unknown", @"detail": detail, @"seconds": @(seconds)};
     }
-    return @{@"ok": @YES, @"generation": @(_sessions.generation), @"reused": @(_sessions.enableWasReused), @"seconds": @(seconds)};
+    double warm = 0;
+    if (!_sessions.enableWasReused) {
+        // The first use of a new session pays for the accessibility client's first snapshot and
+        // XCUIScreen's first screenshot, seconds each (the gym: the agent's first look after prepare
+        // took 8.1 s and came with no tree and no picture; the next read took 1.6 s). Paid here, with
+        // a shallow snapshot of the front app, so the agent's first read is an ordinary one.
+        NSTimeInterval warmStarted = NSProcessInfo.processInfo.systemUptime;
+        @try {
+            id ax = nil;
+            id app = [self front:NULL ax:&ax];
+            if (app && ax) PKRequestSnapshotWithin(3, ax, app, 3, 30, NULL);
+            NSString *code = nil;
+            [self screenshot:&code];
+        } @catch (__unused NSException *e) {}
+        warm = NSProcessInfo.processInfo.systemUptime - warmStarted;
+    }
+    return @{@"ok": @YES, @"generation": @(_sessions.generation), @"reused": @(_sessions.enableWasReused), @"seconds": @(seconds), @"warm_seconds": @(warm)};
 }
 
 - (NSDictionary<NSString *, id> *)close {
     NSTimeInterval started = NSProcessInfo.processInfo.systemUptime;
     uint64_t generation = _sessions.generation;
     BOOL closed = [_sessions close];
-    return @{@"closed": @(closed), @"generation": @(generation), @"seconds": @(NSProcessInfo.processInfo.systemUptime - started)};
+    return @{@"closed": @(closed), @"generation": @(generation), @"seconds": @(NSProcessInfo.processInfo.systemUptime - started),
+             @"detail": [_sessions closeDetail] ?: @""};
 }
+
+- (NSDictionary<NSString *, id> *)pauseAutomation { return [_sessions pauseAutomation]; }
 
 /// The prepared session and its generation, or why there is none.
 - (id)current:(uint64_t *)generation outcome:(PKOutcome **)outcome {
@@ -344,6 +542,7 @@ static BOOL PKInstanceSignature(Class cls, SEL selector, const char *result, NSA
 }
 
 - (PKOutcome *)touch:(NSArray<NSArray<PKTouchPoint *> *> *)fingers timeout:(double)timeout {
+    [self forgetFront];
     PKOutcome *refused;
     uint64_t generation = 0;
     id session = [self current:&generation outcome:&refused];
@@ -389,6 +588,11 @@ static BOOL PKInstanceSignature(Class cls, SEL selector, const char *result, NSA
 }
 
 - (PKOutcome *)type:(NSString *)text timeout:(double)timeout {
+    return [self type:text typingSpeed:120 timeout:timeout];
+}
+
+- (PKOutcome *)type:(NSString *)text typingSpeed:(NSUInteger)speed timeout:(double)timeout {
+    [self forgetFront];
     PKOutcome *refused;
     uint64_t generation = 0;
     id session = [self current:&generation outcome:&refused];
@@ -396,16 +600,70 @@ static BOOL PKInstanceSignature(Class cls, SEL selector, const char *result, NSA
     SRActionContext *context = [self contextFor:session generation:generation];
     NSTimeInterval started = NSProcessInfo.processInfo.systemUptime;
     NSError *error;
-    if (!SRInsertText(session, text, context, &error)) {
+    if (!SRInsertTextAtSpeed(session, text, speed, context, &error)) {
         return [PKOutcome delivery:PKDeliveryNotSent code:error.localizedDescription ?: @"text_not_sent" detail:nil];
     }
     return [self await:context timeout:timeout started:started generation:generation];
 }
 
+/// The screen as a JPEG from testmanagerd, as WebDriverAgent asks for it, or nil within 1.5 s.
+- (nullable NSData *)daemonJPEG {
+    PKOutcome *refused;
+    uint64_t generation = 0;
+    id session = [self current:&generation outcome:&refused];
+    id proxy = [session daemonProxy];
+    id screen = [NSClassFromString(@"XCUIScreen") mainScreen];
+    if (!proxy || ![screen respondsToSelector:@selector(displayID)]) return nil;
+    long long display = [screen displayID];
+    dispatch_semaphore_t got = dispatch_semaphore_create(0);
+    __block NSData *data;
+    @try {
+        [proxy _XCT_requestScreenshotOfScreenWithID:display withRect:CGRectNull uti:@"public.jpeg" compressionQuality:0.6 withReply:^(NSData *value, NSError *error) {
+            data = value; dispatch_semaphore_signal(got);
+        }];
+    } @catch (__unused NSException *e) { return nil; }
+    if (dispatch_semaphore_wait(got, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)))) return nil;
+    return data.length ? data : nil;
+}
+
 - (nullable NSData *)screenshot:(NSString **)code {
     @try {
-        NSData *png = [[[NSClassFromString(@"XCUIScreen") mainScreen] screenshot] PNGRepresentation];
-        if (png.length) return png;
+        NSTimeInterval started = NSProcessInfo.processInfo.systemUptime;
+        id screen = [NSClassFromString(@"XCUIScreen") mainScreen];
+        // A JPEG from testmanagerd (what WebDriverAgent uses): a fraction of the PNG's bytes to
+        // encode, send and decode; PokiCore makes its own 402-pixel JPEG from any image. XCTest's
+        // quality API next, then the PNG. (The quality API was not there on the CI simulator: every
+        // picture was a 190 KB PNG at ~220 ms.)
+        NSData *picture = nil;
+        NSString *kind = @"png";
+        // Three misses in a row and the daemon is not asked again in this process.
+        static int daemonMisses = 0;
+        if (daemonMisses < 3) {
+            picture = [self daemonJPEG];
+            if (picture.length) { kind = @"daemon jpeg"; daemonMisses = 0; } else daemonMisses++;
+        }
+        SEL quality = NSSelectorFromString(@"screenshotDataForQuality:rect:error:");
+        NSString *rect = @"{CGRect={CGPoint=dd}{CGSize=dd}}";
+        if (!picture.length && [screen respondsToSelector:quality] && (PKMatches([screen methodSignatureForSelector:quality], "@", @[@"Q", rect, @"^@"]) || PKMatches([screen methodSignatureForSelector:quality], "@", @[@"q", rect, @"^@"]))) {
+            NSError *error = nil;
+            picture = ((NSData *(*)(id, SEL, NSUInteger, CGRect, NSError **))objc_msgSend)(screen, quality, 1, CGRectNull, &error);
+            if (picture.length) kind = @"jpeg";
+        }
+        if (!picture.length) picture = [[screen screenshot] PNGRepresentation];
+        if (picture.length) {
+            NSLog(@"PokiInProcess timing: screenshot %d ms, %lu bytes (%@)", (int)lround((NSProcessInfo.processInfo.systemUptime - started) * 1000), (unsigned long)picture.length, kind);
+            // The front app's part of the screen only, when it has a part (beside another app). The
+            // front app comes from the search the tree read beside it makes (shared, not made twice),
+            // and its frame from one shallow snapshot, so the first picture after a change of layout
+            // is cut too.
+            NSDictionary *info; id ax;
+            id element = [self sharedFront:&info ax:&ax];
+            // An app that does not answer keeps the viewport it had: the picture is the screen anyway.
+            id root = element ? PKRequestSnapshotWithin(3, ax, element, 1, 1, NULL) : nil;
+            if (root) [self noteViewport:[root frame]];
+            CGRect viewport = self.viewport;
+            return CGRectIsNull(viewport) ? picture : PKCropped(picture, viewport);
+        }
         if (code) *code = @"no_picture";
     } @catch (NSException *e) {
         if (code) *code = [NSString stringWithFormat:@"%@: %@", e.name, e.reason];
@@ -415,13 +673,85 @@ static BOOL PKInstanceSignature(Class cls, SEL selector, const char *result, NSA
 
 /// The bundle id testmanagerd gives for a pid, or nil within a second.
 - (nullable NSString *)bundleForPID:(int)pid session:(id)session {
+    uint64_t generation = _sessions.generation;
+    @synchronized (self) {
+        if (_bundleGeneration != generation || !_bundleByPID) { _bundleByPID = [NSMutableDictionary dictionary]; _bundleGeneration = generation; }
+        NSString *known = _bundleByPID[@(pid)];
+        if (known) return known;
+    }
     dispatch_semaphore_t got = dispatch_semaphore_create(0);
     __block NSString *bundle;
     [[session daemonProxy] _XCT_requestBundleIDForPID:pid reply:^(NSString *value, NSError *error) {
         bundle = value; dispatch_semaphore_signal(got);
     }];
     dispatch_semaphore_wait(got, dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC));
+    // A pid keeps its bundle for the process's life; the cache goes with the session's generation.
+    if (bundle.length) { @synchronized (self) { if (_bundleGeneration == generation) _bundleByPID[@(pid)] = bundle; } }
     return bundle;
+}
+
+/// The front app the last tree read found, served once and only when under a second old with no
+/// input since (nil otherwise): PokiCore asks /wda/activeAppInfo together with /source, and that one
+/// answer comes from the tree read. A poll (a launch waiting for its app) always looks again.
+- (nullable NSDictionary<NSString *, id> *)takeRecentFront {
+    @synchronized (self) {
+        NSDictionary *front = _lastFront;
+        _lastFront = nil;
+        if (!front || _lastFrontGeneration != _sessions.generation) return nil;
+        if (NSProcessInfo.processInfo.systemUptime - _lastFrontAt > 1.0) return nil;
+        return front;
+    }
+}
+
+/// Any touch, key, button or app change can change the front app: the tree read's no longer stands.
+- (void)forgetFront {
+    @synchronized (self) { _lastFront = nil; _inputs++; }
+}
+
+/// The front app's element for a tree read or a screenshot: a search still running, or ended under
+/// 150 ms ago with no input since, is waited for and shared (the two requests come together on two
+/// queues, and each searched on its own: ~220 ms of AX round trips twice per read). A poll a while
+/// later searches again.
+- (id)sharedFront:(NSDictionary **)info ax:(id *)client {
+    PKFrontSearch *search;
+    BOOL mine = NO;
+    NSTimeInterval now = NSProcessInfo.processInfo.systemUptime;
+    @synchronized (self) {
+        PKFrontSearch *last = _search;
+        if (last && last.inputs == _inputs && (last.ended == 0 || now - last.ended < 0.15) && now - last.started < 1.5) {
+            search = last;
+        } else {
+            search = [PKFrontSearch new];
+            search.started = now;
+            search.inputs = _inputs;
+            search.done = dispatch_group_create();
+            dispatch_group_enter(search.done);
+            _search = search;
+            mine = YES;
+        }
+    }
+    if (mine) {
+        NSDictionary *found = nil;
+        id ax = nil;
+        id element = nil;
+        @try { element = [self front:&found ax:&ax]; } @catch (__unused NSException *e) {}
+        search.element = element; search.ax = ax; search.info = found;
+        search.ended = NSProcessInfo.processInfo.systemUptime;
+        dispatch_group_leave(search.done);
+    } else if (dispatch_group_wait(search.done, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)))) {
+        return [self front:info ax:client];
+    }
+    if (info) *info = search.info;
+    if (client) *client = search.ax;
+    return search.element;
+}
+
+- (void)rememberFront:(NSDictionary<NSString *, id> *)front {
+    @synchronized (self) {
+        _lastFront = front;
+        _lastFrontAt = NSProcessInfo.processInfo.systemUptime;
+        _lastFrontGeneration = _sessions.generation;
+    }
 }
 
 /// The AX client, after asking testmanagerd once per session to turn accessibility on in every app, as
@@ -443,9 +773,22 @@ static BOOL PKInstanceSignature(Class cls, SEL selector, const char *result, NSA
     });
     id ax = PKAXClient();
     @synchronized (self) {
+        if (_accessibilityGeneration != 0 && _accessibilityGeneration != generation) {
+            // A new session after a close: requests the old one left hanging never return, so the
+            // pids they marked unresponsive (the accessibility server's among them) are asked again,
+            // and the AX client is a new one on the new session rather than XCUIDevice's, which keeps
+            // talking to the session that was closed (0.2.8 build 144: every read after a stand-by
+            // and reopen timed out until Poki was relaunched).
+            @synchronized (PKHungLock()) { [PKHungSince() removeAllObjects]; }
+            Class client = NSClassFromString(@"XCAXClient_iOS");
+            id fresh = [client instancesRespondToSelector:@selector(init)] ? [[client alloc] init] : nil;
+            if (fresh) _freshAX = fresh;
+            NSLog(@"PokiInProcess: session generation %llu: hung marks cleared, %@ AX client", generation, fresh ? @"a new" : @"the device's");
+        }
+        if (_freshAX) ax = _freshAX;
         if (_accessibilityGeneration != generation && [ax respondsToSelector:@selector(loadAccessibility:)]) {
-            NSError *error;
-            if ([ax loadAccessibility:&error]) _accessibilityGeneration = generation;
+            NSNumber *loaded = PKBounded(0, 4, NULL, ^id { NSError *error; return @([ax loadAccessibility:&error]); });
+            if (loaded.boolValue) _accessibilityGeneration = generation;
         }
     }
     return ax;
@@ -467,40 +810,102 @@ static BOOL PKInstanceSignature(Class cls, SEL selector, const char *result, NSA
     return chosen;
 }
 
+- (CGRect)viewport {
+    @synchronized (self) { return _viewport; }
+}
+
+/// The front app's frame against the screen: a frame that is not the screen (within a few points) is
+/// the viewport. The Duo's side-by-side apps and iPad windows each have a part of the screen; an
+/// alert or a sheet over a full-screen app still reports the full screen.
+- (void)noteViewport:(CGRect)frame {
+    CGRect screen = UIScreen.mainScreen.bounds;
+    CGRect next = CGRectNull;
+    if (!CGRectIsNull(frame) && !CGRectIsEmpty(frame) && !CGRectIsInfinite(frame) &&
+        (fabs(frame.size.width - screen.size.width) > 8 || fabs(frame.size.height - screen.size.height) > 8)) {
+        next = CGRectIntersection(frame, screen);
+        if (CGRectIsEmpty(next)) next = CGRectNull;
+    }
+    @synchronized (self) { _viewport = next; }
+}
+
 - (NSDictionary<NSString *, id> *)frontApp {
+    NSDictionary *recent = [self takeRecentFront];
+    if (recent) return recent;
     @try {
+        NSTimeInterval started = NSProcessInfo.processInfo.systemUptime;
         NSDictionary *info;
         id ax;
         id element = [self front:&info ax:&ax];
         if (!element) return @{};
-        id root = PKRequestSnapshot(ax, element, 1, 1, NULL);
+        // The bundle id and pid come from the active applications; the snapshot adds the name and the
+        // viewport, and an app that does not answer it (starting up, or its main thread busy) is still
+        // reported as the front app, so a launch waiting for it sees it arrive.
+        id root = PKRequestSnapshotWithin(3, ax, element, 1, 1, NULL);
+        if (root) [self noteViewport:[root frame]];
         NSMutableDictionary *out = [info mutableCopy];
-        out[@"name"] = PKText([root label]) ?: @"";
+        out[@"name"] = root ? (PKText([root label]) ?: @"") : @"";
+        NSLog(@"PokiInProcess timing: front app %d ms (%@)", (int)lround((NSProcessInfo.processInfo.systemUptime - started) * 1000), out[@"bundleId"]);
         return out;
     } @catch (NSException *e) { return @{}; }
 }
 
 - (nullable NSString *)sourceXML:(NSDictionary **)focused code:(NSString **)code {
+    return [self sourceXML:focused maxDepth:0 maxChildren:0 code:code];
+}
+
+- (nullable NSString *)sourceXML:(NSDictionary **)focused maxDepth:(NSInteger)maxDepth maxChildren:(NSInteger)maxChildren code:(NSString **)code {
     @try {
+        NSTimeInterval started = NSProcessInfo.processInfo.systemUptime;
         id ax;
-        id app = [self front:NULL ax:&ax];
+        NSDictionary *info;
+        id app = [self sharedFront:&info ax:&ax];
         if (!app) { if (code) *code = @"no_front_app"; return nil; }
-        id root = PKSnapshotTree(ax, app, code);
-        if (!root) { if (code && !*code) *code = @"no_snapshot"; return nil; }
+        NSTimeInterval frontAt = NSProcessInfo.processInfo.systemUptime;
+        id root = PKSnapshotTreeBounded(ax, app, maxDepth, maxChildren, code);
+        if (!root) {
+            // The app is in front all the same (WeChat on the phone: "Error getting main window"): the
+            // /wda/activeAppInfo PokiCore asks beside this read answers it at once, instead of searching
+            // again with its own snapshot behind this one.
+            if ([info[@"bundleId"] length]) {
+                NSMutableDictionary *front = [info mutableCopy];
+                front[@"name"] = @"";
+                [self rememberFront:front];
+            }
+            if (code && !*code) *code = @"no_snapshot";
+            return nil;
+        }
+        [self noteViewport:[root frame]];
+        CGRect viewport = self.viewport;
+        CGPoint shift = CGRectIsNull(viewport) ? CGPointZero : viewport.origin;
+        NSTimeInterval snapshotAt = NSProcessInfo.processInfo.systemUptime;
+        {
+            NSMutableDictionary *front = [info mutableCopy];
+            front[@"name"] = PKText([root label]) ?: @"";
+            [self rememberFront:front];
+        }
+        __block NSUInteger count = 0;
         NSMutableString *xml = [NSMutableString stringWithString:@"<?xml version=\"1.0\" encoding=\"UTF-8\"?><AppiumAUT>"];
         __block NSDictionary *focus = nil;
         __block void (^walk)(id);
         __weak __block void (^weakWalk)(id);
         weakWalk = walk = ^(id node) {
             NSString *type = [@"XCUIElementType" stringByAppendingString:PKTypeName([node elementType])];
+            count++;
             CGRect f = [node frame];
-            NSString *identifier = PKText([node identifier]), *label = PKText([node label]), *value = PKText([node value]);
+            NSString *identifier = PKText([node identifier]), *label = PKText([node label]), *value = PKText([(NSObject *)node value]);
+            // An empty field shows its placeholder as its value, as WebDriverAgent's source does
+            // (UIKit's accessibilityValue of an empty UITextField is its placeholder; the snapshot
+            // keeps them apart), so a listing names the field by what the person sees in it.
+            if (!value.length && [node respondsToSelector:@selector(placeholderValue)] && ([type hasSuffix:@"Field"] || [type hasSuffix:@"TextView"])) {
+                value = PKText([node placeholderValue]);
+            }
             NSString *name = identifier.length ? identifier : label;
             [xml appendFormat:@"<%@ type=\"%@\"", type, type];
             if (name.length) [xml appendFormat:@" name=\"%@\"", PKEscape(name)];
             if (label.length) [xml appendFormat:@" label=\"%@\"", PKEscape(label)];
             if (value.length) [xml appendFormat:@" value=\"%@\"", PKEscape(value)];
             if (CGRectIsNull(f) || CGRectIsInfinite(f)) f = CGRectZero;
+            else f = CGRectOffset(f, -shift.x, -shift.y);
             [xml appendFormat:@" x=\"%d\" y=\"%d\" width=\"%d\" height=\"%d\"", (int)lround(f.origin.x), (int)lround(f.origin.y), (int)lround(f.size.width), (int)lround(f.size.height)];
             BOOL keyboard = [node respondsToSelector:@selector(hasKeyboardFocus)] ? [node hasKeyboardFocus]
                 : [node respondsToSelector:@selector(hasFocus)] && [node hasFocus];
@@ -520,6 +925,10 @@ static BOOL PKInstanceSignature(Class cls, SEL selector, const char *result, NSA
         walk(root);
         [xml appendString:@"</AppiumAUT>"];
         if (focused) *focused = focus;
+        NSTimeInterval end = NSProcessInfo.processInfo.systemUptime;
+        NSLog(@"PokiInProcess timing: source %d ms (front %d, snapshot %d, xml %d), %lu elements, %lu chars",
+              (int)lround((end - started) * 1000), (int)lround((frontAt - started) * 1000), (int)lround((snapshotAt - frontAt) * 1000),
+              (int)lround((end - snapshotAt) * 1000), (unsigned long)count, (unsigned long)xml.length);
         return xml;
     } @catch (NSException *e) {
         if (code) *code = [NSString stringWithFormat:@"%@: %@", e.name, e.reason];
@@ -528,6 +937,7 @@ static BOOL PKInstanceSignature(Class cls, SEL selector, const char *result, NSA
 }
 
 - (nullable NSString *)press:(NSString *)name {
+    [self forgetFront];
     @try {
         PKOutcome *refused;
         uint64_t generation = 0;
@@ -567,6 +977,7 @@ static NSString *PKDaemonReply(NSTimeInterval seconds, void (^send)(void (^)(NSE
 /// (or starts it), terminate ends it. XCUIApplication itself refuses to exist outside a UI test bundle.
 /// Launch and activate return once the app is in front.
 - (nullable NSString *)app:(NSString *)bundle action:(NSString *)action {
+    [self forgetFront];
     @try {
         PKOutcome *refused;
         uint64_t generation = 0;

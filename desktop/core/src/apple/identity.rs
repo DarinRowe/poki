@@ -19,6 +19,19 @@ fn key_path(team: &str) -> Result<std::path::PathBuf> { Ok(paths::keys_dir()?.jo
 
 /// The key for a team: read from disk, or made and saved.
 pub fn key_for(team: &str) -> Result<(Vec<u8>, bool)> {
+    if let Some(v) = crate::vault::installed() {
+        let name = format!("key-{team}");
+        if let Some(pem) = v.get(&name)? {
+            if let Ok(k) = RsaPrivateKey::from_pkcs8_pem(&String::from_utf8_lossy(&pem)) {
+                return Ok((k.to_pkcs8_der().map_err(|e| Error::msg(e.to_string()))?.as_bytes().to_vec(), false));
+            }
+        }
+        let mut rng = rand::thread_rng();
+        let key = RsaPrivateKey::new(&mut rng, 2048).map_err(|e| Error::msg(format!("could not make a key: {e}")))?;
+        let pem = key.to_pkcs8_pem(rsa::pkcs8::LineEnding::LF).map_err(|e| Error::msg(e.to_string()))?;
+        v.set(&name, pem.as_bytes())?;
+        return Ok((key.to_pkcs8_der().map_err(|e| Error::msg(e.to_string()))?.as_bytes().to_vec(), true));
+    }
     let path = key_path(team)?;
     if let Ok(pem) = std::fs::read_to_string(&path) {
         if let Ok(k) = RsaPrivateKey::from_pkcs8_pem(&pem) {
@@ -30,6 +43,25 @@ pub fn key_for(team: &str) -> Result<(Vec<u8>, bool)> {
     let pem = key.to_pkcs8_pem(rsa::pkcs8::LineEnding::LF).map_err(|e| Error::msg(e.to_string()))?;
     write_private(&path, pem.as_bytes())?;
     Ok((key.to_pkcs8_der().map_err(|e| Error::msg(e.to_string()))?.as_bytes().to_vec(), true))
+}
+
+/// Takes a team key another app made (Poki Setup hands its key to Poki on the iPhone), so both
+/// sign with the one development certificate a free team allows. Replaces any key kept for the team.
+pub fn import_key(team: &str, key_pkcs8_pem: &str) -> Result<()> {
+    let key = RsaPrivateKey::from_pkcs8_pem(key_pkcs8_pem.trim()).map_err(|e| Error::msg(format!("the signing key is not a PKCS#8 RSA key: {e}")))?;
+    let pem = key.to_pkcs8_pem(rsa::pkcs8::LineEnding::LF).map_err(|e| Error::msg(e.to_string()))?;
+    match crate::vault::installed() {
+        Some(v) => v.set(&format!("key-{team}"), pem.as_bytes()),
+        None => write_private(&key_path(team)?, pem.as_bytes()),
+    }
+}
+
+/// Whether a key is kept for the team.
+pub fn has_key(team: &str) -> Result<bool> {
+    match crate::vault::installed() {
+        Some(v) => Ok(v.get(&format!("key-{team}"))?.is_some()),
+        None => Ok(key_path(team)?.is_file()),
+    }
 }
 
 /// A throwaway identity with a self-signed "Apple Development" certificate, for checking the
@@ -153,7 +185,7 @@ pub async fn ensure(portal: &mut Portal<'_>, team: &str, reporter: &crate::Repor
     }
     reporter.note("identity", "Asking Apple for a signing certificate for this computer");
     let machine_id = machine_id()?;
-    let machine_name = format!("Poki Setup on {}", hostname());
+    let machine_name = if crate::vault::installed().is_some() { format!("Poki on {}", hostname()) } else { format!("Poki Setup on {}", hostname()) };
     let csr = csr_pem(&key, "Poki Setup")?;
     let submitted = match portal.submit_csr(team, &csr, &machine_id, &machine_name).await {
         Ok(c) => c,
@@ -221,6 +253,11 @@ fn machine_id() -> Result<String> {
 }
 
 pub fn hostname() -> String {
+    if let Ok(name) = std::env::var("POKI_DEVICE_NAME") {
+        if !name.trim().is_empty() {
+            return name;
+        }
+    }
     #[cfg(target_os = "macos")]
     if let Ok(o) = std::process::Command::new("/usr/sbin/scutil").args(["--get", "ComputerName"]).output() {
         let name = String::from_utf8_lossy(&o.stdout).trim().to_string();
