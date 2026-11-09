@@ -328,14 +328,14 @@ final class SelfSigner {
     /// app it replaces is no longer in front. Once per install.
     private func stepAside() {
         guard !steppedAside else { return }
-        log.add("signing", "the install's last step: asking the owner to close Poki and swipe it away")
+        log.add("signing", "the install's last step: telling the owner Poki will close to finish")
         steppedAside = true
-        working = String(localized: "Finishing the update: close Poki and swipe it away in the app switcher")
-        // The last step: the owner is told Poki must exit, and how to finish (the alert's OK steps
-        // aside); the notice says it again in case the alert was missed.
+        working = String(localized: "Finishing the update: Poki will close to finish it")
+        // The last step: the owner is told Poki will close (the alert's OK steps aside, and iOS ends
+        // Poki by itself otherwise); the notice says it again in case the alert was missed.
         finishNotice = true
-        notify(title: String(localized: "Close Poki to Finish the Update"),
-               body: String(localized: "Swipe up to the app switcher and swipe Poki away, then open it again."))
+        notify(title: String(localized: "Poki Will Close to Finish the Update"),
+               body: String(localized: "Poki will close by itself. Open it again once the update is in."))
     }
     /// The last install step's alert: Poki has to exit for the update to finish.
     var finishNotice = false

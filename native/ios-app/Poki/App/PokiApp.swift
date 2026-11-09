@@ -168,10 +168,10 @@ struct RootView: View {
             Text("\(ask.client) is signing in through \(ask.connector) and returns to \(ask.callback), which isn’t on Poki’s list of known agents. Allow it only if you are connecting it yourself right now. It could then see your screen and act on this iPhone.")
         }
         // The update's last step: Poki has to exit, and the owner closes it from the app switcher.
-        .alert("Close Poki to Finish the Update", isPresented: Binding(get: { model.signer.finishNotice }, set: { if !$0 { model.signer.finishNoticeAnswered() } })) {
+        .alert("Poki Will Close to Finish the Update", isPresented: Binding(get: { model.signer.finishNotice }, set: { if !$0 { model.signer.finishNoticeAnswered() } })) {
             Button("OK") { model.signer.finishNoticeAnswered() }
         } message: {
-            Text("The update is almost in. Poki has to exit for iOS to finish it: after OK, swipe up to the app switcher, swipe Poki away, then open Poki again.")
+            Text("The update is almost in. Poki will close to finish it; open Poki again afterwards.")
         }
         // Turning on after Off: Poki exits by itself and has to be opened again.
         .alert("Poki Restarts to Turn On", isPresented: Binding(get: { model.relaunchNotice }, set: { if !$0 { model.relaunchNotice = false } })) {

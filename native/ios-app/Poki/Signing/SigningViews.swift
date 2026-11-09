@@ -123,6 +123,10 @@ struct SigningSection: View {
                         .disabled(signer.working != nil)
                 }
             }
+            if signer.signedIn, signer.next?.kind != "update", let latest = signer.latest, signer.isNewer(latest) {
+                Button("Download Update", systemImage: "arrow.down.circle") { Task { await signer.prepare(kind: "update") } }
+                    .disabled(signer.working != nil)
+            }
             if signer.signedIn {
                 Button("Prepare Refresh Now", systemImage: "arrow.clockwise") { Task { await signer.prepare(kind: "refresh") } }
                     .disabled(signer.working != nil)
