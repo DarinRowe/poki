@@ -393,7 +393,7 @@ export class Devices {
     } catch (error) {
       try { checkWork(); } catch (stop) { return { stopped: true, stop_reason: stoppingReason(stop) }; }
       // Input clears the last read, so one left now was taken after the action: report it rather than nothing.
-      const seen = this.seen?.device === this.resolved?.id && this.seen.elements.length ? this.seen : undefined;
+      const seen = this.seen && this.seen.device === this.resolved?.id && this.seen.elements.length ? this.seen : undefined;
       if (!seen) return { ...screenChange(), screen: { unavailable: error.message } };
       // One read that differs settles a change; a matching one needed a second read to confirm it.
       return { ...screenChange(before, before !== undefined && seen.signature !== before ? seen.signature : undefined), screen: { ...describeScreen(seen), ...(seen.startedAt < this.lastInputAt ? { stale: true } : {}), partial: true, reason: `${error.message}: the screen may still have been changing; this is the last complete read.` } };
