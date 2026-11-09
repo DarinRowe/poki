@@ -51,7 +51,7 @@ The installer runs these in order. Most need nobody.
 10. **`relay`** Deploys the relay when `CLOUDFLARE_API_TOKEN` is set or Poki Setup keeps a token. Skipped otherwise. Poki and its own chat work without it; agents on other computers need it.
 11. **`check`** Self-check: the install record, Developer Mode, pairing, disk image and relay.
 
-Poki turns itself on after this install, and ticks Developer Mode and UI Automation in its Setup once it runs. The iPhone's own switch for UI Automation (Settings > Developer > Enable UI Automation) is still the user's to turn on; Poki's Setup page says so.
+Poki turns itself on after this install, and ticks Developer Mode and UI Automation in its Setup once it runs. The iPhone's own switch for UI Automation (Settings > Developer > Enable UI Automation) is still the user's to turn on; Poki's Setup page says so. When Poki first opens it asks for Automation Mode: tell the user to tap Continue and enter the iPhone passcode on iOS's screen. If they cancel, Poki does not ask again until they turn it on again.
 
 ## Person stops
 
@@ -94,6 +94,7 @@ The installer exits with code 2. The last `error` event has `code`, `reason` and
 | `apple_account_limit` | A free-account limit: 10 App IDs a week, 3 apps, or one certificate already held by AltStore, SideStore or Xcode. | Stop. Tell the user which limit Apple named. The way out is their decision. |
 | `network` | A request failed, also while signing in. | Retried by itself with what the user already typed. Then report. |
 | `sign_failed` | Signing failed. | Stop and run `diagnose`. |
+| `ddi_refused` | Apple rejected the developer disk image with STATUS=94 or a signing-server refusal. The image may be too old for the phone's iOS. | Relay the detected Xcode and iOS versions from the error. Update Xcode to support that iOS version (iOS 27 requires Xcode 27), open Xcode once, and wait for its components to finish installing. Rerun the same command. Poki does not need to be reinstalled. If `prepare-device` used `--image`, replace that image with the updated Xcode image. |
 | `install_failed` | iOS refused the install. | Retried once. Then run `diagnose`. |
 | `relay_failed` | The relay deploy or check failed. Poki still works on the phone. | Report it. The user can deploy from Poki Setup's Relay page. |
 | `check_failed` | Installed, but the self-check found something not ready. | Read the `check` fields, fix what the matching code says, run again. |

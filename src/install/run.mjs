@@ -13,6 +13,7 @@ import { ensureSetupApp, downloadIpa, SetupError } from './setup-app.mjs';
 import { containerAccess, readHello, SEALED_KEY } from './container.mjs';
 import { phoneKey, readKeychainKey, seal } from './model-key.mjs';
 import { installerLabel, installerVersion } from './version.mjs';
+import { signingRefused, ddiRecovery } from '../ddi-failure.mjs';
 
 const exec = promisify(execFile);
 export const manifest = JSON.parse(readFileSync(new URL('./steps.json', import.meta.url), 'utf8'));
@@ -88,6 +89,7 @@ function classify(step, error) {
   const kind = error.kind ?? '';
   const text = error.message ?? String(error);
   const code = (() => {
+    if (signingRefused(text)) return 'ddi_refused';
     if (kind === 'bridge_start_failed') return 'bridge_start_failed';
     if (kind === 'usbmuxd' || /usbmuxd/i.test(text)) return 'usbmuxd_unreachable';
     if (/more than one iPhone/i.test(text)) return 'several_phones';
@@ -520,7 +522,11 @@ class Run {
     const records = await this.bridge.request('records');
     const record = records.find(r => r.udid === this.udid);
     const phone = (await this.listPhones()).find(r => r.phone.udid === this.udid);
-    const ddi = await this.bridge.request('mount_ddi', { udid: this.udid }).then(() => true, error => { this.emit({ event: 'note', text: `developer disk image: ${error.message}` }); return false; });
+    const ddi = await this.bridge.request('mount_ddi', { udid: this.udid }).then(() => true, error => {
+      if (signingRefused(error.message)) throw error;
+      this.emit({ event: 'note', text: `developer disk image: ${error.message}` });
+      return false;
+    });
     let relay = 'skipped';
     if (this.relayAddress) relay = (await this.bridge.request('relay_check', { address: this.relayAddress }).catch(() => false)) ? 'answering' : 'not answering';
     const check = {
@@ -575,6 +581,10 @@ class Run {
             return 3;
           }
           const failure = classify(step.id, error);
+          if (failure.code === 'ddi_refused') {
+            const phone = this.record.phones?.find(phone => phone.udid === this.udid);
+            failure.reason = await ddiRecovery(phone?.ios);
+          }
           this.reportError(failure, false);
           await this.mark(step.id, 'failed', { code: failure.code, reason: failure.reason, agent_fix: manifest.errors[failure.code].agent_fix });
           this.emit({ event: 'result', ok: false, step: step.id, code: failure.code, reason: failure.reason, next: 'node bin/install-iphone.mjs diagnose, then node bin/install-iphone.mjs issue' });

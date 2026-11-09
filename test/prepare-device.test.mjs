@@ -25,11 +25,15 @@ for (const [name, output, explanation] of failures) {
     await mkdir(image);
     await writeFile(join(image, 'BuildManifest.plist'), '');
     await writeFile(join(dir, 'bin/python3'), `#!/bin/sh\necho '[{"id":"fixture-phone","connection":"USB"}]'\n`, { mode: 0o755 });
-    await writeFile(join(dir, 'bin/idevice'), `#!/bin/sh\ncase "$3" in\n  remotexpc) echo com.apple.dt.testmanagerd.remote ;;\n  cryptexd) printf '%s\\n' "$INSTALL_OUTPUT" >&2; exit 101 ;;\nesac\n`, { mode: 0o755 });
+    await writeFile(join(dir, 'bin/idevice'), `#!/bin/sh\ncase "$3" in\n  remotexpc) echo com.apple.dt.testmanagerd.remote ;;\n  lockdown) echo '\"27.2\"' ;;\n  cryptexd) printf '%s\\n' "$INSTALL_OUTPUT" >&2; exit 101 ;;\nesac\n`, { mode: 0o755 });
+    await writeFile(join(dir, 'bin/xcodebuild'), '#!/bin/sh\necho "Xcode 26.6"\n', { mode: 0o755 });
     const env = { ...process.env, PATH: `${join(dir, 'bin')}:${process.env.PATH}`, IDEVICE_TOOLS: join(dir, 'bin/idevice'), INSTALL_OUTPUT: output };
     const failed = await run(process.execPath, [script, 'fixture-phone', '--image', image], { env }).then(() => assert.fail('preparation succeeded'), error => error);
     assert.equal(failed.code, 1);
     assert.match(failed.stderr, explanation);
+    if (name === 'Apple declining to sign the image') {
+      for (const pattern of [/Xcode 26\.6/, /iOS 27\.2/, /Update Xcode/, /iOS 27 requires Xcode 27/, /Open Xcode once/, /components/, /rerun the same command/, /Poki does not need to be reinstalled/]) assert.match(failed.stderr, pattern);
+    }
     assert.match(failed.stderr, new RegExp(image.replaceAll('/', '\\/')));
     assert.doesNotMatch(failed.stderr, /panicked|at file:/);
   });

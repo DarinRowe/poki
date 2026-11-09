@@ -142,7 +142,7 @@ pub fn plan(cli: &str, signed_in: bool, phones: &[PhoneState], update: Option<&s
                 steps.push(Step { id: "developer_mode", who: Who::Agent, command: cmd(cli, &format!("devmode --udid {u} --json")), say: "Developer Mode is needed. If the phone has a passcode, open Settings > Privacy & Security > Developer Mode, turn it on and tap Restart; after the restart, tap Turn On and enter your passcode.".into() });
             }
             match &p.poki {
-                None => steps.push(Step { id: "install", who: Who::Agent, command: cmd(cli, &format!("install --udid {u} --json")), say: "Poki Setup now signs Poki for your Apple Account and installs it. Keep the phone plugged in and unlocked. With a free Apple Account, trust the developer afterwards in Settings > General > VPN & Device Management, then open Poki once.".into() }),
+                None => steps.push(Step { id: "install", who: Who::Agent, command: cmd(cli, &format!("install --udid {u} --json")), say: "Poki Setup now signs Poki for your Apple Account and installs it. Keep the phone plugged in and unlocked. With a free Apple Account, trust the developer afterwards in Settings > General > VPN & Device Management, then open Poki once. When Poki first opens it asks for Automation Mode: tap Continue and enter the iPhone passcode on iOS's screen. If you cancel, Poki asks again only after you turn it on again.".into() }),
                 Some(k) if k.due => steps.push(Step { id: "renew", who: Who::Agent, command: cmd(cli, &format!("renew --udid {u} --json")), say: format!("Poki's signature ends in {} days; Poki Setup signs it again now.", k.days_left.max(0)) }),
                 Some(_) => {}
             }

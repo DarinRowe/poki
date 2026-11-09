@@ -22,11 +22,26 @@ export class SetupError extends Error {
   }
 }
 
-function channelOf(tag, prerelease) {
+// ios-* and desktop-* tags, and Poki's app-* tags (app-0.2.9-prealpha.640, app-prealpha-latest,
+// app-0.2.9-alpha.640, app-alpha-latest, app-0.3.0-beta.1, app-0.3.0).
+export function channelOf(tag, prerelease) {
+  const app = /^app-(.+)$/.exec(tag);
+  if (app) {
+    const rest = app[1];
+    if (rest === 'prealpha-latest') return 'pre-alpha';
+    if (rest === 'alpha-latest') return 'alpha';
+    if (!/^\d/.test(rest)) return null;
+    const suffix = rest.includes('-') ? rest.slice(rest.indexOf('-') + 1) : '';
+    if (!suffix) return prerelease ? 'beta' : 'stable';
+    if (suffix.startsWith('prealpha.')) return 'pre-alpha';
+    if (suffix.startsWith('alpha.')) return 'alpha';
+    return 'beta';
+  }
   const rest = tag.replace(/^(ios|desktop)-/, '');
   if (rest === tag) return null;
   if (rest.startsWith('prealpha-')) return 'pre-alpha';
   if (rest.startsWith('alpha-')) return 'alpha';
+  if (rest.startsWith('beta-')) return 'beta';
   if (rest.startsWith('v')) return prerelease ? 'beta' : 'stable';
   return null;
 }

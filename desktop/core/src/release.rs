@@ -118,6 +118,35 @@ impl Channel {
     }
 }
 
+impl Channel {
+    /// The channel of an `app-*` release (Poki's tags from Nov 2026 on): `app-0.2.9-prealpha.640`
+    /// and `app-prealpha-latest`, `app-0.2.9-alpha.640` and `app-alpha-latest`, `app-0.3.0-beta.1`,
+    /// and `app-0.3.0` (Stable, or Beta while it is marked prerelease). None for any other tag.
+    pub fn of_app_tag(tag: &str, prerelease: bool) -> Option<Channel> {
+        let rest = tag.strip_prefix("app-")?;
+        match rest {
+            "prealpha-latest" => return Some(Channel::PreAlpha),
+            "alpha-latest" => return Some(Channel::Alpha),
+            _ => {}
+        }
+        if !rest.starts_with(|c: char| c.is_ascii_digit()) {
+            return None;
+        }
+        Some(match rest.split_once('-').map(|(_, s)| s) {
+            None => if prerelease { Channel::Beta } else { Channel::Stable },
+            Some(s) if s.starts_with("prealpha.") => Channel::PreAlpha,
+            Some(s) if s.starts_with("alpha.") => Channel::Alpha,
+            // beta.N, and rc.N or any other pre-release suffix.
+            Some(_) => Channel::Beta,
+        })
+    }
+
+    /// The channel of a release of Poki itself, under either scheme (`ios-*` or `app-*`).
+    pub fn of_app_release(tag: &str, prerelease: bool) -> Option<Channel> {
+        Channel::of_tag("ios", tag, prerelease).or_else(|| Channel::of_app_tag(tag, prerelease))
+    }
+}
+
 impl std::str::FromStr for Channel {
     type Err = Error;
     fn from_str(s: &str) -> Result<Self> { Channel::parse(s).ok_or_else(|| Error::msg(format!("Unknown channel “{s}”. Use stable, beta, alpha or pre-alpha."))) }
@@ -174,13 +203,13 @@ async fn list() -> Result<Vec<GhRelease>> {
 
 /// An installable Poki release (one with the external IPA) from GitHub's answer.
 fn installable(r: &GhRelease) -> Option<(Channel, Release)> {
-    let channel = Channel::of_tag("ios", &r.tag_name, r.prerelease)?;
+    let channel = Channel::of_app_release(&r.tag_name, r.prerelease)?;
     let ipa = r.assets.iter().find(|a| a.name.starts_with("Poki-external-") && a.name.ends_with(".ipa"))?;
     // Poki-external-<version>-<build>.ipa; the tag names the version too for ios-v* releases.
     let stem = ipa.name.trim_start_matches("Poki-external-").trim_end_matches(".ipa");
     let (version, build) = match stem.rsplit_once('-') {
         Some((v, b)) if !v.is_empty() => (v.to_string(), b.to_string()),
-        _ => (r.tag_name.trim_start_matches("ios-v").trim_start_matches("ios-prealpha-").trim_start_matches("ios-alpha-").trim_start_matches("ios-beta-").to_string(), String::new()),
+        _ => (r.tag_name.trim_start_matches("app-").trim_start_matches("ios-v").trim_start_matches("ios-prealpha-").trim_start_matches("ios-alpha-").trim_start_matches("ios-beta-").to_string(), String::new()),
     };
     Some((
         channel,
@@ -280,7 +309,7 @@ fn desktop_asset_version(name: &str, suffix: &str) -> Option<String> {
 }
 
 fn release_channel(r: &GhRelease) -> Option<Channel> {
-    Channel::of_tag("desktop", &r.tag_name, r.prerelease).or_else(|| Channel::of_tag("ios", &r.tag_name, r.prerelease))
+    Channel::of_tag("desktop", &r.tag_name, r.prerelease).or_else(|| Channel::of_app_release(&r.tag_name, r.prerelease))
 }
 
 /// The newest Poki Setup installer a channel offers (stepping down like Poki's own releases).
@@ -709,6 +738,47 @@ mod tests {
         assert_eq!(Channel::of_tag("ios", "ios-v0.3.0", false), Some(Channel::Stable));
         assert_eq!(Channel::of_tag("desktop", "desktop-v0.3.0-beta.1", true), Some(Channel::Beta));
         assert_eq!(Channel::of_tag("desktop", "desktop-v0.3.0", false), Some(Channel::Stable));
+    }
+
+    #[test]
+    fn app_tags_map_to_channels() {
+        let c = |t: &str, pre: bool| Channel::of_app_release(t, pre);
+        assert_eq!(c("app-0.2.9-prealpha.640", true), Some(Channel::PreAlpha));
+        assert_eq!(c("app-prealpha-latest", true), Some(Channel::PreAlpha));
+        assert_eq!(c("app-0.2.9-alpha.640", true), Some(Channel::Alpha));
+        assert_eq!(c("app-alpha-latest", true), Some(Channel::Alpha));
+        assert_eq!(c("app-0.3.0-beta.1", true), Some(Channel::Beta));
+        assert_eq!(c("app-0.3.0", false), Some(Channel::Stable));
+        assert_eq!(c("app-0.3.0", true), Some(Channel::Beta));
+        assert_eq!(c("app-latest", false), None);
+        assert_eq!(c("desktop-v0.3.0", false), None);
+        // The ios-* rules stay as they were.
+        assert_eq!(c("ios-prealpha-latest", true), Some(Channel::PreAlpha));
+        assert_eq!(c("ios-alpha-0.2.8-501", true), Some(Channel::Alpha));
+        assert_eq!(c("ios-v0.3.0-beta.1", true), Some(Channel::Beta));
+    }
+
+    #[test]
+    fn app_and_ios_releases_are_read_together() {
+        let list = vec![
+            gh("app-0.3.0", false, "2026-11-14T05:00:00Z", Some("Poki-external-0.3.0.ipa")),
+            gh("app-0.3.0-beta.1", true, "2026-11-12T05:00:00Z", Some("Poki-external-0.3.0-beta.1.ipa")),
+            gh("app-alpha-latest", true, "2026-11-09T06:00:00Z", Some("Poki-external-0.2.9-650.ipa")),
+            gh("app-prealpha-latest", true, "2026-11-09T06:00:00Z", Some("Poki-external-0.2.9-660.ipa")),
+            gh("ios-alpha-latest", true, "2026-11-08T05:00:00Z", Some("Poki-external-0.2.9-650.ipa")),
+            gh("ios-prealpha-latest", true, "2026-11-08T05:00:00Z", Some("Poki-external-0.2.9-660.ipa")),
+        ];
+        let p = pick(&list, Channel::Stable).unwrap();
+        assert_eq!((p.tag.as_str(), p.version.as_str(), p.build.as_str()), ("app-0.3.0", "0.3.0", ""));
+        assert_eq!(pick(&list[1..], Channel::Beta).unwrap().tag, "app-0.3.0-beta.1");
+        // The mirrors carry the same build: either release is fine, the build is what counts.
+        assert_eq!(pick(&list[2..], Channel::Alpha).unwrap().build, "650");
+        assert_eq!(pick(&list[2..], Channel::PreAlpha).unwrap().build, "660");
+        assert_eq!(pick(&list[4..], Channel::PreAlpha).unwrap().tag, "ios-prealpha-latest");
+
+        let mut app = gh("app-alpha-latest", true, "2026-11-09T06:00:00Z", None);
+        app.assets.push(GhAsset { name: "PokiSetup-0.2.2-640-macos.dmg".into(), browser_download_url: "https://x/a".into() });
+        assert_eq!(pick_desktop(&[app], Channel::Alpha, "-macos.dmg").unwrap().2, "0.2.2-640");
     }
 
     #[test]

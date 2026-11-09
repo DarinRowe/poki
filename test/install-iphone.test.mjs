@@ -103,6 +103,21 @@ test('a step that fails gives a machine-readable code, its reason and what to do
   });
 });
 
+test('a DDI signing refusal gives Xcode recovery steps in the JSON failure result', async t => {
+  const state = await stateDir(t);
+  const bin = join(state, 'bin');
+  await mkdir(bin);
+  await writeFile(join(bin, 'xcodebuild'), '#!/bin/sh\necho "Xcode 26.6"\n', { mode: 0o755 });
+  const { code, events, stderr } = await runInstaller(state, {
+    scenario: 'ddi-refused', answer: personAnswers(state),
+    env: { PATH: `${bin}:${process.env.PATH}` },
+  });
+  assert.equal(code, 2, stderr);
+  const result = events.at(-1);
+  assert.equal(result.ok, false);
+  for (const pattern of [/Xcode 26\.6/, /iOS 27\.1/, /Update Xcode/, /iOS 27 requires Xcode 27/, /Open Xcode once/, /components/, /rerun the same command/, /Poki does not need to be reinstalled/]) assert.match(result.reason, pattern);
+});
+
 test('a person stop that nobody answers ends with exit 3 and a rerun resumes from that step', async t => {
   const state = await stateDir(t);
   const first = await runInstaller(state, { env: { POKI_INSTALL_WAIT_MS: '150' } });
