@@ -139,6 +139,11 @@ struct RootView: View {
                 // A dot while a setup item is still open.
                 .badge(model.setupLooksComplete ? nil : Text(verbatim: " "))
 
+            // iOS 26: New Chat is the round button at the bottom right, on the tab bar's line (the
+            // place iOS gives a search tab). Choosing it starts a chat and goes back to the Poki tab.
+            if #available(iOS 26.0, *) {
+                Tab(String(localized: "New Chat"), systemImage: "square.and.pencil", value: RootTab.newChat, role: .search) { Color.clear }
+            }
         }
         .onChange(of: tab) { old, new in
             // Leaving the Poki tab from a conversation (to Accounts, Setup, a connector): the Poki
