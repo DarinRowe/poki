@@ -130,6 +130,7 @@ final class AppModel {
     private static let automationBootKey = "automationStartedBoot"
     /// Automation started in this boot: iOS will not ask again until the next restart.
     private func automationStarted() {
+        InProcessWDA.gate.withLock { $0.startedThisBoot = true }
         guard UserDefaults.standard.double(forKey: Self.automationBootKey) != BootClock.current else { return }
         UserDefaults.standard.set(BootClock.current, forKey: Self.automationBootKey)
     }
@@ -417,7 +418,7 @@ final class AppModel {
     /// already open answers "reused" in milliseconds.
     func warmInProcess(_ why: String) {
         guard automationPath == .inProcess, sessionOn, runner.isRunning else { return }
-        if InProcessWDA.automationDeclined.withLock({ $0 }) { return }
+        if InProcessWDA.automationDeclined { return }
         // The first open since the iPhone restarted is what brings up iOS's passcode screen: with
         // Poki in front, the owner is told just before it (Continue opens; elsewhere the Live
         // Activity asks for the passcode once an open takes 5 s).
@@ -442,7 +443,7 @@ final class AppModel {
             host.update(runner: coreState(of: runner))
         }
         DispatchQueue.global(qos: .userInitiated).async { [automation] in
-            let result = automation.prepare()
+            let result = InProcessWDA.openThroughGate { automation.prepare() }
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 guard epoch == self.inProcessEpoch else {
@@ -466,7 +467,7 @@ final class AppModel {
                 let passcodeMissed = waitedForPasscode || detail.localizedCaseInsensitiveContains("enabling automation mode")
                 // Cancelled (or left) iOS's passcode screen: Poki does not open it again by itself.
                 if !ok, passcodeMissed {
-                    InProcessWDA.automationDeclined.withLock { $0 = true }
+                    InProcessWDA.gate.withLock { $0.declined = true }
                     self.log.add("runner", "the passcode for automation was not entered: Poki will not ask again until it is turned on again")
                 }
                 self.inProcessSession = ok ? .open : passcodeMissed ? .passcodeMissed : .failed(code: "\(result["code"] ?? "unknown")", detail: detail)
@@ -500,6 +501,7 @@ final class AppModel {
     /// setup step the person just did in Settings.
     func becameActive() {
         inFront = true
+        InProcessWDA.gate.withLock { $0.inFront = true }
         cameToFront = Date()
         // A pairing file and disk image Poki Setup put in the container while Poki was running (or
         // since it last came to the front) count at once: mirrored to the Keychain, the disk image
@@ -564,6 +566,7 @@ final class AppModel {
     /// it): every 6 s, light enough for the location-kept background time.
     func wentToBackground() {
         inFront = false
+        InProcessWDA.gate.withLock { $0.inFront = false }
         sessionOn ? loopback.resume(every: 6) : loopback.pause()
         if pairingUnderWay { log.add("pairing", "Poki in the background while pairing; keep-alive \(pairingKeepAlive.isOn ? "playing" : "off")") }
     }
@@ -735,7 +738,7 @@ final class AppModel {
     func startSession(reconnectLocal: Bool = true) {
         guard !sessionOn, !sessionStarting else { return }
         // Turning on is the owner asking for automation again, after a cancelled passcode screen too.
-        InProcessWDA.automationDeclined.withLock { $0 = false }
+        InProcessWDA.gate.withLock { $0.declined = false }
         if automationPath == .inProcess, inProcessUsedUp, !Self.onSimulator {
             // With Poki in front the owner is told first that it exits and must be opened again.
             if inFront { relaunchNotice = true } else { relaunchForFreshSession() }
@@ -831,19 +834,27 @@ final class AppModel {
     /// Off by hand, in-process: Poki leaves for the Home Screen and exits, so the next turn-on is a
     /// fresh launch whose session can read the screen; the notice brings the owner back.
     private func exitAfterStop() {
-        guard !Self.onSimulator, !sessionOn else { return }
+        guard !Self.onSimulator, !sessionOn, !exitingAfterStop else { return }
+        exitingAfterStop = true
         log.add("session", "turned off: Poki exits, and opening it again starts the next task")
         let content = UNMutableNotificationContent()
         content.title = String(localized: "Open Poki Again to Start Another Task")
         content.body = String(localized: "Poki closed after you stopped it. Open it to turn it on again.")
         content.userInfo = ["poki_link": "poki://chat"]
-        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "nz.zheha.poki.stopped", content: content,
-                                                                      trigger: UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)))
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            UIApplication.shared.perform(NSSelectorFromString("suspend"))
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { exit(0) }
+        content.sound = .default
+        // Shown at once (the delegate shows banners while Poki is open too); Poki leaves only after
+        // iOS has taken the notification, so an exit cannot drop it.
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "nz.zheha.poki.stopped", content: content, trigger: nil)) { error in
+            Task { @MainActor [weak self] in
+                self?.log.add("session", error.map { "the reopen notice was not posted: \($0.localizedDescription)" } ?? "reopen notice posted")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                    UIApplication.shared.perform(NSSelectorFromString("suspend"))
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { exit(0) }
+                }
+            }
         }
     }
+    private var exitingAfterStop = false
 
     /// The note before Poki exits to turn on again (Continue exits).
     var relaunchNotice = false
@@ -888,7 +899,11 @@ final class AppModel {
         log.add("session", automationPath == .inProcess ? "turned off: closing the in-process session" : "turned off: ending the runner")
         // In-process, a session closed in this launch cannot be opened again in it: Poki exits once
         // the session has closed, and a notice says to open it again for the next task.
-        if automationPath == .inProcess { closeInProcess("turned off") { [weak self] in self?.exitAfterStop() } }
+        if automationPath == .inProcess {
+            closeInProcess("turned off") { [weak self] in self?.exitAfterStop() }
+            // A close that hangs does not keep Poki from exiting.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in self?.exitAfterStop() }
+        }
         core.stop()
         launcher.stop()
         if setup.loopback == .builtIn { tunnel.disconnect() }

@@ -81,9 +81,42 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
     /// too long is followed by a smaller one, in-process as on WebDriverAgent. 0: unbounded.
     private var maxDepth = 0, maxChildren = 0
 
-    /// Set when an open asked for the passcode and did not get it; cleared when the owner turns
-    /// Poki on (or taps Continue on the passcode note).
-    static let automationDeclined = OSAllocatedUnfairLock(initialState: false)
+    /// When an open may bring up iOS's passcode screen. It does only before the first automation
+    /// of a boot, so until then: one open at a time (two at once each showed a screen), never from
+    /// the background (the screen then could not be closed), and none after the owner cancelled one,
+    /// until they turn Poki on again.
+    struct OpenGate {
+        var declined = false
+        var inFront = true
+        var startedThisBoot = false
+        var opening = false
+    }
+    static let gate = OSAllocatedUnfairLock(initialState: OpenGate())
+    static var automationDeclined: Bool { gate.withLock { $0.declined } }
+
+    /// prepare through the gate: an answer in prepare's shape when it may not run now.
+    static func openThroughGate(_ prepare: () -> [String: Any]) -> [String: Any] {
+        let refusal: String? = gate.withLock { g in
+            if g.startedThisBoot { return nil }
+            if g.declined { return "passcode_declined" }
+            if !g.inFront { return "open_poki_first" }
+            if g.opening { return "open_under_way" }
+            g.opening = true
+            return nil
+        }
+        if let refusal {
+            let detail = refusal == "passcode_declined" ? "the owner cancelled iOS's passcode screen for automation; Poki asks again when they turn it on"
+                : refusal == "open_poki_first" ? "iOS asks for the passcode before the first automation since the iPhone restarted; that happens with Poki open, so the owner opens Poki first"
+                : "an open is already asking for the passcode"
+            return ["ok": false, "code": refusal, "detail": detail, "seconds": 0.0]
+        }
+        let result = prepare()
+        gate.withLock { g in
+            g.opening = false
+            if result["ok"] as? Bool == true { g.startedThisBoot = true }
+        }
+        return result
+    }
 
     init(screen: CGSize) {
         self.screen = screen
@@ -92,10 +125,7 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
             "POST /session": { [unowned self] _, _ in
                 // The owner cancelled iOS's passcode screen: no new open (and no new screen) until they
                 // turn Poki on again.
-                if Self.automationDeclined.withLock({ $0 }) {
-                    throw Refusal("session not created", "the owner cancelled iOS's passcode screen for automation; Poki asks again when they turn it on")
-                }
-                let prepared = self.native.prepare()
+                let prepared = Self.openThroughGate { self.native.prepare() }
                 guard prepared["ok"] as? Bool == true else {
                     throw Refusal("session not created", "the automation session could not be opened: \(prepared["code"] ?? "unknown") \(prepared["detail"] ?? "")")
                 }
