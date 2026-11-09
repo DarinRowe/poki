@@ -16,6 +16,9 @@ on:
         options: ["on", "off"]
         default: "on"
   workflow_call:
+    inputs:
+      # The commit to score (promotion-gate.yml passes the promoted build's); default the calling run's.
+      ref: { type: string, required: false, default: '' }
 
 permissions:
   contents: read
@@ -26,6 +29,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with: { ref: "${{ inputs.ref }}" }
       - name: Use the newest Xcode
         run: |
           XCODE="$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
@@ -72,9 +76,10 @@ jobs:
     timeout-minutes: 45
     env:
       WDA_COMMIT: 02cb92f0e93c8b021443bcbb8eeb80932c113220
-      CORE_BRANCH: ${{ github.ref_name }}
+      CORE_BRANCH: ${{ inputs.ref || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
+        with: { ref: "${{ inputs.ref }}" }
       - uses: actions/download-artifact@v4
         with: { name: PokiGym-simulator, path: build }
       - name: PokiCore (the MCP, from its own branch) with the gym driver as one more executable
@@ -163,6 +168,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+        with: { ref: "${{ inputs.ref }}" }
       - uses: actions/download-artifact@v4
         with: { name: PokiGym-simulator, path: build }
       - name: Use the newest Xcode

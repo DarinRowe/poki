@@ -11,6 +11,8 @@ on:
     inputs:
       version: { type: string, required: true }
       build: { type: string, required: true }
+      # The commit to test (promote-alpha.yml passes the pre-alpha's); default the calling run's.
+      ref: { type: string, required: false, default: '' }
 
 permissions:
   contents: read
@@ -23,6 +25,7 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
+        with: { ref: "${{ inputs.ref }}" }
       - name: Use the newest Xcode
         run: |
           XCODE="$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
@@ -56,6 +59,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+        with: { ref: "${{ inputs.ref }}" }
       - name: Use the newest Xcode
         run: |
           XCODE="$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
@@ -175,6 +179,7 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
+        with: { ref: "${{ inputs.ref }}" }
 
       - name: Use the newest Xcode
         run: |

@@ -4,34 +4,87 @@ Poki's iPhone builds are published as GitHub Releases on this repository. Poki S
 installer) reads them and lets each person pick a channel in Settings. A channel decides which
 releases Poki Setup installs and renews with.
 
-| Channel | Tags | GitHub release | Who it is for |
-| --- | --- | --- | --- |
-| Stable | `ios-vX.Y.Z` | full release | everyone |
-| Beta | `ios-vX.Y.Z` | prerelease | testers (the default while every `ios-v*` release is a prerelease) |
-| Alpha | `app-X.Y.Z-alpha.N` (before Nov 9 2026: `ios-alpha-X.Y.Z-N`) | prerelease | early testers: builds picked by a maintainer, rough edges expected |
-| Pre-alpha | `app-X.Y.Z-prealpha.N` (before Nov 9 2026: `ios-prealpha-X.Y.Z-N`) | prerelease | developers who want every snapshot |
+| Channel | Tag | Title | GitHub release | Who it is for |
+| --- | --- | --- | --- | --- |
+| Stable | `app-X.Y.Z` | Poki v0.3.0 | its own full release (not marked Latest) | everyone |
+| Beta | `app-X.Y.Z-beta.K` | Poki v0.3.0 Beta 1 | its own prerelease | testers |
+| Alpha | `app-X.Y.Z-alpha.N` | Poki v0.3.0 (712) Alpha | rolling `app-alpha-latest`, prerelease | early testers |
+| Pre-alpha | `app-X.Y.Z-prealpha.N` | Poki v0.3.0 (712) Pre-alpha | rolling `app-prealpha-latest`, prerelease | developers |
 
 A channel includes the channels above it: Beta installs the newest Stable or Beta release, Alpha
 the newest Stable, Beta or Alpha, and Pre-alpha the newest release of any kind. Poki Setup's own
 updates (`desktop-v*`, `desktop-alpha-*` and `desktop-prealpha-*` tags) follow the same channel.
+Poki Setup orders versions so that `0.3.0-beta.1 < 0.3.0-beta.2 < 0.3.0 < 0.3.0-712`: a pre-release
+suffix sorts below the plain version, a build number above it.
 
-## Cutting a release
+Until November 2026 app releases were tagged `ios-vX.Y.Z`, `ios-vX.Y.Z-beta.K`, `ios-alpha-X.Y.Z-N` and
+`ios-prealpha-X.Y.Z-N`; Poki Setup reads both schemes. Poki Setup 0.2.2 and earlier read only the old
+ones, so every pre-alpha and alpha is also copied into the old rolling releases `ios-prealpha-latest`
+and `ios-alpha-latest`, which carry the Poki Setup update too. That copy stops once those versions
+are gone. Betas and stables exist only as `app-*`.
 
-- Stable or Beta: push `ios-vX.Y.Z` (`.github/workflows/release.yml`). It is published as a
-  prerelease (Beta); to promote it to Stable, untick "Set as a pre-release" on the release page.
-- Alpha or Pre-alpha: run `native/ios-app/scripts/cut-release.sh alpha` or `... pre-alpha` (defaults
-  to the head of `poki/ios-integration`; pass another ref as the second argument). It tags the commit
-  `app-<VERSION>-alpha.<commit count>` or `app-<VERSION>-prealpha.<commit count>` and pushes the tag;
-  `.github/workflows/channel-release.yml` builds the app and puts it into the channel's one rolling
-  prerelease, `app-alpha-latest` or `app-prealpha-latest`, mirrored to `ios-alpha-latest` or `ios-prealpha-latest` for apps and Poki Setup that read only those (replacing the previous build's files, title
-  and notes, so the Releases page never fills up with test builds), with the same files as a Beta: `Poki-external-*.ipa`, `Poki-*.ipa`, `Poki-signing.zip`, `poki-relay-worker.js` (the relay Worker Poki Setup deploys) and `SHA256SUMS`. The build
-  number is the commit count, so a later commit always has a bigger one. The versioned tag stays as
-  the record of each build; Poki Setup reads the version from the IPA's name. Poki Setup's own
-  installers (`PokiSetup-<version>-<build>-macos.dmg` / `-windows-x64-setup.exe` with
-  `SHA256SUMS-desktop.txt`) are added to the same rolling release and replaced the same way. Only a
-  Stable release is ever marked Latest. The same commit can be both a
-  pre-alpha and, once it looks good, an alpha. `DRY_RUN=1` prints the tag without pushing it.
+N is the commit count of the built commit on `main`, so it only goes up while `main` is never
+rewritten. Betas and stables drop it from their names; inside the app, `CFBundleVersion` still
+carries it.
 
-Both workflows run only on their tags, never on branch pushes. The Mac server's update notice
-(`src/update-check.mjs`) reads `releases/latest`, which never returns a prerelease, so neither Beta
-nor Alpha nor Pre-alpha releases reach it.
+## One build, promoted
+
+Only the pre-alpha step compiles. Each promotion copies that same IPA to the next channel, so
+testers on Alpha run the file that was tried on Pre-alpha, and Beta runs the file the Gym scored.
+
+1. **Pre-alpha, automatic.** Every merge into `main` runs `.github/workflows/prealpha.yml`: one
+   macOS job builds the external IPA, tags `app-<VERSION>-prealpha.<N>` and replaces the files of
+   `app-prealpha-latest`. Its artifact is kept 90 days for later promotions.
+2. **Alpha, one click.** Actions > Promote to Alpha > Run workflow (`promote-alpha.yml`), with a
+   pre-alpha tag or empty for the current one. It runs the alpha tests on that commit (`ios-app.yml`:
+   PokiCore and loopback tests, in-process field, apps and idle-cycle checks, simulator smoke test,
+   agent chat end to end; Poki Setup's core tests), then tags `app-<VERSION>-alpha.<N>` and puts the
+   pre-alpha's IPA and Poki Setup files into `app-alpha-latest`.
+3. **Beta, by PR.** Actions > Propose promotion > beta (`propose-promotion.yml`), with an alpha tag or
+   empty for the current Alpha. The Poki Release Bot opens a PR that adds the promotion to
+   `.github/channels.json` and moves `native/ios-app/VERSION` to the next patch version. The PR's
+   `promotion gate` check (`promotion-gate.yml`) runs the Gym on that commit and passes when neither
+   scorecard has more failures than the last beta's. Merging publishes `app-X.Y.Z-beta.K`
+   (`publish-promotion.yml`) with the scorecards attached, and creates `release/X.Y` on a version's
+   first beta.
+4. **Stable, by PR.** Propose promotion > stable, with a beta tag or empty for the newest beta. The
+   gate passes once that beta has been out for `soak_days` (3, in `.github/channels.json`) and no
+   issue labelled `blocker` is open. To ship sooner, add the `soak-override` label to the PR, or give
+   a reason in the proposal's skip field (it is kept in `channels.json`). Merging publishes
+   `app-X.Y.Z` after approval in the `stable` environment.
+
+Every publish creates a draft first, checks its file count, then publishes. Releases carry
+`Poki-external-<name>.ipa`, `Poki-signing.zip`, `poki-relay-worker.js` (the relay Worker Poki Setup
+deploys) and `SHA256SUMS`, plus Poki Setup's `PokiSetup-*` installers and `SHA256SUMS-desktop.txt`.
+
+## Branches
+
+- `main`: protected trunk; PRs only. Every merge is a pre-alpha.
+- `dev/<topic>`: one change, one PR into `main`, deleted on merge.
+- `release/X.Y`: from a version's first beta; takes cherry-picked fixes from `main` for later betas
+  and X.Y.Z hotfixes.
+- `promote/<channel>-<version>`: the bot's promotion PRs.
+
+## Checks
+
+`pr-checks.yml` runs on every PR into `main` or `release/**`, on Linux only so it never takes one of
+the 5 macOS runners: Poki Setup's core tests, the Rust lockfiles, and the workflows (actionlint).
+
+## Setup (once)
+
+- A GitHub App for the bot (Contents, Pull requests and Workflows read and write; Actions and Checks
+  read), installed on this repository, with its id and private key in the Actions secrets
+  `POKI_BOT_APP_ID` and `POKI_BOT_PRIVATE_KEY`.
+- Labels `promotion`, `soak-override` and `blocker`.
+- Environment `stable` with the maintainers as required reviewers.
+- Branch protection on `main`: the `PR checks` jobs and `promotion gate / verdict` as required checks.
+
+## Fallback
+
+`channel-release.yml` still builds from a pushed alpha or pre-alpha tag
+(`native/ios-app/scripts/cut-release.sh`). It starts with cold caches (about 20 minutes) and will be
+removed once the pipeline above has shipped a few builds.
+
+The Mac server's update notice (`src/update-check.mjs`) reads `releases/latest` and only understands
+Poki MCP's `vX.Y.Z` tags, so app releases are never marked Latest: Latest stays on Poki MCP's newest
+release.

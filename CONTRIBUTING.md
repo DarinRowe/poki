@@ -1,6 +1,6 @@
 # Contributing
 
-Open an issue before a large change. For a small fix, open a pull request.
+Open an issue before a large change. For a small fix, open a pull request into `main` from a `dev/<topic>` branch. Branches, checks and how releases are made: [AGENTS.md](AGENTS.md#contribute-code) and [docs/release-channels.md](docs/release-channels.md).
 
 Run `npm test` before you submit. Say in the pull request whether you also tested on a Simulator or a physical iPhone.
 

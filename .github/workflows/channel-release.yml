@@ -11,7 +11,7 @@
 name: Alpha and pre-alpha
 
 on:
-  # Tag-only: never runs on branch pushes. Neither pattern matches release.yml's ios-v*.*.*.
+  # Tag-only: never runs on branch pushes. The fallback to prealpha.yml and promote-alpha.yml.
   push:
     tags: ['app-*-alpha.*', 'app-*-prealpha.*', 'ios-alpha-*', 'ios-prealpha-*', '!app-alpha-latest', '!app-prealpha-latest', '!ios-alpha-latest', '!ios-prealpha-latest']
 

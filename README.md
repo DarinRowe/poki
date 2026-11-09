@@ -40,7 +40,7 @@ Requires macOS 14+, Node.js 24+, iOS 18+, a USB data cable, an Apple Account, an
 
 No Node.js 24, or on Windows? The same prompt works once Poki Setup is installed: the agent then uses the command line tool inside Poki Setup. Poki Setup's own menu also copies a prompt for your agent (Poki > Copy Prompt for Your Agent on a Mac, Settings > Use an agent on Windows).
 
-Prefer clicking through it yourself? Download Poki Setup from the [Alpha release](https://github.com/JosssphZhou/poki/releases#release-ios-alpha-latest) and follow its window.
+Prefer clicking through it yourself? Download Poki Setup from the [Alpha release](https://github.com/JosssphZhou/poki/releases/tag/ios-alpha-latest) and follow its window.
 
 ### Poki MCP for your agent
 
