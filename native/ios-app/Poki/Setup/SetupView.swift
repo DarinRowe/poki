@@ -301,6 +301,10 @@ private struct LoopbackPage: View {
             }
         } header: {
             Text("Status")
+        } footer: {
+            if model.servicesSilent, monitor.isWorking {
+                Text("10.7.0.1 takes the connection, but the phone's remote pairing service does not answer through it, so this page can show Working while Poki cannot connect. Reconnect your proxy app or LocalDevVPN, then pair again in Setup › Pairing.")
+            }
         }
 
         // The external app is the way (ESP-168): every app's steps can be read at any time.

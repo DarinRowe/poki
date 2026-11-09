@@ -430,6 +430,17 @@
         }
       }
     },
+    "Loopback or Pairing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "回环或配对"
+          }
+        }
+      }
+    },
     "Make a payment?" : {
       "extractionState" : "manual",
       "localizations" : {

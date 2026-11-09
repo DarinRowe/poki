@@ -221,6 +221,17 @@
         }
       }
     },
+    "10.7.0.1 takes the connection, but the phone's remote pairing service does not answer through it, so this page can show Working while Poki cannot connect. Reconnect your proxy app or LocalDevVPN, then pair again in Setup › Pairing." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "10.7.0.1 接受了连接，但手机的远程配对服务没有通过它回应，所以本页可能显示“正常”而 Poki 仍连不上。请重新连接代理 App 或 LocalDevVPN，然后到“设置引导 › 配对”重新配对。"
+          }
+        }
+      }
+    },
     "2 minutes" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2455,6 +2466,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "打开设置引导"
+          }
+        }
+      }
+    },
+    "Open Setup › Loopback and check the loopback, then pair this iPhone again in Setup › Pairing with the loopback on." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开“设置引导 › 回环”检查回环，然后在回环开着时到“设置引导 › 配对”重新配对这台 iPhone。"
           }
         }
       }
