@@ -15,6 +15,8 @@ export default function Setup({ goAccount }: { goAccount: () => void }) {
   const [account, setAccount] = useState<Account | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Set when the Apple Account is at its certificate limit: the person decides whether to replace it.
+  const [certQuestion, setCertQuestion] = useState(false);
   const [result, setResult] = useState<{ notes: string[]; handoff: Handoff | null; name: string; version: string } | null>(null);
   const { steps, apply, fail, reset } = useSteps(STEPS);
   const [chosen, setChosen] = useState<string | null>(null);
@@ -41,13 +43,14 @@ export default function Setup({ goAccount }: { goAccount: () => void }) {
 
   const start = async () => {
     if (!phone) return;
-    setRunning(true); setError(null); setResult(null); reset();
+    setRunning(true); setError(null); setResult(null); setCertQuestion(false); reset();
     try {
       const r = await api.install(phone.phone.udid, false, localIpa);
       setResult({ notes: r.notes, handoff: r.handoff, name: r.record.phone_name, version: r.record.version });
     } catch (e) {
       const text = failureText(e);
       fail(text); setError(text);
+      setCertQuestion(failureKind(e) === "certificate_limit");
     } finally {
       setRunning(false);
     }
@@ -104,6 +107,12 @@ export default function Setup({ goAccount }: { goAccount: () => void }) {
         <Card>
           <Steps steps={steps} />
           <ErrorBox error={error} />
+          {certQuestion && !running && (
+            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+              <Capsule kind="danger" onClick={async () => { try { await api.approveCertificateReplacement(); await start(); } catch (e) { setError(failureText(e)); } }}>{t("Replace Certificate")}</Capsule>
+              <Capsule kind="ghost" onClick={() => setCertQuestion(false)}>{t("Cancel")}</Capsule>
+            </div>
+          )}
         </Card>
       )}
 

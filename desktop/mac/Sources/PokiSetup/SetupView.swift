@@ -8,6 +8,8 @@ struct SetupView: View {
     @State private var handOff = false
     @State private var result: InstallAnswer?
     @State private var failed: String?
+    /// Set when the Apple Account is at its certificate limit: the question to put to the person.
+    @State private var certificateQuestion: String?
     @State private var checking = false
     @State private var channelError: String?
 
@@ -28,6 +30,19 @@ struct SetupView: View {
         }
         .pokiPage()
         .task { await model.refreshChannels() }
+        .alert("Replace the Certificate?", isPresented: Binding(get: { certificateQuestion != nil }, set: { if !$0 { certificateQuestion = nil } })) {
+            Button("Replace Certificate", role: .destructive) {
+                Task {
+                    do {
+                        try await model.approveCertificateReplacement()
+                        await install()
+                    } catch { model.report(error) }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(certificateQuestion ?? "")
+        }
         .fileImporter(isPresented: $choosingIPA, allowedContentTypes: [UTType(filenameExtension: "ipa") ?? .data]) { r in
             if case .success(let url) = r { ipa = url }
         }
@@ -315,6 +330,9 @@ struct SetupView: View {
         result = nil
         do {
             result = try await model.install(udid: phone.id, ipa: ipa, handOff: handOff)
+        } catch let e as CoreError where e.kind == "certificate_limit" {
+            failed = e.message
+            certificateQuestion = e.message
         } catch {
             failed = error.localizedDescription
         }

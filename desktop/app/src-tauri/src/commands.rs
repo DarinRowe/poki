@@ -103,6 +103,10 @@ pub async fn share_pairing(state: State<'_, Shared>, udid: String) -> R<pairshar
     Ok(handoff)
 }
 
+/// The person chose Replace Certificate: the next install revokes the certificate it asked about.
+#[tauri::command]
+pub async fn approve_certificate_replacement() -> R<usize> { Ok(poki_setup_core::apple::identity::approve_replacement()?) }
+
 #[tauri::command]
 pub async fn stop_sharing(state: State<'_, Shared>) -> R<()> {
     if let Some(s) = state.handoff.lock().await.take() {

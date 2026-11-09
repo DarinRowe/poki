@@ -93,6 +93,10 @@ enum Cmd {
         seed_ddi: bool,
         #[arg(long, default_value_t = 120)]
         wait: u64,
+        /// When the Apple Account is at its certificate limit, replace the Poki certificate the
+        /// last attempt named. Every app it signed stops opening until it is installed again.
+        #[arg(long)]
+        replace_certificate: bool,
     },
     /// Sign an IPA for a team without installing it.
     Sign {
@@ -131,6 +135,9 @@ enum Cmd {
         /// Every phone whose profile is due.
         #[arg(long)]
         due: bool,
+        /// As for install: replace the Poki certificate the last attempt named.
+        #[arg(long)]
+        replace_certificate: bool,
     },
     /// The phones this computer set up and when each needs signing again.
     Status,
@@ -243,6 +250,7 @@ fn classify(e: &anyhow::Error) -> (&'static str, i32) {
     }
     match e.downcast_ref::<poki_setup_core::Error>() {
         Some(poki_setup_core::Error::NeedsPerson(_)) => ("needs_person", EXIT_PERSON),
+        Some(poki_setup_core::Error::CertificateLimit(_)) => ("certificate_limit", EXIT_PERSON),
         Some(poki_setup_core::Error::Apple { .. }) => ("apple", EXIT_FAILED),
         Some(poki_setup_core::Error::Device(_)) => ("device", EXIT_FAILED),
         Some(poki_setup_core::Error::Http(_)) => ("network", EXIT_FAILED),
@@ -433,7 +441,10 @@ async fn run() -> Result<()> {
                 }
             })
         }
-        Cmd::Install { udid, ipa, signing_zip, hand_off, seed_ddi, wait } => {
+        Cmd::Install { udid, ipa, signing_zip, hand_off, seed_ddi, wait, replace_certificate } => {
+            if replace_certificate && poki_setup_core::apple::identity::approve_replacement()? == 0 {
+                return Err(anyhow!("No certificate is waiting to be replaced. Run install without --replace-certificate first; it names the certificate if your account is at its limit."));
+            }
             let mut signer = setup::Signer::open()?;
             if !signer.signed_in() {
                 return Err(anyhow!("Sign in first: poki-setup login you@example.com"));
@@ -474,7 +485,10 @@ async fn run() -> Result<()> {
             println!("{}", out_path.display());
             Ok(())
         }
-        Cmd::Renew { udid, due } => {
+        Cmd::Renew { udid, due, replace_certificate } => {
+            if replace_certificate && poki_setup_core::apple::identity::approve_replacement()? == 0 {
+                return Err(anyhow!("No certificate is waiting to be replaced. Run renew without --replace-certificate first; it names the certificate if your account is at its limit."));
+            }
             let mut signer = setup::Signer::open()?;
             if due {
                 for (udid, r) in setup::renew_due(&mut signer, &reporter).await {
