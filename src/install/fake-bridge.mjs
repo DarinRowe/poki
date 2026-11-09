@@ -3,8 +3,16 @@
 // one simulated iPhone. The installer's --dry-run and the tests use it; nothing here touches a device
 // or Apple. POKI_FAKE_SCENARIO picks the story, POKI_FAKE_DELAY_MS how long a simulated person takes.
 import { createInterface } from 'node:readline';
+import { createECDH } from 'node:crypto';
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { KEM, keyId, open } from './model-key.mjs';
 
 const scenario = process.env.POKI_FAKE_SCENARIO || 'happy';
+// old-bridge (Poki Setup 0.2.1, no container commands) and old-poki (Poki 0.2.8, which writes no
+// hello) combine with the others: POKI_FAKE_SCENARIO=old-bridge,old-poki.
+const has = name => scenario.split(',').includes(name);
 const delay = Number(process.env.POKI_FAKE_DELAY_MS ?? 300);
 const udid = '00008999-000A11B22C33D44E';
 const phoneName = 'Test iPhone';
@@ -14,6 +22,12 @@ let phoneCalls = 0;
 let signInCalls = 0;
 let installCalls = 0;
 let record = null;
+// Poki's container on the simulated phone. POKI_FAKE_CONTAINER lets a test look inside it, and a fake
+// devicectl reach the same files. old-bridge is Poki Setup 0.2.1, which has no container commands.
+const container = process.env.POKI_FAKE_CONTAINER || mkdtempSync(join(tmpdir(), 'poki-fake-container-'));
+if (!process.env.POKI_FAKE_CONTAINER) process.on('exit', () => rmSync(container, { recursive: true, force: true }));
+const handoff = name => join(container, 'Documents/PokiSetup', name);
+const writeFile = (path, text) => { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, text); };
 
 const send = value => process.stdout.write(`${JSON.stringify(value)}\n`);
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -51,8 +65,51 @@ async function install() {
   progress({ kind: 'done', id: 'pairing_file', detail: "placed in Poki's container" });
   record = { udid, phone_name: phoneName, ios: '27.1', apple_id: 'tester@example.com', team_id: 'TEAMID1234', team_name: 'Test Team', team_is_free: true, bundle_id: 'nz.zheha.poki.TEAMID1234', version: '0.2.8', build: '501', release_tag: 'ios-alpha-latest', signed_at: 0, profile_expires_at: Math.floor(Date.now() / 1000) + 7 * 86400, pairing_handed_off: true, wifi_address: '192.168.1.44' };
   progress({ kind: 'done', id: 'all', detail: `Poki 0.2.8 is on ${phoneName}` });
+  setTimeout(simulatePoki, delay);
   return { record, notes: [], handoff: null };
 }
+
+// The person trusts the developer and opens Poki: Poki writes its hello with a key it made, takes a
+// sealed model key it finds (into .keychain/, the test's view of its Keychain), and says so.
+function simulatePoki() {
+  writeFile(join(container, '.running'), record.bundle_id);
+  if (has('old-poki')) return;
+  const me = createECDH('prime256v1');
+  me.generateKeys();
+  const loopbackAt = Date.now() + (has('loopback-off') ? delay * 3 : 0);
+  let imported = null;
+  const hello = () => writeFile(handoff('poki-hello.json'), JSON.stringify({
+    schema: 'poki.hello/1', version: '0.2.9', build: '510', at: new Date().toISOString(),
+    model_key: { kem: KEM, public_key: me.getPublicKey().toString('base64url'), key_id: keyId(me.getPublicKey()) },
+    ...(imported ? { imported } : {}),
+    loopback: Date.now() >= loopbackAt ? { working: true } : { working: false, say: 'In Karing, open Settings > TUN, set Loopback address to 10.7.0.1, then reconnect Karing.' },
+  }));
+  hello();
+  const timer = setInterval(() => {
+    const sealed = handoff('model-key.json');
+    if (existsSync(sealed)) {
+      const { provider, secret } = open(readFileSync(sealed, 'utf8'), { privateKey: me.getPrivateKey(), bundleId: record.bundle_id });
+      writeFile(join(container, '.keychain', provider), secret);
+      rmSync(sealed);
+      imported = { key_id: keyId(me.getPublicKey()), provider, at: new Date().toISOString() };
+    }
+    hello();
+  }, 20);
+  timer.unref();
+}
+
+const allowed = name => {
+  if (!['poki-hello.json', 'model-key.json'].includes(name)) fail('bad_request', `not a Poki hand-off file: ${name}`);
+  return handoff(name);
+};
+const containerCommands = has('old-bridge') ? {} : {
+  container_read: ({ name }) => {
+    const path = allowed(name);
+    if (!existsSync(path)) fail('device', `${name}: kAFCObjectNotFound`);
+    return readFileSync(path).toString('base64');
+  },
+  container_write: ({ name, data }) => { writeFile(allowed(name), Buffer.from(data, 'base64')); return true; },
+};
 
 const commands = {
   app_info: () => ({ version: '0.2.1-319', os: 'macos', arch: 'aarch64', data_dir: process.env.POKI_SETUP_HOME || '', simulated: true }),
@@ -85,11 +142,13 @@ const commands = {
   mount_ddi: () => true,
   relay_token_saved: () => false,
   relay_state: () => null,
+  ...containerCommands,
 };
 
 createInterface({ input: process.stdin }).on('line', async line => {
   if (!line.trim()) return;
   const request = JSON.parse(line);
+  if (process.env.POKI_FAKE_REQUEST_LOG) appendFileSync(process.env.POKI_FAKE_REQUEST_LOG, `${line}\n`);
   const handler = commands[request.cmd];
   try {
     if (!handler) fail('bad_request', `unknown command ${request.cmd}`);

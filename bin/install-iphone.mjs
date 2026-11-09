@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Installs Poki on an iPhone through Poki Setup without its window. Read INSTALL-IPHONE.md first.
+// Installs Poki on an iPhone through Poki Setup without its window. Agents follow skills/install-poki/SKILL.md.
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -9,6 +9,7 @@ import { findSetupBridge, SetupError } from '../src/install/setup-app.mjs';
 import { installerLabel, installerVersion } from '../src/install/version.mjs';
 import { diagnose, issueDraft, readRun } from '../src/install/report.mjs';
 import { codeCommand, defaultStateDir, manifest, run } from '../src/install/run.mjs';
+import { PROVIDERS } from '../src/install/model-key.mjs';
 
 const usage = `Usage: node bin/install-iphone.mjs <command> [options]
 
@@ -34,6 +35,10 @@ Options:
   --bridge <path>     Use this poki-setup-bridge instead of the one in Poki Setup.app.
   --app-dir <dir>     Where to put Poki Setup.app when it is not installed (default ~/Applications).
   --reinstall         Sign and install again even when the last run installed Poki.
+  --model-key <name>  Also give Poki on the iPhone this provider's model key from the Mac's login keychain
+                      (${PROVIDERS.join(', ')}). Off unless given: ask the person first. The key is sealed
+                      to a key Poki makes on the phone and never printed, logged or put on a command line.
+  --model-key-item <item>  The keychain item to read it from (default <name>-api-key, e.g. openai-api-key).
   --version           Print the installer's version and build commit.
   --no-device         diagnose only: do not ask usbmuxd, devicectl or Bonjour about devices.
 
@@ -51,6 +56,8 @@ const { values: opts, positionals } = parseArgs({
     bridge: { type: 'string' },
     'app-dir': { type: 'string' },
     reinstall: { type: 'boolean', default: false },
+    'model-key': { type: 'string' },
+    'model-key-item': { type: 'string' },
     'no-device': { type: 'boolean', default: false },
     version: { type: 'boolean', short: 'v', default: false },
     help: { type: 'boolean', short: 'h', default: false },
@@ -107,7 +114,8 @@ async function bridgePath() {
 
 switch (opts.help ? 'help' : command) {
   case 'run':
-    process.exitCode = await run({ state, setupHome, channel: opts.channel, udid: opts.udid, dryRun, json: opts.json, bridge: opts.bridge && resolve(opts.bridge), appDir, reinstall: opts.reinstall });
+    if (opts['model-key'] !== undefined && !PROVIDERS.includes(opts['model-key'])) { console.error(`--model-key is one of ${PROVIDERS.join(', ')}.`); process.exitCode = 1; break; }
+    process.exitCode = await run({ modelKey: opts['model-key'], modelKeyItem: opts['model-key-item'], state, setupHome, channel: opts.channel, udid: opts.udid, dryRun, json: opts.json, bridge: opts.bridge && resolve(opts.bridge), appDir, reinstall: opts.reinstall });
     break;
   case 'code':
     if (arg !== undefined) { console.error(`Do not put the Apple code on the command line. Run: ${codeCommand(state)} (and type it at the hidden prompt).`); process.exitCode = 1; break; }

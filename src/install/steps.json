@@ -7,7 +7,9 @@
     { "id": "apple_account", "who": "input", "title": "Sign in with the Apple Account", "does": "Reuses Poki Setup's own sign-in, or a password from the environment or the login keychain; otherwise asks in Poki Setup windows for the email, the password and then the two-factor code." },
     { "id": "phone", "who": "phone", "title": "Find the iPhone", "does": "Waits until one iPhone is plugged in by USB." },
     { "id": "install", "who": "phone", "title": "Pair, turn on Developer Mode, sign and install Poki", "does": "Runs Poki Setup's install: Trust This Computer, Developer Mode, team, release, signing, install, pairing file and developer disk image." },
-    { "id": "open_poki", "who": "phone", "title": "Trust the developer and open Poki", "does": "Asks the person to trust the Apple Account in VPN & Device Management and open Poki once." },
+    { "id": "open_poki", "who": "phone", "title": "Trust the developer and open Poki", "does": "Asks the person to trust the Apple Account in VPN & Device Management and open Poki once. Poki says it is open by writing Documents/PokiSetup/poki-hello.json, which the installer reads through Poki Setup or Xcode's devicectl; with neither, the agent confirms with done open_poki." },
+    { "id": "model_key", "who": "agent", "title": "Give Poki the model key (only when asked)", "does": "With --model-key <provider>, reads the key from the Mac's login keychain (item <provider>-api-key, or --model-key-item) into memory, seals it to the key Poki made on the phone, writes only the sealed file into Poki, and waits until Poki says it took it. Skipped without --model-key." },
+    { "id": "loopback", "who": "phone", "title": "Connect Poki to this iPhone", "does": "Reads from Poki whether its local connection (10.7.0.1) answers. When it does not, says the one sentence Poki gives for the VPN app on the phone, and waits until Poki says it answers." },
     { "id": "relay", "who": "input", "title": "Deploy the relay (optional)", "does": "Deploys the relay Worker with a Cloudflare token from CLOUDFLARE_API_TOKEN or the token Poki Setup already keeps. Skipped without one." },
     { "id": "check", "who": "agent", "title": "Self-check", "does": "Reads the install record, the phone's Developer Mode and pairing state, mounts the developer disk image and checks the relay." }
   ],
@@ -20,7 +22,9 @@
     "pair": { "who": "phone", "say": "On the iPhone, tap Trust and enter the passcode." },
     "devmode": { "who": "phone", "say": "On the iPhone, open Settings > Privacy & Security > Developer Mode, turn it on and tap Restart. After the restart, tap Turn On and enter the passcode." },
     "pairing_file": { "who": "phone", "say": "Open Poki on the iPhone and scan the code Poki Setup shows to give it the pairing file." },
-    "open_poki": { "who": "phone", "say": "On the iPhone, open Settings > General > VPN & Device Management, tap your Apple Account under Developer App, tap Trust, then open Poki from the Home Screen. Tell me when Poki is open." }
+    "open_poki": { "who": "phone", "say": "On the iPhone, open Settings > General > VPN & Device Management, tap your Apple Account under Developer App, tap Trust, then open Poki from the Home Screen and keep it open for a moment. I see by myself when Poki is open." },
+    "open_poki_tell": { "who": "phone", "say": "On the iPhone, open Settings > General > VPN & Device Management, tap your Apple Account under Developer App, tap Trust, then open Poki from the Home Screen. Tell me when Poki is open." },
+    "loopback": { "who": "phone", "say": "Poki needs a VPN app on the iPhone that lets it reach 10.7.0.1. In Poki, open Setup > Connect to this iPhone and follow the one line for your VPN app. I see by myself when it works." }
   },
   "errors": {
     "setup_download_failed": { "reason": "The Poki Setup DMG or its checksum file could not be downloaded from GitHub.", "agent_fix": "Retry; if it keeps failing, check that github.com and objects.githubusercontent.com are reachable.", "retry": 3 },
@@ -43,6 +47,8 @@
     "install_failed": { "reason": "iOS refused to install Poki.", "agent_fix": "Retry once with the phone unlocked; then stop and run diagnose.", "retry": 1 },
     "relay_failed": { "reason": "Deploying or checking the relay failed. Poki works on the phone without a relay.", "agent_fix": "Report it, finish the install, and point the person to Poki Setup's Relay page.", "retry": 1 },
     "check_failed": { "reason": "Poki is installed but the self-check found something not ready.", "agent_fix": "Read the check fields in the result, fix what the matching code says, and run again.", "retry": 0 },
+    "model_key_missing": { "reason": "--model-key was given, but the Mac's login keychain has no item with that name, or it is empty.", "agent_fix": "Tell the person which keychain item was looked for. They can add it in their own Terminal with security add-generic-password -U -s <item> -a \"$USER\" -w, or type the key in Poki (Agents > Accounts and Models). Never ask for the key in chat.", "retry": 0 },
+    "model_key_not_taken": { "reason": "The sealed key is in Poki, but Poki did not say it took it in time (it reads the file while it is in front).", "agent_fix": "Ask the person to bring Poki to the front, then run the command again; the key is sealed again for the phone's new key.", "person": "Open Poki and keep it in front for a moment.", "retry": 0 },
     "unknown": { "reason": "An error the installer does not recognise.", "agent_fix": "Run diagnose and issue, show the draft to the person, and submit it only after they agree.", "retry": 0 }
   }
 }

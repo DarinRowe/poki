@@ -10,6 +10,8 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { Bridge, BridgeError } from './bridge.mjs';
 import { ensureSetupApp, SetupError } from './setup-app.mjs';
+import { containerAccess, readHello, SEALED_KEY } from './container.mjs';
+import { phoneKey, readKeychainKey, seal } from './model-key.mjs';
 import { installerLabel, installerVersion } from './version.mjs';
 
 const exec = promisify(execFile);
@@ -28,6 +30,8 @@ const KEYCHAIN_SERVICE = 'poki-setup-install';
 const pollMs = () => Number(process.env.POKI_INSTALL_POLL_MS ?? 2000);
 const retryMs = () => Number(process.env.POKI_INSTALL_RETRY_MS ?? 3000);
 const waitMs = () => Number(process.env.POKI_INSTALL_WAIT_MS ?? 15 * 60 * 1000);
+// Poki reads a sealed key while it is in front, every 2 s.
+const keyWaitMs = () => Number(process.env.POKI_INSTALL_KEY_WAIT_MS ?? 2 * 60 * 1000);
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 // Poki Setup windows (osascript dialogs) ask for the Apple Account and the code, so the person never
 // opens Terminal. POKI_INSTALL_DIALOGS=0, or a Mac with no screen to show them on, falls back to Terminal.
@@ -129,7 +133,8 @@ class Run {
   }
 
   emit(event) {
-    process.stdout.write(`${this.opts.json ? JSON.stringify(event) : format(event)}\n`);
+    const stamped = { ...event, at: new Date().toISOString() };
+    process.stdout.write(`${this.opts.json ? JSON.stringify(stamped) : format(stamped)}\n`);
   }
 
   async save() { await writeFile(join(this.state, 'run.json'), `${JSON.stringify(this.record, null, 2)}\n`); }
@@ -170,7 +175,7 @@ class Run {
 
   // Dry run: the simulated person answers the installer's own stops after a moment.
   simulatePerson(wait) {
-    const files = { apple_code: ['apple-code', '123456'], open_poki: ['open_poki', 'done'] };
+    const files = { apple_code: ['apple-code', '123456'], open_poki: ['open_poki', 'done'], open_poki_tell: ['open_poki', 'done'] };
     if (!files[wait]) return;
     setTimeout(() => {
       this.emit({ event: 'note', text: `[dry run] the simulated person finished ${wait}` });
@@ -373,7 +378,11 @@ class Run {
   async install() {
     if (this.doneBefore('install') && !this.opts.reinstall) {
       const records = await this.bridge.request('records');
-      if (records.some(r => r.udid === this.udid)) return { skipped: 'Poki is already installed from this computer (pass --reinstall to sign and install again)' };
+      const installed = records.find(r => r.udid === this.udid);
+      if (installed) {
+        this.bundleId = installed.bundle_id;
+        return { skipped: 'Poki is already installed from this computer (pass --reinstall to sign and install again)' };
+      }
     }
     const retries = {};
     for (;;) {
@@ -393,6 +402,7 @@ class Run {
         for (const note of done.notes ?? []) this.emit({ event: 'note', text: note });
         if (done.handoff?.link) this.emit({ event: 'wait', wait: 'pairing_file', who: 'phone', say: `${manifest.waits.pairing_file.say} Or open ${done.handoff.link} on the iPhone.` });
         this.installed = done.record;
+        this.bundleId = done.record.bundle_id;
         this.record.poki = `${done.record.version} (${done.record.build})`;
         return `Poki ${done.record.version} (${done.record.build}) installed, signed for ${Math.round((done.record.profile_expires_at - Date.now() / 1000) / 86400)} days`;
       } catch (error) {
@@ -406,16 +416,85 @@ class Run {
     }
   }
 
+  // Poki's hand-off files, through Poki Setup's helper or devicectl; null when neither can reach them.
+  async access() {
+    if (this.containerTried) return this.container;
+    this.containerTried = true;
+    try {
+      this.container = await containerAccess({ bridge: this.bridge, udid: this.udid, bundleId: this.bundleId });
+    } catch (error) {
+      this.emit({ event: 'note', text: `Poki's files are not reachable from this Mac: ${error.message}` });
+      this.container = null;
+    }
+    if (this.container) this.record.handoff = this.container.kind;
+    return this.container;
+  }
+
+  // Poki writes Documents/PokiSetup/poki-hello.json each time it starts, so a new one is Poki open.
   async open_poki() {
     if (this.doneBefore('open_poki') && !this.opts.reinstall) return { skipped: 'Poki was opened on an earlier run' };
-    await this.waitFor('open_poki', () => this.takeInbox('open_poki'));
-    return 'the person opened Poki';
+    const access = await this.access();
+    if (!access) {
+      await this.waitFor('open_poki_tell', () => this.takeInbox('open_poki'));
+      return 'the person said Poki is open';
+    }
+    const before = (await readHello(access))?.at;
+    const seen = await this.waitFor('open_poki', async () => {
+      const hello = await readHello(access);
+      if (hello && hello.at !== before) return hello;
+      if (await access.running?.()) return { running: true };
+      return (await this.takeInbox('open_poki')) ? { told: true } : null;
+    });
+    if (seen.told) return 'the person said Poki is open';
+    if (seen.running) return 'Poki is running on the iPhone (a version that does not write its hello yet)';
+    this.hello = seen;
+    return `Poki ${seen.version} (${seen.build}) is open on the iPhone`;
+  }
+
+  // Only with --model-key: the key leaves the keychain into this process, is sealed to the key Poki
+  // made on the phone, and only the sealed file goes to the phone. Poki's hello says when it took it.
+  async model_key() {
+    const provider = this.opts.modelKey;
+    if (!provider) return { skipped: 'not asked to give Poki a model key (pass --model-key openai to carry the Mac keychain item openai-api-key)' };
+    const typeIt = `ask the person to type the key in Poki: Agents > Accounts and Models`;
+    const access = await this.access();
+    if (!access) return { skipped: `this Mac cannot reach Poki's files (this Poki Setup has no container commands and Xcode's devicectl is not installed); ${typeIt}` };
+    const phone = phoneKey((await readHello(access)) ?? this.hello);
+    if (!phone) return { skipped: `this Poki takes no key from the Mac yet; ${typeIt}` };
+    const item = this.opts.modelKeyItem ?? `${provider}-api-key`;
+    let secret = await readKeychainKey(item);
+    if (!secret) throw new StepFailure('model_key_missing', `the login keychain has no key in the item ${item}`);
+    const sealed = seal({ secret, provider, bundleId: this.bundleId, phone });
+    secret = null;
+    await access.write(SEALED_KEY, sealed);
+    const deadline = Date.now() + keyWaitMs();
+    for (;;) {
+      const hello = await readHello(access);
+      if (hello?.imported?.key_id === phone.keyId) break;
+      if (Date.now() > deadline) throw new StepFailure('model_key_not_taken', `Poki did not take the sealed ${provider} key in ${Math.round(keyWaitMs() / 1000)} s`);
+      await sleep(pollMs());
+    }
+    return `the ${provider} key from the keychain item ${item} is in Poki on the iPhone, sealed to a key only that phone holds`;
+  }
+
+  async loopback() {
+    const tell = manifest.waits.loopback.say.replace(/ I see by myself when it works\.$/, '');
+    const access = await this.access();
+    if (!access) return { skipped: `this Mac cannot read Poki's state; tell the person: ${tell}` };
+    const hello = (await readHello(access)) ?? this.hello;
+    if (!hello?.loopback) return { skipped: `this Poki does not say whether its connection answers; tell the person: ${tell}` };
+    if (hello.loopback.working) return 'Poki\'s local connection (10.7.0.1) answers';
+    // Poki's own sentence for the VPN app it found; device text is kept to one plain line.
+    const fromPoki = String(hello.loopback.say ?? '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, 400);
+    const say = fromPoki ? `${fromPoki} I see by myself when it works.` : undefined;
+    await this.waitFor('loopback', async () => ((await readHello(access))?.loopback?.working ? true : null), {}, say);
+    return 'Poki\'s local connection (10.7.0.1) answers';
   }
 
   async relay() {
     const token = process.env.CLOUDFLARE_API_TOKEN;
     const saved = await this.bridge.request('relay_token_saved').catch(() => false);
-    if (!token && !saved) return { skipped: 'no Cloudflare token (set CLOUDFLARE_API_TOKEN to deploy a relay); Poki works on the phone without one' };
+    if (!token && !saved) return { skipped: 'no Cloudflare token (set CLOUDFLARE_API_TOKEN to deploy a relay); Poki and its own chat work on the phone without one, but agents on other computers cannot reach it' };
     try {
       const accounts = await this.bridge.request('relay_accounts', token ? { token } : {});
       if (accounts.length !== 1) throw new StepFailure('relay_failed', `the token sees ${accounts.length} Cloudflare accounts; deploy from Poki Setup's Relay page`);

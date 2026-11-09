@@ -77,8 +77,9 @@ final class AppModel {
     var idleStopSeconds: Int = UserDefaults.standard.object(forKey: "idleStopSeconds.v4") as? Int ?? 60 {
         didSet { UserDefaults.standard.set(idleStopSeconds, forKey: "idleStopSeconds.v4"); log.add("runner", "idle stop set to \(idleStopSeconds) s") }
     }
-    /// Poki was on when it last ran; it turns itself on again at launch.
-    private var wantsOn: Bool {
+    /// Poki was on when it last ran; it turns itself on again at launch. Poki Setup's install turns it
+    /// on the first time (see `init`).
+    private(set) var wantsOn: Bool {
         get { UserDefaults.standard.bool(forKey: "wantsOn") }
         set { UserDefaults.standard.set(newValue, forKey: "wantsOn") }
     }
@@ -161,6 +162,7 @@ final class AppModel {
     private let activity = ActivityController()
     let log = AppLog.shared
     private var eventsTask: Task<Void, Never>?
+    private var handoffTimer: Timer?
     private var sessionStartTask: Task<Void, Never>?
     private(set) var sessionStarting = false
 
@@ -314,6 +316,16 @@ final class AppModel {
             else if problem == tunnelAttention { problem = nil; tunnelAttention = nil }
         }
         if !diskImage.isReady { Task { await diskImage.download() } }
+        // Just installed by Poki Setup on a computer (its signing key still waits in the container, and
+        // the owner never turned Poki on or off): Poki turns on by itself, so it does not stand at Off.
+        if UserDefaults.standard.object(forKey: "wantsOn") == nil, FileManager.default.fileExists(atPath: SelfSigner.handedIdentity.path) {
+            wantsOn = true
+            log.add("session", "installed by Poki Setup: Poki turns on by itself")
+        }
+        // The installer on the Mac reads the hello and may leave a sealed model key while Poki is in front.
+        handoffTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            Task { @MainActor in if self?.inFront == true { self?.handoffTick() } }
+        }
         // An agent whose session began before this launch is named from its connector.
         SessionStore.shared.connectorAgent = { [identity] hash in
             identity.secrets.first { $0.hash == hash }.map { $0.named ? $0.name : ($0.agent ?? $0.name) }
@@ -467,6 +479,7 @@ final class AppModel {
         // checked again, and the pairing checked as soon as the loopback answers.
         SetupVault.mirrorPairingFromContainer()
         lookForHandedPairing()
+        handoffTick()
         diskImage.notice()
         warmInProcess("Poki came to the front")
         loopback.resume()
@@ -483,11 +496,41 @@ final class AppModel {
         if sessionOn, let step = stepUnderWay, Date().timeIntervalSince(step.started) < 20 {
             log.add("app", "Poki came to the front during a step (\(step.summary)): a tap hit the Live Activity")
         }
+        turnOnIfWanted()
+        if let step = guiding, isDone(step) { stopGuide() }
+    }
+
+    /// Turns on when Poki was on (or Poki Setup just installed it) and the pairing and disk image are there.
+    private func turnOnIfWanted() {
         Task {
             await tunnel.refresh()
             if wantsOn, !sessionOn, pairingPath != nil, diskImage.isReady { startSession(reconnectLocal: false) }
         }
-        if let step = guiding, isDone(step) { stopGuide() }
+    }
+
+    // MARK: Hand-off with the installer on the Mac (PokiHandoff)
+
+    /// Takes a model key the installer sealed to this phone, then tells the installer how Poki is.
+    /// A key that just came may be what Poki needed to turn on.
+    func handoffTick() {
+        if let what = PokiHandoff.takeSealedKey() {
+            log.add("setup", what)
+            turnOnIfWanted()
+        }
+        PokiHandoff.writeHello(loopbackWorking: loopback.isWorking, loopbackSay: loopback.isWorking ? nil : loopbackSentence)
+    }
+
+    /// The one thing to do for the local connection, for the person, as the installer says it.
+    var loopbackSentence: String {
+        if tunnel.available { return "In Poki, open Setup > Connect to this iPhone and turn on Poki's own connection." }
+        guard let app = ProxyApps.all.first(where: \.isInstalled) else {
+            return "Install a VPN app that can reach 10.7.0.1 (Karing, Surge, Loon or Shadowrocket), then in Poki open Setup > Connect to this iPhone."
+        }
+        switch app.install {
+        case .url: return "In Poki, open Setup > Connect to this iPhone > \(app.name), tap Install, then confirm in \(app.name)."
+        case .toggle(let setting): return "In \(app.name), set \(setting), and keep \(app.name) connected."
+        case .snippet: return "In Poki, open Setup > Connect to this iPhone > \(app.name) and add the lines it shows to \(app.name)."
+        }
     }
 
     /// In the background the loopback is still watched while Poki is on (the agent's runner depends on

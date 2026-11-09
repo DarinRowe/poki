@@ -1,6 +1,6 @@
 # Install Poki for your client
 
-To install the Poki app on the user's iPhone (the standalone app with Poki Setup), follow [INSTALL-IPHONE.md](INSTALL-IPHONE.md) instead. This file installs Poki MCP for an MCP client.
+To install the Poki app on the user's iPhone (the standalone app with Poki Setup), follow the skill [skills/install-poki/SKILL.md](skills/install-poki/SKILL.md) instead. This file installs Poki MCP for an MCP client.
 
 Choose the installation path first:
 

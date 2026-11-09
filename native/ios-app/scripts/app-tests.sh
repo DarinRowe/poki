@@ -10,7 +10,7 @@ X="$(xcode-select -p)/Platforms/iPhoneSimulator.platform/Developer"
 
 xcodegen generate --spec "$APP_DIR/project.yml" >/dev/null
 xcodebuild -quiet build-for-testing -project "$APP_DIR/Poki.xcodeproj" -scheme Poki \
-  -destination "id=$UDID" -derivedDataPath "$DD" CODE_SIGNING_ALLOWED=NO
+  -destination "id=$UDID" -derivedDataPath "$DD" CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= PROVISIONING_PROFILE_SPECIFIER=
 APP="$DD/Build/Products/Debug-iphonesimulator/Poki.app"
 BUNDLE="$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$APP/Info.plist")"
 xcrun simctl bootstatus "$UDID" -b >/dev/null
