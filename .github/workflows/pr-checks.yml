@@ -49,7 +49,9 @@ jobs:
       - name: actionlint
         run: |
           bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash) 1.7.7
-          ./actionlint -color
+          # Workflow syntax, expressions and runner labels. shellcheck's style notes on the older
+          # workflows' scripts are not checked here (-shellcheck=).
+          ./actionlint -color -shellcheck=
       - name: Release scripts
         run: |
           bash -n .github/scripts/publish-rolling.sh
