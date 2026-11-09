@@ -654,6 +654,16 @@
         }
       }
     },
+    "Apple Account" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple 账号"
+          }
+        }
+      }
+    },
     "Approval" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2624,6 +2634,26 @@
         }
       }
     },
+    "Optional" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "可选"
+          }
+        }
+      }
+    },
+    "Optional. To renew Poki without a Mac, sign in to your Apple Account here." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "可选。不连 Mac 也想续签时，可以在这里登录 Apple 账号，让 Poki 自己续签。"
+          }
+        }
+      }
+    },
     "PROXY LOOPBACK INTERFACE" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2817,6 +2847,16 @@
         }
       }
     },
+    "Poki Setup on your Mac renews Poki when this iPhone is connected." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这台 iPhone 连上 Mac 时，Poki Setup 会为 Poki 续签。"
+          }
+        }
+      }
+    },
     "Poki asks you before an agent pays, deletes, sends a message, places a call, types a password or does anything in Wallet: on the Live Activity, in a notification, or here in Poki. Turned off, agents do all of that without asking. Changes take effect the next time Poki opens." : {
       "localizations" : {
         "zh-Hans" : {
@@ -2968,6 +3008,16 @@
         }
       }
     },
+    "Poki stops opening after %@. Connect this iPhone to your Mac and ask your agent to renew it." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 之后 Poki 将无法打开。请把这台 iPhone 连上 Mac，让 agent 为它续签。"
+          }
+        }
+      }
+    },
     "Poki uses your ChatGPT plan, the way Codex does. The sign-in stays in this iPhone’s Keychain." : {
       "localizations" : {
         "zh-Hans" : {
@@ -2995,6 +3045,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Poki 详情"
+          }
+        }
+      }
+    },
+    "Poki’s signing ends soon" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 的签名快到期了"
           }
         }
       }
@@ -3472,6 +3532,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已登录"
+          }
+        }
+      }
+    },
+    "Signing" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "签名"
+          }
+        }
+      }
+    },
+    "Signing Options" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "签名选项"
           }
         }
       }

@@ -65,7 +65,7 @@ struct SetupView: View {
     }
 
     /// The current step's own check passed: the pairing took, location and Live Activities are on.
-    private var checkedByPhone: Bool { step == .pairing || step == .account || step == .background ? model.isDone(step) : false }
+    private var checkedByPhone: Bool { step == .pairing || step == .background ? model.isDone(step) : false }
 
     private var header: some View {
         HStack(spacing: 12) {
@@ -104,7 +104,6 @@ struct SetupView: View {
             ConfirmCard(step: .developerMode, title: "Developer Mode is on", isOn: binding(\.developerMode))
         case .loopback: LoopbackPage()
         case .pairing: PairingPage()
-        case .account: AccountPage()
         case .automation:
             InstructionsCard(lines: [
                 "Open **Settings › Developer**. It appears once Developer Mode is on.",
@@ -157,7 +156,6 @@ extension SetupStep {
         case .developerMode: "Turn On Developer Mode"
         case .loopback: "Turn On Loopback"
         case .pairing: "Pair This iPhone"
-        case .account: "Sign In to Apple Account"
         case .automation: "Allow UI Automation"
         case .background: "Keep Poki Running"
         }
@@ -169,7 +167,6 @@ extension SetupStep {
         case .developerMode: SetupStep.inProcess ? "Allows Poki to use this iPhone’s developer services." : "Allows this iPhone to run Poki Runner."
         case .loopback: "Allows Poki to reach this iPhone’s developer services through your proxy app."
         case .pairing: "Gives Poki its own key to this iPhone. The key stays on this device."
-        case .account: "Lets Poki sign itself again every week and install updates, with no computer. A free Apple Account works."
         case .automation: SetupStep.inProcess ? "Allows Poki to control other apps." : "Allows Poki Runner to control other apps."
         case .background: "Keeps Poki connected in the background and shows its activity on the Lock Screen."
         }
@@ -663,8 +660,7 @@ struct SetupChecklist: View {
     var body: some View {
         List {
             Section {
-                // The Apple Account is managed in Signing, below.
-                ForEach(SetupStep.shown.filter { $0 != .account }) { step in
+                ForEach(SetupStep.shown) { step in
                     NavigationLink(value: step) { SetupStepRow(step: step) }
                 }
             } footer: {
@@ -839,7 +835,6 @@ struct SetupStepPage: View {
             ConfirmCard(step: .developerMode, title: "Developer Mode is on", isOn: binding(\.developerMode))
         case .loopback: LoopbackPage()
         case .pairing: PairingPage()
-        case .account: AccountPage()
         case .automation:
             InstructionsCard(lines: [
                 "Open **Settings › Developer**. It appears once Developer Mode is on.",

@@ -1496,7 +1496,6 @@ final class AppModel {
         case .loopback: loopback.isWorking
         // The disk image downloads by itself (and is checked again when Poki turns on): it does not hold the step open.
         case .pairing: pairingPath != nil && pairingTrouble == nil
-        case .account: signer.signedIn
         case .automation: setup.uiAutomation
         case .background: background.allowed && activity.enabled
         }

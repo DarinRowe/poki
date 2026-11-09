@@ -96,9 +96,10 @@ enum AppFiles {
     }
 }
 
-/// The setup steps, in the order a new user does them.
+/// The setup steps, in the order a new user does them. The Apple Account is not one (ESP-222): Poki
+/// Setup on a Mac signs and installs Poki, so signing in on the phone is optional, in Signing Options.
 enum SetupStep: String, CaseIterable, Identifiable {
-    case runner, developerMode, loopback, pairing, account, automation, background
+    case runner, developerMode, loopback, pairing, automation, background
     var id: String { rawValue }
 
     /// The steps this launch shows: the in-process path has no Poki Runner to install.
@@ -120,7 +121,6 @@ enum SetupStep: String, CaseIterable, Identifiable {
         case .developerMode: "Turn on Developer Mode"
         case .loopback: "Connect to this iPhone"
         case .pairing: "Pair this iPhone"
-        case .account: "Sign in to your Apple Account"
         case .automation: "Allow UI Automation"
         case .background: "Let Poki stay on"
         }
@@ -132,7 +132,6 @@ enum SetupStep: String, CaseIterable, Identifiable {
         case .developerMode: "hammer"
         case .loopback: "arrow.triangle.2.circlepath"
         case .pairing: "link"
-        case .account: "person.crop.circle.badge.checkmark"
         case .automation: "hand.tap"
         case .background: "location"
         }
@@ -144,7 +143,6 @@ enum SetupStep: String, CaseIterable, Identifiable {
         case .developerMode: Self.inProcess ? "Lets Poki use this iPhone’s developer services." : "Lets this iPhone run Poki Runner."
         case .loopback: "Use Poki's local connection, or a compatible VPN app you already have."
         case .pairing: Self.onDevicePairing ? "Gives Poki its own key to this iPhone. Made and kept on the phone, no computer needed." : "Gives Poki its own key to this iPhone. On this iOS version the key is made on a computer with Poki Setup, then sent here."
-        case .account: "Lets Poki sign itself again before it expires, and install updates. A free Apple Account works."
         case .automation: Self.inProcess ? "Lets Poki use other apps." : "Lets Poki Runner use other apps."
         case .background: "Keeps Poki connected while it is in the background, and shows what it does on the Lock Screen."
         }
@@ -157,7 +155,6 @@ enum SetupStep: String, CaseIterable, Identifiable {
         case .developerMode: "Settings > Privacy & Security > Developer Mode. Turn it on, restart, then tap Turn On."
         case .loopback: "In Poki's Setup, enable the local connection or choose an external connection."
         case .pairing: Self.onDevicePairing ? "Settings > Privacy & Security > Developer Mode > Pair with Poki, then type the code shown here." : "Pair from Poki Setup on your computer, then send the pairing file to this iPhone."
-        case .account: "Sign in to your Apple Account in Poki's Setup."
         case .automation: "Settings > Developer > Enable UI Automation."
         case .background: "Allow location While Using the App, and keep Live Activities on."
         }
@@ -173,7 +170,6 @@ extension SetupStep {
         case .developerMode: "Developer Mode"
         case .loopback: "Loopback"
         case .pairing: "Pairing"
-        case .account: "Apple Account"
         case .automation: "UI Automation"
         case .background: "Background"
         }
