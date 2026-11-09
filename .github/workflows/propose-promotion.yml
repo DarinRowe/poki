@@ -73,7 +73,7 @@ jobs:
             else
               echo "- Gate: the beta has been out for the wait in \`.github/channels.json\` (\`soak_days\`). Add the \`soak-override\` label to skip it."
               [ -n "$SKIP" ] && echo "- The wait was skipped when proposing: $SKIP"
-              echo "- Merging publishes the full release and marks it Latest, after approval in the \`stable\` environment."
+              echo "- Merging publishes the full release (not marked Latest, which stays on Poki MCP's v* release), after approval in the \`stable\` environment."
             fi
             echo
             echo "Requested by @$ACTOR."

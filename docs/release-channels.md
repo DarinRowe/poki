@@ -6,7 +6,7 @@ releases Poki Setup installs and renews with.
 
 | Channel | Tag | Title | GitHub release | Who it is for |
 | --- | --- | --- | --- | --- |
-| Stable | `ios-vX.Y.Z` | Poki v0.3.0 | its own full release, marked Latest | everyone |
+| Stable | `ios-vX.Y.Z` | Poki v0.3.0 | its own full release (not marked Latest) | everyone |
 | Beta | `ios-vX.Y.Z-beta.K` | Poki v0.3.0 Beta 1 | its own prerelease | testers |
 | Alpha | `ios-alpha-X.Y.Z-N` | Poki v0.3.0 (712) Alpha | rolling `ios-alpha-latest`, prerelease | early testers |
 | Pre-alpha | `ios-prealpha-X.Y.Z-N` | Poki v0.3.0 (712) Pre-alpha | rolling `ios-prealpha-latest`, prerelease | developers |
@@ -79,5 +79,6 @@ the 5 macOS runners: Poki Setup's core tests, the Rust lockfiles, and the workfl
 (`native/ios-app/scripts/cut-release.sh`). It starts with cold caches (about 20 minutes) and will be
 removed once the pipeline above has shipped a few builds.
 
-The Mac server's update notice (`src/update-check.mjs`) reads `releases/latest`, which returns only
-Stable.
+The Mac server's update notice (`src/update-check.mjs`) reads `releases/latest` and only understands
+Poki MCP's `vX.Y.Z` tags, so app releases are never marked Latest: Latest stays on Poki MCP's newest
+release.

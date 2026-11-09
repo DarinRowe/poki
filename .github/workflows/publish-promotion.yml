@@ -2,7 +2,8 @@
 # .github/channels.json whose tag does not exist yet. The IPA is the one already built, renamed
 # without the build number (inside, CFBundleVersion keeps it):
 #   beta    Poki-external-0.3.0-beta.1.ipa on ios-v0.3.0-beta.1, a prerelease, with the Gym scorecards
-#   stable  Poki-external-0.3.0.ipa on ios-v0.3.0, a full release marked Latest
+#   stable  Poki-external-0.3.0.ipa on ios-v0.3.0, a full release (never marked Latest: GitHub's
+#           Latest is Poki MCP's v* release, which the Mac server's update check reads)
 # Poki Setup files come along from the source release. Created as a draft, checked, then published.
 # A stable waits for approval in the "stable" environment (Settings > Environments > stable >
 # Required reviewers).
@@ -114,7 +115,7 @@ jobs:
           if [ "$CHANNEL" = beta ]; then
             title="Poki v$BASE Beta ${LABEL##*beta.}"; kind=(--prerelease --latest=false)
           else
-            title="Poki v$BASE"; kind=(--latest)
+            title="Poki v$BASE"; kind=(--latest=false)
           fi
           gh release create "$TAG" dist/* --target "$SHA" --draft --title "$title" --notes-file notes.md "${kind[@]}"
           have="$(gh release view "$TAG" --json assets --jq '.assets | length')"
