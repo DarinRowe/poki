@@ -49,6 +49,7 @@
     "check_failed": { "reason": "Poki is installed but the self-check found something not ready.", "agent_fix": "Read the check fields in the result, fix what the matching code says, and run again.", "retry": 0 },
     "model_key_missing": { "reason": "--model-key was given, but the Mac's login keychain has no item with that name, or it is empty.", "agent_fix": "Tell the person which keychain item was looked for. They can add it in their own Terminal with security add-generic-password -U -s <item> -a \"$USER\" -w, or type the key in Poki (Agents > Accounts and Models). Never ask for the key in chat.", "retry": 0 },
     "model_key_not_taken": { "reason": "The sealed key is in Poki, but Poki did not say it took it in time (it reads the file while it is in front).", "agent_fix": "Ask the person to bring Poki to the front, then run the command again; the key is sealed again for the phone's new key.", "person": "Open Poki and keep it in front for a moment.", "retry": 0 },
+    "node_too_old": { "reason": "The installer runs on Node.js 24 or later.", "agent_fix": "Install Node.js 24 or later, or use Poki Setup's own command line tool (poki-setup next --json).", "retry": 0 },
     "unknown": { "reason": "An error the installer does not recognise.", "agent_fix": "Run diagnose and issue, show the draft to the person, and submit it only after they agree.", "retry": 0 }
   }
 }

@@ -36,7 +36,9 @@ Install Poki on my iPhone from https://github.com/JosssphZhou/poki
 
 The agent follows the [install-poki skill](skills/install-poki/SKILL.md) and runs `bin/install-iphone.mjs`, which does every step it can by itself. You only do what iOS asks of you: type your Apple Account into a Poki Setup window on the Mac, tap Trust and turn on Developer Mode on the iPhone, trust the developer, and open Poki. The agent tells you each one in a sentence when it comes up. A free Apple Account works.
 
-Prefer clicking through it yourself? Download Poki Setup from the [releases](https://github.com/JosssphZhou/poki/releases) and follow its window.
+No Node.js 24, or on Windows? The same prompt works once Poki Setup is installed: the agent then uses the command line tool inside Poki Setup. Poki Setup's own menu also copies a prompt for your agent (Poki > Copy Prompt for Your Agent on a Mac, Settings > Use an agent on Windows).
+
+Prefer clicking through it yourself? Download Poki Setup from the [Alpha release](https://github.com/JosssphZhou/poki/releases#release-ios-alpha-latest) and follow its window.
 
 ### Poki MCP for your agent
 

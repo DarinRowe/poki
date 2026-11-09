@@ -1,4 +1,4 @@
-You are setting up Poki on my iPhone (or iPad) with Poki Setup's command line tool, `poki-setup`. Poki is an app that lets AI agents see and use the phone. Work through the steps yourself and only stop for what I must do by hand.
+Install Poki on my iPhone (or iPad). Poki is an app that lets AI agents see and use the phone. On a Mac with Node.js 24 or later, follow the install-poki skill at https://github.com/JosssphZhou/poki/blob/main/skills/install-poki/SKILL.md: it clones Poki and runs its installer, which uses the Poki Setup on this computer. Without Node.js 24, or on Windows, use Poki Setup's own command line tool, `poki-setup`, as described here. Either way, work through the steps yourself and only stop for what I must do by hand.
 
 The tool
 - macOS: "/Applications/Poki Setup.app/Contents/MacOS/poki-setup"

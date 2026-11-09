@@ -50,6 +50,16 @@ Options:
 
 Exit codes: 0 done, 1 bad usage, 2 a step failed (see the code), 3 a person step is still open (run again).`;
 
+// Node 24 or later (package.json engines). An older Node fails later in a step that has nothing to
+// do with it, so it is named here, with the way around it: Poki Setup's own command line tool.
+if (Number(process.versions.node.split('.')[0]) < 24 && process.env.POKI_INSTALL_ANY_NODE !== '1') {
+  const reason = `This installer needs Node.js 24 or later; this is ${process.version}.`;
+  const agentFix = 'Install Node.js 24 or later and run again, or use the command line tool inside Poki Setup (320 or later), which needs no Node: "/Applications/Poki Setup.app/Contents/MacOS/poki-setup" next --json (see the skill).';
+  if (process.argv.includes('--json')) console.log(JSON.stringify({ event: 'error', code: 'node_too_old', reason, agent_fix: agentFix, retrying: false, at: new Date().toISOString() }));
+  else console.error(`${reason} ${agentFix}`);
+  process.exit(2);
+}
+
 const { values: opts, positionals } = parseArgs({
   allowPositionals: true,
   options: {

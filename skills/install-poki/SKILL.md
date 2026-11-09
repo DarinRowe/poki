@@ -13,7 +13,7 @@ The installer does the work. You start it, relay its person stops, and report it
 ## Before you start
 
 1. Find or make a Poki checkout. In a checkout, `bin/install-iphone.mjs` exists. Otherwise run `git clone --branch standalone https://github.com/JosssphZhou/poki.git` and work in that folder.
-2. Check: a Mac with macOS 14 or later, Node.js 24 or later, an iPhone on iOS 18 or later, a USB data cable, and the user's Apple Account. A free account works. Xcode is not required. With Xcode installed, the installer can see when Poki opens and give it the model key even with an older Poki Setup.
+2. Check: a Mac with macOS 14 or later, Node.js 24 or later, an iPhone on iOS 18 or later, a USB data cable, and the user's Apple Account. A free account works. Xcode is not required. With Xcode installed, the installer can see when Poki opens and give it the model key even with an older Poki Setup. Without Node.js 24, or on Windows, use "Without Node.js, or on Windows" below instead of the checkout.
 3. Ask the user one question: "Should I also give Poki on the iPhone your model API key from this Mac's keychain?" Default is no. On yes, ask which provider (`openai`, `anthropic`, `deepseek`, `gemini` or `openrouter`) and add `--model-key <provider>` below. The installer reads the keychain item `<provider>-api-key` (for example `openai-api-key`; another name with `--model-key-item <item>`). Never read the key yourself and never ask for it in chat.
 
 ## Run it
@@ -98,7 +98,12 @@ The installer exits with code 2. The last `error` event has `code`, `reason` and
 | `check_failed` | Installed, but the self-check found something not ready. | Read the `check` fields, fix what the matching code says, run again. |
 | `model_key_missing` | `--model-key` was given, but the keychain item is missing or empty. | Tell the user the item name. They add it in their own Terminal (`security add-generic-password -U -s <item> -a "$USER" -w`) or type the key in Poki: Agents > Accounts and Models. |
 | `model_key_not_taken` | Poki did not take the sealed key in time. | Ask the user to bring Poki to the front, then run again. |
+| `node_too_old` | Node.js is older than 24. | Install Node.js 24 or later, or follow "Without Node.js, or on Windows" below. |
 | `unknown` | Not recognised. | Run `diagnose` and `issue`. |
+
+## Without Node.js, or on Windows
+
+Poki Setup 320 and later carry their own command line tool, which needs no checkout and no Node.js: `"/Applications/Poki Setup.app/Contents/MacOS/poki-setup"` on a Mac (or under `~/Applications`), `"$env:LOCALAPPDATA\Poki Setup\poki-setup.exe"` on Windows. When Node.js 24 is missing (`node_too_old`) or the computer runs Windows, ask the user to install Poki Setup from https://github.com/JosssphZhou/poki/releases#release-ios-alpha-latest and open it once, then run `"<tool>" prompt` and follow what it prints. In short: `"<tool>" next --json` lists what is done and what is next, with `who`, `command` and `say` for each step; exit code 2 means a person has to act and 3 that Apple's sign-in code is needed. The person signs in by running `"<tool>" login <email> --keep-password` in their own terminal.
 
 ## Read Poki's records on the Mac
 
@@ -116,4 +121,4 @@ The installer exits with code 2. The last `error` event has `code`, `reason` and
 - The model key leaves the keychain only into the installer's memory, is sealed to the iPhone's key, and is never printed, logged or put on a command line.
 - Do not print, log or paste the user's password, tokens, model keys or iPhone passcode.
 
-`node bin/install-iphone.mjs run --dry-run` checks the real Poki Setup and simulates the iPhone and the Apple Account. `node bin/install-iphone.mjs --version` names the installer; say it when you report a problem. Windows is not covered yet: there, install Poki Setup from the release and follow its window.
+`node bin/install-iphone.mjs run --dry-run` checks the real Poki Setup and simulates the iPhone and the Apple Account. `node bin/install-iphone.mjs --version` names the installer; say it when you report a problem. On Windows, see "Without Node.js, or on Windows" above.
