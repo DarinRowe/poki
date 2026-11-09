@@ -108,21 +108,24 @@ struct SigningSection: View {
                 } label: {
                     Label(next.kind == "update" ? "Update Ready" : "Refresh Ready", systemImage: "checkmark.seal")
                 }
+            } else if let latest = signer.latest, signer.isNewer(latest) {
+                LabeledContent { Text(verbatim: "\(latest.version) (\(latest.build))") } label: { Label("Update Available", systemImage: "sparkles") }
+            }
+            NavigationLink { SigningOptionsPage() } label: {
+                Label("Signing Options", systemImage: "slider.horizontal.3")
+            }
+            // The actions last, under what they act on.
+            if let next = signer.next {
                 // Idle is partly time (a minute since the last agent step), which nothing observes, so
                 // the row looks again every few seconds instead of staying as it was first drawn.
                 TimelineView(.periodic(from: .now, by: 5)) { _ in
                     Button(next.kind == "update" ? "Install Update" : "Install Refresh", systemImage: "arrow.down.app") { Task { await signer.install() } }
                         .disabled(signer.working != nil)
                 }
-            } else if let latest = signer.latest, signer.isNewer(latest) {
-                LabeledContent { Text(verbatim: "\(latest.version) (\(latest.build))") } label: { Label("Update Available", systemImage: "sparkles") }
             }
             if signer.signedIn {
                 Button("Prepare Refresh Now", systemImage: "arrow.clockwise") { Task { await signer.prepare(kind: "refresh") } }
                     .disabled(signer.working != nil)
-            }
-            NavigationLink { SigningOptionsPage() } label: {
-                Label("Signing Options", systemImage: "slider.horizontal.3")
             }
         } header: {
             Text("Signing")

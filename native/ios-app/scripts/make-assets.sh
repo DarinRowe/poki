@@ -35,6 +35,13 @@ logos() {
   done
 }
 logos "$APP"
+# Proxy apps' own App Store icons (Poki/ProxyIcons, see its README) beside their names in Setup.
+for png in "$HERE"/Poki/ProxyIcons/*.png; do
+  name="Proxy-$(basename "$png" .png)"
+  mkdir -p "$APP/$name.imageset"
+  cp "$png" "$APP/$name.imageset/icon@3x.png"
+  echo '{"images":[{"filename":"icon@3x.png","idiom":"universal","scale":"3x"}],"info":{"version":1,"author":"poki"}}' > "$APP/$name.imageset/Contents.json"
+done
 
 WIDGET="$HERE/PokiWidgets/Assets.xcassets"
 catalog "$WIDGET"

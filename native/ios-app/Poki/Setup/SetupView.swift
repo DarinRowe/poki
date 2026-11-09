@@ -356,9 +356,18 @@ private struct LoopbackPage: View {
             else if chosen { Text("Not Answering").foregroundStyle(.orange) }
             else if installed { Text("Installed") }
         } label: {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(verbatim: name)
-                if let sub { Text(sub).font(.footnote).foregroundStyle(Color(.secondaryLabel)) }
+            // The app's own icon, the size and corners of Settings' app rows.
+            HStack(spacing: 12) {
+                Image("Proxy-\(id)")
+                    .resizable()
+                    .frame(width: 29, height: 29)
+                    .clipShape(.rect(cornerRadius: 6.5, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 6.5, style: .continuous).strokeBorder(Color(.separator), lineWidth: 0.5))
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(verbatim: name)
+                    if let sub { Text(sub).font(.footnote).foregroundStyle(Color(.secondaryLabel)) }
+                }
             }
         }
     }
