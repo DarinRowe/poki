@@ -658,6 +658,26 @@ final class Computer: @unchecked Sendable {
             lastPicture = seenPicture
             result = await readAndReply(until: until, full: full, changes: true, did: did, error: error, extra: (approvedNote.map { [$0] } ?? []) + extra + ["the screen was read again (\(rereads)): \(why)"])
         }
+        // The app this call opened answers no tree because its process has no accessibility server
+        // (on the phone, WeChat for half an hour: "Error getting main window kAXErrorServerNotFound",
+        // while Settings and Poki read; the same WeChat process read fine later). It is opened once
+        // more from a fresh start, which brings up a process with one, and read again. Only an app the
+        // call itself brought forward: ending one the owner was in would lose their place.
+        let cameForward = launched ?? (lastForeground?.bundleID != before?.bundleID ? lastForeground?.bundleID : nil)
+        if let app = cameForward, lastForeground?.bundleID == app, !config.isPoki(lastForeground), app != "com.apple.springboard",
+           result.text.contains("kAXErrorServerNotFound"), until - now() > config.readTimeout + 4 {
+            var how = "it was opened again from a fresh start"
+            do {
+                _ = try await runner.call("POST", "/wda/apps/terminate", ["bundleId": .string(app)], timeout: 6, countsAsMiss: false)
+                _ = try await runner.call("POST", "/wda/apps/launch", ["bundleId": .string(app)], timeout: max(3, min(10, until - now() - config.readTimeout - 0.5)))
+            } catch {
+                how = "opening it again from a fresh start did not answer (\(error))"
+            }
+            await sleep(seconds: 0.4)
+            lastTree = seenTree
+            lastPicture = seenPicture
+            result = await readAndReply(until: until, full: full, changes: true, did: did, error: error, extra: (approvedNote.map { [$0] } ?? []) + extra + ["\(app) answered no element tree (no accessibility server in its process: kAXErrorServerNotFound); \(how), so its earlier page is gone"])
+        }
         // A call that took far longer than its parts says where the time went (gym: a wait_until
         // whose parts said 5 s answered after 29.8 s).
         let total = now() - callStarted

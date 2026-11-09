@@ -1061,3 +1061,42 @@ final class UnreadableTreeTests: XCTestCase {
         XCTAssertEqual(wda.sent.filter { $0.hasSuffix("/wda/tap") }.count, 1, tapped.text)
     }
 }
+
+/// ESP-229: on the phone, WeChat's tree failed with "Error getting main window kAXErrorServerNotFound"
+/// for half an hour (no accessibility server in its process), while Settings and Poki read fine; the
+/// same WeChat process read fine later. A call that opened the app and then finds no accessibility
+/// server in it opens the app once more from a fresh start and reads again; a look, which opened
+/// nothing, never ends an app.
+final class AccessibilityServerMissingTests: XCTestCase {
+    func testAnAppOpenedWithoutAnAccessibilityServerIsOpenedAgainFreshAndRead() async {
+        let (core, wda, _) = makeCore()
+        let front = LockedBox("nz.zheha.poki")
+        let restarted = LockedBox(false)
+        wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": .string(front.value), "name": ""]]) }
+        for key in ["POST /wda/apps/activate", "POST /wda/apps/launch"] {
+            wda.set(key) { body in front.value = body?["bundleId"]?.string ?? front.value; return (200, ["value": .null]) }
+        }
+        wda.set("POST /wda/apps/terminate") { _ in restarted.value = true; front.value = "com.apple.springboard"; return (200, ["value": .null]) }
+        let rect: JSON = ["x": 0, "y": 0, "width": 390, "height": 844]
+        let poki: JSON = ["type": "XCUIElementTypeApplication", "label": "Poki", "rect": rect,
+                          "children": [["type": "XCUIElementTypeButton", "label": "Talk", "rect": ["x": 16, "y": 700, "width": 358, "height": 44]]]]
+        let wechat: JSON = ["type": "XCUIElementTypeApplication", "label": "WeChat", "rect": rect,
+                            "children": [["type": "XCUIElementTypeButton", "label": "Chats", "rect": ["x": 16, "y": 790, "width": 80, "height": 44]]]]
+        wda.set("GET /source") { _ in
+            guard front.value == "com.tencent.xin" else { return (200, ["value": poki]) }
+            return restarted.value ? (200, ["value": wechat])
+                : (500, ["value": ["error": "unknown error", "message": "no element tree: Error getting main window kAXErrorServerNotFound"]])
+        }
+        _ = await core.call("look", [:])
+
+        let opened = await core.call("do", ["actions": [["launch": "com.tencent.xin"]]])
+        XCTAssertTrue(opened.text.contains("\"Chats\""), opened.text)
+        XCTAssertTrue(opened.text.contains("opened again from a fresh start"), opened.text)
+        XCTAssertEqual(wda.sent.filter { $0.hasSuffix("/wda/apps/terminate") }.count, 1, opened.text)
+
+        restarted.value = false
+        let looked = await core.call("look", [:])
+        XCTAssertTrue(looked.text.contains("kAXErrorServerNotFound"), looked.text)
+        XCTAssertEqual(wda.sent.filter { $0.hasSuffix("/wda/apps/terminate") }.count, 1, "a look ends no app: \(looked.text)")
+    }
+}
