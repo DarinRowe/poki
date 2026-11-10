@@ -9,7 +9,10 @@ import UIKit
 enum AutomationPath: String, CaseIterable, Identifiable {
     case runner
     case inProcess = "in-process"
+    /// Diagnostics-only: the paired developer services used by the Mac/Linux bridge, from the phone.
+    case nativeServices = "native-services"
     var id: String { rawValue }
+    var mountsOnly: Bool { self != .runner }
     static let current: AutomationPath = UserDefaults.standard.string(forKey: "automationPath").flatMap(AutomationPath.init(rawValue:)) ?? .inProcess
 }
 

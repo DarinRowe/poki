@@ -407,6 +407,7 @@ struct InProcessSection: View {
             Picker("Agents' actions go through", selection: $path) {
                 Text("Poki Runner").tag(AutomationPath.runner.rawValue)
                 Text("Poki itself").tag(AutomationPath.inProcess.rawValue)
+                Text("Native services (experimental)").tag(AutomationPath.nativeServices.rawValue)
             }
             if path != running.rawValue {
                 Text("Takes effect when Poki starts again.").font(.caption).foregroundStyle(.orange)
@@ -416,7 +417,7 @@ struct InProcessSection: View {
                 Button("Port 8100") { Task { await probe.portCheck() } }
                 Button("Separate session") { Task { await probe.separateTrial() } }
             }.disabled(probe.running)
-            Button("Compare both paths (5 rounds)") { Task { await probe.benchmark(model: model, rounds: 5) } }.disabled(probe.running)
+            Button("Compare available paths (5 rounds)") { Task { await probe.benchmark(model: model, rounds: 5) } }.disabled(probe.running)
             HStack {
                 Button("Prepare") { Task { await probe.prepareOnly() } }
                 Spacer()
@@ -436,7 +437,7 @@ struct InProcessSection: View {
         } header: {
             Text("In-process automation")
         } footer: {
-            Text("Taps and types from Poki itself, without Poki Runner. Self test taps the field above and types into it. Later waits, then taps the point (x, y) and types, in whatever app is in front.")
+            Text("Native services is an experimental banner-free path using the same paired accessibility, screenshot and HID services as the Mac/Linux bridge. PokiCore keeps the same control logic, approvals, action timing and typing cadence as the standard paths. Changes take effect when Poki starts again.")
         }
     }
 }

@@ -4,16 +4,44 @@
 pub mod ddi;
 pub mod device;
 pub mod launch;
+mod native_services;
 pub mod pair;
 pub mod remote;
 pub mod signer;
 pub mod supervisor;
+
+// The desktop bridge and the experimental on-device path deliberately compile the same protocol
+// implementations. Keeping these files shared prevents the two banner-free paths from drifting.
+#[allow(dead_code)]
+#[path = "../../bridge/src/apps.rs"]
+mod apps;
+#[path = "../../bridge/src/ax.rs"]
+mod ax;
+#[allow(dead_code)]
+#[path = "../../bridge/src/gesture.rs"]
+mod gesture;
+#[path = "../../bridge/src/pasteboard.rs"]
+mod pasteboard;
+#[path = "../../bridge/src/stream.rs"]
+mod stream;
 
 use serde_json::Value;
 use std::{
     ffi::{CStr, CString, c_char, c_void},
     sync::{Arc, OnceLock},
 };
+
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
+type Touch = idevice::core_device::hid::UniversalHidServiceClient<Box<dyn idevice::ReadWrite>>;
+pub(crate) use native_services::Request;
+pub(crate) use native_services::{Keyboard, chord, held_tap};
+#[allow(dead_code)]
+fn trace(_stage: &str) {}
+fn not_sent_error(
+    error: impl Into<Box<dyn std::error::Error + Send + Sync>>,
+) -> Box<dyn std::error::Error + Send + Sync> {
+    error.into()
+}
 
 pub use supervisor::{Config, Launcher};
 
@@ -83,6 +111,78 @@ unsafe fn read_str(text: *const c_char) -> Option<String> {
 
 pub struct PokiLauncher {
     inner: Arc<Launcher>,
+}
+
+/// A persistent experimental native-services worker. It owns its tunnel and media session, separate
+/// from PokiLauncher, so the stable XCTest and runner paths retain their exact state and behavior.
+pub struct PokiNativeClient {
+    calls: tokio::sync::mpsc::UnboundedSender<native_services::Call>,
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn poki_native_client_new(
+    config_json: *const c_char,
+) -> *mut PokiNativeClient {
+    pin_crypto_provider();
+    let Some(text) = (unsafe { read_str(config_json) }) else {
+        return std::ptr::null_mut();
+    };
+    let Ok(config) = serde_json::from_str::<native_services::ClientConfig>(&text) else {
+        return std::ptr::null_mut();
+    };
+    let (calls, receiver) = tokio::sync::mpsc::unbounded_channel();
+    let worker = std::thread::Builder::new()
+        .name("poki-native-services".into())
+        .stack_size(8 << 20)
+        .spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("the native-services runtime");
+            runtime.block_on(native_services::serve(config, receiver));
+        });
+    if worker.is_err() {
+        return std::ptr::null_mut();
+    }
+    Box::into_raw(Box::new(PokiNativeClient { calls }))
+}
+
+/// Queues one request on the client's persistent tunnel. Its callback receives exactly one
+/// {ok,value} or {ok:false,error}. Requests run in order, matching the desktop bridge and WDA.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn poki_native_client_call(
+    client: *mut PokiNativeClient,
+    request_json: *const c_char,
+    cb: EventCallback,
+    context: *mut c_void,
+) -> i32 {
+    let Some(client) = (unsafe { client.as_ref() }) else {
+        return -1;
+    };
+    let Some(text) = (unsafe { read_str(request_json) }) else {
+        return -1;
+    };
+    let Ok(request) = native_services::parse_request(&text) else {
+        return -1;
+    };
+    let callback = Callback { function: cb, context };
+    let call = native_services::Call {
+        request,
+        answer: Box::new(move |answer| {
+            callback.call(&match answer {
+                Ok(value) => serde_json::json!({"ok": true, "value": value}),
+                Err(error) => serde_json::json!({"ok": false, "error": error.to_string()}),
+            });
+        }),
+    };
+    if client.calls.send(call).is_ok() { 0 } else { -1 }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn poki_native_client_free(client: *mut PokiNativeClient) {
+    if !client.is_null() {
+        drop(unsafe { Box::from_raw(client) });
+    }
 }
 
 /// Makes a launcher from its JSON config; null when the config is unreadable.

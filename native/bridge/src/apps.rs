@@ -112,6 +112,45 @@ pub async fn launch(
     )
 }
 
+/// Ends the running process for a bundle through DVT, without starting XCTest. An app that is not
+/// running is already terminated. The desktop bridge's existing request protocol is unchanged.
+pub async fn terminate(
+    adapter: &mut AdapterHandle,
+    rsd: &mut RsdHandshake,
+    bundle_id: &str,
+) -> Result<Value> {
+    let mut service = AppServiceClient::connect_rsd(adapter, rsd)
+        .await
+        .map_err(not_sent_error)?;
+    let apps = installed_apps(&mut service, rsd).await?;
+    let bundle = apps
+        .iter()
+        .find(|app| app.bundle_identifier == bundle_id)
+        .ok_or_else(|| format!("No installed app has bundle id {bundle_id}."))?;
+    let bundle_path = bare_path(&bundle.path);
+    let pid = service
+        .list_processes()
+        .await?
+        .into_iter()
+        .find_map(|process| {
+            let executable = process.executable_url?.relative;
+            bare_path(&executable)
+                .strip_prefix(bundle_path)
+                .is_some_and(|rest| rest.starts_with('/'))
+                .then_some(process.pid)
+        });
+    let Some(pid) = pid else {
+        return Ok(json!({"terminated": false, "already_stopped": true}));
+    };
+    drop(service);
+    let mut dvt =
+        idevice::dvt::remote_server::RemoteServerClient::connect_rsd(adapter, rsd).await?;
+    dvt.read_message(0).await?;
+    let mut process = idevice::dvt::process_control::ProcessControlClient::new(&mut dvt).await?;
+    process.kill_app(pid as u64).await?;
+    Ok(json!({"terminated": true, "pid": pid}))
+}
+
 async fn installed_apps(
     service: &mut AppServiceClient<Box<dyn idevice::ReadWrite>>,
     rsd: &RsdHandshake,
