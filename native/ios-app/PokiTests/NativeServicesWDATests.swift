@@ -1,9 +1,11 @@
 import PokiCore
+import UIKit
 import XCTest
 @testable import Poki
 
 final class NativeServicesWDATests: XCTestCase {
     func testHumanizedPointerActionsKeepEveryPointAndRelativeTime() throws {
+        let wda = NativeServicesWDA(screen: CGSize(width: 401, height: 801))
         let source: JSON = [
             "type": "pointer",
             "parameters": ["pointerType": "touch"],
@@ -16,16 +18,16 @@ final class NativeServicesWDATests: XCTestCase {
             ],
         ]
 
-        let points = try NativeServicesWDA.finger(source)
+        let points = try wda.finger(source)
 
         XCTAssertEqual(points.count, 3)
-        XCTAssertEqual(points[0]["x"] as? Int, 100)
-        XCTAssertEqual(points[0]["y"] as? Int, 200)
+        XCTAssertEqual(points[0]["x"] as? Int, 16_424)
+        XCTAssertEqual(points[0]["y"] as? Int, 16_404)
         XCTAssertEqual(points[0]["time_ms"] as? Double, 0)
-        XCTAssertEqual(points[1]["x"] as? Int, 100)
+        XCTAssertEqual(points[1]["x"] as? Int, 16_424)
         XCTAssertEqual(points[1]["time_ms"] as? Double, 30)
-        XCTAssertEqual(points[2]["x"] as? Int, 102)
-        XCTAssertEqual(points[2]["y"] as? Int, 202)
+        XCTAssertEqual(points[2]["x"] as? Int, 16_671)
+        XCTAssertEqual(points[2]["y"] as? Int, 16_527)
         XCTAssertEqual(points[2]["time_ms"] as? Double, 75)
     }
 }

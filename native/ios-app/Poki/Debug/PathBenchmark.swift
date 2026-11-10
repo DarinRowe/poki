@@ -100,18 +100,24 @@ extension InProcessProbe {
         var out: [Sample] = []
         field.text = ""
         field.resignFirstResponder()
-        try? await Task.sleep(for: .seconds(0.5))
+        reveal(field)
+        try? await Task.sleep(for: .seconds(0.3))
         let frame = field.convert(field.bounds, to: nil)
 
         let (tapMs, tapError) = await timed { _ = try await runner.call("POST", "/wda/tap", ["x": .number(Double(frame.midX)), "y": .number(Double(frame.midY))], timeout: 5) }
         try? await Task.sleep(for: .seconds(0.6))
-        out.append(Sample(path: name, action: "tap", ms: tapMs, ok: tapError == nil && field.isFirstResponder, note: tapError ?? (field.isFirstResponder ? "" : "field not focused")))
+        let focused = tapError == nil && field.isFirstResponder
+        out.append(Sample(path: name, action: "tap", ms: tapMs, ok: focused, note: tapError ?? (focused ? "" : "field not focused")))
 
         let text = Self.sample
-        let (typeMs, typeError) = await timed { _ = try await runner.call("POST", "/wda/keys", ["value": .array(text.map { .string(String($0)) })], timeout: 8) }
-        try? await Task.sleep(for: .seconds(0.5))
-        let same = field.text == text
-        out.append(Sample(path: name, action: "type", ms: typeMs, ok: typeError == nil && same, note: typeError ?? (same ? "" : "field holds \(field.text?.count ?? 0) characters")))
+        if focused {
+            let (typeMs, typeError) = await timed { _ = try await runner.call("POST", "/wda/keys", ["value": .array(text.map { .string(String($0)) })], timeout: 8) }
+            try? await Task.sleep(for: .seconds(0.5))
+            let same = field.text == text
+            out.append(Sample(path: name, action: "type", ms: typeMs, ok: typeError == nil && same, note: typeError ?? (same ? "" : "field holds \(field.text?.count ?? 0) characters")))
+        } else {
+            out.append(Sample(path: name, action: "type", ms: 0, ok: false, note: "skipped: tap did not focus the field"))
+        }
         field.resignFirstResponder()
         try? await Task.sleep(for: .seconds(0.4))
 
@@ -121,6 +127,10 @@ extension InProcessProbe {
         }
         try? await Task.sleep(for: .seconds(0.8))
         out.append(Sample(path: name, action: "swipe", ms: swipeMs, ok: swipeError == nil, note: swipeError ?? ""))
+        // The swipe is measured, but it must not move the fixture out of the next read or the next
+        // method. This also makes the benchmark stable if the owner scrolls its live results.
+        reveal(field)
+        try? await Task.sleep(for: .seconds(0.3))
 
         var found = false, pictureBytes = 0
         let (readMs, readError) = await timed {
@@ -132,5 +142,18 @@ extension InProcessProbe {
         }
         out.append(Sample(path: name, action: "read", ms: readMs, ok: readError == nil && found && pictureBytes > 0, note: readError ?? "tree has the field: \(found), picture \(pictureBytes) bytes"))
         return out
+    }
+
+    private func reveal(_ field: UIView) {
+        var ancestor = field.superview
+        while let view = ancestor {
+            if let scroll = view as? UIScrollView {
+                let rect = field.convert(field.bounds, to: scroll).insetBy(dx: -16, dy: -80)
+                scroll.scrollRectToVisible(rect, animated: false)
+                scroll.layoutIfNeeded()
+                return
+            }
+            ancestor = view.superview
+        }
     }
 }
