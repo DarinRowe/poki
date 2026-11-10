@@ -47,6 +47,16 @@ fn drag_duration() -> u64 {
 pub(crate) enum Request {
     Reset,
     WarmInput,
+    /// Explicit diagnostics-only composition session. Keep the keyboard attached
+    /// between composing pinyin and navigating the OS candidate list.
+    Ime {
+        #[serde(default)]
+        text: String,
+        #[serde(default)]
+        key: Option<String>,
+        #[serde(default)]
+        end: bool,
+    },
     AxTree {
         #[serde(default)]
         include_offscreen: bool,
@@ -291,6 +301,12 @@ impl Session {
 
 fn validate(request: &Request) -> Result<()> {
     match request {
+        Request::Ime { text, key, .. } => {
+            if text.len() > 200 { return Err("IME input is at most 200 bytes".into()); }
+            for character in text.chars() { char_usage(character)?; }
+            if let Some(key) = key { key_usage(key)?; }
+            Ok(())
+        }
         Request::Tap { duration_ms, .. }
         | Request::LongPress { duration_ms, .. }
         | Request::Drag { duration_ms, .. }
@@ -301,6 +317,13 @@ fn validate(request: &Request) -> Result<()> {
         }
         Request::TypeKeys { text, .. } if text.chars().count() > 2_000 => {
             Err("text is at most 2000 characters".into())
+        }
+        // Reject unsupported characters before sending any prefix to the phone.
+        Request::TypeKeys { text, .. } => {
+            for character in text.chars() {
+                char_usage(character)?;
+            }
+            Ok(())
         }
         Request::TypeText { text, .. } if text.len() > 1024 * 1024 => {
             Err("text exceeds 1 MiB".into())
@@ -324,6 +347,7 @@ fn validate(request: &Request) -> Result<()> {
 }
 
 struct InputMedia {
+    keyboard: Option<Keyboard>,
     _client: idevice::core_device::DisplayServiceClient<Box<dyn idevice::ReadWrite>>,
     _receivers: tokio::task::JoinSet<()>,
     touch: Touch,
@@ -343,6 +367,7 @@ impl InputMedia {
             .await
             .map_err(not_sent_error)?;
         Ok(Self {
+            keyboard: None,
             _client: opened.client,
             _receivers: receivers,
             touch,
@@ -360,6 +385,30 @@ async fn input(
     }
     if matches!(request, Request::WarmInput) {
         return Ok(json!({"ready": true}));
+    }
+    if let Request::Ime { text, key, end } = request {
+        let media = media.as_mut().unwrap();
+        if end {
+            if let Some(mut keyboard) = media.keyboard.take() {
+                let cancelled = chord(&mut keyboard, 0x29, &[]).await;
+                let closed = keyboard.close().await;
+                cancelled?;
+                closed?;
+            }
+            return Ok(json!({"ended": true}));
+        }
+        if media.keyboard.is_none() { media.keyboard = Some(Keyboard::connect(device).await?); }
+        let keyboard = media.keyboard.as_mut().unwrap();
+        if !text.is_empty() { type_keys(keyboard, &text, false, Some(60)).await?; }
+        if let Some(key) = key { chord(keyboard, key_usage(&key)?, &[]).await?; }
+        return Ok(json!({"sent": true, "text_verified": false}));
+    }
+    // Never leak a diagnostic composition into ordinary agent input.
+    if let Some(mut keyboard) = media.as_mut().unwrap().keyboard.take() {
+        let cancelled = chord(&mut keyboard, 0x29, &[]).await;
+        let closed = keyboard.close().await;
+        cancelled?;
+        closed?;
     }
     let request = match request {
         Request::TypeText {
@@ -621,27 +670,18 @@ async fn type_keys(
     for character in text.chars() {
         let (usage, shifted) = char_usage(character)?;
         let key = KeyboardUsage::new(usage as u16)?;
-        if shifted {
-            keyboard
-                .hid
-                .main_keyboard_key_down(&mut keyboard.service, shift)
-                .await?;
-        }
+        // Send modifiers and the key atomically: two reports per character,
+        // including uppercase and punctuation, rather than four round trips.
+        let usages = if shifted { vec![shift, key] } else { vec![key] };
         keyboard
             .hid
-            .main_keyboard_key_down(&mut keyboard.service, key)
+            .set_main_keyboard_usages(&mut keyboard.service, usages)
             .await?;
         tokio::time::sleep(gap).await;
         keyboard
             .hid
-            .main_keyboard_key_up(&mut keyboard.service, key)
+            .set_main_keyboard_usages(&mut keyboard.service, [])
             .await?;
-        if shifted {
-            keyboard
-                .hid
-                .main_keyboard_key_up(&mut keyboard.service, shift)
-                .await?;
-        }
         tokio::time::sleep(gap).await;
     }
     keyboard
@@ -706,6 +746,13 @@ mod tests {
             }
         ));
         assert_eq!(char_usage('\u{8}').unwrap(), (0x2a, false));
+    }
+
+    #[test]
+    fn unsupported_keys_are_rejected_before_typing_a_prefix() {
+        assert!(validate(&parse_request(r#"{"op":"type_keys","text":"prefix中文"}"#).unwrap()).is_err());
+        assert!(validate(&parse_request(r#"{"op":"type_keys","text":"AbC!?\b\t\n"}"#).unwrap()).is_ok());
+        assert!(validate(&parse_request(r#"{"op":"type_text","text":"中文👋"}"#).unwrap()).is_ok());
     }
 
     #[test]
