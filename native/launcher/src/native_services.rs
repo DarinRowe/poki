@@ -165,8 +165,9 @@ pub(crate) async fn serve(
     let mut session: Option<Session> = None;
     while let Some(call) = calls.recv().await {
         if matches!(&call.request, Request::Reset) {
+            let cleanup = detach_session_keyboard(&mut session).await;
             session = None;
-            (call.answer)(Ok(json!({"reset": true})));
+            (call.answer)(cleanup.map(|_| json!({"reset": true})));
             continue;
         }
         let timeout = call.request.timeout();
@@ -185,10 +186,24 @@ pub(crate) async fn serve(
             .into())
         });
         if result.is_err() {
+            let _ = detach_session_keyboard(&mut session).await;
             session = None;
         }
         (call.answer)(result);
     }
+    let _ = detach_session_keyboard(&mut session).await;
+}
+
+/// Dropping a tunnel is not the keyboard-removal protocol. Remove the virtual
+/// device explicitly before reset, error recovery, or client shutdown.
+async fn detach_session_keyboard(session: &mut Option<Session>) -> Result<()> {
+    if let Some(keyboard) = session.as_mut()
+        .and_then(|s| s.media.as_mut())
+        .and_then(|m| m.keyboard.as_mut()) {
+        tokio::time::timeout(Duration::from_secs(3), keyboard.close())
+            .await.map_err(|_| "keyboard detach timed out")??;
+    }
+    Ok(())
 }
 
 impl Request {
@@ -304,7 +319,7 @@ fn validate(request: &Request) -> Result<()> {
         Request::Ime { text, key, .. } => {
             if text.len() > 200 { return Err("IME input is at most 200 bytes".into()); }
             for character in text.chars() { char_usage(character)?; }
-            if let Some(key) = key { key_usage(key)?; }
+            if let Some(key) = key { if key != "next_input_source" { key_usage(key)?; } }
             Ok(())
         }
         Request::Tap { duration_ms, .. }
@@ -380,27 +395,32 @@ async fn input(
     media: &mut Option<InputMedia>,
     request: Request,
 ) -> Result<Value> {
+    // Ending an unused experiment must not create a new media/keyboard session.
+    if matches!(&request, Request::Ime { end: true, .. }) {
+        if let Some(keyboard) = media.as_mut().and_then(|m| m.keyboard.as_mut()) {
+            keyboard.close().await?;
+        }
+        if let Some(media) = media.as_mut() { media.keyboard = None; }
+        return Ok(json!({"ended": true}));
+    }
     if media.is_none() {
         *media = Some(InputMedia::connect(device).await?);
     }
     if matches!(request, Request::WarmInput) {
         return Ok(json!({"ready": true}));
     }
-    if let Request::Ime { text, key, end } = request {
+    if let Request::Ime { text, key, .. } = request {
         let media = media.as_mut().unwrap();
-        if end {
-            if let Some(mut keyboard) = media.keyboard.take() {
-                let cancelled = chord(&mut keyboard, 0x29, &[]).await;
-                let closed = keyboard.close().await;
-                cancelled?;
-                closed?;
-            }
-            return Ok(json!({"ended": true}));
-        }
         if media.keyboard.is_none() { media.keyboard = Some(Keyboard::connect(device).await?); }
         let keyboard = media.keyboard.as_mut().unwrap();
         if !text.is_empty() { type_keys(keyboard, &text, false, Some(60)).await?; }
-        if let Some(key) = key { chord(keyboard, key_usage(&key)?, &[]).await?; }
+        if let Some(key) = key {
+            if key == "next_input_source" {
+                // Standard hardware-keyboard input-source shortcut. This cycles
+                // installed sources; it does not prove Chinese is selected.
+                chord(keyboard, 0x2c, &[0xe0]).await?;
+            } else { chord(keyboard, key_usage(&key)?, &[]).await?; }
+        }
         return Ok(json!({"sent": true, "text_verified": false}));
     }
     // Never leak a diagnostic composition into ordinary agent input.
@@ -750,6 +770,8 @@ mod tests {
 
     #[test]
     fn unsupported_keys_are_rejected_before_typing_a_prefix() {
+        assert!(validate(&parse_request(r#"{"op":"ime","key":"next_input_source"}"#).unwrap()).is_ok());
+        assert!(validate(&parse_request(r#"{"op":"ime","key":"unknown"}"#).unwrap()).is_err());
         assert!(validate(&parse_request(r#"{"op":"type_keys","text":"prefix中文"}"#).unwrap()).is_err());
         assert!(validate(&parse_request(r#"{"op":"type_keys","text":"AbC!?\b\t\n"}"#).unwrap()).is_ok());
         assert!(validate(&parse_request(r#"{"op":"type_text","text":"中文👋"}"#).unwrap()).is_ok());

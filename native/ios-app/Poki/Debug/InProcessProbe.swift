@@ -31,6 +31,20 @@ final class InProcessProbe: ObservableObject {
     @Published var delay = "8"
     weak var field: UITextField?
 
+    static func isChineseInputLanguage(_ language: String?) -> Bool {
+        guard let language else { return false }
+        let tag = language.lowercased().replacingOccurrences(of: "_", with: "-")
+        return tag == "zh" || tag.hasPrefix("zh-")
+    }
+
+    /// This evidence is valid only for our focused diagnostics field, never
+    /// inferred from the installed keyboards or reused for another app.
+    var focusedInputLanguage: String? {
+        guard UIApplication.shared.applicationState == .active,
+              let field, field.isFirstResponder else { return nil }
+        return field.textInputMode?.primaryLanguage
+    }
+
     let queue = DispatchQueue(label: "poki.inprocess.probe", qos: .userInitiated)
     private var record: [[String: Any]] = []
 
@@ -421,6 +435,8 @@ struct InProcessSection: View {
                     .font(.caption)
                 TextField("Pinyin", text: $pinyin).textInputAutocapitalization(.never).autocorrectionDisabled()
                 Button("Compose Pinyin") { imeAction(text: pinyin) }.disabled(imeBusy)
+                Button("Switch to Chinese and verify") { imeAction(key: "next_input_source") }.disabled(imeBusy)
+                Button("Read candidate accessibility") { imeAction(read: true) }.disabled(imeBusy)
                 HStack {
                     Button("Previous") { imeAction(key: "left") }
                     Button("Next") { imeAction(key: "right") }
@@ -431,7 +447,8 @@ struct InProcessSection: View {
                     Button("Backspace") { imeAction(key: "backspace") }
                     Button("End experiment") { imeAction(end: true) }
                 }.disabled(imeBusy)
-                Text(imeStatus).font(.caption)
+                Text(imeStatus).font(.caption).textSelection(.enabled)
+                Text("Composition requires Chinese as the focused test field’s active input language. This verifies Chinese, not the specific Pinyin layout. The accessibility read may include app text: review it before sharing.").font(.caption)
             }
             HStack {
                 Button("Port 8100") { Task { await probe.portCheck() } }
@@ -462,20 +479,67 @@ struct InProcessSection: View {
         .onAppear {
             if path == AutomationPath.runner.rawValue { path = AutomationPath.nativeServices.rawValue }
         }
-        .onDisappear { imeTask?.cancel(); Task { await ime.reset() } }
+        .onDisappear {
+            let pending = imeTask
+            pending?.cancel()
+            Task {
+                await pending?.value
+                do { try await ime.ime(end: true) }
+                catch { imeStatus = "Keyboard detach failed: \(error.localizedDescription)" }
+                await ime.reset()
+            }
+        }
     }
 
-    private func imeAction(text: String = "", key: String? = nil, end: Bool = false) {
+    private func imeAction(text: String = "", key: String? = nil, end: Bool = false, read: Bool = false) {
         imeBusy = true
         imeStatus = "Focus the test field now…"
         imeTask = Task { @MainActor in
             defer { imeBusy = false }
             do {
-                try await Task.sleep(for: .seconds(2))
+                if !end { try await Task.sleep(for: .seconds(2)) }
                 try Task.checkCancellation()
+                if read {
+                    imeStatus = try await ime.imeAccessibilitySnapshot()
+                    return
+                }
+                if !end {
+                    guard probe.focusedInputLanguage != nil else {
+                        try await ime.ime(end: true)
+                        imeStatus = "Not verified: focus the test field in Poki first. Nothing typed."
+                        return
+                    }
+                    // Attaching a hardware keyboard can change the active mode.
+                    // Observe after attachment, not just before sending the command.
+                    try await ime.ime()
+                    try await Task.sleep(for: .milliseconds(250))
+                    if key == "next_input_source" {
+                        for _ in 0..<8 {
+                            try Task.checkCancellation()
+                            guard probe.focusedInputLanguage != nil else { break }
+                            if InProcessProbe.isChineseInputLanguage(probe.focusedInputLanguage) { break }
+                            try await ime.ime(key: "next_input_source")
+                            try await Task.sleep(for: .milliseconds(350))
+                        }
+                    }
+                    guard let language = probe.focusedInputLanguage,
+                          InProcessProbe.isChineseInputLanguage(language) else {
+                        try await ime.ime(end: true)
+                        imeStatus = "Chinese not verified (active: \(probe.focusedInputLanguage ?? "unknown")). No composition or candidate-selection key sent. Enable a Chinese keyboard in iOS Settings."
+                        return
+                    }
+                    if key == "next_input_source" {
+                        imeStatus = "Verified Chinese input: \(language) on the focused test field"
+                        return
+                    }
+                }
                 try await ime.ime(text: text, key: key, end: end)
                 imeStatus = end ? "Keyboard detached" : "Sent — inspect the composition and candidates"
-            } catch { imeStatus = error.localizedDescription }
+            } catch {
+                imeStatus = error.localizedDescription
+                do { try await ime.ime(end: true) }
+                catch { imeStatus += " · Keyboard detach failed: \(error.localizedDescription)" }
+            }
         }
     }
 }

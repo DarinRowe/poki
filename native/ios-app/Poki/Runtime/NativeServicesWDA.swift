@@ -80,6 +80,15 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
         _ = try await input.call(request)
     }
 
+    /// Uncached evidence for the experimental candidate reader. Keep the raw
+    /// roles/identifiers/parents so candidate containers can be distinguished
+    /// from ordinary app text before enabling automatic selection.
+    func imeAccessibilitySnapshot() async throws -> String {
+        let tree = try await native.call(["op": "ax_tree"])
+        let data = try JSONSerialization.data(withJSONObject: tree, options: [.prettyPrinted, .sortedKeys])
+        return String(decoding: data, as: UTF8.self)
+    }
+
     /// Drops all paired tunnels without destroying the transport. The next call reconnects them,
     /// which gives PokiCore's existing restart policy the same clean boundary as the runner path.
     func reset() async {
