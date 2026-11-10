@@ -398,7 +398,7 @@ final class InProcessProbe: ObservableObject {
 /// DiagnosticsView hosts it; ESP-152 removed it on a line where it had no caller).
 struct InProcessSection: View {
     @ObservedObject var probe = InProcessProbe.shared
-    @AppStorage("automationPath") private var path = AutomationPath.inProcess.rawValue
+    @AppStorage("automationPath") private var path = AutomationPath.nativeServices.rawValue
     private let running = AutomationPath.current
 
     var body: some View {
@@ -438,7 +438,7 @@ struct InProcessSection: View {
             Text("Native services is an experimental banner-free path using the same paired accessibility, screenshot and HID services as the Mac/Linux bridge. PokiCore keeps the same control logic, approvals, action timing and typing cadence as the standard paths. Changes take effect when Poki starts again.")
         }
         .onAppear {
-            if path == AutomationPath.runner.rawValue { path = AutomationPath.inProcess.rawValue }
+            if path == AutomationPath.runner.rawValue { path = AutomationPath.nativeServices.rawValue }
         }
     }
 }

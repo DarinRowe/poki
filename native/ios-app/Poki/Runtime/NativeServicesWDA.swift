@@ -153,7 +153,7 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
             return .null
         case "POST /wda/pressAndDragWithVelocity", "POST /wda/dragfromtoforduration":
             let from = try point(body, x: "fromX", y: "fromY"), to = try point(body, x: "toX", y: "toY")
-            let duration = key.contains("pressAndDrag") ? max(80, Int(hypot(Double(to.x - from.x), Double(to.y - from.y)) / max(1, body?["velocity"]?.double ?? 1000) * 1000)) : 300
+            let duration = key.contains("pressAndDrag") ? Self.dragMilliseconds(body) : 300
             _ = try await input.call(["op": "drag", "x1": from.x, "y1": from.y, "x2": to.x, "y2": to.y, "duration_ms": duration, "hold_ms": Int((body?["duration"]?.double ?? body?["pressDuration"]?.double ?? 0) * 1000), "end_hold_ms": Int((body?["holdDuration"]?.double ?? 0) * 1000)])
             return .null
         case "POST /actions":
@@ -276,6 +276,13 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
             queue.sync { treeTask = nil }
             throw error
         }
+    }
+
+    /// WDA velocity is in screen points/second, not normalized HID units/second.
+    static func dragMilliseconds(_ body: JSON?) -> Int {
+        let distance = hypot((body?["toX"]?.double ?? 0) - (body?["fromX"]?.double ?? 0),
+                             (body?["toY"]?.double ?? 0) - (body?["fromY"]?.double ?? 0))
+        return max(80, Int(distance / max(1, body?["velocity"]?.double ?? 1000) * 1000))
     }
 
     private func point(_ body: JSON?, x: String, y: String) throws -> (x: Int, y: Int) {

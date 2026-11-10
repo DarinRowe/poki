@@ -385,9 +385,10 @@ async fn input(
         }
         request => request,
     };
-    let result = input_open(device, media.as_mut().unwrap(), request).await;
-    tokio::time::sleep(Duration::from_millis(300)).await;
-    result?;
+    // The HID connection stays alive between calls. Unlike the short-lived desktop
+    // helper, it needs no disconnect grace period after every action. PokiCore
+    // owns UI settling and verification for both automation methods.
+    input_open(device, media.as_mut().unwrap(), request).await?;
     Ok(json!({"sent": true, "screen_change_verified": false}))
 }
 
