@@ -148,11 +148,11 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
         case "POST /wda/tap":
             try await callPoint("tap", body: body); return .null
         case "POST /wda/touchAndHold":
-            let point = try Self.point(body, x: "x", y: "y")
+            let point = try point(body, x: "x", y: "y")
             _ = try await input.call(["op": "long_press", "x": point.x, "y": point.y, "duration_ms": Int((body?["duration"]?.double ?? 1) * 1000)])
             return .null
         case "POST /wda/pressAndDragWithVelocity", "POST /wda/dragfromtoforduration":
-            let from = try Self.point(body, x: "fromX", y: "fromY"), to = try Self.point(body, x: "toX", y: "toY")
+            let from = try point(body, x: "fromX", y: "fromY"), to = try point(body, x: "toX", y: "toY")
             let duration = key.contains("pressAndDrag") ? max(80, Int(hypot(Double(to.x - from.x), Double(to.y - from.y)) / max(1, body?["velocity"]?.double ?? 1000) * 1000)) : 300
             _ = try await input.call(["op": "drag", "x1": from.x, "y1": from.y, "x2": to.x, "y2": to.y, "duration_ms": duration, "hold_ms": Int((body?["duration"]?.double ?? body?["pressDuration"]?.double ?? 0) * 1000), "end_hold_ms": Int((body?["holdDuration"]?.double ?? 0) * 1000)])
             return .null
@@ -195,7 +195,7 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
     }
 
     private func callPoint(_ op: String, body: JSON?) async throws {
-        let point = try Self.point(body, x: "x", y: "y")
+        let point = try point(body, x: "x", y: "y")
         _ = try await input.call(["op": op, "x": point.x, "y": point.y])
     }
 
@@ -209,11 +209,11 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
     private func actions(_ body: JSON?) async throws {
         let sources = body?["actions"]?.array ?? []
         guard (1...5).contains(sources.count) else { throw Self.failure("W3C actions need 1 to 5 touch pointers") }
-        let fingers = try sources.map(Self.finger)
+        let fingers = try sources.map(finger)
         _ = try await input.call(["op": "draw_fingers", "fingers": fingers])
     }
 
-    static func finger(_ source: JSON) throws -> [[String: Any]] {
+    func finger(_ source: JSON) throws -> [[String: Any]] {
         guard source["type"]?.string == "pointer",
               source["parameters"]?["pointerType"]?.string == "touch"
         else { throw failure("W3C actions support touch pointers only") }
@@ -229,16 +229,16 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
                 x = nextX; y = nextY
                 if touching {
                     elapsed += max(0.001, action["duration"]?.double ?? 0)
-                    points.append(["x": coordinate(nextX), "y": coordinate(nextY), "time_ms": elapsed])
+                    points.append(["x": coordinate(nextX, across: screen.width), "y": coordinate(nextY, across: screen.height), "time_ms": elapsed])
                 }
             case "pointerDown":
                 guard !touching, let x, let y else { throw failure("pointerDown needs an initial pointerMove") }
                 touching = true
-                points.append(["x": coordinate(x), "y": coordinate(y), "time_ms": 0.0])
+                points.append(["x": coordinate(x, across: screen.width), "y": coordinate(y, across: screen.height), "time_ms": 0.0])
             case "pause":
                 guard touching, let x, let y else { throw failure("pause needs a pointerDown") }
                 elapsed += max(0.001, action["duration"]?.double ?? 0)
-                points.append(["x": coordinate(x), "y": coordinate(y), "time_ms": elapsed])
+                points.append(["x": coordinate(x, across: screen.width), "y": coordinate(y, across: screen.height), "time_ms": elapsed])
             case "pointerUp":
                 guard touching else { throw failure("pointerUp needs a pointerDown") }
                 touching = false; lifted = true
@@ -247,7 +247,7 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
         }
         guard lifted, !touching, let x, let y, !points.isEmpty else { throw failure("the touch pointer did not lift") }
         if points.count == 1 {
-            points.append(["x": coordinate(x), "y": coordinate(y), "time_ms": 50.0])
+            points.append(["x": coordinate(x, across: screen.width), "y": coordinate(y, across: screen.height), "time_ms": 50.0])
         }
         return points
     }
@@ -278,11 +278,16 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
         }
     }
 
-    private static func point(_ body: JSON?, x: String, y: String) throws -> (x: Int, y: Int) {
+    private func point(_ body: JSON?, x: String, y: String) throws -> (x: Int, y: Int) {
         guard let px = body?[x]?.double, let py = body?[y]?.double else { throw Self.failure("\(x) and \(y) are needed") }
-        return (coordinate(px), coordinate(py))
+        return (coordinate(px, across: screen.width), coordinate(py, across: screen.height))
     }
-    private static func coordinate(_ value: Double) -> Int { max(0, min(65_535, Int(value.rounded()))) }
+    /// CoreDevice HID uses 0...65535 over each full display axis, while WDA and PokiCore use UIKit
+    /// points. Use the same end-point mapping as the Mac/Linux bridge.
+    private func coordinate(_ value: Double, across: CGFloat) -> Int {
+        guard across > 1 else { return 0 }
+        return max(0, min(65_535, Int((value / Double(across - 1) * 65_535).rounded())))
+    }
     private static func hidCanType(_ text: String) -> Bool {
         text.unicodeScalars.allSatisfy { scalar in
             scalar.value == 8 || scalar.value == 9 || scalar.value == 10 || (32...126).contains(scalar.value)
