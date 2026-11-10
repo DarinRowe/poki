@@ -2,7 +2,7 @@ import Foundation
 import PokiCore
 import UIKit
 
-/// The same requests through Poki Runner and through Poki's own process, interleaved round by round:
+/// The same requests through the paths available in this launch, interleaved round by round:
 /// tap the probe field, type the sample, swipe, read (tree and screenshot). Each is timed from the
 /// request to its answer, with PokiCore's `Runner` as the client on both sides, and checked: the tap
 /// by the field taking the focus, the text by reading the field, the read by the field being in the
@@ -22,6 +22,7 @@ extension InProcessProbe {
         defer { end() }
         guard await prepare(), let field else { return }
         var paths: [(String, Runner)] = [("in-process", Runner(url: URL(string: "http://127.0.0.1:8100")!, transport: InProcessWDA(screen: UIScreen.main.bounds.size)))]
+        var nativePath: NativeServicesWDA?
         if model.automationPath == .runner {
             if !model.runner.isRunning { model.wakeRunner() }
             let by = Date().addingTimeInterval(60)
@@ -31,6 +32,10 @@ extension InProcessProbe {
             } else {
                 note("runner: not running after 60 s (\(model.runner.title)); only the in-process path is measured", ["step": "runner_missing"])
             }
+        } else if model.automationPath == .nativeServices {
+            let native = NativeServicesWDA(screen: UIScreen.main.bounds.size)
+            nativePath = native
+            paths.insert(("native-services", Runner(url: URL(string: "http://127.0.0.1:8100")!, transport: native)), at: 0)
         } else {
             note("Poki started with the in-process path, so the runner is not measured", ["step": "runner_skipped"])
         }
@@ -54,6 +59,7 @@ extension InProcessProbe {
                      ["step": "summary", "path": name, "action": action, "median_ms": median, "ok": mine.count - failed, "count": mine.count, "ms": times])
             }
         }
+        await nativePath?.reset()
     }
 
     /// The front app's tree read once by Poki Runner and once by Poki's own process, a moment apart and

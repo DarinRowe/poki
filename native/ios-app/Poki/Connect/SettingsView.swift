@@ -150,6 +150,8 @@ struct SettingsHome: View {
             } footer: {
                 Text(model.automationPath == .inProcess
                      ? "iOS shows the automation banner only while Poki’s automation session is open. Poki opens it when an agent asks and closes it when idle. Memory holds the routines and notes every agent shares."
+                     : model.automationPath == .nativeServices
+                     ? "Experimental native services controls the phone without an XCTest automation session or its banner. Change it in Diagnostics."
                      : "Memory holds the routines and notes every agent shares. Diagnostics: logs, checks, background hold, addresses, and Live Activity preview.")
             }
         }

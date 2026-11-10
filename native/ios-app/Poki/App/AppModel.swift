@@ -167,6 +167,7 @@ final class AppModel {
     /// Poki Runner or Poki's own process, fixed for this launch (Debug tab).
     let automationPath = AutomationPath.current
     private let core: LiveCore
+    private let nativeServicesWDA: NativeServicesWDA?
     private let launcher: RunnerLauncher
     private let pairer: DevicePairing
     private let pairingKeepAlive = KeepAlive()
@@ -259,7 +260,20 @@ final class AppModel {
         // setup state did the same in `SetupState.load`), so the owner is not sent through setup again.
         if SetupVault.restorePairingIfMissing() { AppLog.shared.add("pairing", "pairing file restored from the Keychain after a reinstall") }
         else { SetupVault.mirrorPairingFromContainer() }
-        let core = LiveCore(host: host, transport: automationPath == .inProcess ? InProcessWDA(screen: UIScreen.main.bounds.size) : URLSessionTransport())
+        let transport: HTTPTransport
+        switch automationPath {
+        case .inProcess:
+            nativeServicesWDA = nil
+            transport = InProcessWDA(screen: UIScreen.main.bounds.size)
+        case .nativeServices:
+            let native = NativeServicesWDA(screen: UIScreen.main.bounds.size)
+            nativeServicesWDA = native
+            transport = native
+        case .runner:
+            nativeServicesWDA = nil
+            transport = URLSessionTransport()
+        }
+        let core = LiveCore(host: host, transport: transport)
         self.core = core
         // Voice taps get the same rules and approval card as an agent's `do`.
         voice = VoiceModel(clearTap: { text, bundle, name in await core.clearTap(on: text, inApp: bundle, named: name, waiting: VoiceModel.approvalWait) },
@@ -278,14 +292,21 @@ final class AppModel {
         // them while the runner is fine, so the runner is asked first; only a runner that does not
         // answer is started again (each restart costs seconds and flashes the automation banner).
         host.onRestart { [weak self, automationPath] in
-            // In-process there is no runner to ask: the session is closed and opened again.
-            guard automationPath == .runner else {
+            // XCTest in-process has no runner to ask: its one session is kept.
+            guard automationPath != .inProcess else {
                 Task { @MainActor in
                     guard let self else { return }
                     // A reopened session reads nothing in this launch, so the one open is kept: its
                     // requests have deadlines of their own, and a busy app answers again by itself.
                     self.log.add("runner", "PokiCore asked for a restart: the in-process session is kept (a reopened one cannot read the screen in the same launch)")
                     self.warmInProcess("PokiCore's restart")
+                }
+                return
+            }
+            if automationPath == .nativeServices {
+                Task { @MainActor [weak self] in
+                    AppLog.shared.add("runner", "PokiCore asked for a restart: reopening the experimental native-services tunnel")
+                    await self?.nativeServicesWDA?.reset()
                 }
                 return
             }
@@ -820,7 +841,7 @@ final class AppModel {
         log.add("activity", activity.isRunning ? "Live Activity started" : "Live Activity not running: \(activity.lastError ?? "unknown reason")")
         sessionOn = true
         wantsOn = true
-        launcherConfig = LauncherConfig(pairing_file: pairing, ddi_dir: AppFiles.ddiDirectory.path, in_process: automationPath == .inProcess)
+        launcherConfig = LauncherConfig(pairing_file: pairing, ddi_dir: AppFiles.ddiDirectory.path, in_process: automationPath.mountsOnly)
         lastAgentActivity = Date()
         // The runner (and with it iOS's automation banner) starts only when an agent asks.
         standBy(reason: nil)
@@ -884,6 +905,7 @@ final class AppModel {
     func windDownForUpdate() {
         log.add("signing", "installing the update: winding down (Poki closes, then reopens from the notice)")
         if automationPath == .inProcess { closeInProcess("the update") }
+        if automationPath == .nativeServices { Task { [nativeServicesWDA] in await nativeServicesWDA?.reset() } }
         activity.end()
         AttentionNotice.clear()
     }
@@ -896,7 +918,7 @@ final class AppModel {
             return
         }
         if !inFront { loopback.pause() }
-        log.add("session", automationPath == .inProcess ? "turned off: closing the in-process session" : "turned off: ending the runner")
+        log.add("session", automationPath == .inProcess ? "turned off: closing the in-process session" : automationPath == .nativeServices ? "turned off: ending native services" : "turned off: ending the runner")
         // In-process, a session closed in this launch cannot be opened again in it: Poki exits once
         // the session has closed, and a notice says to open it again for the next task.
         if automationPath == .inProcess {
@@ -905,6 +927,7 @@ final class AppModel {
             DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in self?.exitAfterStop() }
         }
         core.stop()
+        if automationPath == .nativeServices { Task { [nativeServicesWDA] in await nativeServicesWDA?.reset() } }
         launcher.stop()
         if setup.loopback == .builtIn { tunnel.disconnect() }
         if automationPath == .runner {
@@ -922,7 +945,13 @@ final class AppModel {
         activityText = "Idle"
     }
 
-    func restartRunner() { launcher.restart() }
+    func restartRunner() {
+        if automationPath == .nativeServices {
+            Task { [nativeServicesWDA] in await nativeServicesWDA?.reset() }
+        } else {
+            launcher.restart()
+        }
+    }
 
     #if targetEnvironment(simulator)
     static let onSimulator = true
@@ -975,6 +1004,16 @@ final class AppModel {
             if closeSessionWhenIdle { closeInProcess("standing by") } else { pauseAutomationMode() }
             // The launcher stays: the disk image is mounted and the next session opens through
             // testmanagerd on the phone itself, so no loopback (and no Wi-Fi) is needed to wake.
+            standBy(reason: reason)
+            return
+        }
+        if automationPath == .nativeServices {
+            log.add("runner", "standing by: \(reason); closing the experimental native-services tunnel")
+            Task { [core, nativeServicesWDA] in
+                _ = await core.finishTask(switching: false)
+                await nativeServicesWDA?.reset()
+            }
+            launcher.stop()
             standBy(reason: reason)
             return
         }
@@ -1032,7 +1071,7 @@ final class AppModel {
     private func standBy(reason: String?) {
         runnerPaused = true
         runner = RunnerStatus(state: "standby", detail: reason.map { "\($0). It starts again when an agent asks." } ?? "It starts when an agent asks.")
-        host.update(runner: .starting(automationPath == .inProcess ? "opening the automation session" : "starting the runner"))
+        host.update(runner: .starting(automationPath == .inProcess ? "opening the automation session" : automationPath == .nativeServices ? "opening native services" : "starting the runner"))
         host.setPaused(true)
         activityText = "Idle"
         activity.update { $0.runnerPaused = true; $0.phase = .idle; $0.headline = "Runner asleep"; $0.since = nil }
@@ -1044,8 +1083,8 @@ final class AppModel {
         runnerPaused = false
         host.setPaused(false)
         lastAgentActivity = Date()
-        log.add("runner", automationPath == .inProcess ? "an agent asked: opening the automation session again" : "an agent asked: starting the runner")
-        activity.update { $0.runnerPaused = false; $0.phase = .working; $0.headline = "Starting the runner"; $0.since = Date() }
+        log.add("runner", automationPath == .inProcess ? "an agent asked: opening the automation session again" : automationPath == .nativeServices ? "an agent asked: opening native services again" : "an agent asked: starting the runner")
+        activity.update { $0.runnerPaused = false; $0.phase = .working; $0.headline = automationPath == .nativeServices ? "Starting native services" : "Starting the runner"; $0.since = Date() }
         if automationPath == .inProcess, inProcessUsedUp {
             log.add("runner", "an agent asked, but the session of this launch was closed: open Poki to start it again")
             problem = String(localized: "Open Poki so agents can see the screen again: it restarts once.")
@@ -1143,7 +1182,7 @@ final class AppModel {
             // runner means UI Automation is on too. Setup's confirm steps tick themselves (a pairing
             // file from Poki Setup then needs nothing more on the phone).
             if !setup.developerMode { setup.developerMode = true; log.add("setup", "Developer Mode is on (the runner started)") }
-            if status.state == "running", !setup.uiAutomation { setup.uiAutomation = true; log.add("setup", "UI Automation is on (the runner runs)") }
+            if status.state == "running", automationPath != .nativeServices, !setup.uiAutomation { setup.uiAutomation = true; log.add("setup", "UI Automation is on (the runner runs)") }
             if status.state == "running", automationPath == .runner { automationStarted() }
             if status.state == "launching", runner.state != "launching" { launchingSince = Date() }
         case "failed" where status.code == "handshake":

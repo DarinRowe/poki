@@ -12,6 +12,7 @@ extern "C" {
 
 typedef struct PokiLauncher PokiLauncher;
 typedef struct PokiPairing PokiPairing;
+typedef struct PokiNativeClient PokiNativeClient;
 typedef void (*poki_event_cb)(void *context, const char *event_json);
 
 // config_json: {"device_address": "10.7.0.1", "pairing_file": "...", "host_name": "Poki",
@@ -33,6 +34,12 @@ void poki_string_free(char *text);
 //   {"event": "paired", "path": "..."}, {"event": "failed", "detail": "..."}
 PokiPairing *poki_pair_start(const char *config_json, poki_event_cb cb, void *context);
 void poki_pair_cancel(PokiPairing *pairing);
+
+// Experimental banner-free device services. One client keeps its paired tunnel and HID media
+// session warm. Calls run in order and each callback receives one JSON result.
+PokiNativeClient *poki_native_client_new(const char *config_json);
+int32_t poki_native_client_call(PokiNativeClient *client, const char *request_json, poki_event_cb cb, void *context);
+void poki_native_client_free(PokiNativeClient *client);
 
 // Poki keeps its own signing (native/launcher/src/signer.rs, Poki Setup's core). The vault is the
 // app's Keychain: get returns a malloc'd base64 string (freed by the library) or NULL; set and

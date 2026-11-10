@@ -104,9 +104,9 @@ enum SetupStep: String, CaseIterable, Identifiable {
 
     /// The steps this launch shows: the in-process path has no Poki Runner to install.
     /// Poki automates the phone itself (ESP-152): step text names Poki, not Poki Runner.
-    static var inProcess: Bool { AutomationPath.current == .inProcess }
+    static var inProcess: Bool { AutomationPath.current != .runner }
 
-    static var shown: [SetupStep] { AutomationPath.current == .inProcess ? allCases.filter { $0 != .runner } : Array(allCases) }
+    static var shown: [SetupStep] { AutomationPath.current != .runner ? allCases.filter { $0 != .runner } : Array(allCases) }
 
     /// Pairing on the phone itself (Settings > Privacy & Security > Developer Mode > Pair) exists from
     /// iOS 27. Earlier versions get their pairing file from a computer (Poki Setup), by AirDrop, a
