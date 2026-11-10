@@ -1,7 +1,8 @@
 # Poki typing panel (pre-alpha)
 
 Poki bundles an automation-only keyboard extension. It occupies a keyboard-sized
-panel saying **Poki is typing**. There are no manual keys or candidate buttons.
+panel saying **Poki is typing**. There are no manual typing keys or candidate buttons. A system globe control remains
+available where iOS requires it, so the user can switch keyboards and take over.
 The extension is preferred for eligible native agent typing; the existing native
 Pinyin/HID engine remains the fallback, and XCTest remains selectable.
 

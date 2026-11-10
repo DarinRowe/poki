@@ -6,6 +6,7 @@ final class KeyboardViewController: UIInputViewController {
     private var sessionID: UUID?
     private var marked = false
     private var leaving = false
+    private let switchKey = UIButton(type: .system)
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -16,10 +17,27 @@ final class KeyboardViewController: UIInputViewController {
         label.translatesAutoresizingMaskIntoConstraints = false
         view.backgroundColor = .secondarySystemBackground
         view.addSubview(label)
+        // This is the system source switcher, not a manual typing key. In
+        // particular, iPad may have no external globe when this key is required.
+        switchKey.setImage(UIImage(systemName: "globe"), for: .normal)
+        switchKey.accessibilityLabel = "Next keyboard"
+        switchKey.translatesAutoresizingMaskIntoConstraints = false
+        switchKey.addTarget(self, action: #selector(handleInputModeList(from:with:)), for: .allTouchEvents)
+        view.addSubview(switchKey)
+        NSLayoutConstraint.activate([
+            switchKey.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
+            switchKey.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -8),
+            switchKey.widthAnchor.constraint(equalToConstant: 44),
+            switchKey.heightAnchor.constraint(equalToConstant: 44)
+        ])
         let height = view.heightAnchor.constraint(equalToConstant: traitCollection.userInterfaceIdiom == .pad ? 350 : 260)
         height.priority = .defaultHigh
         NSLayoutConstraint.activate([height, label.centerXAnchor.constraint(equalTo: view.centerXAnchor),
                                      label.centerYAnchor.constraint(equalTo: view.centerYAnchor)])
+    }
+    override func viewWillLayoutSubviews() {
+        super.viewWillLayoutSubviews()
+        switchKey.isHidden = !needsInputModeSwitchKey
     }
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
