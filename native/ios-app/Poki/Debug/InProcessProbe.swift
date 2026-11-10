@@ -479,7 +479,16 @@ struct InProcessSection: View {
         .onAppear {
             if path == AutomationPath.runner.rawValue { path = AutomationPath.nativeServices.rawValue }
         }
-        .onDisappear { imeTask?.cancel(); Task { await ime.reset() } }
+        .onDisappear {
+            let pending = imeTask
+            pending?.cancel()
+            Task {
+                await pending?.value
+                do { try await ime.ime(end: true) }
+                catch { imeStatus = "Keyboard detach failed: \(error.localizedDescription)" }
+                await ime.reset()
+            }
+        }
     }
 
     private func imeAction(text: String = "", key: String? = nil, end: Bool = false, read: Bool = false) {
@@ -488,7 +497,7 @@ struct InProcessSection: View {
         imeTask = Task { @MainActor in
             defer { imeBusy = false }
             do {
-                try await Task.sleep(for: .seconds(2))
+                if !end { try await Task.sleep(for: .seconds(2)) }
                 try Task.checkCancellation()
                 if read {
                     imeStatus = try await ime.imeAccessibilitySnapshot()
@@ -496,6 +505,7 @@ struct InProcessSection: View {
                 }
                 if !end {
                     guard probe.focusedInputLanguage != nil else {
+                        try await ime.ime(end: true)
                         imeStatus = "Not verified: focus the test field in Poki first. Nothing typed."
                         return
                     }
@@ -514,6 +524,7 @@ struct InProcessSection: View {
                     }
                     guard let language = probe.focusedInputLanguage,
                           InProcessProbe.isChineseInputLanguage(language) else {
+                        try await ime.ime(end: true)
                         imeStatus = "Chinese not verified (active: \(probe.focusedInputLanguage ?? "unknown")). No composition or candidate-selection key sent. Enable a Chinese keyboard in iOS Settings."
                         return
                     }
@@ -524,7 +535,11 @@ struct InProcessSection: View {
                 }
                 try await ime.ime(text: text, key: key, end: end)
                 imeStatus = end ? "Keyboard detached" : "Sent — inspect the composition and candidates"
-            } catch { imeStatus = error.localizedDescription }
+            } catch {
+                imeStatus = error.localizedDescription
+                do { try await ime.ime(end: true) }
+                catch { imeStatus += " · Keyboard detach failed: \(error.localizedDescription)" }
+            }
         }
     }
 }
