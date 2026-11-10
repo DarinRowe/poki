@@ -1,4 +1,4 @@
-# Quick checks on every PR, all on Linux so they never take one of the 5 macOS runners the
+# Quick checks on every PR, on Linux and Windows so they never take one of the 5 macOS runners the
 # builds share: Poki Setup's core tests (release picking, pairing, signing), the Rust lockfiles
 # (a stale Cargo.lock once broke a release build), and the workflows themselves. The macOS work
 # (the app, the Gym) runs on main and on promotions only.
@@ -50,7 +50,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with: { workspaces: desktop, save-if: false }
       - name: Apple sign-in regression tests (Windows)
-        run: cargo test --locked -p poki-setup-core --manifest-path desktop/Cargo.toml apple::gsa::
+        run: |
+          cargo test --locked -p poki-setup-core --manifest-path desktop/Cargo.toml apple::gsa::
 
   workflows:
     runs-on: ubuntu-24.04
