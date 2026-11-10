@@ -128,22 +128,22 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
             return ["bundleId": .string(app["bundle_id"] as? String ?? ""), "name": .string(app["name"] as? String ?? ""), "pid": .number(Double(app["pid"] as? Int ?? 0))]
         case "GET /screenshot":
             let result = try await pictures.call(["op": "screenshot"])
-            guard let base64 = result["base64"] as? String else { throw failure("the screenshot service returned no image") }
+            guard let base64 = result["base64"] as? String else { throw Self.failure("the screenshot service returned no image") }
             return .string(base64)
         case "GET /element/active":
             let tree = try await readTree()
             let elements = tree["elements"] as? [[String: Any]] ?? []
-            guard let field = elements.first(where: { $0["focused"] as? Bool == true }) else { throw failure("no element has keyboard focus") }
+            guard let field = elements.first(where: { $0["focused"] as? Bool == true }) else { throw Self.failure("no element has keyboard focus") }
             queue.sync { focused = field }
             return ["ELEMENT": "focused"]
         case "GET /element/attribute/value":
-            guard element == "focused", let field = queue.sync(execute: { focused }) else { throw failure("the focused element is gone") }
+            guard element == "focused", let field = queue.sync(execute: { focused }) else { throw Self.failure("the focused element is gone") }
             return field["value"].map(Self.json) ?? .null
         case "GET /element/attribute/placeholderValue":
-            guard element == "focused", let field = queue.sync(execute: { focused }) else { throw failure("the focused element is gone") }
+            guard element == "focused", let field = queue.sync(execute: { focused }) else { throw Self.failure("the focused element is gone") }
             return field["placeholder"].map(Self.json) ?? .null
         case "GET /element/rect":
-            guard element == "focused", let field = queue.sync(execute: { focused }), let frame = field["frame"] as? [String: Any] else { throw failure("the focused element is gone") }
+            guard element == "focused", let field = queue.sync(execute: { focused }), let frame = field["frame"] as? [String: Any] else { throw Self.failure("the focused element is gone") }
             return Self.json(frame)
         case "POST /wda/tap":
             try await callPoint("tap", body: body); return .null
@@ -160,7 +160,7 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
             try await actions(body); return .null
         case "POST /wda/keys":
             let text = (body?["value"]?.array ?? []).compactMap(\.string).joined()
-            guard !text.isEmpty else { throw failure("no keys given") }
+            guard !text.isEmpty else { throw Self.failure("no keys given") }
             var request: [String: Any]
             if Self.hidCanType(text) {
                 request = ["op": "type_keys", "text": text]
@@ -180,17 +180,17 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
         case "POST /wda/apps/launch": try await launch(body, terminate: true); return .null
         case "POST /wda/apps/activate": try await launch(body, terminate: false); return .null
         case "POST /wda/apps/terminate":
-            guard let bundle = body?["bundleId"]?.string, !bundle.isEmpty else { throw failure("bundleId is needed") }
+            guard let bundle = body?["bundleId"]?.string, !bundle.isEmpty else { throw Self.failure("bundleId is needed") }
             _ = try await native.call(["op": "terminate_app", "bundle_id": bundle]); return .null
         case "POST /wda/getPasteboard":
             let result = try await native.call(["op": "pasteboard_get"])
             let text = result["text"] as? String ?? ""
             return .string(Data(text.utf8).base64EncodedString())
         case "POST /wda/setPasteboard":
-            guard let encoded = body?["content"]?.string, let data = Data(base64Encoded: encoded) else { throw failure("content must be base64 text") }
+            guard let encoded = body?["content"]?.string, let data = Data(base64Encoded: encoded) else { throw Self.failure("content must be base64 text") }
             _ = try await native.call(["op": "pasteboard_set", "text": String(decoding: data, as: UTF8.self)])
             return .null
-        default: throw failure("\(key) is not implemented in the experimental native-services path")
+        default: throw Self.failure("\(key) is not implemented in the experimental native-services path")
         }
     }
 
@@ -200,7 +200,7 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
     }
 
     private func launch(_ body: JSON?, terminate: Bool) async throws {
-        guard let bundle = body?["bundleId"]?.string, !bundle.isEmpty else { throw failure("bundleId is needed") }
+        guard let bundle = body?["bundleId"]?.string, !bundle.isEmpty else { throw Self.failure("bundleId is needed") }
         _ = try await native.call(["op": "launch_app", "bundle_id": bundle, "terminate_existing": terminate])
     }
 
@@ -208,13 +208,13 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
     /// starting and ending distance; ordinary drags use the dedicated routes above.
     private func actions(_ body: JSON?) async throws {
         let sources = body?["actions"]?.array ?? []
-        guard sources.count == 2 else { throw failure("the experiment supports two-finger W3C actions only") }
+        guard sources.count == 2 else { throw Self.failure("the experiment supports two-finger W3C actions only") }
         func endpoints(_ source: JSON) -> ((Double, Double), (Double, Double), Int)? {
             let moves = (source["actions"]?.array ?? []).filter { $0["type"]?.string == "pointerMove" }
             guard let first = moves.first, let last = moves.last else { return nil }
             return ((first["x"]?.double ?? 0, first["y"]?.double ?? 0), (last["x"]?.double ?? 0, last["y"]?.double ?? 0), last["duration"]?.int ?? 500)
         }
-        guard let a = endpoints(sources[0]), let b = endpoints(sources[1]) else { throw failure("the pinch has no pointer moves") }
+        guard let a = endpoints(sources[0]), let b = endpoints(sources[1]) else { throw Self.failure("the pinch has no pointer moves") }
         let centreX = (a.0.0 + b.0.0) / 2, centreY = (a.0.1 + b.0.1) / 2
         let start = hypot(a.0.0 - b.0.0, a.0.1 - b.0.1), end = hypot(a.1.0 - b.1.0, a.1.1 - b.1.1)
         _ = try await input.call(["op": "pinch", "x": Self.coordinate(centreX), "y": Self.coordinate(centreY), "start_distance": start, "end_distance": end, "duration_ms": max(a.2, b.2)])
@@ -247,7 +247,7 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
     }
 
     private static func point(_ body: JSON?, x: String, y: String) throws -> (x: Int, y: Int) {
-        guard let px = body?[x]?.double, let py = body?[y]?.double else { throw failure("\(x) and \(y) are needed") }
+        guard let px = body?[x]?.double, let py = body?[y]?.double else { throw Self.failure("\(x) and \(y) are needed") }
         return (coordinate(px), coordinate(py))
     }
     private static func coordinate(_ value: Double) -> Int { max(0, min(65_535, Int(value.rounded()))) }
