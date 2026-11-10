@@ -41,6 +41,17 @@ jobs:
           native/launcher/fetch-idevice.sh
           cargo metadata --locked --format-version 1 --manifest-path native/launcher/Cargo.toml > /dev/null
 
+  windows-auth:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: desktop, save-if: false }
+      - name: Apple sign-in regression tests (Windows)
+        run: cargo test --locked -p poki-setup-core --manifest-path desktop/Cargo.toml apple::gsa::
+
   workflows:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
