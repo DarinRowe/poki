@@ -4,6 +4,34 @@ import XCTest
 @testable import Poki
 
 final class NativeServicesWDATests: XCTestCase {
+    func testUnicodeEditingPreservesBackspaceCountAndControlOrder() {
+        let requests = NativeServicesWDA.typingRequests("\u{8}\u{8}中文\t姓名\n", frequency: 55)
+        XCTAssertEqual(requests.count, 5)
+        XCTAssertEqual(requests[0]["text"] as? String, "\u{8}\u{8}")
+        XCTAssertEqual(requests[0]["op"] as? String, "type_keys")
+        XCTAssertEqual(requests[0]["frequency"] as? Int, 55)
+        XCTAssertEqual(requests[1]["text"] as? String, "中文")
+        XCTAssertEqual(requests[1]["clear"] as? Bool, false)
+        XCTAssertEqual(requests[1]["submit"] as? Bool, false)
+        XCTAssertEqual(requests[2]["text"] as? String, "\t")
+        XCTAssertEqual(requests[3]["text"] as? String, "姓名")
+        XCTAssertEqual(requests[4]["text"] as? String, "\n")
+    }
+
+    func testUnicodeRunsStayBatchedAndASCIIKeepsCadence() {
+        let unicode = NativeServicesWDA.typingRequests("Hello 中文 👨‍👩‍👧", frequency: nil)
+        XCTAssertEqual(unicode.count, 1)
+        XCTAssertEqual(unicode[0]["text"] as? String, "Hello 中文 👨‍👩‍👧")
+        let ascii = NativeServicesWDA.typingRequests("AbC!?\n", frequency: 120)
+        XCTAssertEqual(ascii.count, 1)
+        XCTAssertEqual(ascii[0]["frequency"] as? Int, 120)
+    }
+
+    func testUnconfirmedPasteIsNotReportedAsSuccessfulTyping() {
+        XCTAssertThrowsError(try NativeServicesWDA.checkTypingResult(["isError": true, "instruction": "Read the field before retrying"]))
+        XCTAssertNoThrow(try NativeServicesWDA.checkTypingResult(["text_verified": true]))
+    }
+
     func testCompactStatusAndGlyphShareEventColor() {
         var state = PokiState(phase: .idle, headline: "Ready", thumbnailVersion: 0)
         state.event = .init(kind: .started, text: "Started")

@@ -72,6 +72,14 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
 
     init(screen: CGSize) { self.screen = screen }
 
+    /// Diagnostic IME experiment: the owner selects Chinese Pinyin in iOS first.
+    /// Candidate ordering and commitment belong to iOS, not a transliteration table.
+    func ime(text: String = "", key: String? = nil, end: Bool = false) async throws {
+        var request: [String: Any] = ["op": "ime", "text": text, "end": end]
+        if let key { request["key"] = key }
+        _ = try await input.call(request)
+    }
+
     /// Drops all paired tunnels without destroying the transport. The next call reconnects them,
     /// which gives PokiCore's existing restart policy the same clean boundary as the runner path.
     func reset() async {
@@ -161,18 +169,10 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
         case "POST /wda/keys":
             let text = (body?["value"]?.array ?? []).compactMap(\.string).joined()
             guard !text.isEmpty else { throw Self.failure("no keys given") }
-            var request: [String: Any]
-            if Self.hidCanType(text) {
-                request = ["op": "type_keys", "text": text]
-                if let frequency = body?["frequency"]?.int { request["frequency"] = frequency }
-            } else {
-                let deletes = text.prefix { $0 == "\u{8}" }.count
-                var pasted = String(text.dropFirst(deletes))
-                let submit = pasted.last == "\n"
-                if submit { pasted.removeLast() }
-                request = ["op": "type_text", "text": pasted, "clear": deletes > 0, "submit": submit]
+            for request in Self.typingRequests(text, frequency: body?["frequency"]?.int) {
+                let answer = try await input.call(request)
+                try Self.checkTypingResult(answer)
             }
-            _ = try await input.call(request)
             return .null
         case "POST /wda/homescreen": _ = try await input.call(["op": "button", "button": "home"]); return .null
         case "POST /wda/lock": _ = try await input.call(["op": "button", "button": "lock"]); return .null
@@ -295,6 +295,38 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
         guard across > 1 else { return 0 }
         return max(0, min(65_535, Int((value / Double(across - 1) * 65_535).rounded())))
     }
+    static func checkTypingResult(_ answer: [String: Any]) throws {
+        if answer["isError"] as? Bool == true {
+            throw Self.failure(answer["instruction"] as? String ?? answer["reason"] as? String ?? "Typing was not confirmed; read the field before retrying")
+        }
+    }
+
+    /// Keep edit keys as keystrokes, including those embedded in Unicode text.
+    /// Never turn a count of backspaces into Select All/Delete or paste Tab/Return literally.
+    static func typingRequests(_ text: String, frequency: Int?) -> [[String: Any]] {
+        func keys(_ value: String) -> [String: Any] {
+            var request: [String: Any] = ["op": "type_keys", "text": value]
+            if let frequency { request["frequency"] = frequency }
+            return request
+        }
+        if hidCanType(text) { return [keys(text)] }
+        var requests: [[String: Any]] = []
+        var run = ""
+        var controls = false
+        func flush() {
+            guard !run.isEmpty else { return }
+            requests.append(hidCanType(run) ? keys(run) : ["op": "type_text", "text": run, "clear": false, "submit": false])
+            run = ""
+        }
+        for scalar in text.unicodeScalars {
+            let isControl = scalar.value == 8 || scalar.value == 9 || scalar.value == 10
+            if isControl != controls { flush(); controls = isControl }
+            run.unicodeScalars.append(scalar)
+        }
+        flush()
+        return requests
+    }
+
     private static func hidCanType(_ text: String) -> Bool {
         text.unicodeScalars.allSatisfy { scalar in
             scalar.value == 8 || scalar.value == 9 || scalar.value == 10 || (32...126).contains(scalar.value)

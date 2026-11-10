@@ -400,6 +400,11 @@ struct InProcessSection: View {
     @ObservedObject var probe = InProcessProbe.shared
     @AppStorage("automationPath") private var path = AutomationPath.nativeServices.rawValue
     private let running = AutomationPath.current
+    @State private var ime = NativeServicesWDA(screen: UIScreen.main.bounds.size)
+    @State private var pinyin = "nihao"
+    @State private var imeStatus = ""
+    @State private var imeBusy = false
+    @State private var imeTask: Task<Void, Never>?
 
     var body: some View {
         Section {
@@ -411,6 +416,23 @@ struct InProcessSection: View {
                 Text("Takes effect when Poki starts again.").font(.caption).foregroundStyle(.orange)
             }
             ProbeField(probe: probe).frame(height: 44)
+            DisclosureGroup("Chinese keyboard experiment") {
+                Text("Select Chinese Pinyin on the test field first. Actions wait 2 seconds so you can focus the field. Inspect the candidates before choosing; Space may insert a space if no composition is active.")
+                    .font(.caption)
+                TextField("Pinyin", text: $pinyin).textInputAutocapitalization(.never).autocorrectionDisabled()
+                Button("Compose Pinyin") { imeAction(text: pinyin) }.disabled(imeBusy)
+                HStack {
+                    Button("Previous") { imeAction(key: "left") }
+                    Button("Next") { imeAction(key: "right") }
+                    Button("Choose (Space)") { imeAction(key: "space") }
+                }.disabled(imeBusy)
+                HStack {
+                    Button("More candidates") { imeAction(key: "down") }
+                    Button("Backspace") { imeAction(key: "backspace") }
+                    Button("End experiment") { imeAction(end: true) }
+                }.disabled(imeBusy)
+                Text(imeStatus).font(.caption)
+            }
             HStack {
                 Button("Port 8100") { Task { await probe.portCheck() } }
                 Button("Separate session") { Task { await probe.separateTrial() } }
@@ -439,6 +461,21 @@ struct InProcessSection: View {
         }
         .onAppear {
             if path == AutomationPath.runner.rawValue { path = AutomationPath.nativeServices.rawValue }
+        }
+        .onDisappear { imeTask?.cancel(); Task { await ime.reset() } }
+    }
+
+    private func imeAction(text: String = "", key: String? = nil, end: Bool = false) {
+        imeBusy = true
+        imeStatus = "Focus the test field now…"
+        imeTask = Task { @MainActor in
+            defer { imeBusy = false }
+            do {
+                try await Task.sleep(for: .seconds(2))
+                try Task.checkCancellation()
+                try await ime.ime(text: text, key: key, end: end)
+                imeStatus = end ? "Keyboard detached" : "Sent — inspect the composition and candidates"
+            } catch { imeStatus = error.localizedDescription }
         }
     }
 }
