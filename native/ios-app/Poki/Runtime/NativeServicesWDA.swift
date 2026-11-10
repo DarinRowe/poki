@@ -216,7 +216,7 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
     func finger(_ source: JSON) throws -> [[String: Any]] {
         guard source["type"]?.string == "pointer",
               source["parameters"]?["pointerType"]?.string == "touch"
-        else { throw failure("W3C actions support touch pointers only") }
+        else { throw Self.failure("W3C actions support touch pointers only") }
         var x: Double?, y: Double?, elapsed = 0.0
         var touching = false, lifted = false
         var points: [[String: Any]] = []
@@ -224,7 +224,7 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
             switch action["type"]?.string {
             case "pointerMove":
                 guard let nextX = action["x"]?.double, let nextY = action["y"]?.double else {
-                    throw failure("a pointerMove needs x and y")
+                    throw Self.failure("a pointerMove needs x and y")
                 }
                 x = nextX; y = nextY
                 if touching {
@@ -232,20 +232,20 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
                     points.append(["x": coordinate(nextX, across: screen.width), "y": coordinate(nextY, across: screen.height), "time_ms": elapsed])
                 }
             case "pointerDown":
-                guard !touching, let x, let y else { throw failure("pointerDown needs an initial pointerMove") }
+                guard !touching, let x, let y else { throw Self.failure("pointerDown needs an initial pointerMove") }
                 touching = true
                 points.append(["x": coordinate(x, across: screen.width), "y": coordinate(y, across: screen.height), "time_ms": 0.0])
             case "pause":
-                guard touching, let x, let y else { throw failure("pause needs a pointerDown") }
+                guard touching, let x, let y else { throw Self.failure("pause needs a pointerDown") }
                 elapsed += max(0.001, action["duration"]?.double ?? 0)
                 points.append(["x": coordinate(x, across: screen.width), "y": coordinate(y, across: screen.height), "time_ms": elapsed])
             case "pointerUp":
-                guard touching else { throw failure("pointerUp needs a pointerDown") }
+                guard touching else { throw Self.failure("pointerUp needs a pointerDown") }
                 touching = false; lifted = true
-            default: throw failure("unsupported W3C pointer action: \(action["type"]?.string ?? "missing type")")
+            default: throw Self.failure("unsupported W3C pointer action: \(action["type"]?.string ?? "missing type")")
             }
         }
-        guard lifted, !touching, let x, let y, !points.isEmpty else { throw failure("the touch pointer did not lift") }
+        guard lifted, !touching, let x, let y, !points.isEmpty else { throw Self.failure("the touch pointer did not lift") }
         if points.count == 1 {
             points.append(["x": coordinate(x, across: screen.width), "y": coordinate(y, across: screen.height), "time_ms": 50.0])
         }
