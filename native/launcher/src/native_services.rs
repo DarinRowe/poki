@@ -5,7 +5,7 @@
 use crate::{
     Result, apps, ax,
     device::{Device, Pairing},
-    gesture::{Drag, Pinch},
+    gesture::{Drag, Fingers, Pinch},
     not_sent_error, stream,
 };
 use base64::Engine;
@@ -87,6 +87,9 @@ pub(crate) enum Request {
     },
     DrawStrokes {
         strokes: crate::gesture::Strokes,
+    },
+    DrawFingers {
+        fingers: Fingers,
     },
     TypeKeys {
         text: String,
@@ -315,6 +318,7 @@ fn validate(request: &Request) -> Result<()> {
             Err("text exceeds 1 MiB".into())
         }
         Request::DrawStrokes { strokes } => strokes.validate(),
+        Request::DrawFingers { fingers } => fingers.validate(),
         _ => Ok(()),
     }
 }
@@ -434,6 +438,9 @@ async fn input_open(device: &mut Device, media: &mut InputMedia, request: Reques
         }
         Request::DrawStrokes { strokes } => {
             strokes.send(&mut media.touch).await?;
+        }
+        Request::DrawFingers { fingers } => {
+            fingers.send(&mut media.touch).await?;
         }
         Request::TypeKeys {
             text,

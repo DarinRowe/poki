@@ -54,7 +54,7 @@ final class InProcessProbe: ObservableObject {
             case "tools": await toolsCycle(model: model, app: defaults.string(forKey: "pokiProbeApp") ?? "local.pokimcp.fixture")
             case "gym": await gymScorecard(model: model)
             case "chat": await chatCycle(model: model)
-            case "bench": await benchmark(model: model, rounds: defaults.integer(forKey: "pokiBenchRounds") > 0 ? defaults.integer(forKey: "pokiBenchRounds") : 5)
+            case "bench": await benchmark(rounds: defaults.integer(forKey: "pokiBenchRounds") > 0 ? defaults.integer(forKey: "pokiBenchRounds") : 5)
             default: await prepareOnly()
             }
         }
@@ -398,15 +398,13 @@ final class InProcessProbe: ObservableObject {
 /// DiagnosticsView hosts it; ESP-152 removed it on a line where it had no caller).
 struct InProcessSection: View {
     @ObservedObject var probe = InProcessProbe.shared
-    @Environment(AppModel.self) private var model
     @AppStorage("automationPath") private var path = AutomationPath.inProcess.rawValue
     private let running = AutomationPath.current
 
     var body: some View {
         Section {
-            Picker("Agents' actions go through", selection: $path) {
-                Text("Poki Runner").tag(AutomationPath.runner.rawValue)
-                Text("Poki itself").tag(AutomationPath.inProcess.rawValue)
+            Picker("Method", selection: $path) {
+                Text("XCTest session").tag(AutomationPath.inProcess.rawValue)
                 Text("Native services (experimental)").tag(AutomationPath.nativeServices.rawValue)
             }
             if path != running.rawValue {
@@ -417,7 +415,7 @@ struct InProcessSection: View {
                 Button("Port 8100") { Task { await probe.portCheck() } }
                 Button("Separate session") { Task { await probe.separateTrial() } }
             }.disabled(probe.running)
-            Button("Compare available paths (5 rounds)") { Task { await probe.benchmark(model: model, rounds: 5) } }.disabled(probe.running)
+            Button("Compare methods (5 rounds)") { Task { await probe.benchmark(rounds: 5) } }.disabled(probe.running)
             HStack {
                 Button("Prepare") { Task { await probe.prepareOnly() } }
                 Spacer()
@@ -438,6 +436,9 @@ struct InProcessSection: View {
             Text("In-process automation")
         } footer: {
             Text("Native services is an experimental banner-free path using the same paired accessibility, screenshot and HID services as the Mac/Linux bridge. PokiCore keeps the same control logic, approvals, action timing and typing cadence as the standard paths. Changes take effect when Poki starts again.")
+        }
+        .onAppear {
+            if path == AutomationPath.runner.rawValue { path = AutomationPath.inProcess.rawValue }
         }
     }
 }

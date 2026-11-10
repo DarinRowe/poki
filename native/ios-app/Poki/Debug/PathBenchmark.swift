@@ -2,7 +2,8 @@ import Foundation
 import PokiCore
 import UIKit
 
-/// The same requests through the paths available in this launch, interleaved round by round:
+/// The same requests through the XCTest-session and native-services in-process methods, interleaved
+/// round by round:
 /// tap the probe field, type the sample, swipe, read (tree and screenshot). Each is timed from the
 /// request to its answer, with PokiCore's `Runner` as the client on both sides, and checked: the tap
 /// by the field taking the focus, the text by reading the field, the read by the field being in the
@@ -17,28 +18,15 @@ extension InProcessProbe {
         var note: String
     }
 
-    func benchmark(model: AppModel, rounds: Int) async {
+    func benchmark(rounds: Int) async {
         guard begin("compare paths, \(rounds) rounds") else { return }
         defer { end() }
         guard await prepare(), let field else { return }
-        var paths: [(String, Runner)] = [("in-process", Runner(url: URL(string: "http://127.0.0.1:8100")!, transport: InProcessWDA(screen: UIScreen.main.bounds.size)))]
-        var nativePath: NativeServicesWDA?
-        if model.automationPath == .runner {
-            if !model.runner.isRunning { model.wakeRunner() }
-            let by = Date().addingTimeInterval(60)
-            while !model.runner.isRunning, Date() < by { try? await Task.sleep(for: .seconds(0.5)) }
-            if model.runner.isRunning {
-                paths.insert(("runner", Runner(url: URL(string: "http://127.0.0.1:8100")!)), at: 0)
-            } else {
-                note("runner: not running after 60 s (\(model.runner.title)); only the in-process path is measured", ["step": "runner_missing"])
-            }
-        } else if model.automationPath == .nativeServices {
-            let native = NativeServicesWDA(screen: UIScreen.main.bounds.size)
-            nativePath = native
-            paths.insert(("native-services", Runner(url: URL(string: "http://127.0.0.1:8100")!, transport: native)), at: 0)
-        } else {
-            note("Poki started with the in-process path, so the runner is not measured", ["step": "runner_skipped"])
-        }
+        let nativePath = NativeServicesWDA(screen: UIScreen.main.bounds.size)
+        let paths: [(String, Runner)] = [
+            ("native-services", Runner(url: URL(string: "http://127.0.0.1:8100")!, transport: nativePath)),
+            ("xctest-session", Runner(url: URL(string: "http://127.0.0.1:8100")!, transport: InProcessWDA(screen: UIScreen.main.bounds.size))),
+        ]
         var samples: [Sample] = []
         for round in 1...rounds {
             for (name, runner) in paths {
@@ -59,7 +47,7 @@ extension InProcessProbe {
                      ["step": "summary", "path": name, "action": action, "median_ms": median, "ok": mine.count - failed, "count": mine.count, "ms": times])
             }
         }
-        await nativePath?.reset()
+        await nativePath.reset()
     }
 
     /// The front app's tree read once by Poki Runner and once by Poki's own process, a moment apart and
