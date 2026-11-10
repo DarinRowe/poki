@@ -4,6 +4,17 @@ import XCTest
 @testable import Poki
 
 final class NativeServicesWDATests: XCTestCase {
+    @MainActor
+    func testChineseInputVerificationRejectsUnknownAndOtherLanguages() {
+        for language in ["zh", "zh-Hans", "zh-Hant", "zh_CN"] {
+            XCTAssertTrue(InProcessProbe.isChineseInputLanguage(language))
+        }
+        let otherLanguages: [String?] = [nil, "", "en-US", "ja-JP", "zhongwen"]
+        for language in otherLanguages {
+            XCTAssertFalse(InProcessProbe.isChineseInputLanguage(language))
+        }
+    }
+
     func testUnicodeEditingPreservesBackspaceCountAndControlOrder() {
         let requests = NativeServicesWDA.typingRequests("\u{8}\u{8}中文\t姓名\n", frequency: 55)
         XCTAssertEqual(requests.count, 5)

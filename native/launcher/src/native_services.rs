@@ -304,7 +304,7 @@ fn validate(request: &Request) -> Result<()> {
         Request::Ime { text, key, .. } => {
             if text.len() > 200 { return Err("IME input is at most 200 bytes".into()); }
             for character in text.chars() { char_usage(character)?; }
-            if let Some(key) = key { key_usage(key)?; }
+            if let Some(key) = key { if key != "next_input_source" { key_usage(key)?; } }
             Ok(())
         }
         Request::Tap { duration_ms, .. }
@@ -400,7 +400,13 @@ async fn input(
         if media.keyboard.is_none() { media.keyboard = Some(Keyboard::connect(device).await?); }
         let keyboard = media.keyboard.as_mut().unwrap();
         if !text.is_empty() { type_keys(keyboard, &text, false, Some(60)).await?; }
-        if let Some(key) = key { chord(keyboard, key_usage(&key)?, &[]).await?; }
+        if let Some(key) = key {
+            if key == "next_input_source" {
+                // Standard hardware-keyboard input-source shortcut. This cycles
+                // installed sources; it does not prove Chinese is selected.
+                chord(keyboard, 0x2c, &[0xe0]).await?;
+            } else { chord(keyboard, key_usage(&key)?, &[]).await?; }
+        }
         return Ok(json!({"sent": true, "text_verified": false}));
     }
     // Never leak a diagnostic composition into ordinary agent input.
@@ -750,6 +756,8 @@ mod tests {
 
     #[test]
     fn unsupported_keys_are_rejected_before_typing_a_prefix() {
+        assert!(validate(&parse_request(r#"{"op":"ime","key":"next_input_source"}"#).unwrap()).is_ok());
+        assert!(validate(&parse_request(r#"{"op":"ime","key":"unknown"}"#).unwrap()).is_err());
         assert!(validate(&parse_request(r#"{"op":"type_keys","text":"prefix中文"}"#).unwrap()).is_err());
         assert!(validate(&parse_request(r#"{"op":"type_keys","text":"AbC!?\b\t\n"}"#).unwrap()).is_ok());
         assert!(validate(&parse_request(r#"{"op":"type_text","text":"中文👋"}"#).unwrap()).is_ok());
