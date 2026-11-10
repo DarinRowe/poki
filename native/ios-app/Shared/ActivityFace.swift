@@ -142,6 +142,11 @@ extension PokiState {
             face.status = word
             face.shortStatus = word
             face.tone = event.tone
+            // Compact text and its adjacent glyph are one status. A transient
+            // event must not recolor only the glyph (for example blue + green Ready).
+            if case .text(let text, _) = face.compact {
+                face.compact = .text(text, event.tone)
+            }
         }
         if stale, phase == .working || phase == .handoff {
             // The app stopped updating (closed, or iOS suspended it): say so, and drop the action,

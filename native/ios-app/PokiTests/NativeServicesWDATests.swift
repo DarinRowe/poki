@@ -4,6 +4,22 @@ import XCTest
 @testable import Poki
 
 final class NativeServicesWDATests: XCTestCase {
+    func testCompactStatusAndGlyphShareEventColor() {
+        var state = PokiState(phase: .idle, headline: "Ready", thumbnailVersion: 0)
+        state.event = .init(kind: .started, text: "Started")
+        let face = state.face
+        guard case .text(_, let tone) = face.compact else { return XCTFail("Expected compact status") }
+        XCTAssertEqual(tone, face.tone)
+    }
+
+    func testDragVelocityUsesScreenPointsNotHIDCoordinates() {
+        let body: JSON = ["fromX": 201, "fromY": 300, "toX": 201, "toY": 480, "velocity": 800]
+        XCTAssertEqual(NativeServicesWDA.dragMilliseconds(body), 225)
+        let diagonal: JSON = ["fromX": 0, "fromY": 0, "toX": 300, "toY": 400, "velocity": 1000]
+        XCTAssertEqual(NativeServicesWDA.dragMilliseconds(diagonal), 500)
+        XCTAssertEqual(NativeServicesWDA.dragMilliseconds(nil), 80)
+    }
+
     func testHumanizedPointerActionsKeepEveryPointAndRelativeTime() throws {
         let wda = NativeServicesWDA(screen: CGSize(width: 401, height: 801))
         let source: JSON = [

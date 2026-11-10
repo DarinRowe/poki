@@ -62,10 +62,11 @@ private struct StatusRow: View {
     private let theme = ActivityTheme.current
     var body: some View {
         HStack(spacing: 6) {
-            StateGlyph(face: face)
+            StateGlyph(face: face, surface: surface)
             Text(face.status)
                 .font(theme.status)
                 .foregroundStyle(theme.palette(surface).color(face.tone))
+                .transaction { $0.animation = nil }
                 .lineLimit(1)
                 .contentTransition(.interpolate)
             Spacer(minLength: 8)
@@ -136,10 +137,11 @@ struct IslandLeading: View {
     private let theme = ActivityTheme.current
     var body: some View {
         HStack(spacing: 6) {
-            StateGlyph(face: face)
+            StateGlyph(face: face, surface: .island)
             Text(face.shortStatus)
                 .font(theme.status)
                 .foregroundStyle(theme.island.color(face.tone))
+                .transaction { $0.animation = nil }
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
                 .contentTransition(.interpolate)
@@ -202,6 +204,7 @@ struct CompactTrailing: View {
             switch face.compact {
             case .text(let text, let tone):
                 Text(text).font(theme.compact).foregroundStyle(palette.color(tone))
+                    .transaction { $0.animation = nil }
                     .lineLimit(1).minimumScaleFactor(0.7)
                     .contentTransition(.numericText())
             case .code(let code):
@@ -250,9 +253,10 @@ struct RingGlyph: View {
                     .tint(color)
             }
             Image(systemName: face.symbol)
+                .symbolRenderingMode(.monochrome)
                 .font(.system(size: face.ring == .none ? ActivityMetrics.glyph : 11, weight: .bold))
                 .foregroundStyle(color)
-                .contentTransition(.symbolEffect(.replace))
+                .transaction { $0.animation = nil }
         }
         .frame(width: Self.size, height: Self.size)
         .accessibilityHidden(true)
@@ -293,12 +297,14 @@ private struct StepBar: View {
 /// The state's SF Symbol in its colour: no container, no app icon (HIG).
 struct StateGlyph: View {
     var face: ActivityFace
+    var surface: ActivitySurface = .lockScreen
     private let theme = ActivityTheme.current
     var body: some View {
         Image(systemName: face.symbol)
+            .symbolRenderingMode(.monochrome)
             .font(.system(size: ActivityMetrics.glyph, weight: .semibold))
-            .foregroundStyle(theme.lock.color(face.tone))
-            .contentTransition(.symbolEffect(.replace))
+            .foregroundStyle(theme.palette(surface).color(face.tone))
+            .transaction { $0.animation = nil }
             .accessibilityHidden(true)
     }
 }

@@ -1084,7 +1084,13 @@ final class AppModel {
         host.setPaused(false)
         lastAgentActivity = Date()
         log.add("runner", automationPath == .inProcess ? "an agent asked: opening the automation session again" : automationPath == .nativeServices ? "an agent asked: opening native services again" : "an agent asked: starting the runner")
-        activity.update { $0.runnerPaused = false; $0.phase = .working; $0.headline = automationPath == .nativeServices ? "Starting native services" : "Starting the runner"; $0.since = Date() }
+        activity.update {
+            $0.runnerPaused = false
+            guard $0.approval == nil, $0.handoff == nil else { return }
+            $0.phase = .working
+            $0.headline = stepUnderWay?.summary ?? (automationPath == .nativeServices ? "Starting native services" : "Starting the runner")
+            $0.since = stepUnderWay?.started ?? Date()
+        }
         if automationPath == .inProcess, inProcessUsedUp {
             log.add("runner", "an agent asked, but the session of this launch was closed: open Poki to start it again")
             problem = String(localized: "Open Poki so agents can see the screen again: it restarts once.")
@@ -1217,9 +1223,13 @@ final class AppModel {
         if status.state == "failed" {
             let title = Self.problemText(code: status.code, fix: status.fix ?? status.detail ?? "The runner stopped")
             activity.update { $0.phase = .problem; $0.label = "Runner Stopped"; $0.headline = title }
+        } else if activity.state.approval != nil || activity.state.handoff != nil {
+            // Runner readiness must not replace a decision waiting for the owner.
+        } else if let step = stepUnderWay {
+            activity.update { $0.phase = .working; $0.headline = step.summary; $0.since = step.started; $0.runnerPaused = false }
         } else if !status.isRunning {
             activity.update { $0.phase = .idle; $0.headline = status.title }
-        } else if activity.state.phase == .problem || activity.state.phase == .idle || activity.state.headline == "Starting the runner" {
+        } else if activity.state.phase == .problem || activity.state.phase == .idle || activity.state.headline == "Starting the runner" || activity.state.headline == "Starting native services" {
             activity.update { $0.phase = .idle; $0.headline = "Waiting for agent" }
         }
     }
