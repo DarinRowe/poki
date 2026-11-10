@@ -140,6 +140,96 @@ impl Strokes {
     }
 }
 
+/// Fingers that touch together. Each path uses milliseconds since its own pointer-down; positions
+/// are interpolated at the union of their sample times so PokiCore's independently humanized
+/// fingers keep their exact schedules while sharing one multitouch HID report.
+#[derive(Clone, serde::Deserialize)]
+#[serde(transparent)]
+pub(crate) struct Fingers(pub Vec<Vec<PathPoint>>);
+
+impl Fingers {
+    pub(crate) fn validate(&self) -> Result<()> {
+        if !(1..=5).contains(&self.0.len()) {
+            return Err("fingers must contain 1..5 paths".into());
+        }
+        for points in &self.0 {
+            if !(2..=8192).contains(&points.len()) {
+                return Err("a finger must contain 2..8192 points".into());
+            }
+            if points[0].time_ms != 0.0
+                || points.iter().any(|point| !point.time_ms.is_finite())
+                || points.windows(2).any(|w| w[1].time_ms <= w[0].time_ms)
+                || points.last().is_some_and(|point| point.time_ms > 60_000.0)
+            {
+                return Err("finger time_ms must start at 0, increase, and end by 60000".into());
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn send(&self, hid: &mut impl TouchSender) -> Result<()> {
+        self.validate()?;
+        let mut times: Vec<f64> = self
+            .0
+            .iter()
+            .flat_map(|points| points.iter().map(|point| point.time_ms))
+            .collect();
+        times.sort_by(f64::total_cmp);
+        times.dedup_by(|a, b| (*a - *b).abs() < 0.000_1);
+        let start = Instant::now();
+        for time_ms in times {
+            sleep_until(start + Duration::from_secs_f64(time_ms / 1000.0)).await;
+            let contacts = self.contacts_at(time_ms, true);
+            hid.send_multitouch(&contacts).await?;
+            if self
+                .0
+                .iter()
+                .any(|points| (points.last().unwrap().time_ms - time_ms).abs() < 0.000_1)
+            {
+                let released = self.contacts_at(time_ms, false);
+                hid.send_multitouch(&released).await?;
+            }
+        }
+        Ok(())
+    }
+
+    fn contacts_at(&self, time_ms: f64, endings_touch: bool) -> Vec<TouchscreenContact> {
+        self.0
+            .iter()
+            .enumerate()
+            .map(|(identity, points)| {
+                let last = *points.last().unwrap();
+                let ended = time_ms >= last.time_ms;
+                let (x, y) = if time_ms >= last.time_ms {
+                    (last.x, last.y)
+                } else {
+                    let next = points
+                        .iter()
+                        .position(|point| point.time_ms >= time_ms)
+                        .unwrap();
+                    if next == 0 {
+                        (points[0].x, points[0].y)
+                    } else {
+                        let a = points[next - 1];
+                        let b = points[next];
+                        let progress = (time_ms - a.time_ms) / (b.time_ms - a.time_ms);
+                        (
+                            (a.x as f64 + (b.x as f64 - a.x as f64) * progress).round() as u16,
+                            (a.y as f64 + (b.y as f64 - a.y as f64) * progress).round() as u16,
+                        )
+                    }
+                };
+                TouchscreenContact {
+                    identity: identity as u8,
+                    touching: !ended || endings_touch && (time_ms - last.time_ms).abs() < 0.000_1,
+                    x,
+                    y,
+                }
+            })
+            .collect()
+    }
+}
+
 pub(crate) struct Pinch {
     pub x: u16,
     pub y: u16,
@@ -503,6 +593,44 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn fingers_keep_one_shared_multitouch_timeline_and_release_together() {
+        let point = |x, y, time_ms| PathPoint { x, y, time_ms };
+        let fingers = Fingers(vec![
+            vec![point(100, 100, 0.0), point(110, 100, 50.0)],
+            vec![
+                point(200, 200, 0.0),
+                point(210, 200, 25.0),
+                point(220, 200, 50.0),
+            ],
+        ]);
+        let mut transport = Transport::new(1, None);
+        fingers.send(&mut transport).await.unwrap();
+        assert_eq!(transport.transmissions.len(), 4);
+        let contact = |identity, touching, x, y| Contact {
+            id: identity,
+            touching,
+            x,
+            y,
+        };
+        assert_eq!(
+            transport.transmissions[0].contacts,
+            vec![contact(0, true, 100, 100), contact(1, true, 200, 200)]
+        );
+        assert_eq!(
+            transport.transmissions[1].contacts,
+            vec![contact(0, true, 105, 100), contact(1, true, 210, 200)]
+        );
+        assert_eq!(
+            transport.transmissions[2].contacts,
+            vec![contact(0, true, 110, 100), contact(1, true, 220, 200)]
+        );
+        assert_eq!(
+            transport.transmissions[3].contacts,
+            vec![contact(0, false, 110, 100), contact(1, false, 220, 200)]
+        );
     }
 
     #[tokio::test(start_paused = true)]

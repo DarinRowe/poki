@@ -204,20 +204,52 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
         _ = try await native.call(["op": "launch_app", "bundle_id": bundle, "terminate_existing": terminate])
     }
 
-    /// W3C actions are used by PokiCore only for a two-finger pinch. Reduce them to its centre,
-    /// starting and ending distance; ordinary drags use the dedicated routes above.
+    /// PokiCore sends every humanized tap, hold, drag and pinch as W3C pointer actions. Preserve
+    /// every sampled point and its relative time for the native multitouch HID service.
     private func actions(_ body: JSON?) async throws {
         let sources = body?["actions"]?.array ?? []
-        guard sources.count == 2 else { throw Self.failure("the experiment supports two-finger W3C actions only") }
-        func endpoints(_ source: JSON) -> ((Double, Double), (Double, Double), Int)? {
-            let moves = (source["actions"]?.array ?? []).filter { $0["type"]?.string == "pointerMove" }
-            guard let first = moves.first, let last = moves.last else { return nil }
-            return ((first["x"]?.double ?? 0, first["y"]?.double ?? 0), (last["x"]?.double ?? 0, last["y"]?.double ?? 0), last["duration"]?.int ?? 500)
+        guard (1...5).contains(sources.count) else { throw Self.failure("W3C actions need 1 to 5 touch pointers") }
+        let fingers = try sources.map(Self.finger)
+        _ = try await input.call(["op": "draw_fingers", "fingers": fingers])
+    }
+
+    static func finger(_ source: JSON) throws -> [[String: Any]] {
+        guard source["type"]?.string == "pointer",
+              source["parameters"]?["pointerType"]?.string == "touch"
+        else { throw failure("W3C actions support touch pointers only") }
+        var x: Double?, y: Double?, elapsed = 0.0
+        var touching = false, lifted = false
+        var points: [[String: Any]] = []
+        for action in source["actions"]?.array ?? [] {
+            switch action["type"]?.string {
+            case "pointerMove":
+                guard let nextX = action["x"]?.double, let nextY = action["y"]?.double else {
+                    throw failure("a pointerMove needs x and y")
+                }
+                x = nextX; y = nextY
+                if touching {
+                    elapsed += max(0.001, action["duration"]?.double ?? 0)
+                    points.append(["x": coordinate(nextX), "y": coordinate(nextY), "time_ms": elapsed])
+                }
+            case "pointerDown":
+                guard !touching, let x, let y else { throw failure("pointerDown needs an initial pointerMove") }
+                touching = true
+                points.append(["x": coordinate(x), "y": coordinate(y), "time_ms": 0.0])
+            case "pause":
+                guard touching, let x, let y else { throw failure("pause needs a pointerDown") }
+                elapsed += max(0.001, action["duration"]?.double ?? 0)
+                points.append(["x": coordinate(x), "y": coordinate(y), "time_ms": elapsed])
+            case "pointerUp":
+                guard touching else { throw failure("pointerUp needs a pointerDown") }
+                touching = false; lifted = true
+            default: throw failure("unsupported W3C pointer action: \(action["type"]?.string ?? "missing type")")
+            }
         }
-        guard let a = endpoints(sources[0]), let b = endpoints(sources[1]) else { throw Self.failure("the pinch has no pointer moves") }
-        let centreX = (a.0.0 + b.0.0) / 2, centreY = (a.0.1 + b.0.1) / 2
-        let start = hypot(a.0.0 - b.0.0, a.0.1 - b.0.1), end = hypot(a.1.0 - b.1.0, a.1.1 - b.1.1)
-        _ = try await input.call(["op": "pinch", "x": Self.coordinate(centreX), "y": Self.coordinate(centreY), "start_distance": start, "end_distance": end, "duration_ms": max(a.2, b.2)])
+        guard lifted, !touching, let x, let y, !points.isEmpty else { throw failure("the touch pointer did not lift") }
+        if points.count == 1 {
+            points.append(["x": coordinate(x), "y": coordinate(y), "time_ms": 50.0])
+        }
+        return points
     }
 
     /// Coalesces PokiCore's parallel source and foreground requests into the one accessibility read
