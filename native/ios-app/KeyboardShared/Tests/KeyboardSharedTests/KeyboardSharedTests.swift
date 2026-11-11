@@ -107,6 +107,17 @@ final class KeyboardSharedTests: XCTestCase {
         XCTAssertEqual(outcome.check, .matched)
     }
 
+    func testClearStopsWhenTheFocusMovesToAnotherField() async {
+        let document = FakeDocument("first line\nsecond line", cursor: 3)
+        var sleeps = 0
+        // The focus moves on during the clear: the other field's text is not deleted.
+        await KeyboardTypist().clear(document, sleep: { _ in
+            sleeps += 1
+            if sleeps == 1 { document.documentID = UUID() }
+        })
+        XCTAssertEqual(document.string, "first line\nsecond line")
+    }
+
     func testHiddenTextIsNotEchoed() async {
         let document = FakeDocument()
         let outcome = await type("hunter2", into: document, hidden: true)

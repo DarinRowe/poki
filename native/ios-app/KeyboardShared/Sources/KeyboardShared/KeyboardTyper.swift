@@ -158,8 +158,10 @@ final class KeyboardTypist {
     /// Empties the field: the cursor to its end, then Delete until nothing is before the cursor. The keyboard is
     /// shown the text a piece at a time, so it reads again after each piece.
     func clear(_ document: KeyboardDocument, sleep: (Double) async -> Void) async {
+        // Only the field the request came for is emptied: when the focus moves on, nothing more is deleted.
+        let field = document.documentID
         var emptyReads = 0
-        for _ in 0..<200 where !stopped {
+        for _ in 0..<200 where !stopped && document.documentID == field {
             let after = document.contextAfter ?? ""
             if after.isEmpty {
                 // Nothing is shown past the end of a paragraph either: one step further finds the next.
@@ -174,7 +176,7 @@ final class KeyboardTypist {
         }
         var sent = 0
         emptyReads = 0
-        while sent < Self.clearLimit, !stopped {
+        while sent < Self.clearLimit, !stopped, document.documentID == field {
             if let selected = document.selectedText, !selected.isEmpty {
                 document.deleteBackward()
                 sent += 1
