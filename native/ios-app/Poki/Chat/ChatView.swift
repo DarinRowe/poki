@@ -267,24 +267,54 @@ struct TypingBubble: View {
     }
 }
 
-/// An outside agent's own step: one grey line, centred, ticked when it went through.
+/// The mark in front of a status line. Steps, approvals and the plan all draw the same tick and cross.
+enum StatusGlyph: Equatable {
+    case ok, failed, working, warning, island, none
+
+    @ViewBuilder var view: some View {
+        switch self {
+        case .ok: Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundStyle(ChatColor.green)
+        case .failed: Image(systemName: "xmark").font(.system(size: 11, weight: .bold)).foregroundStyle(Color(.systemRed))
+        case .working: ProgressView().controlSize(.mini)
+        case .warning: Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 11)).foregroundStyle(Color(.systemOrange))
+        // The Dynamic Island, small.
+        case .island: Capsule().fill(Color(hex: 0x1C1C1E)).frame(width: 22, height: 8)
+        case .none: EmptyView()
+        }
+    }
+}
+
+/// One status line of the conversation: a mark and grey words that wrap, on the bubbles' leading edge.
+/// A notice (an approval or a problem) sits on a grey card; a step is bare, so a run of them reads as a list.
+struct StatusLine: View {
+    var glyph: StatusGlyph
+    var text: String
+    var card = false
+
+    var body: some View {
+        HStack(spacing: 0) {
+            HStack(alignment: .center, spacing: 6) {
+                if glyph != .none { glyph.view.frame(minWidth: 14) }
+                Text(text).fixedSize(horizontal: false, vertical: true)
+            }
+            .font(.system(size: 13)).foregroundStyle(ChatColor.pending)
+            .multilineTextAlignment(.leading)
+            .padding(.vertical, card ? 8 : 2).padding(.horizontal, card ? 12 : 14)
+            .background { if card { RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(.secondarySystemBackground)) } }
+            Spacer(minLength: card ? .messageInsetPadding : 16)
+        }
+        .padding(.vertical, card ? 4 : 0)
+        .accessibilityElement(children: .combine)
+        .transition(.opacity)
+    }
+}
+
+/// An outside agent's own step: one grey line, ticked when it went through.
 private struct StepLine: View {
     var text: String
     var ok: Bool?
     var body: some View {
-        HStack(spacing: 5) {
-            switch ok {
-            case true?: Image(systemName: "checkmark").font(.system(size: 10, weight: .bold)).foregroundStyle(ChatColor.green)
-            case false?: Image(systemName: "xmark").font(.system(size: 10, weight: .bold)).foregroundStyle(Color(.systemRed))
-            case nil: ProgressView().controlSize(.mini)
-            }
-            Text(text).lineLimit(2)
-        }
-        .font(.system(size: 12)).foregroundStyle(ChatColor.secondary)
-        .multilineTextAlignment(.center)
-        .padding(.vertical, 3)
-        .frame(maxWidth: .infinity)
-        .transition(.opacity)
+        StatusLine(glyph: ok == true ? .ok : ok == false ? .failed : .working, text: text)
     }
 }
 
@@ -362,43 +392,36 @@ private struct PlanRow: View {
 
 // MARK: Notes
 
-/// One grey line about an approval, centred under the steps.
+/// A notice about an approval or a problem, on a grey card under the steps.
 private struct NoteLine: View {
     var note: ChatNote
     var body: some View {
-        HStack(spacing: 6) {
-            switch note {
-            case .waiting:
-                // The Dynamic Island, small.
-                Capsule().fill(Color(hex: 0x1C1C1E)).frame(width: 22, height: 8)
-                Text("Waiting for your approval")
-            case .approved(let at):
-                Text(verbatim: "✓").fontWeight(.semibold).foregroundStyle(ChatColor.green)
-                Text("Approved, \(at.formatted(date: .omitted, time: .shortened))")
-            case .declined:
-                Text(verbatim: "✕").fontWeight(.semibold).foregroundStyle(Color(.systemRed))
-                Text("Not approved, so Poki skipped that step")
-            case .expired:
-                Text("The approval ran out, so Poki skipped that step")
-            case .problem(let text):
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Color(.systemOrange))
-                Text(text)
-            case .modelChecking:
-                ProgressView().controlSize(.mini)
-                Text("The model is checking this step")
-            case .modelApproved(let why):
-                Text(verbatim: "✓").fontWeight(.semibold).foregroundStyle(ChatColor.green)
-                Text(why.isEmpty ? String(localized: "Approved by model") : String(localized: "Approved by model: \(why)"))
-            case .modelDeclined(let why):
-                Text(verbatim: "✕").fontWeight(.semibold).foregroundStyle(Color(.systemRed))
-                Text(why.isEmpty ? String(localized: "Not approved by model. Say yes in the chat to let it through.") : String(localized: "Not approved by model: \(why). Say yes in the chat to let it through."))
-            }
+        StatusLine(glyph: glyph, text: text, card: true)
+    }
+
+    private var glyph: StatusGlyph {
+        switch note {
+        case .waiting: .island
+        case .approved, .modelApproved: .ok
+        case .declined, .modelDeclined: .failed
+        case .expired, .problem: .warning
+        case .modelChecking: .working
         }
-        .font(.system(size: 12)).foregroundStyle(ChatColor.secondary)
-        .multilineTextAlignment(.center)
-        .padding(.top, note == .waiting ? 12 : 10).padding(.bottom, note == .waiting ? 2 : 10)
-        .frame(maxWidth: .infinity)
-        .transition(.opacity)
+    }
+
+    private var text: String {
+        switch note {
+        case .waiting: String(localized: "Waiting for your approval")
+        case .approved(let at): String(localized: "Approved, \(at.formatted(date: .omitted, time: .shortened))")
+        case .declined: String(localized: "Not approved, so Poki skipped that step")
+        case .expired: String(localized: "The approval ran out, so Poki skipped that step")
+        case .problem(let text): text
+        case .modelChecking: String(localized: "The model is checking this step")
+        case .modelApproved(let why): why.isEmpty ? String(localized: "Approved by model") : String(localized: "Approved by model: \(why)")
+        case .modelDeclined(let why):
+            why.isEmpty ? String(localized: "Not approved by model. Say yes in the chat to let it through.")
+                : String(localized: "Not approved by model: \(why). Say yes in the chat to let it through.")
+        }
     }
 }
 
@@ -446,25 +469,18 @@ struct ComposerInputView: View {
     @State private var dictation = FieldDictation()
     @FocusState private var focused: Bool
     @State private var liveNote: String?
+    @State private var sent: (text: String, at: Date)?
 
     private var voice: VoiceModel { model.voice }
     private var hasText: Bool { !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     var body: some View {
         VStack(spacing: 4) {
-            if dictation.on {
-                HStack(spacing: 6) {
-                    Circle().fill(Color(.systemRed)).frame(width: 7, height: 7)
-                    Text("Dictating. Your words go into the message; tap Send when it reads right.")
-                }
-                .font(.system(size: 12)).foregroundStyle(ChatColor.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20)
-                .transition(.opacity)
-            } else if let liveNote {
+            if let liveNote, !dictation.on {
                 Text(liveNote).font(.system(size: 12)).foregroundStyle(ChatColor.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20)
                     .onTapGesture { self.liveNote = nil; openModel() }
-            } else if let problem = dictation.problem {
+            } else if let problem = dictation.problem, !dictation.on {
                 Text(problem).font(.system(size: 12)).foregroundStyle(Color(.systemRed))
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20)
             }
@@ -488,6 +504,11 @@ struct ComposerInputView: View {
         }
         .animation(.snappy, value: dictation.on)
         .onChange(of: dictation.text) { _, text in if dictation.on { input = dictation.base + text } }
+        // A keyboard that was still composing (autocorrect, Pinyin) can commit its text after Send has
+        // emptied the field, which put the sent message back: for a moment after Send, that is undone.
+        .onChange(of: input) { _, text in
+            if let sent, text == sent.text, Date().timeIntervalSince(sent.at) < 1 { input = "" }
+        }
         .onDisappear { dictation.stop(model) }
     }
 
@@ -496,6 +517,7 @@ struct ComposerInputView: View {
             if running {
                 Button(action: stop) {
                     Image(systemName: "stop.circle.fill").resizable().scaledToFit().frame(width: 30, height: 30).foregroundStyle(.white, Site.blue)
+                        .frame(width: 44, height: 40).contentShape(.rect)
                 }
                 .accessibilityLabel(Text("Stop"))
             } else {
@@ -537,9 +559,16 @@ struct ComposerInputView: View {
 
     private func submit() {
         guard !running, hasText else { return }
-        dictation.stop(model)
-        send(input)
+        dictation.cancel(model)
+        let text = input
+        send(text)
+        sent = (text, Date())
         input = ""
+        // Once more after the keyboard has settled, for a commit that arrives in pieces.
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(120))
+            if input == text { input = "" }
+        }
     }
 }
 
@@ -553,20 +582,31 @@ final class FieldDictation {
     private(set) var base = ""
     private(set) var problem: String?
     private var engine: Dictation?
+    /// Between the tap and the microphone being on (the permission question can sit in between).
+    private var starting = false
 
     func start(_ model: AppModel, after current: String) {
-        guard !on else { return }
+        guard !on, !starting else { return }
+        starting = true
         problem = nil
         let trimmed = current.trimmingCharacters(in: .whitespacesAndNewlines)
         base = trimmed.isEmpty ? "" : trimmed + " "
         text = ""
         Task {
             guard await Dictation.allowed() else {
+                starting = false
                 problem = String(localized: "Poki needs the microphone and speech recognition: allow them in Settings › Poki.")
                 return
             }
+            guard starting else { return }
+            starting = false
             let engine = Dictation()
             engine.onHeard = { [weak self] heard in self?.text = heard }
+            engine.onFailed = { [weak self, weak model] why in
+                guard let self else { return }
+                if let model { self.stop(model) }
+                self.problem = why
+            }
             model.background.pauseAudio()
             do {
                 try engine.listen()
@@ -577,6 +617,12 @@ final class FieldDictation {
                 problem = error.localizedDescription
             }
         }
+    }
+
+    /// Send was tapped: dictation ends, also one that was still asking for the microphone.
+    func cancel(_ model: AppModel) {
+        starting = false
+        stop(model)
     }
 
     func stop(_ model: AppModel) {
@@ -675,8 +721,7 @@ struct LiveVoiceTranscript: View {
                     case .poki:
                         MessageBubble(direction: .incoming, text: line.text, tail: true)
                     case .tool, .note:
-                        Text(line.text).font(.system(size: 12)).foregroundStyle(ChatColor.secondary)
-                            .multilineTextAlignment(.center).lineLimit(2).padding(.vertical, 3).frame(maxWidth: .infinity)
+                        StatusLine(glyph: .none, text: line.text)
                     }
                 }
                 if voice.phase == .hearing, lines.last?.role != .you {

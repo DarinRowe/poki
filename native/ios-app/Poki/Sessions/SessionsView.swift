@@ -97,6 +97,9 @@ struct SessionsView: View {
             }
         }
         .listStyle(.insetGrouped)
+        // The grouped list leaves a section's worth of space above its first row; under the search
+        // field that read as a hole.
+        .contentMargins(.top, 6, for: .scrollContent)
         // Home's own header: a soft translucent blue that fades into the list, the bear and "Poki" in
         // Geist at the top left. The other pages keep the system's plain bars.
         .scrollContentBackground(.hidden)
