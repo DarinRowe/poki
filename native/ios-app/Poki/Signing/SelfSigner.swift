@@ -288,7 +288,7 @@ final class SelfSigner {
             self.ready[kind] = p
             self.log.add("signing", "prepared \(kind): \(p.version) (\(p.build)), profile until \(p.expires)")
             self.notify(title: kind == "update" ? String(localized: "Poki Update Ready") : String(localized: "Poki Refresh Ready"),
-                        body: String(localized: "Open Setup and tap Install when Poki isn't running a task."))
+                        body: String(localized: "Open Setup and tap Install when Poki isn't running a task."), id: Self.readyNotice)
         }
     }
 
@@ -309,23 +309,30 @@ final class SelfSigner {
         }
         request["op"] = "install"
         request["manifest"] = Self.home.appendingPathComponent("ready/\(p.kind)/manifest.json").path
-        let reopen = "nz.zheha.poki.signing.reopen"
-        scheduleReopenNotice(id: reopen)
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [Self.reopenNotice])
         beforeInstall()
         steppedAside = false
+        closing = false
         installFraction = nil
-        // iOS holds the last part of an upgrade until the app it replaces leaves the screen: Poki
-        // steps aside to the Home Screen by itself once the new copy is almost in (or has stalled
-        // there), keeping a background task so the request can finish; iOS then ends Poki, and the
-        // notice above reopens it.
+        installStepSince = nil
+        asideSince = nil
+        // iOS holds the last part of an upgrade until the app it replaces is gone: stepping aside
+        // to the Home Screen is not enough (seen on the phone: the install waited until Poki was
+        // swiped away). So once the new copy is almost in, or has stalled there, Poki exits by
+        // itself, and a notice set at that moment reopens it.
         let background = UIApplication.shared.beginBackgroundTask(withName: "Poki update")
         let watch = Task { @MainActor [weak self] in
-            var last: (fraction: Double, since: Date)?
+            var last: (fraction: Double?, since: Date)?
             while !Task.isCancelled, let self, self.working != nil {
-                try? await Task.sleep(for: .seconds(1))
-                guard let f = self.installFraction else { continue }
-                if last?.fraction != f { last = (f, Date()) }
-                if f >= 0.9 || (f >= 0.4 && Date().timeIntervalSince(last!.since) > 5) { self.stepAside(); break }
+                try? await Task.sleep(for: .milliseconds(500))
+                guard let began = self.installStepSince else { continue }
+                let f = self.installFraction
+                if last == nil || last?.fraction != f { last = (f, Date()) }
+                let still = Date().timeIntervalSince(last!.since)
+                if Self.shouldClose(fraction: f, still: still, sinceInstallBegan: Date().timeIntervalSince(began), sinceAside: self.asideSince.map { Date().timeIntervalSince($0) }) {
+                    self.closeToFinish()
+                    break
+                }
             }
         }
         await run("Installing") {
@@ -335,8 +342,12 @@ final class SelfSigner {
         }
         watch.cancel()
         UIApplication.shared.endBackgroundTask(background)
-        // Still here: iOS did not end Poki (or the install failed).
-        if lastError != nil { UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [reopen]) }
+        // Still here: the install failed before Poki closed for it.
+        if lastError != nil, !closing {
+            finishNotice = false
+            UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [Self.reopenNotice])
+            UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [Self.finishNoticeID])
+        }
     }
 
     // MARK: Helpers
@@ -355,6 +366,51 @@ final class SelfSigner {
     /// The upgrade's progress while it installs, for `install`'s watch.
     private var installFraction: Double?
     private var steppedAside = false
+    /// When the install itself began (the build is on the phone).
+    private var installStepSince: Date?
+    /// When the owner sent Poki to the Home Screen from the alert.
+    private var asideSince: Date?
+    private var closing = false
+
+    static let readyNotice = "nz.zheha.poki.signing.ready"
+    static let finishNoticeID = "nz.zheha.poki.signing.finish"
+    static let reopenNotice = "nz.zheha.poki.signing.reopen"
+    static let expiringNotice = "nz.zheha.poki.signing.expiring"
+
+    /// Whether Poki exits now for iOS to finish the upgrade: the new copy is almost in, or the
+    /// install has stood still (iOS is waiting for Poki to go), sooner once Poki is off the screen.
+    nonisolated static func shouldClose(fraction: Double?, still: Double, sinceInstallBegan: Double, sinceAside: Double?) -> Bool {
+        if let fraction, fraction >= 0.9 { return true }
+        if let sinceAside { return sinceAside >= 8 || (still >= 3 && sinceAside >= 1) }
+        if let fraction, fraction >= 0.4 { return still >= 5 }
+        // No progress reported at all, or stuck early.
+        return still >= 15 && sinceInstallBegan >= 15
+    }
+
+    /// Poki exits so iOS can finish the upgrade. The notice that reopens it is set now, counted
+    /// from the exit, so it does not arrive while the install is still going.
+    private func closeToFinish() {
+        guard !closing else { return }
+        closing = true
+        finishNotice = false
+        log.add("signing", "closing Poki so iOS can finish the install")
+        let center = UNUserNotificationCenter.current()
+        center.removeDeliveredNotifications(withIdentifiers: [Self.finishNoticeID, Self.readyNotice, Self.expiringNotice])
+        notify(title: String(localized: "Poki Was Updated"), body: String(localized: "Tap to open Poki again."), id: Self.reopenNotice, after: 15)
+        UIApplication.shared.perform(NSSelectorFromString("suspend"))
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { exit(0) }
+    }
+
+    /// The update notices still in Notification Centre are taken away: called when Poki opens.
+    func clearNotices() {
+        let center = UNUserNotificationCenter.current()
+        center.removeDeliveredNotifications(withIdentifiers: [Self.readyNotice, Self.finishNoticeID, Self.reopenNotice, Self.expiringNotice])
+        // Notices from builds that gave each one its own id.
+        center.getDeliveredNotifications { delivered in
+            let old = delivered.filter { $0.request.content.userInfo["poki_link"] as? String == "poki://setup" }.map(\.request.identifier)
+            if !old.isEmpty { center.removeDeliveredNotifications(withIdentifiers: old) }
+        }
+    }
 
     /// Poki to the Home Screen, as the person swiping up would: iOS finishes the upgrade only once the
     /// app it replaces is no longer in front. Once per install.
@@ -365,15 +421,18 @@ final class SelfSigner {
         working = String(localized: "Finishing the update: Poki will close to finish it")
         // The last step: the owner is told Poki will close (the alert's OK steps aside, and iOS ends
         // Poki by itself otherwise); the notice says it again in case the alert was missed.
+        installStepSince = Date()
         finishNotice = true
         notify(title: String(localized: "Poki Will Close to Finish the Update"),
-               body: String(localized: "Poki will close by itself. Open it again once the update is in."))
+               body: String(localized: "Poki will close by itself. Open it again once the update is in."), id: Self.finishNoticeID)
     }
     /// The last install step's alert: Poki has to exit for the update to finish.
     var finishNotice = false
     /// OK on that alert: Poki leaves for the Home Screen.
     func finishNoticeAnswered() {
+        guard finishNotice else { return }
         finishNotice = false
+        asideSince = Date()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             UIApplication.shared.perform(NSSelectorFromString("suspend"))
         }
@@ -389,24 +448,22 @@ final class SelfSigner {
             if progress["id"] as? String == "install" { stepAside() }
         case "part":
             fraction = progress["fraction"] as? Double
-            if progress["id"] as? String == "install" { installFraction = fraction }
+            if progress["id"] as? String == "install" { installFraction = fraction; stepAside() }
             if let d = progress["detail"] as? String { working = d }
         case "note", "waiting": if let t = progress["text"] as? String { working = t }
         default: break
         }
     }
 
-    private func notify(title: String, body: String, id: String = UUID().uuidString, after seconds: TimeInterval? = nil) {
+    private func notify(title: String, body: String, id: String, after seconds: TimeInterval? = nil) {
+        // One notice of each kind at a time: a newer one takes the older one's place.
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [id])
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
         content.userInfo = ["poki_link": "poki://setup"]
         let trigger = seconds.map { UNTimeIntervalNotificationTrigger(timeInterval: $0, repeats: false) }
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: content, trigger: trigger))
-    }
-
-    private func scheduleReopenNotice(id: String) {
-        notify(title: String(localized: "Poki Was Updated"), body: String(localized: "Tap to open Poki again."), id: id, after: 20)
     }
 
     /// Once a day in the last two days: the build is ready (or can't be made) and nothing installed it.
@@ -417,7 +474,7 @@ final class SelfSigner {
         UserDefaults.standard.set(Date(), forKey: key)
         let when = expiry.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? ""
         notify(title: String(localized: "Poki Expires Soon"),
-               body: next != nil ? String(localized: "A refreshed Poki is ready. Open Setup and tap Install before \(when).") : String(localized: "Open Setup to refresh Poki before \(when)."))
+               body: next != nil ? String(localized: "A refreshed Poki is ready. Open Setup and tap Install before \(when).") : String(localized: "Open Setup to refresh Poki before \(when)."), id: Self.expiringNotice)
     }
 
     /// `-pokiSigningDays 1`: a simulator has no profile, so a screenshot gives Poki one that ends then.

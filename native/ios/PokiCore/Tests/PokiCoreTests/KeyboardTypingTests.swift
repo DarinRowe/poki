@@ -51,7 +51,8 @@ final class KeyboardTypingTests: XCTestCase {
         XCTAssertFalse(usual.isEmpty)
         XCTAssertTrue(usual.allSatisfy { $0["keyboard"] == nil })
         XCTAssertEqual(usual.flatMap { $0["value"]?.array?.compactMap(\.string) ?? [] }.joined(), "hello")
-        XCTAssertFalse(result.text.contains("Poki's keyboard"), result.text)
+        // The answer says why, so a keyboard that is never used is not a mystery.
+        XCTAssertTrue(result.text.contains("Poki's keyboard was not used: not added"), result.text)
     }
 
     func testPasswordFieldsNeverAskTheKeyboard() async {
@@ -109,7 +110,7 @@ final class KeyboardTypingTests: XCTestCase {
     }
 
     func testKeyboardTextsGetTimeAtAKeyboardsPace() {
-        XCTAssertEqual(Computer.keyboardTypingBudget("hello"), 22.6, accuracy: 0.01)
-        XCTAssertEqual(Computer.keyboardTypingBudget(String(repeating: "x", count: 2000)), 262, accuracy: 0.01)
+        XCTAssertEqual(Computer.keyboardTypingBudget("hello"), 30.6, accuracy: 0.01)
+        XCTAssertEqual(Computer.keyboardTypingBudget(String(repeating: "x", count: 2000)), 270, accuracy: 0.01)
     }
 }

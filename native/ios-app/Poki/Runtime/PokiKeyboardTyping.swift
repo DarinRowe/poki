@@ -37,7 +37,10 @@ final class PokiKeyboardTyping {
     /// The keyboards turned on in Settings, as iOS lists them (empty when it does not say).
     static var keyboards: [String] { UserDefaults.standard.stringArray(forKey: "AppleKeyboards") ?? [] }
 
-    static var added: Bool { keyboards.contains(keyboardID) }
+    static var added: Bool {
+        let app = Bundle.main.bundleIdentifier ?? "nz.zheha.poki"
+        return keyboards.contains { $0 == keyboardID || $0.hasPrefix(app + ".") }
+    }
 
     /// The keyboard's last word. It can only write this with Full Access, so its presence shows that
     /// the keyboard has run with it.
@@ -45,9 +48,9 @@ final class PokiKeyboardTyping {
         KeyboardLink.directory.flatMap { KeyboardLink.read(KeyboardLink.Status.self, KeyboardLink.statusFile, in: $0) }
     }
 
-    /// Worth asking the keyboard at all: it is added, or (where iOS does not list keyboards) it has
-    /// answered here before.
-    static var available: Bool { added || (keyboards.isEmpty && lastStatus != nil) }
+    /// Worth asking the keyboard at all: iOS lists it as added, does not say which keyboards are
+    /// added, or the keyboard has answered here before. (Only a list without it rules it out.)
+    static var available: Bool { added || keyboards.isEmpty || lastStatus != nil }
 
     static func setting(_ key: String) -> Bool { UserDefaults.standard.object(forKey: key) as? Bool ?? true }
     static let autoSwitchKey = "poki.keyboard.autoSwitch"
@@ -103,7 +106,10 @@ final class PokiKeyboardTyping {
             }
             if !accepted {
                 if KeyboardLink.withdraw(KeyboardLink.requestFile, in: directory) {
-                    return .declined("the Poki keyboard did not come up")
+                    return .declined(switching ? "it did not come up when Poki switched keyboards (the field may take no other keyboard)"
+                        : !options.maySwitch ? "it was not the keyboard in use, and no text field was known to have the focus"
+                        : !Self.setting(Self.autoSwitchKey) ? "it was not the keyboard in use, and switching to it is turned off"
+                        : "it was not the keyboard in use, and switching to it failed in this app a few minutes ago")
                 }
                 // It took the request in this very moment.
                 guard try await acknowledged(id, in: directory, within: 1.5) else {
@@ -173,57 +179,90 @@ final class PokiKeyboardTyping {
 
     // MARK: Switching to the keyboard
 
+    /// How many presses of the shortcut reached Poki's keyboard last time (its place after the
+    /// owner's usual keyboard).
+    static let switchPressesKey = "poki.keyboard.switchPresses"
+    /// Why the keyboard was last not used, for Settings and the answer.
+    static let lastDeclineKey = "poki.keyboard.lastDecline"
+
     /// Brings Poki's keyboard up from another keyboard with the hardware-keyboard shortcut for the
     /// next input source (Control-Space), one source at a time, until the keyboard itself answers.
     /// Nothing on the screen is read or tapped: the app sees a keyboard change, as when its owner
     /// changes keyboards. When Poki's keyboard never answers (the field takes no third-party
-    /// keyboard, or nothing has the focus), one more step completes the circle, back to the keyboard
+    /// keyboard, or nothing has the focus), one more press completes the circle, back to the keyboard
     /// the owner had.
     ///
-    /// iOS may show a third-party keyboard while a hardware keyboard is attached, or only once it is
-    /// gone. The first way is tried with the simulated keyboard attached throughout; if that never
-    /// answers, the second detaches after each step. Whichever worked is remembered.
+    /// iOS hides the on-screen keyboard while a hardware keyboard is attached, and a keyboard
+    /// extension answers only once it is on screen. So after each press the simulated keyboard is
+    /// also taken away for a moment (long enough for the extension to start cold). Whether the
+    /// keyboard answered with it attached or only without is remembered, and so is the number of
+    /// presses, which is tried in one go the next time.
     private func bringUp(_ id: String, in directory: URL, left: () -> Double) async throws -> Bool {
-        let count = Self.keyboards.count
+        let listed = Self.keyboards.count
         // Every other source once; with no list from iOS, as many as most people have.
-        let steps = max(1, min(7, (count > 0 ? count : 4) - 1))
-        let known = UserDefaults.standard.string(forKey: Self.switchModeKey)
-        do {
-            if known != "detached", left() > Double(steps) * 0.8 + 1 {
-                _ = try await call(["op": "ime"])
-                try await Task.sleep(nanoseconds: 350_000_000)
-                for _ in 0..<steps {
-                    _ = try await call(["op": "ime", "key": "next_input_source"])
-                    if try await acknowledged(id, in: directory, within: 0.7) {
-                        _ = try await call(["op": "ime", "end": true])
-                        UserDefaults.standard.set("attached", forKey: Self.switchModeKey)
-                        return true
-                    }
-                }
-                // Full circle.
+        let sources = listed > 1 ? min(8, listed) : 5
+        let steps = sources - 1
+        let defaults = UserDefaults.standard
+        var attached = false
+        func attach() async throws {
+            guard !attached else { return }
+            _ = try await call(["op": "ime"])
+            attached = true
+            try await Task.sleep(nanoseconds: 350_000_000)
+        }
+        func detach() async throws {
+            guard attached else { return }
+            _ = try await call(["op": "ime", "end": true])
+            attached = false
+        }
+        func press(_ times: Int) async throws {
+            try await attach()
+            for _ in 0..<times {
                 _ = try await call(["op": "ime", "key": "next_input_source"])
-                _ = try await call(["op": "ime", "end": true])
-                if try await acknowledged(id, in: directory, within: 0.5) { return true }
+                try await Task.sleep(nanoseconds: 120_000_000)
             }
-            if known != "attached", left() > Double(steps) * 2.2 + 1 {
-                for _ in 0..<steps {
-                    _ = try await call(["op": "ime"])
-                    try await Task.sleep(nanoseconds: 350_000_000)
-                    _ = try await call(["op": "ime", "key": "next_input_source"])
-                    try await Task.sleep(nanoseconds: 250_000_000)
-                    _ = try await call(["op": "ime", "end": true])
-                    if try await acknowledged(id, in: directory, within: 1.0) {
-                        UserDefaults.standard.set("detached", forKey: Self.switchModeKey)
-                        return true
-                    }
+        }
+        /// The keyboard answered after the last press.
+        func answered() async throws -> Bool {
+            let mode = defaults.string(forKey: Self.switchModeKey)
+            if mode != "detached" {
+                if try await acknowledged(id, in: directory, within: mode == "attached" ? 1.2 : 0.6) {
+                    defaults.set("attached", forKey: Self.switchModeKey)
+                    try await detach()
+                    return true
                 }
-                _ = try await call(["op": "ime"])
-                try await Task.sleep(nanoseconds: 350_000_000)
-                _ = try await call(["op": "ime", "key": "next_input_source"])
-                try await Task.sleep(nanoseconds: 250_000_000)
-                _ = try await call(["op": "ime", "end": true])
+                if mode == "attached" { return false }
+            }
+            try await detach()
+            if try await acknowledged(id, in: directory, within: 2.2) {
+                defaults.set("detached", forKey: Self.switchModeKey)
+                return true
             }
             return false
+        }
+        do {
+            var tried = 0
+            // The place it had last time, in one go.
+            let known = defaults.integer(forKey: Self.switchPressesKey)
+            if known >= 1, known <= steps, left() > 4 {
+                try await press(known)
+                if try await answered() { return true }
+                // Not there any more: round to where it began, then one at a time.
+                try await press(sources - known)
+            }
+            while tried < steps, left() > 3.5 {
+                try await press(1)
+                tried += 1
+                if try await answered() {
+                    defaults.set(tried, forKey: Self.switchPressesKey)
+                    return true
+                }
+            }
+            // Round to the keyboard the owner had.
+            try await press(sources - tried)
+            try await detach()
+            defaults.removeObject(forKey: Self.switchPressesKey)
+            return try await acknowledged(id, in: directory, within: 0.8)
         } catch {
             // The simulated keyboard never stays attached behind a failure.
             _ = try? await call(["op": "ime", "end": true])

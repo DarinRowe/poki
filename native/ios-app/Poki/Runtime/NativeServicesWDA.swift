@@ -40,6 +40,7 @@ private final class NativeServicesBridge: @unchecked Sendable {
         let config: [String: Any] = [
             "device_address": "10.7.0.1", "pairing_file": AppFiles.pairingFile.path,
             "host_name": "Poki",
+            "input_without_media": UserDefaults.standard.bool(forKey: NativeServicesWDA.inputWithoutScreenSharingKey),
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: config) else { handle = nil; return }
         let text = String(decoding: data, as: UTF8.self)
@@ -88,13 +89,21 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
     private var focused: [String: Any]?
     private var cachedTree: (at: Date, tree: Tree)?
     private var treeTask: Task<Tree, Error>?
-    private var inputWarming = false
+    /// Testing Options: touches and keys go out with no screen-sharing session at all. Read when Poki turns on.
+    static let inputWithoutScreenSharingKey = "poki.native.inputWithoutScreenSharing"
 
     init(screen: CGSize) { self.screen = screen }
 
     /// PokiCore asks Poki's keyboard first (`keyboard: true` on /wda/keys) and types the old way when
     /// the keyboard declines.
-    var typesThroughKeyboard: Bool { true }
+    var typesThroughKeyboard: Bool { !Self.pasteAllowed }
+
+    /// How text is entered (Setup › Advanced › Typing): "keyboard", the default, is Poki's keyboard
+    /// with key presses behind it and never the clipboard; "paste" is key presses with a paste for
+    /// what the keys cannot type, and no Poki keyboard.
+    static let typingMethodKey = "poki.typing.method"
+    static var pasteAllowed: Bool { UserDefaults.standard.string(forKey: typingMethodKey) == "paste" }
+    private static let pasteOff = "Pasting is off: the owner can choose Paste under Setup › Advanced › Typing."
 
     /// Drops all paired tunnels without destroying the transport. The next call reconnects them,
     /// which gives PokiCore's existing restart policy the same clean boundary as the runner path.
@@ -109,7 +118,6 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
             focused = nil
             cachedTree = nil
             treeTask = nil
-            inputWarming = false
         }
     }
 
@@ -202,7 +210,13 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
             }
             // Hardware key presses, and a paste for what the keys cannot type: the path before the
             // keyboard, and still the one for password fields and apps that take no third-party keyboard.
-            for request in Self.typingRequests(text, frequency: body?["frequency"]?.int) {
+            let requests = Self.typingRequests(text, frequency: body?["frequency"]?.int)
+            // Checked before anything is sent, so no part of the text goes in.
+            if !Self.pasteAllowed, requests.contains(where: { $0["op"] as? String == "type_text" }) {
+                let why = UserDefaults.standard.string(forKey: PokiKeyboardTyping.lastDeclineKey).map { " (\($0))" } ?? ""
+                throw Self.failure("Nothing was typed. This text has characters that key presses cannot type, and Poki's keyboard was not used\(why). \(Self.pasteOff)")
+            }
+            for request in requests {
                 let answer = try await input.call(request)
                 try Self.checkTypingResult(answer)
             }
@@ -219,10 +233,12 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
             guard let bundle = body?["bundleId"]?.string, !bundle.isEmpty else { throw Self.failure("bundleId is needed") }
             _ = try await native.call(["op": "terminate_app", "bundle_id": bundle]); return .null
         case "POST /wda/getPasteboard":
+            guard Self.pasteAllowed else { throw Self.failure("The clipboard is not read. \(Self.pasteOff)") }
             let result = try await native.call(["op": "pasteboard_get"])
             let text = result["text"] as? String ?? ""
             return .string(Data(text.utf8).base64EncodedString())
         case "POST /wda/setPasteboard":
+            guard Self.pasteAllowed else { throw Self.failure("Nothing was pasted. \(Self.pasteOff)") }
             guard let encoded = body?["content"]?.string, let data = Data(base64Encoded: encoded) else { throw Self.failure("content must be base64 text") }
             _ = try await native.call(["op": "pasteboard_set", "text": String(decoding: data, as: UTF8.self)])
             return .null
@@ -242,6 +258,7 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
         options.budget = timeout
         switch try await keyboard.type(text, options) {
         case .typed(let status):
+            UserDefaults.standard.removeObject(forKey: PokiKeyboardTyping.lastDeclineKey)
             return ["keyboard": "typed", "check": .string((status.check ?? .unknown).rawValue), "moved": .bool(status.moved), "tail": status.tail.map(JSON.string) ?? .null]
         case .declined(let why):
             // Off unless the owner turns it on: Chinese through the system's Pinyin keyboard, which
@@ -251,6 +268,7 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
                 let value = try await engine.type(text, clear: options.clear, frequency: body?["frequency"]?.int)
                 return ["keyboard": "typed", "check": "matched", "moved": false, "tail": .string(String(value.suffix(200))), "via": "system Pinyin"]
             }
+            UserDefaults.standard.set(why, forKey: PokiKeyboardTyping.lastDeclineKey)
             return ["keyboard": "declined", "why": .string(why)]
         }
     }
@@ -324,10 +342,8 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
             if let treeTask { return treeTask }
             let task = Task { Tree(value: try await native.call(["op": "ax_tree"])) }
             treeTask = task
-            if !inputWarming {
-                inputWarming = true
-                Task { _ = try? await input.call(["op": "warm_input"]) }
-            }
+            // A read never opens the input lane: its screen-sharing session takes the camera from every
+            // app, so it opens only for a touch or a key and closes 5 s after the last one.
             return task
         }
         do {

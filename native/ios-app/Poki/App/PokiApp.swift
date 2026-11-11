@@ -167,7 +167,7 @@ struct RootView: View {
         } message: { ask in
             Text("\(ask.client) is signing in through \(ask.connector) and returns to \(ask.callback), which isn’t on Poki’s list of known agents. Allow it only if you are connecting it yourself right now. It could then see your screen and act on this iPhone.")
         }
-        // The update's last step: Poki has to exit, and the owner closes it from the app switcher.
+        // The update's last step: Poki has to exit, and does so by itself.
         .alert("Poki Will Close to Finish the Update", isPresented: Binding(get: { model.signer.finishNotice }, set: { if !$0 { model.signer.finishNoticeAnswered() } })) {
             Button("OK") { model.signer.finishNoticeAnswered() }
         } message: {
@@ -188,7 +188,7 @@ struct RootView: View {
             Text("This is the first time Poki starts automation since your iPhone restarted, so iOS will ask for your passcode on the next screen. That screen belongs to iOS: Poki can’t see or read what you enter, and it asks only once until the next restart.")
         }
         .onChange(of: scenePhase, initial: true) { _, phase in
-            if phase == .active { model.becameActive(); AskPoki.refresh(); model.startSigner(); model.signer.maintain(); Task { await model.verifyPairing() } } else if phase == .background { model.wentToBackground() }
+            if phase == .active { model.becameActive(); AskPoki.refresh(); model.startSigner(); model.signer.clearNotices(); model.signer.maintain(); Task { await model.verifyPairing() } } else if phase == .background { model.wentToBackground() }
         }
         // A tap on the Live Activity opens the screen its state is about (ActivityFace.link): the chat,
         // the setup step, or the Activity Log for a problem; `poki://voice` opens the chat too (it

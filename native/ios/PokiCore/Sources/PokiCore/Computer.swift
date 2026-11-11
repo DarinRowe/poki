@@ -63,6 +63,8 @@ final class Computer: @unchecked Sendable {
     /// The element the last type went to and its text, so the read after it can say which number the
     /// field has now when the app replaced it (Settings' search field is a new element in search mode).
     var typedInto: (ref: Int, text: String)?
+    /// Why Poki's keyboard did not take the last text (the transport's words), for that type's answer.
+    var keyboardDeclined: String?
     /// How much of the picture changed in the latest read while the elements did not (nil when the
     /// elements changed too, or nothing did): a whole new picture over an unchanged tree is the old
     /// app's tree under the new app's screen (gym: Photos launched from Safari).

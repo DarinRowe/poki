@@ -295,7 +295,10 @@ extension Computer {
             let readBack = reads.map { hidden ? "; the field now holds \($0.count) characters" : "; the field now reads \"\($0.count > 200 ? String($0.prefix(190)) + "…" : $0)\"" }
                 ?? "; the field could not be read back (no focused field answered in time), so check the elements or the picture"
             if let ref = action["ref"]?.int { typedInto = (ref, text) }
-            return ("type", "\(describe(action)) (\(via))\(readBack)\(focusNote(reads.map { $0.contains(text) } ?? false))\(note)\(safariAddressNote(target, text))")
+            // Why Poki's own keyboard did not type it, so a set-up problem is seen and not guessed at.
+            let declined = keyboardDeclined.map { "; Poki's keyboard was not used: \($0)" } ?? ""
+            keyboardDeclined = nil
+            return ("type", "\(describe(action)) (\(via))\(readBack)\(focusNote(reads.map { $0.contains(text) } ?? false))\(note)\(declined)\(safariAddressNote(target, text))")
         }
         if action["back"] != nil {
             return ("back", try await back(until: until))
@@ -437,7 +440,7 @@ extension Computer {
     /// What a text may take through Poki's keyboard, with the time to bring the keyboard up from
     /// another one and, if it declines, to type the usual way after all.
     static func keyboardTypingBudget(_ text: String) -> Double {
-        min(280, 22 + 0.12 * Double(text.count))
+        min(280, 30 + 0.12 * Double(text.count))
     }
 
     /// The whole text through Poki's own keyboard, in one request (`HTTPTransport.typesThroughKeyboard`).
@@ -445,20 +448,25 @@ extension Computer {
     /// did not come up, or the field takes no third-party keyboard (iOS gives password fields its own).
     /// A text the keyboard took is never typed again another way: a stop part way is thrown.
     func typeThroughKeyboard(_ text: String, clear: Bool, hidden: Bool, target: Element?, tapped: Bool, until: Double) async throws -> String? {
+        keyboardDeclined = nil
         // iOS shows its own keyboard in a password field, never a third-party one.
         guard runner.typesThroughKeyboard, target?.isSecure != true, target?.type != "SecureTextField", !text.isEmpty, text.count <= 2000 else { return nil }
         // What is left after the keyboard must still do for the usual way.
         let budget = until - now() - 4
         guard budget >= 2 else { return nil }
-        // Another keyboard is switched away from only when a field is believed to have the focus:
-        // the action tapped one, or the last read listed a keyboard. Not when the field is not
-        // named and a password field is on the screen: the focus may be in that one.
-        let focused = tapped || (lastAll.contains { $0.type == "Keyboard" } && !lastElements.contains(where: \.isSecure))
+        // Another keyboard is switched away from when a field can be taken to have the focus, as it
+        // does whenever text is typed (a tap earlier in the same list leaves no keyboard in the last
+        // read, so that is no test). Not when the field is not named and a password field is on
+        // the screen: the focus may be in that one.
+        let focused = tapped || target != nil || !lastElements.contains(where: \.isSecure)
         // `hidden`: a password field is on the screen, so nothing of the field's text comes back.
         var body: [String: JSON] = ["value": .array(text.map { .string(String($0)) }), "clear": .bool(clear), "keyboard": true, "focused": .bool(focused), "hidden": .bool(hidden)]
         if let app = lastForeground?.bundleID { body["app"] = .string(app) }
         let answer = try await runner.call("POST", "/wda/keys", .object(body), timeout: budget, countsAsMiss: false)
-        guard answer["keyboard"]?.string == "typed" else { return nil }
+        guard answer["keyboard"]?.string == "typed" else {
+            keyboardDeclined = answer["why"]?.string
+            return nil
+        }
         let by = answer["via"]?.string.map { "the \($0) keyboard" } ?? "Poki's keyboard"
         let tail = answer["tail"]?.string
         func shown(_ s: String) -> String { "\"\(s.count > 120 ? "…" + String(s.suffix(110)) : s)\"" }

@@ -363,6 +363,16 @@
         }
       }
     },
+    "Add the Poki Keyboard" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加 Poki 键盘"
+          }
+        }
+      }
+    },
     "Add this URL as a remote MCP server in your client. Anyone with this link can control this iPhone while Poki is running. Keep it private, and revoke it here if compromised." : {
       "localizations" : {
         "zh-Hans" : {
@@ -1119,6 +1129,16 @@
         }
       }
     },
+    "Debugging" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "调试"
+          }
+        }
+      }
+    },
     "DeepSeek V4 Pro (no screenshots)" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1195,6 +1215,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "诊断"
+          }
+        }
+      }
+    },
+    "Diagnostics: connection checks and this iPhone’s addresses. Testing Options: the automation method and switches being tried." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "诊断：连接检查和本机地址。测试选项：自动化方式和试验中的开关。"
           }
         }
       }
@@ -1462,12 +1492,12 @@
         }
       }
     },
-    "Full Access lets the panel talk to Poki on this iPhone. It has no network access and never uses the clipboard. Without the panel, Poki types with key presses as before." : {
+    "Full Access lets the panel talk to Poki on this iPhone. It has no network access and never uses the clipboard." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "完全访问让面板能与本机上的 Poki 通信。它不联网，也不使用剪贴板。没有面板时，Poki 仍像以前一样用按键输入。"
+            "value" : "完全访问让面板能与本机上的 Poki 通信。它不联网，也不使用剪贴板。"
           }
         }
       }
@@ -1569,6 +1599,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "主屏幕"
+          }
+        }
+      }
+    },
+    "How to Add It" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "如何添加"
           }
         }
       }
@@ -1753,6 +1793,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "保持现有 VPN 连接。Poki 使用它的回环，不开启自己的 VPN。"
+          }
+        }
+      }
+    },
+    "Keep your usual keyboards. Then switch to the Poki keyboard once in any text field, so Poki knows it is there." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保留你常用的键盘。然后在任意输入框中切换到 Poki 键盘一次，让 Poki 知道它已就绪。"
           }
         }
       }
@@ -2130,6 +2180,36 @@
         }
       }
     },
+    "Native services" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "原生服务"
+          }
+        }
+      }
+    },
+    "Native services controls the phone through its paired accessibility, screenshot and input services, with no automation session and no banner. The XCTest session is the earlier way, with iOS’s automation banner." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "原生服务通过已配对的辅助功能、截屏和输入服务控制手机，没有自动化会话，也没有横幅。XCTest 会话是早期的方式，会显示 iOS 的自动化横幅。"
+          }
+        }
+      }
+    },
+    "Native services controls the phone without an XCTest automation session or its banner. Change it under Setup › Advanced › Testing Options." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "原生服务无需 XCTest 自动化会话及其横幅即可控制手机。可在“设置 › 高级 › 测试选项”中更改。"
+          }
+        }
+      }
+    },
     "Needs Full Access" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2294,6 +2374,16 @@
         }
       }
     },
+    "Not Added" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未添加"
+          }
+        }
+      }
+    },
     "Not Found" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2314,12 +2404,12 @@
         }
       }
     },
-    "Not added" : {
+    "Not Used Last Time" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "未添加"
+            "value" : "上次未使用"
           }
         }
       }
@@ -2361,6 +2451,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "10.7.0.1 没有应答。请开启代理 App（含 Poki 模块）或 LocalDevVPN。"
+          }
+        }
+      }
+    },
+    "Notification Settings" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通知设置"
           }
         }
       }
@@ -2462,6 +2562,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "打开“**设置 › 开发者**”。开启开发者模式后会显示此选项。"
+          }
+        }
+      }
+    },
+    "Open **Settings › General › Keyboard › Keyboards › Add New Keyboard** and choose **Poki**." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开**设置 › 通用 › 键盘 › 键盘 › 添加新键盘**，选择 **Poki**。"
           }
         }
       }
@@ -2857,6 +2967,16 @@
         }
       }
     },
+    "Paste" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "粘贴"
+          }
+        }
+      }
+    },
     "Pause" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2893,6 +3013,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Poki 已关闭"
+          }
+        }
+      }
+    },
+    "Poki Keyboard" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 键盘"
           }
         }
       }
@@ -3050,16 +3180,6 @@
         }
       }
     },
-    "Poki keyboard" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Poki 键盘"
-          }
-        }
-      }
-    },
     "Poki log" : {
       "localizations" : {
         "zh-Hans" : {
@@ -3141,12 +3261,32 @@
         }
       }
     },
-    "Poki types through its own keyboard panel, at a person’s pace. The panel has no keys: it shows while Poki types, and Take Over stops it. To set it up, add Poki under Settings → General → Keyboard → Keyboards, then allow Full Access. Keep your usual keyboards." : {
+    "Poki types through its own keyboard and never touches the clipboard. When the keyboard can’t be used, plain text is typed with key presses, and other text is not entered." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 通过自己的键盘面板以常人的速度输入。面板没有按键：Poki 输入时显示，轻点“接管”即可停止。设置方法：在“设置 → 通用 → 键盘 → 键盘”中添加 Poki，然后允许完全访问。请保留你常用的键盘。"
+            "value" : "Poki 通过自己的键盘输入，绝不使用剪贴板。键盘无法使用时，普通文字用按键输入，其他文字不会输入。"
+          }
+        }
+      }
+    },
+    "Poki types through its own keyboard panel, at a person’s pace. The panel has no keys: it shows while Poki types, and Take Over stops it." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 通过自己的键盘面板以常人的速度输入。面板没有按键：Poki 输入时显示，轻点“接管”即可停止。"
+          }
+        }
+      }
+    },
+    "Poki types with key presses and pastes what the keys can’t type, such as Chinese and emoji. Your clipboard is put back afterwards. The Poki keyboard is not used." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 用按键输入，按键无法输入的内容（如中文和表情符号）通过粘贴输入，之后会恢复你的剪贴板。不使用 Poki 键盘。"
           }
         }
       }
@@ -3892,7 +4032,7 @@
         }
       }
     },
-    "Switch back when finished" : {
+    "Switch Back When Finished" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -3902,12 +4042,22 @@
         }
       }
     },
-    "Switch to it automatically" : {
+    "Switch to It Automatically" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "自动切换到 Poki 键盘"
+          }
+        }
+      }
+    },
+    "System Pinyin Keyboard for Chinese" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用系统拼音键盘输入中文"
           }
         }
       }
@@ -3939,6 +4089,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "轻点“**与 Poki 配对**”，并输入此处或锁定屏幕上显示的配对码。"
+          }
+        }
+      }
+    },
+    "Tap **Poki** in that list and turn on **Allow Full Access**." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在列表中轻点 **Poki**，打开**允许完全访问**。"
           }
         }
       }
@@ -4011,6 +4171,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "替你在这台 iPhone 上点按和打字"
+          }
+        }
+      }
+    },
+    "Testing Options" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "测试选项"
+          }
+        }
+      }
+    },
+    "Text Entry" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字输入方式"
           }
         }
       }
@@ -4587,16 +4767,6 @@
         }
       }
     },
-    "Type Chinese with the system Pinyin keyboard" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "用系统拼音键盘输入中文"
-          }
-        }
-      }
-    },
     "Type it on the Pair with Poki screen in Settings" : {
       "localizations" : {
         "zh-Hans" : {
@@ -4613,6 +4783,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "输入“在路上了”"
+          }
+        }
+      }
+    },
+    "Typing" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "输入"
           }
         }
       }
@@ -4674,6 +4854,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "请把 iOS 更新到 17.4 或更高版本。"
+          }
+        }
+      }
+    },
+    "Updates" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新"
           }
         }
       }

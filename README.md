@@ -28,8 +28,8 @@
 
 On the native path Poki types through its own keyboard panel at a person's pace, without
 reading the screen while it types. The panel has no keys and is not a keyboard for people:
-it shows while Poki types and has a Take Over button. Without it, Poki types with key
-presses as before. See [docs/poki-keyboard.md](docs/poki-keyboard.md).
+it shows while Poki types and has a Take Over button. Nothing is pasted unless you choose
+Paste in Advanced. See [docs/poki-keyboard.md](docs/poki-keyboard.md).
 
 ## Quick start
 
