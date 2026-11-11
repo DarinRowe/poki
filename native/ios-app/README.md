@@ -11,11 +11,13 @@ the only app to install. The older Runner path (WebDriverAgent as a second bundl
 `.github/workflows/ios-runner.yml`; `docs/single-bundle.md` is the earlier study) stays in the code
 and is chosen per launch with `-automationPath runner`.
 
-Diagnostics also contains a third, experimental **Native services** path. It uses the paired
-accessibility, screenshot and HID services shared with the Mac/Linux bridge, without opening an
-XCTest session or showing its automation banner. The normal PokiCore control and approval logic is
-unchanged. Its state, screenshot and input lanes remain connected independently while active; the
-Diagnostics path comparison records tap, type, swipe and parallel tree/screenshot timings against
+A third path, **Native services**, is the default from iOS 27; earlier iOS versions default to the
+XCTest session above, and Testing Options (Setup › Advanced) switches between the two. It uses the
+paired accessibility, screenshot and HID services shared with the Mac/Linux bridge, without opening an
+XCTest session or showing its automation banner. Those services stream the screen and take touches
+only from iOS 27 (#1 on iOS 18.6.2 and #18 on iOS 26.6 could not tap). The normal PokiCore control
+and approval logic is unchanged. Its state, screenshot and input lanes remain connected independently
+while active; the Diagnostics path comparison records tap, type, swipe and parallel tree/screenshot timings against
 the in-process path. Changing paths takes effect on the next app launch.
 
 ## Layout

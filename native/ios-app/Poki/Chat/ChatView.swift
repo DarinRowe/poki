@@ -19,10 +19,13 @@ struct ChatView: View {
     @State private var newName = ""
 
     var body: some View {
-        ChatTranscript(entries: chat.entries, typing: chat.awaitingModel, canRetry: chat.canRetry, retry: chat.retry, session: chat.sessionID) {
+        ChatTranscript(entries: chat.entries, typing: chat.awaitingModel, live: chat.running, canRetry: chat.canRetry, retry: chat.retry, session: chat.sessionID) {
             if needsSetup { SetupBubble(paired: model.pairingPath != nil, openSetup: openSetup) }
             if let approval = model.approvals.first {
                 ApprovalCard(approval: approval) { approved in model.resolve(approval, approved: approved) }
+            }
+            if let ask = model.methodAsk, model.sessionOn, !model.methodAskDismissed {
+                MethodAskCard(ask: ask) { model.answerMethodAsk(useBanner: $0, from: "the owner, on the card") }
             }
             LiveVoiceTranscript(voice: voice)
         }
@@ -99,6 +102,9 @@ struct ChatView: View {
 struct ChatTranscript<Footer: View>: View {
     var entries: [ChatEntry]
     var typing = false
+    /// The task is under way. In a stopped or paused conversation nothing types itself out: the
+    /// step it stopped at stands still.
+    var live = true
     var canRetry = false
     var retry: () -> Void = {}
     /// The run these entries belong to, for the details of its steps (the Activity Log's session).
@@ -208,8 +214,10 @@ struct ChatTranscript<Footer: View>: View {
                 .transition(PlanMotion.stepTransition)
         case .plan(let steps):
             HStack {
-                PlanBubble(steps: steps, tail: isLast(i, poki: true))
-                    .contentShape(.contextMenuPreview, .rect(cornerRadius: .cornerRadius, style: .continuous))
+                PlanBubble(steps: steps, tail: isLast(i, poki: true), live: live && i == entries.indices.last(where: { if case .plan = entries[$0] { true } else { false } }))
+                    // The lifted bubble keeps the bubble's own outline, small corner included.
+                    .contentShape(.contextMenuPreview, UnevenRoundedRectangle(topLeadingRadius: .cornerRadius, bottomLeadingRadius: isLast(i, poki: true) ? .tailRadius : .cornerRadius,
+                                                                              bottomTrailingRadius: .cornerRadius, topTrailingRadius: .cornerRadius, style: .continuous))
                     .contextMenu { menu(at: i) }
                 Spacer(minLength: .messageInsetPadding)
             }
@@ -392,11 +400,12 @@ struct PokiAvatar: View {
 struct PlanBubble: View {
     var steps: [PlanStep]
     var tail: Bool
+    var live = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             ForEach(steps) { step in
-                PlanRow(step: step).transition(PlanMotion.stepTransition)
+                PlanRow(step: step, live: live).transition(PlanMotion.stepTransition)
             }
         }
         .animation(PlanMotion.enter, value: steps)
@@ -410,6 +419,7 @@ struct PlanBubble: View {
 
 private struct PlanRow: View {
     var step: PlanStep
+    var live = true
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 4) {
@@ -427,6 +437,9 @@ private struct PlanRow: View {
             .animation(PlanMotion.swap, value: step.state)
             Group {
                 switch step.state {
+                case .current where !live, .waiting where !live:
+                    // Stopped or paused here: the words stand, with no typing and no cursor.
+                    Text(step.text).font(.system(size: 15)).foregroundStyle(ChatColor.pending)
                 case .current, .waiting:
                     TypewriterText(text: step.state == .waiting ? String(localized: "\(step.text), waiting for you") : step.text,
                                    font: .system(size: 15), color: ChatColor.pending)
@@ -525,7 +538,7 @@ struct ApprovalNoteCard: View {
     private var context: String {
         let why = note.why.split(separator: "(").first.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
         let app = note.app.isEmpty || note.app == "unknown" || note.app.contains("(") ? nil : note.app
-        return [app, why.isEmpty ? nil : why].compactMap { $0 }.joined(separator: " · ")
+        return [app, why.isEmpty ? nil : why].compactMap { $0 }.joined(separator: ", ")
     }
 
     var body: some View {

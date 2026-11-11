@@ -94,7 +94,7 @@ struct SigningSection: View {
             LabeledContent {
                 if let expiry = signer.expiry {
                     // One line: the date, and how long is left in the warning colour when it is close.
-                    (Text(expiry, format: .dateTime.month(.abbreviated).day().year()) + Text(verbatim: " · ") + Text(expiry, style: .relative).foregroundStyle(countdownColor))
+                    (Text(expiry, format: .dateTime.month(.abbreviated).day().year()) + Text(verbatim: ", ") + Text(expiry, style: .relative).foregroundStyle(countdownColor))
                         .lineLimit(1).minimumScaleFactor(0.8)
                 } else {
                     Text("No Profile").foregroundStyle(Color(.secondaryLabel))

@@ -19,7 +19,9 @@ struct PokiLiveActivity: Widget {
         ActivityConfiguration(for: PokiActivityAttributes.self) { context in
             let face = context.face
             LockScreenCard(face: face)
+                .environment(\.colorScheme, .dark)
                 .activityBackgroundTint(ActivityTheme.current.lockBackground)
+                .activitySystemActionForegroundColor(.white)
                 .widgetURL(face.link)
         } dynamicIsland: { context in
             let face = context.face

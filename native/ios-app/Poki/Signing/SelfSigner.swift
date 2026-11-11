@@ -88,6 +88,9 @@ final class SelfSigner {
     /// Before an install the owner asked for: Poki winds down (automation session, Live Activity)
     /// so it exits cleanly when iOS replaces it, and comes back on after.
     var beforeInstall: () -> Void = {}
+    /// The install has everything it needs and waits for Poki to go: background tasks, silent audio,
+    /// location and the Live Activity end, so iOS can replace Poki without having to kill it.
+    var beforeClose: (() -> Void)?
 
     private var started = false
     private var timer: Timer?
@@ -394,6 +397,7 @@ final class SelfSigner {
         closing = true
         finishNotice = false
         log.add("signing", "closing Poki so iOS can finish the install")
+        beforeClose?()
         let center = UNUserNotificationCenter.current()
         center.removeDeliveredNotifications(withIdentifiers: [Self.finishNoticeID, Self.readyNotice, Self.expiringNotice])
         notify(title: String(localized: "Poki Was Updated"), body: String(localized: "Tap to open Poki again."), id: Self.reopenNotice, after: 15)
@@ -418,6 +422,9 @@ final class SelfSigner {
         guard !steppedAside else { return }
         log.add("signing", "the install's last step: telling the owner Poki will close to finish")
         steppedAside = true
+        // Nothing may hold Poki up from here on: iOS replaces the app once it is neither in front
+        // nor running, and a background task or a Live Activity kept it alive under the install.
+        beforeClose?()
         working = String(localized: "Finishing the update: Poki will close to finish it")
         // The last step: the owner is told Poki will close (the alert's OK steps aside, and iOS ends
         // Poki by itself otherwise); the notice says it again in case the alert was missed.
@@ -462,6 +469,7 @@ final class SelfSigner {
         content.title = title
         content.body = body
         content.userInfo = ["poki_link": "poki://setup"]
+        content.interruptionLevel = .timeSensitive
         let trigger = seconds.map { UNTimeIntervalNotificationTrigger(timeInterval: $0, repeats: false) }
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: content, trigger: trigger))
     }

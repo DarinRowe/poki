@@ -40,7 +40,7 @@ private final class NativeServicesBridge: @unchecked Sendable {
         let config: [String: Any] = [
             "device_address": "10.7.0.1", "pairing_file": AppFiles.pairingFile.path,
             "host_name": "Poki",
-            "input_without_media": UserDefaults.standard.bool(forKey: NativeServicesWDA.inputWithoutScreenSharingKey),
+            "input_without_media": UserDefaults.standard.object(forKey: NativeServicesWDA.inputWithoutScreenSharingKey) as? Bool ?? true,
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: config) else { handle = nil; return }
         let text = String(decoding: data, as: UTF8.self)
@@ -113,6 +113,36 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
         async let state: [String: Any]? = try? native.call(["op": "reset"])
         async let picture: [String: Any]? = try? pictures.call(["op": "reset"])
         async let controls: [String: Any]? = try? input.call(["op": "reset"])
+        _ = await (state, picture, controls)
+        queue.sync {
+            focused = nil
+            cachedTree = nil
+            treeTask = nil
+        }
+    }
+
+    /// Testing Options: the tunnels are opened when Poki turns on and kept between tasks, so a
+    /// phone that later has only cellular (where iOS opens no new tunnel) can still be used.
+    static let keepTunnelKey = "poki.native.keepTunnel"
+    static var keepsTunnel: Bool { UserDefaults.standard.bool(forKey: keepTunnelKey) }
+
+    /// Opens the three tunnels now. How many are open afterwards.
+    @discardableResult
+    func hold() async -> Int {
+        async let state: [String: Any]? = try? native.call(["op": "hold"])
+        async let picture: [String: Any]? = try? pictures.call(["op": "hold"])
+        async let controls: [String: Any]? = try? input.call(["op": "hold"])
+        let answers = await [state, picture, controls]
+        return answers.filter { $0?["held"] as? Bool == true }.count
+    }
+
+    /// The end of a task with the tunnels kept: only the keyboard and the screen-sharing session go.
+    func release() async {
+        await inputGate.acquire()
+        defer { inputGate.release() }
+        async let state: [String: Any]? = try? native.call(["op": "release"])
+        async let picture: [String: Any]? = try? pictures.call(["op": "release"])
+        async let controls: [String: Any]? = try? input.call(["op": "release"])
         _ = await (state, picture, controls)
         queue.sync {
             focused = nil
@@ -322,42 +352,57 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
             queue.sync { cachedTree = nil }
         }
         func centre(_ frame: CGRect) -> CGPoint { CGPoint(x: frame.midX, y: frame.midY) }
+        // The list opens over the keyboard, in the lower part of the screen. Nothing near the top is
+        // ever a row of it: Poki's own Live Activity sits in the Dynamic Island with a label that
+        // starts with "Poki", and a tap there opens Poki in the middle of the task.
+        func inList(_ point: CGPoint) -> Bool { point.y > max(140, screen.height * 0.3) }
         let defaults = UserDefaults.standard
         let name = other ?? PokiKeyboardTyping.displayName
-        let before = items(try await readTree())
-        guard let globe = before.first(where: { Self.globeLabels.contains($0.label) }) else {
-            return ("no keyboard with a globe key is on screen (no text field has the focus, or the field takes only its own keyboard)", false)
-        }
         let places = defaults.dictionary(forKey: Self.keyboardListKey) as? [String: [Double]] ?? [:]
         func place(_ key: String) -> CGPoint? { places[key].flatMap { $0.count == 2 ? CGPoint(x: $0[0], y: $0[1]) : nil } }
-        if !fresh, let was = place("globe"), let target = place(name),
-           abs(was.x - globe.frame.midX) < 2, abs(was.y - globe.frame.midY) < 2 {
-            let from = try unit(centre(globe.frame)), to = try unit(target)
-            // To Poki's keyboard the hold is a little longer, and the list is read once while it is
-            // open under the finger, for the keyboard the owner has now (the one with the tick).
-            let hold = other == nil ? 680 : 520
-            async let touch = input.call(["op": "drag", "x1": from.x, "y1": from.y, "x2": to.x, "y2": to.y, "hold_ms": hold, "duration_ms": 170, "end_hold_ms": 70])
-            if other == nil {
+        let ownerKnown = defaults.string(forKey: Self.ownerKeyboardKey) != nil
+        // One touch: down on the globe key, a hold while the list opens, a slide to the row, up.
+        func slide(from globe: CGPoint, to target: CGPoint, known: Set<String>?) async throws {
+            let from = try unit(globe), to = try unit(target)
+            // The list is read while it is open under the finger only when the owner's own keyboard
+            // (the one with the tick) is not known yet: the read is the slow part of a switch.
+            let learn = other == nil && !ownerKnown && known != nil
+            async let touch = input.call(["op": "drag", "x1": from.x, "y1": from.y, "x2": to.x, "y2": to.y, "hold_ms": learn ? 680 : 460, "duration_ms": 140, "end_hold_ms": 60])
+            if learn, let known {
                 try? await Task.sleep(nanoseconds: 540_000_000)
                 queue.sync { cachedTree = nil }
-                let known = Set(before.map(\.label))
                 if let open = try? await readTree(),
-                   let had = items(open).first(where: { !known.contains($0.label) && $0.selected && !$0.label.hasPrefix(name) })?.label {
+                   let had = items(open).first(where: { !known.contains($0.label) && inList(centre($0.frame)) && $0.selected && !$0.label.hasPrefix(name) })?.label {
                     queue.sync { keyboardBefore = had }
                     defaults.set(had, forKey: Self.ownerKeyboardKey)
                 }
             }
             _ = try await touch
             queue.sync { cachedTree = nil }
+        }
+        // The last switch from these places worked a moment ago: no screen read at all. The caller
+        // checks that the panel answered and asks again afresh when it did not.
+        if !fresh, PokiKeyboardTyping.quickTrusted, ownerKnown || other != nil,
+           let was = place("globe"), let target = place(name), inList(target), inList(was) {
+            try await slide(from: was, to: target, known: nil)
+            return (nil, true)
+        }
+        let before = items(try await readTree())
+        guard let globe = before.first(where: { Self.globeLabels.contains($0.label) }) else {
+            return ("no keyboard with a globe key is on screen (no text field has the focus, or the field takes only its own keyboard)", false)
+        }
+        if !fresh, let was = place("globe"), let target = place(name), inList(target),
+           abs(was.x - globe.frame.midX) < 2, abs(was.y - globe.frame.midY) < 2 {
+            try await slide(from: centre(globe.frame), to: target, known: Set(before.map(\.label)))
             return (nil, true)
         }
         try await send("long_press", at: centre(globe.frame), ["duration_ms": 560])
         let known = Set(before.map(\.label))
         // The list opens under the finger and stays after it lifts.
         var listed: [Item] = [], item: Item?
-        for wait in [120, 250, 450] {
+        for wait in [60, 200, 450] {
             try await Task.sleep(nanoseconds: UInt64(wait) * 1_000_000)
-            listed = items(try await readTree()).filter { !known.contains($0.label) }
+            listed = items(try await readTree()).filter { !known.contains($0.label) && inList(centre($0.frame)) }
             item = listed.first { $0.label == name } ?? listed.first { $0.label.hasPrefix(name) }
             if item != nil { break }
         }

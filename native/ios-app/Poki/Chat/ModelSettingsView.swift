@@ -295,9 +295,9 @@ private struct AddAccount: View {
 
     private func capabilities(_ provider: ModelProvider) -> String {
         let how = ModelAccounts.method(provider)
-        if ModelAccounts.canTalkLive(provider) { return String(localized: "\(how) · Text chat and live voice") }
-        if ModelAccounts.canChat(provider) { return String(localized: "\(how) · Text chat") }
-        return String(localized: "\(how) · Coming in an update")
+        if ModelAccounts.canTalkLive(provider) { return String(localized: "\(how), text chat and live voice") }
+        if ModelAccounts.canChat(provider) { return String(localized: "\(how), text chat") }
+        return String(localized: "\(how), coming in an update")
     }
 }
 

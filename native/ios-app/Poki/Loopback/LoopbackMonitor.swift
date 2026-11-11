@@ -35,6 +35,11 @@ final class LoopbackMonitor {
     private(set) var wifiUp = false
     private(set) var cellularUp = false
     private var running = false
+    /// Rounds in a row with no answer since it last worked. One round alone does not take
+    /// "Working" away: a busy phone or a tunnel that is reconnecting misses one now and then.
+    private var misses = 0
+    /// What the two ports last said, for the log and Diagnostics ("49152 timeout, 62078 refused").
+    private(set) var lastProbe = ""
 
     init() {
         // The default path's interface types change while a proxy app's tunnel is up, so "only
@@ -106,12 +111,19 @@ final class LoopbackMonitor {
         guard !running else { return }
         running = true
         Task {
-            var result = await probe(label: "loopback", host: "10.7.0.1", port: 49152, timeout: 1.5)
-            if result.outcome != "connected" {
-                result = await probe(label: "loopback", host: "10.7.0.1", port: 62078, timeout: 1.5)
+            // Both of the phone's developer ports at once: either one answering is the loopback
+            // working, and the answer comes as fast as the quicker one.
+            var answer = await Self.round(timeout: 1.5)
+            if answer.ms == nil, isWorking, misses == 0 {
+                // It worked a moment ago: once more with more time before saying it stopped.
+                misses = 1
+                try? await Task.sleep(for: .milliseconds(400))
+                answer = await Self.round(timeout: 3)
             }
             running = false
-            let probed: State = result.outcome == "connected" ? .working(ms: result.milliseconds) : loopbackInterface() == nil ? .off : .noAnswer
+            lastProbe = answer.said
+            misses = answer.ms == nil ? misses + 1 : 0
+            let probed: State = answer.ms.map { .working(ms: $0) } ?? (loopbackInterface() == nil ? .off : .noAnswer)
             let next = Self.forcedCellular || Self.forced == "noanswer" ? State.noAnswer : Self.forced == "working" ? State.working(ms: 5) : probed
             // Only a change is published, so the screens are not redrawn every 3 s (a redraw while
             // the person drags a list makes scrolling stutter).
@@ -120,10 +132,19 @@ final class LoopbackMonitor {
                 state = next; checkedAt = Date()
                 if case .working = old, !isWorking { droppedAt = Date() }
                 if isWorking { droppedAt = nil }
-                AppLog.shared.add("loopback", "developer service: \(next)")
+                AppLog.shared.add("loopback", "developer service: \(next) (\(lastProbe))")
                 onChange?(old, next)
             }
         }
+    }
+
+    /// One round: both ports, the quicker connect's time, and what each said.
+    nonisolated private static func round(timeout: TimeInterval) async -> (ms: Int?, said: String) {
+        async let first = connectTime(host: "10.7.0.1", port: 49152, timeout: timeout)
+        async let second = connectTime(host: "10.7.0.1", port: 62078, timeout: timeout)
+        let (a, b) = await (first, second)
+        let ms = [a.ms, b.ms].compactMap { $0 }.min()
+        return (ms, "49152 \(a.outcome), 62078 \(b.outcome)")
     }
 
     #if DEBUG

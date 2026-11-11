@@ -112,10 +112,15 @@ struct ActivityTheme {
     private static let palette = ActivityPalette(
         text: .primary, quiet: .secondary, accent: .blue, approval: .blue, done: .green,
         problem: .red, segmentDone: .green, track: Color(.tertiarySystemFill), finished: .green)
-    var lock = ActivityTheme.palette
+    /// The Lock Screen card is Poki's blue, see-through: white words on it, in both appearances (the
+    /// card is drawn in the dark scheme). Green and red keep their meaning.
+    var lock = ActivityPalette(
+        text: .white, quiet: Color.white.opacity(0.72), accent: .white, approval: .white, done: .green,
+        problem: Color(hex: 0xFF6961), segmentDone: .green, track: Color.white.opacity(0.24), finished: .green)
     var island = ActivityTheme.palette
-    /// nil: the system's own background.
-    var lockBackground: Color? = nil
+    /// Poki blue (#2084FD), translucent: iOS draws the Lock Screen's material (Liquid Glass on iOS 26
+    /// and later) under it, so the wallpaper shows through in blue. Never black.
+    var lockBackground: Color? = Color(hex: 0x2084FD).opacity(0.42)
     var glassEdge = Color(.separator)
     /// The island's outline while the person is needed.
     var approvalOutline = Color.blue

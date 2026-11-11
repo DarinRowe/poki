@@ -70,6 +70,18 @@ final class PokiKeyboardTyping {
         failedSwitches[app ?? ""] = failed ? Date() : nil
     }
 
+    /// The last switch through the globe key's list brought the panel up: for the next ten minutes
+    /// the switch is sent from the remembered places with no screen read before it.
+    private static var quickWorked = Date.distantPast
+    static var quickTrusted: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return Date().timeIntervalSince(quickWorked) < 600
+    }
+    static func noteQuick(worked: Bool) {
+        lock.lock(); defer { lock.unlock() }
+        quickWorked = worked ? Date() : .distantPast
+    }
+
     static func failure(_ message: String) -> NSError {
         NSError(domain: "PokiKeyboard", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
     }
@@ -195,11 +207,15 @@ final class PokiKeyboardTyping {
         let first = try await chooseFromGlobe(false)
         if let why = first.why { return why }
         // The extension may start cold.
-        if try await acknowledged(id, in: directory, within: first.quick ? 1.6 : min(3, max(1, left()))) { return nil }
+        if try await acknowledged(id, in: directory, within: first.quick ? 1.2 : min(3, max(1, left()))) {
+            Self.noteQuick(worked: true)
+            return nil
+        }
         if first.quick, left() > 3 {
             // The list was not where it was last time: once more, reading it.
+            Self.noteQuick(worked: false)
             if let why = try await chooseFromGlobe(true).why { return why }
-            if try await acknowledged(id, in: directory, within: min(3, max(1, left()))) { return nil }
+            if try await acknowledged(id, in: directory, within: min(3, max(1, left()))) { Self.noteQuick(worked: true); return nil }
         }
         return "it was chosen from the globe key's list but did not answer (the field may take no other keyboard, or Full Access is off)"
     }

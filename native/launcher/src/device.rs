@@ -26,11 +26,13 @@ pub struct Failure {
     /// A short code the app acts on instead of the fix's words (for example `ddi_bad`: delete the
     /// image and download it again; `pairing`: the phone refused the pairing).
     pub code: Option<&'static str>,
+    /// The stage RemotePairing itself failed at. A whole-device timeout has no known stage.
+    pub(crate) remote_stage: Option<remote::Stage>,
 }
 
 impl Failure {
     pub fn new(detail: impl Into<String>) -> Self {
-        Self { detail: detail.into(), fix: None, code: None }
+        Self { detail: detail.into(), fix: None, code: None, remote_stage: None }
     }
     pub fn code(mut self, code: &'static str) -> Self {
         self.code = Some(code);
@@ -115,7 +117,9 @@ pub(crate) fn remote_failure(error: remote::RemoteError) -> Failure {
         remote::Stage::PairVerify => (PAIRING_FIX, "pairing"),
         remote::Stage::Listener | remote::Stage::Tunnel | remote::Stage::Rsd => (UNREACHABLE_FIX, "unreachable"),
     };
-    Failure::new(error.to_string()).fix(fix).code(code)
+    let mut failure = Failure::new(error.to_string()).fix(fix).code(code);
+    failure.remote_stage = Some(error.stage);
+    failure
 }
 
 /// An open tunnel. Dropping it closes everything that runs through it, the runner's session included.

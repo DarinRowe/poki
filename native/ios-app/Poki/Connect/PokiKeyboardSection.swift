@@ -52,25 +52,20 @@ struct PokiKeyboardPage: View {
             } footer: {
                 Text("Poki types through its own keyboard panel, at a person’s pace. The panel has no keys: it shows while Poki types, and Take Over stops it.")
             }
-            Section {
-                // Numbered as Setup's other steps are (Turn On Developer Mode).
-                NumberedLines(lines: [
-                    "Tap **Open Settings** below.",
-                    "On Poki’s page, tap **Keyboards**.",
-                    "Turn on **Poki**, then **Allow Full Access**.",
-                ])
-                .padding(.vertical, 4)
+            // The same list as Setup's other steps (Turn On Developer Mode).
+            HowToSection(lines: [
+                "Tap **Open Settings** below.",
+                "On Poki’s page, tap **Keyboards**.",
+                "Turn on **Poki**, then **Allow Full Access**.",
+            ]) {
                 Text("If Poki’s page has no Keyboards row, open **Settings › General › Keyboard › Keyboards › Add New Keyboard**, choose **Poki**, then tap it in that list and turn on **Allow Full Access**.")
-                    .font(.footnote).foregroundStyle(.secondary)
-                Text("Keep your usual keyboards. Poki switches to its keyboard when it types and back to yours when it is done.")
-                    .font(.footnote).foregroundStyle(.secondary)
+            }
+            Section {
                 Button("Open Settings", systemImage: "gear") {
                     if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
                 }
-            } header: {
-                Text("How to Add It")
             } footer: {
-                Text("Full Access lets the panel talk to Poki on this iPhone. It has no network access and never uses the clipboard.")
+                Text("Keep your usual keyboards. Poki switches to its keyboard when it types and back to yours when it is done. Full Access lets the panel talk to Poki on this iPhone. It has no network access and never uses the clipboard.")
             }
         }
         .navigationTitle("Poki Keyboard")

@@ -98,7 +98,7 @@ struct LogView: View {
 /// Steps and the Auto-Classifier are in Agents › Approvals.
 struct TestingOptionsView: View {
     @Environment(AppModel.self) private var model
-    @AppStorage(NativeServicesWDA.inputWithoutScreenSharingKey) private var bareInput = false
+    @AppStorage(NativeServicesWDA.inputWithoutScreenSharingKey) private var bareInput = true
     var body: some View {
         @Bindable var model = model
         Form {
@@ -115,7 +115,7 @@ struct TestingOptionsView: View {
             } header: {
                 Text("Touches and Keys")
             } footer: {
-                Text("Poki sends touches and keys over a screen-sharing session, and iOS turns the camera off in every app while one is open, so Poki opens it only for an action and closes it 5 seconds after the last one. With this on, Poki opens no session at all. If taps and typing still work, the camera is never affected; if they stop working, turn it off. Takes effect the next time Poki turns on.")
+                Text("Poki sends touches and keys over a screen-sharing session, and iOS turns the camera off in every app while one is open, so Poki opens it only for an action and closes it 5 seconds after the last one. With this on (the default), Poki opens no session at all, so the camera is never affected. If taps and typing stop working, turn it off. Takes effect the next time Poki turns on.")
             }
             Section {
                 NavigationLink("Live Activity Preview") { ActivityPreview() }

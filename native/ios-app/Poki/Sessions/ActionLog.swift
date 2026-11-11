@@ -295,7 +295,7 @@ struct ActionLogView: View {
             badge(run.caller, ok: run.failed == 0, approval: false)
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: title(run)).foregroundStyle(Color(.label)).lineLimit(1)
-                Text(verbatim: parts.joined(separator: " · ")).font(.footnote).foregroundStyle(Color(.secondaryLabel)).lineLimit(1)
+                Text(verbatim: parts.joined(separator: ", ")).font(.footnote).foregroundStyle(Color(.secondaryLabel)).lineLimit(1)
             }
             Spacer(minLength: 4)
             if let first = run.entries.first {
@@ -312,7 +312,7 @@ struct ActionLogView: View {
                 if let detail = entry.detail {
                     Text(verbatim: detail).font(.footnote).foregroundStyle(entry.ok ? Color(.secondaryLabel) : Color.orange).lineLimit(2)
                 }
-                Text([entry.app, entry.session.flatMap { SessionStore.shared.session($0)?.name }].compactMap { $0 }.joined(separator: " · "))
+                Text([entry.app, entry.session.flatMap { SessionStore.shared.session($0)?.name }].compactMap { $0 }.joined(separator: ", "))
                     .font(.footnote).foregroundStyle(Color(.secondaryLabel)).lineLimit(1)
             }
             Spacer(minLength: 4)

@@ -59,6 +59,18 @@ final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
     /// The iOS 26 continued run (typed loosely so this class builds for iOS 18).
     private var continued: AnyObject?
 
+    /// iOS's continued processing task is holding Poki up, with its own "Poki is on" on the Lock
+    /// Screen and in the island: Poki's Live Activity is not needed while nothing is happening.
+    var continuedRunIsOn: Bool {
+        if #available(iOS 26.0, *) { return (continued as? ContinuedRun)?.isRunning == true }
+        return false
+    }
+
+    /// The line under "Poki is on" in iOS's own background-task UI: what Poki is doing now.
+    func showStatus(_ text: String) {
+        if #available(iOS 26.0, *) { (continued as? ContinuedRun)?.update(subtitle: text) }
+    }
+
     /// Silent audio could not hold Poki up (it would be suspended): location stands in until it can.
     private(set) var audioLost = false
     private var interruption: NSObjectProtocol?

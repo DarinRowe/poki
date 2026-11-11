@@ -84,6 +84,9 @@ struct LauncherConfig: Encodable {
     var wda_port = 8100
     /// Mount the disk image only: Poki automates the phone itself (AutomationPath.inProcess).
     var in_process = false
+    /// The XCTest session without a loopback: with the image's framework already there, a refused
+    /// connection to the developer services still reports running (PR #91).
+    var local_ddi = false
 }
 
 /// On-device wireless pairing (iOS 27, Settings > Privacy & Security > Developer Mode > Pair).

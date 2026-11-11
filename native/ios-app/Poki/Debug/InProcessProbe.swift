@@ -410,16 +410,21 @@ final class InProcessProbe: ObservableObject {
 
 /// Testing Options: which way Poki controls the phone. Takes effect when Poki starts again.
 struct AutomationMethodSection: View {
-    @AppStorage("automationPath") private var path = AutomationPath.nativeServices.rawValue
+    /// nil until the owner picks a method: Poki then uses this iPhone's default.
+    @AppStorage("automationPath") private var saved: String?
     private let running = AutomationPath.current
+    private var path: String { saved ?? AutomationPath.thisPhoneDefault.rawValue }
 
     var body: some View {
         Section {
-            Picker("Method", selection: $path) {
+            Picker("Method", selection: Binding(get: { saved ?? "automatic" }, set: { saved = $0 == "automatic" ? nil : $0 })) {
+                Text("Automatic").tag("automatic")
                 Text("XCTest session").tag(AutomationPath.inProcess.rawValue)
                 Text("Native services").tag(AutomationPath.nativeServices.rawValue)
             }
-            if path != running.rawValue {
+            Text(saved == nil ? "Poki chooses between tasks, native services first where iOS has them" : "Chosen here")
+                .font(.caption).foregroundStyle(.secondary)
+            if saved != AutomationPath.pinned?.rawValue {
                 Text("Takes effect when Poki starts again.").font(.caption).foregroundStyle(.orange)
             }
         } header: {
@@ -428,7 +433,7 @@ struct AutomationMethodSection: View {
             Text("Native services controls the phone through its paired accessibility, screenshot and input services, with no automation session and no banner. The XCTest session is the earlier way, with iOS’s automation banner.")
         }
         .onAppear {
-            if path == AutomationPath.runner.rawValue { path = AutomationPath.nativeServices.rawValue }
+            if saved == AutomationPath.runner.rawValue { saved = nil }
         }
     }
 }

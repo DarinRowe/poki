@@ -65,6 +65,51 @@ Another ordinary packet-tunnel VPN cannot be assumed to coexist with this one. E
 proxy apps can provide their own loopback instead. Personal VPN and enterprise VPN are distinct
 in Apple's configuration model; compatibility must be measured for the actual combination.
 
+## Set Up the Local Connection (the app's page)
+
+The Setup item is named "Set Up the Local Connection". It shows whether 10.7.0.1 answers (two
+ports are tried together, and a second 3 s round runs before the state leaves Working), a "Check
+Again" button, and one row per proxy app that says only what Poki can know: Chosen or Installed.
+Which app the loopback comes from cannot be told from inside Poki, so no per-app working state is
+shown.
+
+### Shadowrocket
+
+Shadowrocket has its own switch for the route: Settings › Other › "Include Route 10.7.0.1/32"
+(test build 2.2.91, reported working in 2.2.93). A module or a `[General]` line does not turn it
+on. After changing it, disconnect and connect again, on Wi-Fi. The app's Shadowrocket page lists
+these steps and, when nothing answers, what to check next. On iOS 18.7.7 the route was reported
+never to appear (issue 124).
+
+### Which method does the work
+
+Poki has two ways to control the phone. Native services (iOS 27 and later) show no banner and need
+the connection at 10.7.0.1, which iOS opens only on Wi-Fi. The XCTest session shows iOS's
+"Automation Running" banner and needs no connection once the developer image is mounted (the idea
+of PR #91, issue 35); a mount lasts until the phone restarts.
+
+`AutomationChooser` picks between them, and only between tasks: when Poki turns on, when an agent
+asks after a pause, when the connection changes while nothing runs, and when native services have
+failed twice in a row. A request under way always finishes on the method it began with.
+
+- Before iOS 27 the XCTest session is the only method. It now starts without a loopback when the
+  image is already mounted.
+- From iOS 27 native services come first. When they cannot start, the page's "When the Connection
+  Is Off" setting decides: "Ask Me First" (the default) has the agent ask the owner, and
+  "Decide Automatically" lets Poki use the XCTest session and go back to native services when the
+  connection returns.
+- The question has three forms. On Wi-Fi with the loopback off, the agent nudges the owner to turn
+  it on. With no Wi-Fi, it asks whether to connect or to start anyway. When native services keep
+  failing although the connection answers, it asks whether to go on with the banner method. The
+  owner answers the agent (which calls `use_banner_method` with `owner_said_yes: true`) or taps
+  the card in Poki's chat. A yes holds until Poki is turned off.
+- A method set in Testing Options (anything but Automatic) is never changed.
+- An XCTest session closed in a launch cannot be opened again in that launch, so after going back
+  to native services the banner method is not offered again until Poki restarts.
+
+"Keep the Connection for Cellular" (off by default, a test) opens the native-services tunnels as
+Poki turns on and keeps them between tasks, because a tunnel opened on Wi-Fi goes on over cellular.
+
 ## Acceptance
 
 Run `swift test --package-path native/ios/PokiLoopback`. The three tests protect distinct contracts:

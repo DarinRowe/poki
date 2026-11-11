@@ -74,18 +74,23 @@ final class ContinuedRun {
                 self.onExpired?()
             }
         }
-        // iOS ends a task that shows no progress: a tick every few seconds, never reaching the end.
+        // iOS ends a task that shows no progress (on the phone it ended one that ticked every 5 s
+        // after about two minutes): a tick every second, never reaching the end.
+        task.progress.totalUnitCount = 100_000
         ticker = Task { @MainActor [weak self] in
             while !Task.isCancelled, let self, let task = self.task {
                 let p = task.progress
                 if p.completedUnitCount < p.totalUnitCount - 1 { p.completedUnitCount += 1 } else { p.completedUnitCount = p.totalUnitCount / 2 }
-                try? await Task.sleep(for: .seconds(5))
+                try? await Task.sleep(for: .seconds(1))
             }
         }
         AppLog.shared.add("background", "continued run started: Poki keeps running without silent audio")
     }
 
+    private var shown = ""
     func update(subtitle: String) {
+        guard subtitle != shown else { return }
+        shown = subtitle
         task?.updateTitle(String(localized: "Poki is on"), subtitle: subtitle)
     }
 
