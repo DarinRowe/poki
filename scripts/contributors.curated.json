@@ -1,0 +1,496 @@
+{
+  "ZhehanZhang": {
+    "status": "counted",
+    "categories": [
+      "code"
+    ],
+    "basis": [
+      "main branch"
+    ],
+    "summary": "The great co-creator of Poki.",
+    "lines": {
+      "en": "The great co-creator of Poki.",
+      "zh-CN": "Poki 伟大的共同创造者。",
+      "zh-TW": "Poki 偉大的共同創造者。",
+      "ja": "Poki の偉大な共同創造者。",
+      "ko": "Poki의 위대한 공동 창작자.",
+      "es": "El gran cocreador de Poki."
+    }
+  },
+  "igc110": {
+    "status": "counted",
+    "categories": [
+      "report"
+    ],
+    "basis": [
+      "#10",
+      "#12"
+    ],
+    "summary": "Found why taps on a physical iPhone were slow in #10; the fix that followed made them about a third faster.",
+    "lines": {
+      "en": "Found why taps on a physical iPhone were slow in #10; the fix that followed made them about a third faster.",
+      "zh-CN": "在 #10 中查明真机点按慢的原因，随后的修复让点按快了约三分之一。",
+      "zh-TW": "在 #10 查明實體 iPhone 點按慢的原因，隨後的修正讓點按快了約三分之一。",
+      "ja": "#10 で実機 iPhone のタップが遅い原因を突き止め、その後の修正でタップが約 3 分の 1 速くなりました。",
+      "ko": "#10에서 실제 iPhone의 탭이 느린 원인을 찾아냈고, 이후 수정으로 탭이 약 3분의 1 빨라졌습니다.",
+      "es": "Descubrió en #10 por qué los toques en un iPhone físico eran lentos; la corrección posterior los hizo alrededor de un tercio más rápidos."
+    }
+  },
+  "edge369": {
+    "status": "counted",
+    "categories": [
+      "code",
+      "report"
+    ],
+    "basis": [
+      "#14",
+      "#15",
+      "#17",
+      "#19"
+    ],
+    "summary": "Made Poki run on a router in #14, so Telegram can drive the iPhone with the Mac powered off; #15, #17 and #19 followed.",
+    "lines": {
+      "en": "Made Poki run on a router in #14, so Telegram can drive the iPhone with the Mac powered off; #15, #17 and #19 followed.",
+      "zh-CN": "在 #14 中让 Poki 能在路由器上运行，Mac 关机时也能通过 Telegram 操作 iPhone；#15、#17 和 #19 随后跟进。",
+      "zh-TW": "在 #14 讓 Poki 能在路由器上執行，Mac 關機時也能透過 Telegram 操作 iPhone；#15、#17 和 #19 隨後跟進。",
+      "ja": "#14 で Poki をルーター上で動かせるようにし、Mac の電源がオフでも Telegram から iPhone を操作できます。#15、#17、#19 が続きました。",
+      "ko": "#14에서 Poki를 라우터에서 실행할 수 있게 만들어 Mac이 꺼져 있어도 Telegram으로 iPhone을 조작할 수 있게 했고, #15, #17, #19가 이어졌습니다.",
+      "es": "Hizo que Poki funcionara en un router en #14, de modo que Telegram controla el iPhone con el Mac apagado; siguieron #15, #17 y #19."
+    }
+  },
+  "carrotciallo": {
+    "status": "counted",
+    "categories": [
+      "code",
+      "testing"
+    ],
+    "basis": [
+      "#16"
+    ],
+    "summary": "Ported Poki to Linux and tested it on a physical iPhone over USB, LAN and Tailscale in #16; the README now points to it.",
+    "lines": {
+      "en": "Ported Poki to Linux and tested it on a physical iPhone over USB, LAN and Tailscale in #16; the README now points to it.",
+      "zh-CN": "在 #16 中把 Poki 移植到 Linux，并在 iPhone 真机上通过 USB、局域网和 Tailscale 验证；README 现已指向该移植版。",
+      "zh-TW": "在 #16 把 Poki 移植到 Linux，並在實體 iPhone 上透過 USB、區域網路和 Tailscale 驗證；README 現已指向該移植版。",
+      "ja": "#16 で Poki を Linux に移植し、実機 iPhone で USB、LAN、Tailscale 経由の動作を確認しました。README はこの移植版を案内しています。",
+      "ko": "#16에서 Poki를 Linux로 포팅해 실제 iPhone에서 USB, LAN, Tailscale 연결을 검증했고, README는 이 포팅 버전을 안내합니다.",
+      "es": "Portó Poki a Linux y lo probó en un iPhone físico por USB, LAN y Tailscale en #16; el README ahora lo enlaza."
+    }
+  },
+  "guangtouge82": {
+    "status": "counted",
+    "categories": [
+      "report",
+      "testing"
+    ],
+    "basis": [
+      "#18"
+    ],
+    "summary": "Traced failing touches on a physical iPhone to a missing display service in #18; Poki now says nothing was sent and points to prepare-device.",
+    "lines": {
+      "en": "Traced failing touches on a physical iPhone to a missing display service in #18; Poki now says nothing was sent and points to prepare-device.",
+      "zh-CN": "在 #18 中把 iPhone 真机触控失败追查到缺少 display service；现在 Poki 会说明没有发送任何输入，并指向 prepare-device。",
+      "zh-TW": "在 #18 把實體 iPhone 觸控失敗追查到缺少 display service；現在 Poki 會說明沒有送出任何輸入，並指向 prepare-device。",
+      "ja": "#18 で実機 iPhone のタッチ失敗の原因が display service の欠如にあると突き止めました。Poki は何も送信されなかったことを伝え、prepare-device を案内します。",
+      "ko": "#18에서 실제 iPhone의 터치 실패 원인이 display service 누락임을 밝혀냈고, 이제 Poki는 아무것도 전송되지 않았다고 알리며 prepare-device를 안내합니다.",
+      "es": "Rastreó en #18 los toques fallidos de un iPhone físico hasta la falta de display service; ahora Poki indica que no se envió nada y apunta a prepare-device."
+    }
+  },
+  "Dreaminmaster": {
+    "status": "counted",
+    "categories": [
+      "code",
+      "report"
+    ],
+    "basis": [
+      "#21",
+      "#22",
+      "#37",
+      "#49"
+    ],
+    "summary": "Fixed a corrupt cached route that aborted unrelated Agent tasks (#21, #22), then let the Agent reuse its post-action screen read in #37.",
+    "lines": {
+      "en": "Fixed a corrupt cached route that aborted unrelated Agent tasks (#21, #22), then let the Agent reuse its post-action screen read in #37.",
+      "zh-CN": "修复了损坏的路由缓存中断无关 Agent 任务的问题（#21、#22），随后在 #37 中让 Agent 复用操作后已读取的屏幕。",
+      "zh-TW": "修正了損壞的路由快取中斷無關 Agent 任務的問題（#21、#22），隨後在 #37 讓 Agent 重用操作後已讀到的畫面。",
+      "ja": "壊れたキャッシュ済みルートが無関係な Agent タスクを中断させる問題を修正し（#21、#22）、続く #37 で操作後に読み取った画面を Agent が再利用できるようにしました。",
+      "ko": "손상된 캐시 경로가 관련 없는 Agent 작업을 중단시키는 문제를 고쳤고(#21, #22), 이어 #37에서 Agent가 동작 후 읽은 화면을 재사용하게 했습니다.",
+      "es": "Corrigió una ruta en caché corrupta que abortaba tareas del Agent sin relación (#21, #22) y después hizo que el Agent reutilice la pantalla ya leída tras cada acción (#37)."
+    }
+  },
+  "PeterKingXu1s": {
+    "status": "counted",
+    "categories": [
+      "report"
+    ],
+    "basis": [
+      "#25"
+    ],
+    "summary": "Reported in #25 that a natural-language stop request did not interrupt an iMessage task; Poki now replies to mid-task messages and points to /stop.",
+    "lines": {
+      "en": "Reported in #25 that a natural-language stop request did not interrupt an iMessage task; Poki now replies to mid-task messages and points to /stop.",
+      "zh-CN": "在 #25 中报告了 iMessage 任务不会被自然语言的停止请求打断；现在 Poki 会回复任务中途的消息，并提示使用 /stop。",
+      "zh-TW": "在 #25 回報 iMessage 任務不會被自然語言的停止請求打斷；現在 Poki 會回覆任務途中的訊息，並提示使用 /stop。",
+      "ja": "#25 で、自然言語の停止リクエストでは iMessage のタスクが止まらないことを報告しました。Poki はタスク中のメッセージに返信し、/stop を案内するようになりました。",
+      "ko": "#25에서 자연어 중지 요청으로는 iMessage 작업이 멈추지 않는다고 보고했고, 이제 Poki는 작업 도중 받은 메시지에 답하며 /stop을 안내합니다.",
+      "es": "Reportó en #25 que una petición de detener en lenguaje natural no interrumpía una tarea de iMessage; ahora Poki responde a los mensajes enviados durante la tarea y señala /stop."
+    }
+  },
+  "ScottH1122": {
+    "status": "counted",
+    "categories": [
+      "code",
+      "report",
+      "testing"
+    ],
+    "basis": [
+      "#27",
+      "#28",
+      "#101",
+      "#102",
+      "#103",
+      "#118",
+      "#121",
+      "#122",
+      "#123",
+      "#136"
+    ],
+    "summary": "Reproduced two Agent bugs in #27 and #28, then merged seven fixes and test repairs, from cancelled input locks (#102) to invalid touch coordinates (#136).",
+    "lines": {
+      "en": "Reproduced two Agent bugs in #27 and #28, then merged seven fixes and test repairs, from cancelled input locks (#102) to invalid touch coordinates (#136).",
+      "zh-CN": "在 #27 和 #28 中复现了两个 Agent 缺陷，随后合并了七项修复和测试修整，从已取消的输入锁（#102）到无效的触控坐标（#136）。",
+      "zh-TW": "在 #27 和 #28 中重現了兩個 Agent 缺陷，隨後合併了七項修正和測試修整，從已取消的輸入鎖（#102）到無效的觸控座標（#136）。",
+      "ja": "#27 と #28 で Agent の 2 つの不具合を再現し、その後、キャンセル済みの入力ロック（#102）から無効なタッチ座標（#136）まで、7 件の修正とテスト修整をマージしました。",
+      "ko": "#27과 #28에서 Agent 버그 두 건을 재현한 뒤, 취소된 입력 잠금(#102)부터 잘못된 터치 좌표(#136)까지 수정과 테스트 정비 일곱 건을 병합했습니다.",
+      "es": "Reprodujo dos errores del Agent en #27 y #28 y luego fusionó siete correcciones y arreglos de pruebas, desde bloqueos de entrada cancelados (#102) hasta coordenadas táctiles no válidas (#136)."
+    }
+  },
+  "jiahuipaung": {
+    "status": "counted",
+    "categories": [
+      "code",
+      "report"
+    ],
+    "basis": [
+      "#30",
+      "#34"
+    ],
+    "summary": "Fixed in #34 a RemotePairing connection that died when the iPhone's LAN address changed (#30); a real iPhone reconnected in 768 ms.",
+    "lines": {
+      "en": "Fixed in #34 a RemotePairing connection that died when the iPhone's LAN address changed (#30); a real iPhone reconnected in 768 ms.",
+      "zh-CN": "在 #34 中修复了 iPhone 局域网地址变化后 RemotePairing 连接失效的问题（#30）；真机重连只用了 768 毫秒。",
+      "zh-TW": "在 #34 修正了 iPhone 區域網路位址變更後 RemotePairing 連線失效的問題（#30）；實體 iPhone 重新連線只花了 768 毫秒。",
+      "ja": "iPhone の LAN アドレスが変わると RemotePairing 接続が切れる問題（#30）を #34 で修正しました。実機では 768 ミリ秒で再接続できました。",
+      "ko": "iPhone의 LAN 주소가 바뀌면 끊기던 RemotePairing 연결(#30)을 #34에서 고쳤고, 실제 iPhone은 768ms 만에 다시 연결되었습니다.",
+      "es": "Corrigió en #34 una conexión RemotePairing que fallaba al cambiar la dirección LAN del iPhone (#30); un iPhone real se reconectó en 768 ms."
+    }
+  },
+  "scy7796": {
+    "status": "counted",
+    "categories": [
+      "code"
+    ],
+    "basis": [
+      "#39",
+      "#57",
+      "#58"
+    ],
+    "summary": "Fixed taps that failed every time over RemotePairing from a Windows host in #39; 5 of 5 taps then worked.",
+    "lines": {
+      "en": "Fixed taps that failed every time over RemotePairing from a Windows host in #39; 5 of 5 taps then worked.",
+      "zh-CN": "在 #39 中修复了 Windows 主机经 RemotePairing 连接时每次点按都失败的问题；修复后 5 次点按全部成功。",
+      "zh-TW": "在 #39 修正了 Windows 主機經 RemotePairing 連線時每次點按都失敗的問題；修正後 5 次點按全部成功。",
+      "ja": "Windows ホストから RemotePairing 接続でタップが毎回失敗する問題を #39 で修正しました。修正後は 5 回中 5 回のタップが成功しました。",
+      "ko": "Windows 호스트에서 RemotePairing으로 연결할 때 탭이 매번 실패하던 문제를 #39에서 고쳤고, 수정 후 5번 중 5번의 탭이 성공했습니다.",
+      "es": "Corrigió en #39 los toques que fallaban siempre por RemotePairing desde un host Windows; después, 5 de 5 toques funcionaron."
+    }
+  },
+  "foshanfm": {
+    "status": "counted",
+    "categories": [
+      "testing",
+      "report"
+    ],
+    "basis": [
+      "#42",
+      "#60"
+    ],
+    "summary": "Ran an insurance-terms check on a real iPhone over Tailscale in #42; the report shaped clearer USB errors and a per-session transport switch.",
+    "lines": {
+      "en": "Ran an insurance-terms check on a real iPhone over Tailscale in #42; the report shaped clearer USB errors and a per-session transport switch.",
+      "zh-CN": "在 #42 中通过 Tailscale 在真机上做了一次保险条款核对；这份报告推动了更清晰的 USB 报错，以及按会话切换连接方式。",
+      "zh-TW": "在 #42 透過 Tailscale 在實體 iPhone 上做了一次保險條款核對；這份報告推動了更清楚的 USB 錯誤訊息，以及依工作階段切換連線方式。",
+      "ja": "#42 で Tailscale 経由の実機 iPhone を使い、保険約款の確認を行いました。この報告が、USB のより分かりやすいエラーと、セッションごとの接続方式の切り替えにつながっています。",
+      "ko": "#42에서 Tailscale로 연결한 실제 iPhone으로 보험 약관을 확인했고, 이 보고가 더 알기 쉬운 USB 오류와 세션별 연결 방식 전환 작업으로 이어졌습니다.",
+      "es": "Hizo en #42 una comprobación de condiciones de seguros en un iPhone real por Tailscale; su informe orientó errores USB más claros y un cambio de transporte por sesión."
+    }
+  },
+  "xiaweiyi713": {
+    "status": "counted",
+    "categories": [
+      "design"
+    ],
+    "basis": [
+      "demo videos"
+    ],
+    "summary": "Recorded demo videos of Poki driving a real iPhone, so new visitors can see what it does before installing anything.",
+    "lines": {
+      "en": "Recorded demo videos of Poki driving a real iPhone, so new visitors can see what it does before installing anything.",
+      "zh-CN": "录制了 Poki 操作 iPhone 真机的演示视频，让新访客在安装之前就能看到它能做什么。",
+      "zh-TW": "錄製了 Poki 操作實體 iPhone 的示範影片，讓新訪客在安裝之前就能看到它能做什麼。",
+      "ja": "Poki が実機 iPhone を操作するデモ動画を制作し、新しい訪問者がインストール前に何ができるかを確認できるようにしました。",
+      "ko": "Poki가 실제 iPhone을 조작하는 데모 영상을 제작해, 새 방문자가 설치하기 전에 무엇을 할 수 있는지 볼 수 있게 했습니다.",
+      "es": "Grabó vídeos de demostración de Poki controlando un iPhone real, para que los visitantes nuevos vean qué hace antes de instalar nada."
+    }
+  },
+  "makirqi-alt": {
+    "status": "counted",
+    "categories": [
+      "report"
+    ],
+    "basis": [
+      "#1"
+    ],
+    "summary": "Filed Poki's first issue, #1, on iOS 18.6.2: screenshots worked, accessibility and touch did not, and the clear split made it easy to follow.",
+    "lines": {
+      "en": "Filed Poki's first issue, #1, on iOS 18.6.2: screenshots worked, accessibility and touch did not, and the clear split made it easy to follow.",
+      "zh-CN": "提交了 Poki 的第一个问题 #1：在 iOS 18.6.2 上截图正常，辅助功能和触控不可用，哪些能用哪些不能写得很清楚。",
+      "zh-TW": "提交了 Poki 的第一個問題 #1：在 iOS 18.6.2 上截圖正常，輔助功能和觸控不可用，哪些能用哪些不能寫得很清楚。",
+      "ja": "Poki 最初の issue #1 を報告。iOS 18.6.2 でスクリーンショットは動き、アクセシビリティとタッチは動かないことを、切り分けてわかりやすく書いてくれました。",
+      "ko": "Poki의 첫 번째 이슈 #1을 올렸습니다. iOS 18.6.2에서 스크린샷은 되고 손쉬운 사용과 터치는 안 된다는 점을 명확히 나누어 적어 주었습니다.",
+      "es": "Abrió el primer issue de Poki, #1, en iOS 18.6.2: las capturas funcionaban, la accesibilidad y el toque no, y la separación clara lo hizo fácil de seguir."
+    }
+  },
+  "mawenhao1028": {
+    "status": "counted",
+    "categories": [
+      "report"
+    ],
+    "basis": [
+      "#6",
+      "#59"
+    ],
+    "summary": "Reported in #6 that usbmuxd listed no iPhone on macOS 27.2; Poki now says so plainly and why a helper stops early (#59).",
+    "lines": {
+      "en": "Reported in #6 that usbmuxd listed no iPhone on macOS 27.2; Poki now says so plainly and why a helper stops early (#59).",
+      "zh-CN": "在 #6 中报告 macOS 27.2 上 usbmuxd 列不出任何 iPhone；Poki 现在会直接说明这一点，以及辅助程序为何提前停止（#59）。",
+      "zh-TW": "在 #6 中回報 macOS 27.2 上 usbmuxd 列不出任何 iPhone；Poki 現在會直接說明這一點，以及輔助程式為何提前停止（#59）。",
+      "ja": "#6 で macOS 27.2 の usbmuxd が iPhone を一覧に出さないことを報告。Poki はそれを明確に伝え、ヘルパーが早く止まる理由も示すようになりました（#59）。",
+      "ko": "#6에서 macOS 27.2의 usbmuxd가 iPhone을 목록에 보이지 않는 문제를 보고했습니다. 이제 Poki는 이를 분명히 알리고 도우미가 일찍 멈춘 이유도 알려 줍니다(#59).",
+      "es": "Informó en #6 de que usbmuxd no listaba ningún iPhone en macOS 27.2; ahora Poki lo dice con claridad y explica por qué un ayudante se detiene antes de tiempo (#59)."
+    }
+  },
+  "Zeno6898": {
+    "status": "counted",
+    "categories": [
+      "testing",
+      "report"
+    ],
+    "basis": [
+      "#35",
+      "#40",
+      "#138",
+      "#162"
+    ],
+    "summary": "Field-tested the iPhone app over cellular and from Windows in #35 and #40, which led to the Wi-Fi setup note (#138); reported #162.",
+    "lines": {
+      "en": "Field-tested the iPhone app over cellular and from Windows in #35 and #40, which led to the Wi-Fi setup note (#138); reported #162.",
+      "zh-CN": "在 #35 和 #40 中实地测试了 iPhone 应用，覆盖蜂窝网络和 Windows，促成了首次设置需要 Wi-Fi 的说明（#138）；还报告了 #162。",
+      "zh-TW": "在 #35 和 #40 中實地測試了 iPhone 應用，涵蓋行動網路和 Windows，促成了首次設定需要 Wi-Fi 的說明（#138）；還回報了 #162。",
+      "ja": "#35 と #40 でモバイル通信と Windows から iPhone アプリを実機テストし、初回セットアップに Wi-Fi が必要という説明（#138）につながりました。#162 も報告。",
+      "ko": "#35와 #40에서 모바일 데이터와 Windows로 iPhone 앱을 실기기 테스트했고, 첫 설정에 Wi-Fi가 필요하다는 안내(#138)로 이어졌습니다. #162도 보고했습니다.",
+      "es": "Probó la app de iPhone con datos móviles y desde Windows en #35 y #40, lo que dio lugar a la nota sobre Wi-Fi en la primera configuración (#138); también informó de #162."
+    }
+  },
+  "owensn951954688": {
+    "status": "counted",
+    "categories": [
+      "report"
+    ],
+    "basis": [
+      "#69",
+      "#70"
+    ],
+    "summary": "Posted a full timeline of Runner pairing failing after 25 idle minutes in #69; Setup now points to Loopback and Pairing (#70).",
+    "lines": {
+      "en": "Posted a full timeline of Runner pairing failing after 25 idle minutes in #69; Setup now points to Loopback and Pairing (#70).",
+      "zh-CN": "在 #69 中给出了 Runner 空闲约 25 分钟后配对失败的完整时间线；设置页现在会指向回环和配对检查（#70）。",
+      "zh-TW": "在 #69 中提供了 Runner 閒置約 25 分鐘後配對失敗的完整時間線；設定頁現在會指向回環和配對檢查（#70）。",
+      "ja": "#69 で Runner が約 25 分の待機後にペアリングに失敗する経過を詳しく記録。Setup は Loopback と Pairing の確認を案内するようになりました（#70）。",
+      "ko": "#69에서 Runner가 약 25분 유휴 후 페어링에 실패하는 과정을 상세히 기록했습니다. 이제 Setup은 Loopback과 Pairing 확인을 안내합니다(#70).",
+      "es": "Aportó en #69 la cronología completa de un fallo de emparejamiento del Runner tras 25 minutos de inactividad; Setup ahora remite a Loopback y Pairing (#70)."
+    }
+  },
+  "fucknima": {
+    "status": "counted",
+    "categories": [
+      "code"
+    ],
+    "basis": [
+      "#68"
+    ],
+    "summary": "Added OpenCode Go as a model account in the iPhone app in #68, with its own Keychain credential and independent model choice.",
+    "lines": {
+      "en": "Added OpenCode Go as a model account in the iPhone app in #68, with its own Keychain credential and independent model choice.",
+      "zh-CN": "在 #68 中把 OpenCode Go 加为 iPhone 应用的模型账号，带独立的钥匙串凭据和独立的模型选择。",
+      "zh-TW": "在 #68 中把 OpenCode Go 加為 iPhone 應用的模型帳號，附獨立的鑰匙圈憑證和獨立的模型選擇。",
+      "ja": "#68 で OpenCode Go を iPhone アプリのモデルアカウントとして追加。専用の Keychain 認証情報と独立したモデル選択を備えています。",
+      "ko": "#68에서 OpenCode Go를 iPhone 앱의 모델 계정으로 추가했습니다. 전용 키체인 자격 증명과 독립된 모델 선택을 갖추고 있습니다.",
+      "es": "Añadió OpenCode Go como cuenta de modelo en la app de iPhone en #68, con su propia credencial en el llavero y una elección de modelo independiente."
+    }
+  },
+  "kira-ariaki": {
+    "status": "counted",
+    "categories": [
+      "code"
+    ],
+    "basis": [
+      "#74",
+      "#75",
+      "#77"
+    ],
+    "summary": "Made batch calls report an ambiguous device instead of crashing (#74), added POKI_MCP_DEVICE (#75) and an optional per-task approval gate (#77).",
+    "lines": {
+      "en": "Made batch calls report an ambiguous device instead of crashing (#74), added POKI_MCP_DEVICE (#75) and an optional per-task approval gate (#77).",
+      "zh-CN": "让批量调用在设备不明确时给出提示而不是崩溃（#74），并新增 POKI_MCP_DEVICE（#75）和可选的按任务审批（#77）。",
+      "zh-TW": "讓批次呼叫在裝置不明確時給出提示而不是當機（#74），並新增 POKI_MCP_DEVICE（#75）和可選的逐任務核准（#77）。",
+      "ja": "バッチ呼び出しがデバイス不明時にクラッシュせず知らせるようにし（#74）、POKI_MCP_DEVICE（#75）とタスクごとの任意の承認ゲート（#77）を追加しました。",
+      "ko": "배치 호출이 기기가 모호할 때 충돌하지 않고 알려 주도록 했고(#74), POKI_MCP_DEVICE(#75)와 작업별 선택적 승인 단계(#77)를 추가했습니다.",
+      "es": "Hizo que las llamadas por lotes avisen de un dispositivo ambiguo en vez de fallar (#74) y añadió POKI_MCP_DEVICE (#75) y una aprobación opcional por tarea (#77)."
+    }
+  },
+  "Purelite": {
+    "status": "counted",
+    "categories": [
+      "code"
+    ],
+    "basis": [
+      "#137"
+    ],
+    "summary": "Fixed pairing setup sending people to the wrong Settings page, so the Developer Mode and UI Automation steps now open the right one (#137).",
+    "lines": {
+      "en": "Fixed pairing setup sending people to the wrong Settings page, so the Developer Mode and UI Automation steps now open the right one (#137).",
+      "zh-CN": "修复配对设置把人带到错误设置页面的问题，开发者模式和 UI 自动化步骤现在会打开正确的页面（#137）。",
+      "zh-TW": "修正配對設定把人帶到錯誤設定頁面的問題，開發者模式和 UI 自動化步驟現在會開啟正確的頁面（#137）。",
+      "ja": "ペアリング設定が誤った設定ページへ誘導する問題を修正し、開発者モードと UI オートメーションの手順が正しいページを開くようになりました（#137）。",
+      "ko": "페어링 설정이 잘못된 설정 페이지로 안내하던 문제를 고쳐, 개발자 모드와 UI 자동화 단계가 이제 올바른 페이지를 엽니다(#137).",
+      "es": "Corrigió que la configuración del emparejamiento llevara a la página de Ajustes equivocada; los pasos de Modo desarrollador y automatización de UI ahora abren la correcta (#137)."
+    }
+  },
+  "heyallencao": {
+    "status": "counted",
+    "categories": [
+      "code",
+      "testing"
+    ],
+    "basis": [
+      "#139"
+    ],
+    "summary": "Fixed screen reads that ran past their call deadline in #139, with a regression test for consistently slow runner responses.",
+    "lines": {
+      "en": "Fixed screen reads that ran past their call deadline in #139, with a regression test for consistently slow runner responses.",
+      "zh-CN": "在 #139 中修复读屏超过调用期限的问题，并为持续变慢的 Runner 响应补了回归测试。",
+      "zh-TW": "在 #139 中修正讀取畫面超過呼叫期限的問題，並為持續變慢的 Runner 回應補上回歸測試。",
+      "ja": "#139 で画面読み取りが呼び出しの期限を超える問題を修正し、常に遅い Runner 応答に対する回帰テストも追加しました。",
+      "ko": "#139에서 화면 읽기가 호출 기한을 넘기던 문제를 고쳤고, 계속 느린 Runner 응답에 대한 회귀 테스트도 추가했습니다.",
+      "es": "Corrigió en #139 las lecturas de pantalla que superaban el plazo de la llamada, con una prueba de regresión para respuestas del Runner constantemente lentas."
+    }
+  },
+  "zcyoung2000": {
+    "status": "community",
+    "categories": [
+      "community"
+    ],
+    "summary": "Proposed SOCKS5 proxy support for the RemotePairing transport in #9; its author closed it and plans to reopen it after testing.",
+    "basis": [
+      "#9"
+    ]
+  },
+  "kilingzhang": {
+    "status": "community",
+    "categories": [
+      "community"
+    ],
+    "summary": "Proposed humanized input timing and trajectory shaping in #11, still open; it is the base for the bounded input variation discussed in #26.",
+    "basis": [
+      "#11"
+    ]
+  },
+  "zqy5608": {
+    "status": "community",
+    "categories": [
+      "community"
+    ],
+    "summary": "Reported a foldable iPhone whose accessibility and touch used the wrong panel in #20 and shared experiments in #47; tracking continues in #47 and #76.",
+    "basis": [
+      "#20",
+      "#47"
+    ]
+  },
+  "wanghao-SunSky": {
+    "status": "community",
+    "categories": [
+      "community"
+    ],
+    "summary": "Proposed an opt-in unlock tool and bounded input variation in #26, #31 and #36; closed without merging, and the input part moved to #11.",
+    "basis": [
+      "#26",
+      "#31",
+      "#36"
+    ]
+  },
+  "windywendyday": {
+    "status": "community",
+    "categories": [
+      "community"
+    ],
+    "summary": "Reported in #29 that a LAN connection could not recover after the iPhone's address changed, the problem fixed in #34.",
+    "basis": [
+      "#29"
+    ]
+  },
+  "htx996": {
+    "status": "community",
+    "categories": [
+      "community"
+    ],
+    "summary": "Reported in #55 that Wi-Fi RemotePairing failed on iOS 27.0.1 while another tool connected; it led to clearer diagnostics (#56), and the failure itself is still open.",
+    "basis": [
+      "#55"
+    ]
+  },
+  "oasis979559-alt": {
+    "status": "community",
+    "categories": [
+      "community"
+    ],
+    "summary": "Reported in #124 that after a restart on iOS 18.7.7 mounting the developer image failed and the loopback stayed off; under investigation.",
+    "basis": [
+      "#124"
+    ]
+  },
+  "iTry": {
+    "status": "community",
+    "categories": [
+      "community"
+    ],
+    "summary": "Reported in #135 that Poki Setup kept asking for the two-factor code after accepting it; under investigation.",
+    "basis": [
+      "#135"
+    ]
+  },
+  "lunar-me": {
+    "status": "community",
+    "categories": [
+      "community"
+    ],
+    "summary": "Opened #141 to fix a repeated word in the keyboard doc; open and not merged.",
+    "basis": [
+      "#141"
+    ]
+  },
+  "zerocodefast": {
+    "status": "excluded",
+    "note": "Issue #132 invited Poki to be listed in a directory; outreach, not a contribution."
+  }
+}

@@ -19,9 +19,13 @@ const imageSize = 80;
 // Listed first, in this order; everyone else follows alphabetically.
 // ZhehanZhang was the first outside contributor.
 const pinned = ['ZhehanZhang'];
+// Who is on the wall is decided in scripts/contributors.curated.json: everyone counted or community.
+const curated = JSON.parse(readFileSync(join(root, 'scripts/contributors.curated.json'), 'utf8'));
+const listed = new Set(Object.entries(curated).filter(([, entry]) => ['counted', 'community'].includes(entry.status)).map(([login]) => login));
 
 const usage = `Usage: node bin/thanks-wall.mjs [--check | --print]
-Rebuild the README thanks wall from everyone who opened an issue or pull request on ${repo}.
+Rebuild the README thanks wall from the people counted or marked community in scripts/contributors.curated.json,
+with avatars from the issues and pull requests on ${repo}.
   (no flag)  rewrite the list between the THANKS-WALL markers in all six READMEs
   --check    exit 1 if any README list is out of date
   --print    print the generated list without touching files
@@ -38,9 +42,11 @@ function people() {
   const byLogin = new Map();
   for (const item of gh(`repos/${repo}/issues?state=all&per_page=100`, '--paginate', '--slurp').flat()) {
     const user = item.user;
-    if (!user || user.type === 'Bot' || user.login.endsWith('[bot]') || user.login === owner) continue;
+    if (!user || user.type === 'Bot' || user.login.endsWith('[bot]') || user.login === owner || !listed.has(user.login)) continue;
     byLogin.set(user.login, { login: user.login, profile: user.html_url, avatar: user.avatar_url });
   }
+  const missing = [...listed].filter(login => !byLogin.has(login));
+  if (missing.length) throw new Error(`No issue or pull request found for: ${missing.join(', ')}`);
   const rank = login => { const index = pinned.indexOf(login); return index === -1 ? pinned.length : index; };
   return [...byLogin.values()].sort((a, b) => rank(a.login) - rank(b.login) || a.login.localeCompare(b.login, 'en', { sensitivity: 'base' }));
 }
