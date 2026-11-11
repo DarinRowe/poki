@@ -191,14 +191,14 @@ struct AdvancedView: View {
         Form {
             if model.automationPath == .nativeServices { TypingSettingsSection() }
             Section {
-                Button("Notification Settings") {
+                Button("Notification Settings", systemImage: "bell.badge") {
                     if let url = URL(string: UIApplication.openNotificationSettingsURLString) { UIApplication.shared.open(url) }
                 }
             } header: { Text("Notifications") }
             Section {
-                NavigationLink("Diagnostics", value: SettingsRoute.diagnostics)
-                NavigationLink("Log", value: SettingsRoute.log)
-                NavigationLink("Testing Options") { TestingOptionsView() }
+                NavigationLink(value: SettingsRoute.diagnostics) { Label("Diagnostics", systemImage: "stethoscope") }
+                NavigationLink(value: SettingsRoute.log) { Label("Log", systemImage: "doc.text") }
+                NavigationLink { TestingOptionsView() } label: { Label("Testing Options", systemImage: "flask") }
             } header: {
                 Text("Debugging")
             } footer: {

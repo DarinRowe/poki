@@ -120,7 +120,7 @@ struct SigningSection: View {
             // one tap downloads and installs it (or, without an Apple Account, opens the sign-in).
             if signer.updateNotReady {
                 if signer.signedIn {
-                    action("Download and Install Update", id: "download") { await signer.downloadAndInstallUpdate() }
+                    action("Download and Install Update", systemImage: "arrow.down.circle", id: "download") { await signer.downloadAndInstallUpdate() }
                 } else {
                     NavigationLink {
                         Form { AccountPage() }
@@ -134,11 +134,11 @@ struct SigningSection: View {
                 // Idle is partly time (a minute since the last agent step), which nothing observes, so
                 // the row looks again every few seconds instead of staying as it was first drawn.
                 TimelineView(.periodic(from: .now, by: 5)) { _ in
-                    action(next.kind == "update" ? "Install Update" : "Install Refresh", id: "install") { await signer.install() }
+                    action(next.kind == "update" ? "Install Update" : "Install Refresh", systemImage: "arrow.down.app", id: "install") { await signer.install() }
                 }
             }
             if signer.signedIn {
-                action("Prepare Refresh Now", id: "refresh") { await signer.prepare(kind: "refresh") }
+                action("Prepare Refresh Now", systemImage: "arrow.clockwise", id: "refresh") { await signer.prepare(kind: "refresh") }
             }
         } header: {
             Text("Updates")
@@ -151,15 +151,15 @@ struct SigningSection: View {
     /// The action last tapped, which shows a spinner while it runs.
     @State private var pressed: String?
 
-    /// One action row: its title in the tint with no symbol, as in Settings, and the system's
+    /// One action row: its symbol and title in the same tint, and the system's
     /// spinner at the trailing edge from the tap until the work ends.
-    private func action(_ title: LocalizedStringKey, id: String, _ work: @escaping () async -> Void) -> some View {
+    private func action(_ title: LocalizedStringKey, systemImage: String, id: String, _ work: @escaping () async -> Void) -> some View {
         Button {
             pressed = id
             Task { await work(); if pressed == id { pressed = nil } }
         } label: {
             HStack {
-                Text(title)
+                Label(title, systemImage: systemImage)
                 Spacer()
                 if pressed == id, signer.working != nil { ProgressView() }
             }

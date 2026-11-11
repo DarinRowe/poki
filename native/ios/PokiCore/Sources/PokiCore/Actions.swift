@@ -723,7 +723,13 @@ extension Computer {
     func paste(_ text: String, clear: Bool, until: Double, target: Element? = nil) async throws -> String {
         let saved: JSON
         do { saved = try await runner.call("POST", "/wda/getPasteboard", ["contentType": "plaintext"], timeout: 2, countsAsMiss: false) }
-        catch { throw ActionFailure(message: "the clipboard could not be read, so it was not used (the owner's clipboard would be lost); type the text instead", delivery: .notSent) }
+        catch {
+            // The owner has pasting turned off: say that, not that the read failed.
+            if let said = (error as? RunnerError)?.message, said.contains("Pasting is off") {
+                throw ActionFailure(message: "nothing was pasted. \(said) Type the text without via", delivery: .notSent)
+            }
+            throw ActionFailure(message: "the clipboard could not be read, so it was not used (the owner's clipboard would be lost); type the text instead", delivery: .notSent)
+        }
         guard let field = await fieldOnScreen(target: target, timeout: 1.5).field else {
             throw ActionFailure(message: "no field to paste into is listed (tap the field first, or name it with ref)", delivery: .notSent)
         }

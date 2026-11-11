@@ -23,8 +23,14 @@ struct KeyboardPanel: View {
             switch model.mode {
             case .typing:
                 VStack(spacing: 10) {
-                    Label(Words.typing, systemImage: "keyboard").font(.headline)
-                    ProgressView(value: model.progress).frame(maxWidth: 220)
+                    Label {
+                        Text(Words.typing)
+                    } icon: {
+                        Image(systemName: "keyboard.fill").symbolEffect(.variableColor.iterative, isActive: true)
+                    }
+                    .font(.headline)
+                    .foregroundStyle(Self.blue)
+                    ProgressView(value: model.progress).tint(Self.blue).frame(maxWidth: 220)
                 }
                 button(Words.takeOver, action: model.takeOver)
             case .idle:
@@ -37,8 +43,22 @@ struct KeyboardPanel: View {
         }
         .padding(.horizontal, 24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // While Poki types the whole panel is washed in Poki's blue, so it is seen at a glance that
+        // the keyboard is working and not waiting.
+        .background {
+            if model.mode == .typing {
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .fill(LinearGradient(colors: [Self.blue.opacity(0.30), Self.blue.opacity(0.10)], startPoint: .top, endPoint: .bottom))
+                    .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(Self.blue.opacity(0.55), lineWidth: 1.5))
+                    .padding(6)
+                    .transition(.opacity)
+            }
+        }
         .animation(.default, value: model.mode)
     }
+
+    /// Poki blue (#2084FD).
+    static let blue = Color(red: 0x20 / 255.0, green: 0x84 / 255.0, blue: 0xFD / 255.0)
 
     private func text(_ title: String, _ detail: String) -> some View {
         VStack(spacing: 4) {

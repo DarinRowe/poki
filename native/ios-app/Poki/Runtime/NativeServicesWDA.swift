@@ -222,7 +222,7 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
             }
             return .null
         case "POST /poki/keyboard/release":
-            PokiKeyboardTyping.release()
+            await releaseKeyboard()
             return .null
         case "POST /wda/homescreen": _ = try await input.call(["op": "button", "button": "home"]); return .null
         case "POST /wda/lock": _ = try await input.call(["op": "button", "button": "lock"]); return .null
@@ -249,7 +249,10 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
     /// One whole text through Poki's keyboard. `declined` when the keyboard never had the text, so
     /// PokiCore types it the old way; anything else is the keyboard's own account of what it typed.
     private func typeThroughKeyboard(_ text: String, body: JSON?, timeout: Double) async throws -> JSON {
-        let keyboard = PokiKeyboardTyping { [input] request in try await input.call(request) }
+        let keyboard = PokiKeyboardTyping { [weak self] in
+            guard let self else { return "Poki was turned off" }
+            return try await self.chooseKeyboardFromGlobe()
+        }
         var options = PokiKeyboardTyping.Options()
         options.clear = body?["clear"]?.bool ?? false
         options.hidden = body?["hidden"]?.bool ?? false
@@ -273,6 +276,74 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
         }
     }
     static let systemPinyinKey = "poki.typing.systemPinyin"
+
+    /// The globe key's name in the languages iOS ships most.
+    static let globeLabels: Set<String> = ["Next keyboard", "Next Keyboard", "下一个键盘", "下一個鍵盤", "次のキーボード", "다음 키보드", "Clavier suivant", "Nächste Tastatur", "Teclado siguiente", "Siguiente teclado", "Tastiera successiva", "Próximo teclado", "Следующая клавиатура"]
+
+    /// The keyboard the owner had when Poki's was chosen from the globe key's list, to go back to.
+    private var keyboardBefore: String?
+
+    /// Switches keyboards as a person does: holds the globe key of the keyboard on screen, then taps
+    /// one keyboard in the list that opens. `to` nil is Poki's keyboard, else the keyboard of that
+    /// name. Nil when it was tapped, else why not.
+    private func chooseKeyboardFromGlobe(to other: String? = nil) async throws -> String? {
+        typealias Item = (label: String, frame: CGRect, selected: Bool)
+        func items(_ tree: [String: Any]) -> [Item] {
+            (tree["elements"] as? [[String: Any]] ?? []).compactMap { (e: [String: Any]) -> Item? in
+                guard let label = e["label"] as? String, !label.isEmpty else { return nil }
+                let frame = NativeIME.rect(e["frame"])
+                guard frame.width > 4, frame.height > 4 else { return nil }
+                // UIAccessibilityTraitSelected: the keyboard in use has the list's tick.
+                let traits = e["traits"] as? Int ?? 0
+                let selected = e["selected"] as? Bool == true || (traits & 0x4) != 0
+                return (label: label, frame: frame, selected: selected)
+            }
+        }
+        func send(_ op: String, at frame: CGRect, _ more: [String: Any] = [:]) async throws {
+            var request: [String: Any] = ["op": op, "x": coordinate(frame.midX, across: screen.width), "y": coordinate(frame.midY, across: screen.height)]
+            request.merge(more) { $1 }
+            _ = try await input.call(request)
+            queue.sync { cachedTree = nil }
+        }
+        let before = items(try await readTree())
+        guard let globe = before.first(where: { Self.globeLabels.contains($0.label) }) else {
+            return "no keyboard with a globe key is on screen (no text field has the focus, or the field takes only its own keyboard)"
+        }
+        try await send("long_press", at: globe.frame, ["duration_ms": 650])
+        let name = other ?? PokiKeyboardTyping.displayName
+        let known = Set(before.map(\.label))
+        // The list opens under the finger and stays after it lifts.
+        var listed: [Item] = [], item: Item?
+        for wait in [250, 350, 500] {
+            try await Task.sleep(nanoseconds: UInt64(wait) * 1_000_000)
+            listed = items(try await readTree()).filter { !known.contains($0.label) }
+            item = listed.first { $0.label == name } ?? listed.first { $0.label.hasPrefix(name) }
+            if item != nil { break }
+        }
+        guard let item else {
+            // Close the list where it opened, so the next touch is not spent on it.
+            try? await send("tap", at: globe.frame)
+            return other == nil
+                ? "the globe key's list did not show \(name) (is the Poki keyboard added under Settings › General › Keyboard › Keyboards?)"
+                : "the globe key's list did not show \(name)"
+        }
+        if other == nil {
+            let had = listed.first { $0.selected && $0.label != item.label }?.label
+            queue.sync { keyboardBefore = had }
+        }
+        try await send("tap", at: item.frame)
+        return nil
+    }
+
+    /// Poki's keyboard gives way to the owner's own at the end of a task: through the globe key's
+    /// list when Poki's keyboard was chosen from it, else by the keyboard itself.
+    private func releaseKeyboard() async {
+        let had: String? = queue.sync { defer { keyboardBefore = nil }; return keyboardBefore }
+        if let had, PokiKeyboardTyping.setting(PokiKeyboardTyping.switchBackKey) {
+            do { if try await chooseKeyboardFromGlobe(to: had) == nil { return } } catch {}
+        }
+        PokiKeyboardTyping.release()
+    }
 
     private func callPoint(_ op: String, body: JSON?) async throws {
         let point = try point(body, x: "x", y: "y")

@@ -153,7 +153,8 @@ targets:
           NSExtensionAttributes:
             IsASCIICapable: true
             PrefersRightToLeft: false
-            PrimaryLanguage: en-US
+            # "mul": no language of its own, so iOS does not list it as an English keyboard.
+            PrimaryLanguage: mul
             RequestsOpenAccess: true
     entitlements:
       path: PokiKeyboard/PokiKeyboard.entitlements
