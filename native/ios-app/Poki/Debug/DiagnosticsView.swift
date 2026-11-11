@@ -98,6 +98,7 @@ struct LogView: View {
 /// Steps is in Agents › Approvals.
 struct TestingOptionsView: View {
     @Environment(AppModel.self) private var model
+    @AppStorage(NativeServicesWDA.inputWithoutScreenSharingKey) private var bareInput = false
     var body: some View {
         @Bindable var model = model
         Form {
@@ -114,6 +115,13 @@ struct TestingOptionsView: View {
                 Text("Agents")
             } footer: {
                 Text("Both off by default. ask_poki lets outside agents hand a repetitive task to Poki's own agent. The auto-classifier answers approvals in your place: it asks your chat model, out of sight, whether what you said asks for the step, and allows or refuses it with nothing for you to tap; a yes from you in the chat or a live call lets a refused step through next time. With no chat model set up it refuses every sensitive step. Changes take effect the next time Poki opens.")
+            }
+            Section {
+                Toggle("Input Without Screen Sharing", isOn: $bareInput)
+            } header: {
+                Text("Touches and Keys")
+            } footer: {
+                Text("Poki sends touches and keys over a screen-sharing session, and iOS turns the camera off in every app while one is open, so Poki opens it only for an action and closes it 5 seconds after the last one. With this on, Poki opens no session at all. If taps and typing still work, the camera is never affected; if they stop working, turn it off. Takes effect the next time Poki turns on.")
             }
             Section {
                 NavigationLink("Live Activity Preview") { ActivityPreview() }

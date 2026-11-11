@@ -35,6 +35,10 @@ pub struct ClientConfig {
     usb_udid: Option<String>,
     #[serde(default)]
     host_name: Option<String>,
+    /// Testing: send touches and keys with no screen-sharing session open. Whether the phone takes
+    /// them that way is not established; with a session open, iOS refuses the camera to every app.
+    #[serde(default)]
+    input_without_media: bool,
 }
 
 fn default_address() -> IpAddr {
@@ -179,7 +183,7 @@ pub(crate) async fn serve(
     loop {
         // The screen-sharing session that input rides on makes iOS refuse the camera to every app,
         // so it is held only while actions are arriving and given back once they stop.
-        let idle = session.as_ref().and_then(|s| s.media.as_ref()).map(InputMedia::idle_limit);
+        let idle = session.as_ref().and_then(|s| s.media.as_ref()).and_then(InputMedia::idle_limit);
         let call = match idle {
             Some(limit) => match tokio::time::timeout(limit, calls.recv()).await {
                 Ok(call) => call,
@@ -225,9 +229,9 @@ pub(crate) async fn serve(
     release_media(&mut session).await;
 }
 
-/// How long the screen-sharing session outlives the last action. An agent's next action usually
-/// comes within this, so a task keeps one session; after it the phone's camera works again.
-const MEDIA_IDLE: Duration = Duration::from_secs(15);
+/// How long the screen-sharing session outlives the last touch or key. Actions sent one after
+/// another share a session; a pause gives the camera back, and the next action opens a new one.
+const MEDIA_IDLE: Duration = Duration::from_secs(5);
 /// With the simulated keyboard attached, Poki's own keyboard may be typing a long text with no calls
 /// arriving here, so the session waits out the longest typing budget before it gives up.
 const MEDIA_IDLE_TYPING: Duration = Duration::from_secs(300);
@@ -240,8 +244,10 @@ async fn release_media(session: &mut Option<Session>) {
         let _ = tokio::time::timeout(Duration::from_secs(3), keyboard.close()).await;
     }
     media.keyboard = None;
-    let _ = tokio::time::timeout(Duration::from_secs(2), media.client.stop_media_stream()).await;
-    media.receivers.shutdown().await;
+    if let Some(mut stream) = media.stream.take() {
+        let _ = tokio::time::timeout(Duration::from_secs(2), stream.client.stop_media_stream()).await;
+        stream.receivers.shutdown().await;
+    }
 }
 
 /// Dropping a tunnel is not the keyboard-removal protocol. Remove the virtual
@@ -285,6 +291,7 @@ struct Session {
     device: Device,
     media: Option<InputMedia>,
     direct_ax: Option<ax::Direct>,
+    bare_input: bool,
 }
 
 impl Session {
@@ -294,7 +301,7 @@ impl Session {
             if udid.is_empty() || config.pairing_file.is_some() {
                 return Err("USB requires a nonempty udid and no pairing_file".into());
             }
-            return Ok(Self { device: Device::open_usb(udid).await.map_err(|e| e.detail)?, media: None, direct_ax: None });
+            return Ok(Self { device: Device::open_usb(udid).await.map_err(|e| e.detail)?, media: None, direct_ax: None, bare_input: config.input_without_media });
         }
         let path = config.pairing_file.as_ref().ok_or("pairing_file is required")?;
         let mut pairing = Pairing::read(path, config.host_name.as_deref())
@@ -306,6 +313,7 @@ impl Session {
             device,
             media: None,
             direct_ax: None,
+            bare_input: config.input_without_media,
         })
     }
 
@@ -393,7 +401,7 @@ impl Session {
                     .await?;
                 Ok(json!({"copied": true}))
             }
-            request => input(&mut self.device, &mut self.media, request).await,
+            request => input(&mut self.device, &mut self.media, request, self.bare_input).await,
         }
     }
 }
@@ -451,10 +459,15 @@ fn validate(request: &Request) -> Result<()> {
     }
 }
 
-struct InputMedia {
-    keyboard: Option<Keyboard>,
+struct ScreenShare {
     client: idevice::core_device::DisplayServiceClient<Box<dyn idevice::ReadWrite>>,
     receivers: tokio::task::JoinSet<()>,
+}
+
+struct InputMedia {
+    keyboard: Option<Keyboard>,
+    /// The screen-sharing session, absent when input is sent without one (testing).
+    stream: Option<ScreenShare>,
     touch: Touch,
 }
 
@@ -469,8 +482,9 @@ fn with_cleanup<T>(outcome: Result<T>, cleanup: Result<()>) -> Result<T> {
 }
 
 impl InputMedia {
-    fn idle_limit(&self) -> Duration {
-        if self.keyboard.is_some() { MEDIA_IDLE_TYPING } else { MEDIA_IDLE }
+    /// None while nothing is held that blocks the camera or needs detaching.
+    fn idle_limit(&self) -> Option<Duration> {
+        if self.keyboard.is_some() { Some(MEDIA_IDLE_TYPING) } else if self.stream.is_some() { Some(MEDIA_IDLE) } else { None }
     }
 
     async fn attach_keyboard(&mut self, device: &mut Device) -> Result<()> {
@@ -489,22 +503,26 @@ impl InputMedia {
         Ok(())
     }
 
-    async fn connect(device: &mut Device) -> Result<Self> {
-        let opened = stream::start_screen_media_stream(&mut device.adapter, &mut device.rsd, 1)
-            .await
-            .map_err(not_sent_error)?;
-        let mut receivers = tokio::task::JoinSet::new();
-        for socket in [opened.audio_udp, opened.video_udp] {
-            receivers.spawn(async move { while socket.recv().await.is_ok() {} });
-        }
-        tokio::time::sleep(Duration::from_secs(1)).await;
+    async fn connect(device: &mut Device, bare: bool) -> Result<Self> {
+        let stream = if bare {
+            None
+        } else {
+            let opened = stream::start_screen_media_stream(&mut device.adapter, &mut device.rsd, 1)
+                .await
+                .map_err(not_sent_error)?;
+            let mut receivers = tokio::task::JoinSet::new();
+            for socket in [opened.audio_udp, opened.video_udp] {
+                receivers.spawn(async move { while socket.recv().await.is_ok() {} });
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            Some(ScreenShare { client: opened.client, receivers })
+        };
         let touch = Touch::connect_rsd(&mut device.adapter, &mut device.rsd)
             .await
             .map_err(not_sent_error)?;
         Ok(Self {
             keyboard: None,
-            client: opened.client,
-            receivers,
+            stream,
             touch,
         })
     }
@@ -514,6 +532,7 @@ async fn input(
     device: &mut Device,
     media: &mut Option<InputMedia>,
     request: Request,
+    bare: bool,
 ) -> Result<Value> {
     // Ending an unused experiment must not create a new media/keyboard session.
     if matches!(&request, Request::Ime { end: true, .. }) {
@@ -524,7 +543,7 @@ async fn input(
         return Ok(json!({"ended": true}));
     }
     if media.is_none() {
-        *media = Some(InputMedia::connect(device).await?);
+        *media = Some(InputMedia::connect(device, bare).await?);
     }
     if matches!(request, Request::WarmInput) {
         return Ok(json!({"ready": true}));

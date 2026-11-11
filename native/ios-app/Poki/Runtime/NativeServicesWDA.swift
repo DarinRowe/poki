@@ -40,6 +40,7 @@ private final class NativeServicesBridge: @unchecked Sendable {
         let config: [String: Any] = [
             "device_address": "10.7.0.1", "pairing_file": AppFiles.pairingFile.path,
             "host_name": "Poki",
+            "input_without_media": UserDefaults.standard.bool(forKey: NativeServicesWDA.inputWithoutScreenSharingKey),
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: config) else { handle = nil; return }
         let text = String(decoding: data, as: UTF8.self)
@@ -88,9 +89,8 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
     private var focused: [String: Any]?
     private var cachedTree: (at: Date, tree: Tree)?
     private var treeTask: Task<Tree, Error>?
-    /// When a read last asked the input lane to get ready. The lane gives its screen-sharing session
-    /// back after 15 s without a call (it blocks the camera), so a later read warms it again.
-    private var inputWarmedAt: Date?
+    /// Testing Options: touches and keys go out with no screen-sharing session at all. Read when Poki turns on.
+    static let inputWithoutScreenSharingKey = "poki.native.inputWithoutScreenSharing"
 
     init(screen: CGSize) { self.screen = screen }
 
@@ -118,7 +118,6 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
             focused = nil
             cachedTree = nil
             treeTask = nil
-            inputWarmedAt = nil
         }
     }
 
@@ -343,10 +342,8 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
             if let treeTask { return treeTask }
             let task = Task { Tree(value: try await native.call(["op": "ax_tree"])) }
             treeTask = task
-            if inputWarmedAt.map({ Date().timeIntervalSince($0) > 10 }) ?? true {
-                inputWarmedAt = Date()
-                Task { _ = try? await input.call(["op": "warm_input"]) }
-            }
+            // A read never opens the input lane: its screen-sharing session takes the camera from every
+            // app, so it opens only for a touch or a key and closes 5 s after the last one.
             return task
         }
         do {
