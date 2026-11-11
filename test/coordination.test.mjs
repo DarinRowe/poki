@@ -211,6 +211,15 @@ test('an English query taps a mixed Chinese and English label',async t=>{
  assert.match(JSON.stringify(result),/Signed in/);
 });
 
+test('a failed text search keeps the foreground accessibility reported when OCR has no answer',async t=>{
+ // The physical-device fixture reports a foreground when bundleId is set. An empty elements
+ // array empties the accessibility read, and OCR then answers with no text and no foreground.
+ const f=await fixture(t);await f.set({elements:[],bundleId:'local.fixture',ocrLabel:''});
+ const result=await f.call('tap_text',{text:'Absent'});
+ assert.equal(result.isError,true);
+ assert.match(result.content[0].text,/foreground: local\.fixture/);
+});
+
 test('recognized prompts report their type without forcing a human handoff',async t=>{
  for(const [tool,args,label,kind] of [
   ['handle_alert',{action:'accept'},'Allow Paste','paste'],
