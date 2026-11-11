@@ -766,7 +766,7 @@
     },
     {
       "name": "hide_keyboard",
-      "description": "Detect a visible keyboard, send its toggle event, and verify dismissal. Does nothing when already hidden. Some emoji panels remain visible and are reported as an error without changing input methods. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "description": "Detect a visible keyboard, use its unique visible accessibility hide key when available or send the toggle event, and verify dismissal. Does nothing when already hidden. Some emoji panels remain visible and are reported as an error without changing input methods. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
       "inputSchema": {
         "type": "object",
         "properties": {

@@ -563,8 +563,17 @@ export async function interaction(ctx, name, args) {
     case 'press_key': return ctx.input({ op: 'key', key: args.key, modifiers: args.modifiers ?? [], count: args.count ?? 1 });
     case 'press_button': return ctx.input({ op: 'button', button: args.button });
     case 'hide_keyboard': {
+      let hideControl;
       const keyboardVisible = async () => {
         let result = await read({ max_elements: Number.MAX_SAFE_INTEGER });
+        // iPad keyboards expose a hide key; an ordinary app button with that name is not one.
+        const hideKeys = result.source === 'accessibility' ? result.elements.filter(e => {
+          const f = e.frame ?? e;
+          return visible(e) && /^(?:AX|XCUIElementType)?key$/i.test(e.type ?? e.role ?? '') &&
+            normalize(e.label ?? '') === 'hide keyboard' && f.width > 0 && f.height > 0 &&
+            f.x >= 0 && f.y > result.height * .5 && f.x + f.width <= result.width && f.y + f.height <= result.height;
+        }) : [];
+        hideControl = hideKeys.length === 1 ? hideKeys[0] : undefined;
         if (result.elements.filter(visible).some(e => {
           const f = e.frame ?? e;
           return [e.type, e.role].some(type => typeof type === 'string' &&
@@ -586,8 +595,9 @@ export async function interaction(ctx, name, args) {
         return letters.size >= 8;
       };
       if (!await keyboardVisible()) return { hidden: true, already_hidden: true };
-      await ctx.input({ op: 'button', button: 'keyboard' });
-      if (await keyboardVisible()) throw new Error("The keyboard is still visible after the toggle. Use its hide control, or tap outside the field if the app supports dismissing it that way.");
+      const input = await ctx.input(hideControl ? { op: 'tap', ...center(hideControl), duration_ms: 50 } : { op: 'button', button: 'keyboard' });
+      if (input.isError || input.stopped) return input;
+      if (await keyboardVisible()) throw new Error("The keyboard is still visible after the hide attempt. Use its hide control, or tap outside the field if the app supports dismissing it that way.");
       return { hidden: true, screen_change: 'changed', screen_change_verified: true };
     }
     case 'system_gesture': {
