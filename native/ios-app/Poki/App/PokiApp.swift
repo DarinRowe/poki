@@ -103,16 +103,21 @@ struct RootView: View {
 
     @ViewBuilder private var pokiTab: some View {
         if width == .regular {
-            NavigationSplitView {
-                sessions
-                    .navigationDestination(for: SetupStep.self) { SetupStepPage(step: $0) }
-            } detail: {
+            // Two plain stacks side by side, not a NavigationSplitView: its sidebar is a floating panel
+            // on iOS 26, set in from the top edge, which left a gap above home's blue header and pushed
+            // the title down. The left stack is the iPhone's home as it is.
+            HStack(spacing: 0) {
+                NavigationStack {
+                    sessions
+                        .navigationDestination(for: SetupStep.self) { SetupStepPage(step: $0) }
+                }
+                .frame(width: 375)
+                Divider().ignoresSafeArea()
                 NavigationStack {
                     page(wide, split: true).id(wide)
                         .navigationDestination(for: SetupStep.self) { SetupStepPage(step: $0) }
                 }
             }
-            .navigationSplitViewStyle(.balanced)
         } else {
             NavigationStack(path: $home) {
                 sessions
@@ -127,15 +132,17 @@ struct RootView: View {
 
     var body: some View {
         TabView(selection: $tab) {
-            Tab(String(localized: "Poki"), systemImage: "bubble.left.and.bubble.right.fill", value: RootTab.chats) { pokiTab }
+            Tab(String(localized: "Poki"), systemImage: "bubble.left.and.bubble.right.fill", value: RootTab.chats) {
+                pokiTab.environment(\.horizontalSizeClass, width)
+            }
 
             Tab("Agents", systemImage: "point.3.connected.trianglepath.dotted", value: RootTab.agents) {
-                AgentsView(path: $agents, openSession: openRun)
+                AgentsView(path: $agents, openSession: openRun).environment(\.horizontalSizeClass, width)
             }
             // A dot when something there needs attention: no account for the chat, or the relay down.
             .badge(agentsNeedAttention ? Text(verbatim: " ") : nil)
 
-            Tab("Setup", systemImage: "checklist", value: RootTab.setup) { SetupTab(path: $setup) }
+            Tab("Setup", systemImage: "checklist", value: RootTab.setup) { SetupTab(path: $setup).environment(\.horizontalSizeClass, width) }
                 // A dot while a setup item is still open.
                 .badge(model.setupLooksComplete ? nil : Text(verbatim: " "))
 
@@ -145,6 +152,10 @@ struct RootView: View {
                 Tab(String(localized: "New Chat"), systemImage: "square.and.pencil", value: RootTab.newChat, role: .search) { Color.clear }
             }
         }
+        // The tab bar stays at the bottom on iPad too: in a wide window iOS moves it to a floating bar
+        // at the top, over home's header. The tab bar reads the compact width here; each tab's own
+        // content gets the real width back.
+        .environment(\.horizontalSizeClass, .compact)
         .onChange(of: tab) { old, new in
             // Leaving the Poki tab from a conversation (to Accounts, Setup, a connector): the Poki
             // tab is back at Sessions, with its tab bar, when you come back. Done without animation

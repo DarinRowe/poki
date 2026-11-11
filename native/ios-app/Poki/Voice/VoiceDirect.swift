@@ -96,6 +96,9 @@ final class Dictation: NSObject, AVSpeechSynthesizerDelegate {
     private let speaker = AVSpeechSynthesizer()
     private(set) var heard = ""
     var onHeard: ((String) -> Void)?
+    /// Recognition ended with an error before any word was heard.
+    var onFailed: ((String) -> Void)?
+    private var listening = false
     var onSpoken: (() -> Void)?
 
     override init() {
@@ -116,18 +119,31 @@ final class Dictation: NSObject, AVSpeechSynthesizerDelegate {
         let audio = AVAudioSession.sharedInstance()
         try audio.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .duckOthers])
         try audio.setActive(true)
+        listening = true
+        begin(recognizer, onDevice: recognizer.supportsOnDeviceRecognition)
+        engine.prepare()
+        do { try engine.start() } catch { listening = false; throw error }
+    }
+
+    /// Starts recognition on the microphone. On the device when it can; when that fails before a word
+    /// is heard (its language model may not be on the phone yet), once more through Apple's service.
+    private func begin(_ recognizer: SFSpeechRecognizer, onDevice: Bool) {
+        recognition?.cancel()
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
-        if recognizer.supportsOnDeviceRecognition { request.requiresOnDeviceRecognition = true }
+        request.requiresOnDeviceRecognition = onDevice
         self.request = request
         let input = engine.inputNode
         input.removeTap(onBus: 0)
         Self.tap(input, into: request)
-        engine.prepare()
-        try engine.start()
-        recognition = Self.recognize(recognizer, request) { [weak self] text in
-            self?.heard = text
-            self?.onHeard?(text)
+        recognition = Self.recognize(recognizer, request) { [weak self] text, failure in
+            guard let self, self.listening, self.request === request else { return }
+            if let text {
+                self.heard = text
+                self.onHeard?(text)
+            } else if let failure, self.heard.isEmpty {
+                if onDevice { self.begin(recognizer, onDevice: false) } else { self.onFailed?(failure) }
+            }
         }
     }
 
@@ -138,15 +154,18 @@ final class Dictation: NSObject, AVSpeechSynthesizerDelegate {
     }
 
     nonisolated private static func recognize(_ recognizer: SFSpeechRecognizer, _ request: SFSpeechAudioBufferRecognitionRequest,
-                                              heard: @escaping @MainActor (String) -> Void) -> SFSpeechRecognitionTask {
-        recognizer.recognitionTask(with: request) { result, _ in
-            guard let text = result?.bestTranscription.formattedString else { return }
-            Task { @MainActor in heard(text) }
+                                              heard: @escaping @MainActor (String?, String?) -> Void) -> SFSpeechRecognitionTask {
+        recognizer.recognitionTask(with: request) { result, error in
+            let text = result?.bestTranscription.formattedString
+            let failure = text == nil ? error?.localizedDescription : nil
+            guard text != nil || failure != nil else { return }
+            Task { @MainActor in heard(text, failure) }
         }
     }
 
     /// Stops listening; the words heard so far (a moment later, for the last ones).
     func finish() async -> String {
+        listening = false
         request?.endAudio()
         engine.stop()
         engine.inputNode.removeTap(onBus: 0)

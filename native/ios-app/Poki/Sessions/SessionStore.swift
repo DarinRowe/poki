@@ -142,7 +142,7 @@ final class SessionStore {
 
     /// Live first, then newest.
     var ordered: [SavedSession] {
-        sessions.sorted { a, b in a.live != b.live ? a.live : a.updated > b.updated }
+        sessions.sorted { a, b in a.live != b.live ? a.live : a.updated != b.updated ? a.updated > b.updated : a.id < b.id }
     }
 
     var liveAgentCount: Int { sessions.filter { $0.live && ($0.kind == .agent || $0.kind == .handoff) }.count }
@@ -150,14 +150,19 @@ final class SessionStore {
     // MARK: Chats
 
     func save(chat: ChatModel) {
-        var session = self.session(chat.sessionID) ?? SavedSession(id: chat.sessionID, kind: chat.kind, client: chat.requester, title: chat.title,
-                                                                      started: Date(), updated: Date(), live: false, outcome: nil, entries: [], calls: [])
+        let saved = self.session(chat.sessionID)
+        var session = saved ?? SavedSession(id: chat.sessionID, kind: chat.kind, client: chat.requester, title: chat.title,
+                                            started: Date(), updated: Date(), live: false, outcome: nil, entries: [], calls: [])
+        let changed = saved == nil || session.entries != chat.entries
         session.entries = chat.entries
         session.calls = chat.savedCalls
         session.title = chat.title
         if let name = pendingNames.removeValue(forKey: chat.sessionID) { session.autoName = name }
-        session.updated = Date()
+        // Opening a conversation hands the same lines back: only a new line gives the row a new time
+        // and moves it up the list. (It used to jump to the top, marked "now", each time it was opened.)
+        if changed { session.updated = Date() }
         session.live = chat.running
+        guard session != saved else { return }
         put(session)
     }
 
