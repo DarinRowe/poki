@@ -206,7 +206,7 @@ final class ApprovalDefaultTests: XCTestCase {
         let core = LiveCore(host: AppCoreHost(), transport: URLSessionTransport())
         let tap = await core.clearTap(on: "Send", inApp: "com.apple.MobileSMS", named: "Messages", waiting: 0.2)
         XCTAssertFalse(tap.mayTap, "\(tap)")
-        XCTAssertTrue(AppModel(launcher: FakeLauncher(), pairer: FakePairing()).askBeforeSensitiveSteps)
+        XCTAssertNotEqual(AppModel(launcher: FakeLauncher(), pairer: FakePairing()).approvalMode, .off)
     }
 
     /// An owner who turned asking off keeps that choice.
