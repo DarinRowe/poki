@@ -65,6 +65,7 @@ jobs:
   publish:
     needs: [version, app]
     runs-on: ubuntu-latest
+    environment: ${{ needs.version.outputs.channel == 'alpha' && 'alpha' || '' }}
     permissions:
       contents: write
     steps:

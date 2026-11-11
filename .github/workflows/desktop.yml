@@ -49,6 +49,7 @@ jobs:
           - name: Windows (x64)
             os: windows-2022
     runs-on: ${{ matrix.os }}
+    environment: stable
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4

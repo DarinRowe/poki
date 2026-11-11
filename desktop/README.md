@@ -48,6 +48,13 @@ npm run tauri build                       # DMG / MSI; .github/workflows/desktop
 
 Data lives in the OS app-data directory (`POKI_SETUP_HOME` overrides it): pairing records, keys (0600), the release cache, state. The Apple session and, if chosen, the password are in the OS keychain.
 
+## Release approval
+
+Uploading Poki Setup installers requires the repository owner's approval. The Windows workflow
+uses the protected `stable` environment. The macOS workflow only creates Actions artifacts.
+For app channels, Pre-alpha is automatic; Alpha, Beta, and Stable require the owner's approval.
+See [Release channels](../docs/release-channels.md).
+
 ## Licences
 
 The crate is AGPL-3.0-only like Poki. Logic ported from: SideStore's icloud-auth and omnisette (MPL-2.0; GSA and anisette protocol), Dadoum's Sideloader (GPL-3.0; developer portal shapes), AltSign (AGPL-3.0; the entitlement rule). Apple's corecrypto and ldid are not used. See THIRD_PARTY_NOTICES.md.

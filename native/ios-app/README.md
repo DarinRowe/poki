@@ -40,9 +40,11 @@ PokiCore (Swift, `native/ios/PokiCore`) and PokiLauncher (Rust with a C ABI, `na
 
 ## Build
 
-GitHub Actions (`.github/workflows/ios-app.yml`) builds `Poki-unsigned.ipa` on demand, for
-`ios-v*` release tags and for `ios-alpha-*` / `ios-prealpha-*` tags (see `docs/release-channels.md`), runs it on the iOS Simulator and uploads a screenshot of every screen in light and
-dark mode (artifact `simulator-smoke`, folder `shots`). Locally on a Mac with Xcode 26 or later:
+GitHub Actions (`.github/workflows/ios-app.yml`) builds and tests the app on demand or as a reusable
+workflow, runs it on the iOS Simulator, and uploads screenshots in light and dark mode
+(artifact `simulator-smoke`, folder `shots`). [Release workflows](../../docs/release-channels.md)
+publish Pre-alpha automatically. Alpha, Beta, Stable, and installer uploads require the repository
+owner's approval. Locally on a Mac with Xcode 26 or later:
 
 ```sh
 native/ios-app/scripts/make-assets.sh

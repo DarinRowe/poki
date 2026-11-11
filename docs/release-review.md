@@ -1,5 +1,9 @@
 # Release hygiene review (production bar item 7)
 
+This review records a historical proposal. Use [Release channels](release-channels.md) for the
+current publication steps. Pre-alpha is automatic; Alpha, Beta, Stable, and installer uploads
+require the repository owner's approval.
+
 Reviewed 2026-11-06 against origin/dev/ios-app (ios-app.yml, ios-runner.yml, native/ios-app/project.yml)
 and dev/ios-core. Nothing here was run on the phone. Written when every release carried Poki and Poki
 Runner; since ESP-152 Poki ships alone by default (`native/ios-app/README.md`).

@@ -35,16 +35,16 @@ testers on Alpha run the file that was tried on Pre-alpha, and Beta runs the fil
 1. **Pre-alpha, automatic.** Every merge into `main` runs `.github/workflows/prealpha.yml`: one
    macOS job builds the external IPA, tags `app-<VERSION>-prealpha.<N>` and replaces the files of
    `app-prealpha-latest`. Its artifact is kept 90 days for later promotions.
-2. **Alpha, one click.** Actions > Promote to Alpha > Run workflow (`promote-alpha.yml`), with a
+2. **Alpha, after approval.** Actions > Promote to Alpha > Run workflow (`promote-alpha.yml`), with a
    pre-alpha tag or empty for the current one. It runs the alpha tests on that commit (`ios-app.yml`:
    PokiCore and loopback tests, in-process field, apps and idle-cycle checks, simulator smoke test,
-   agent chat end to end; Poki Setup's core tests), then tags `app-<VERSION>-alpha.<N>` and puts the
+   agent chat end to end; Poki Setup's core tests), then waits for approval in `alpha`, tags `app-<VERSION>-alpha.<N>` and puts the
    pre-alpha's IPA and Poki Setup files into `app-alpha-latest`.
 3. **Beta, by PR.** Actions > Propose promotion > beta (`propose-promotion.yml`), with an alpha tag or
    empty for the current Alpha. The Poki Release Bot opens a PR that adds the promotion to
    `.github/channels.json` and moves `native/ios-app/VERSION` to the next patch version. The PR's
    `promotion gate` check (`promotion-gate.yml`) runs the Gym on that commit and passes when neither
-   scorecard has more failures than the last beta's. Merging publishes `app-X.Y.Z-beta.K`
+   scorecard has more failures than the last beta's. Merging waits for approval in `beta`, then publishes `app-X.Y.Z-beta.K`
    (`publish-promotion.yml`) with the scorecards attached, and creates `release/X.Y` on a version's
    first beta.
 4. **Stable, by PR.** Propose promotion > stable, with a beta tag or empty for the newest beta. The
@@ -76,15 +76,32 @@ the 5 macOS runners: Poki Setup's core tests, the Rust lockfiles, and the workfl
   read), installed on this repository, with its id and private key in the Actions secrets
   `POKI_BOT_APP_ID` and `POKI_BOT_PRIVATE_KEY`.
 - Labels `promotion`, `soak-override` and `blocker`.
-- Environment `stable` with the maintainers as required reviewers.
+- The `alpha`, `beta`, and `stable` environments are configured with `JosssphZhou` as the only
+  required reviewer and administrator bypass disabled. Self-review prevention is off so the owner
+  can approve a run they started. Agents must not approve on the owner's behalf.
+  See [GitHub's environment setup](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments).
 - Branch protection on `main`: the `PR checks` jobs and `promotion gate / verdict` as required checks.
 
 ## Fallback
 
 `channel-release.yml` still builds from a pushed alpha or pre-alpha tag
-(`native/ios-app/scripts/cut-release.sh`). It starts with cold caches (about 20 minutes) and will be
+(`native/ios-app/scripts/cut-release.sh`). Its publish job uses `alpha` only for alpha tags. Pre-alpha tags publish without environment approval.
+It starts with cold caches (about 20 minutes) and will be
 removed once the pipeline above has shipped a few builds.
 
 The Mac server's update notice (`src/update-check.mjs`) reads `releases/latest` and only understands
 Poki MCP's `vX.Y.Z` tags, so app releases are never marked Latest: Latest stays on Poki MCP's newest
 release.
+
+## Approval coverage
+
+Publishing Alpha, Beta, Stable, or uploading installers requires the repository owner's approval.
+The two Promote to Alpha workflows use `alpha`. The tag fallback selects `alpha` for Alpha and no
+environment for Pre-alpha. Main Pre-alpha builds and publishes automatically without approval.
+Beta and Stable use their respective environments in `publish-promotion.yml`.
+The Windows installer job uses `stable`, including artifact-only runs, because its optional release
+upload shares the build job. The macOS installer workflow only uploads Actions artifacts.
+
+These rules protect the workflows that reference the environments. Manual Release uploads and
+workflow edits remain outside this gate. An agent using the owner's credentials is not a separate
+GitHub identity. Keep approval in the owner's hands.

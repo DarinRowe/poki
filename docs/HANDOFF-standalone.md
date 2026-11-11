@@ -1,5 +1,9 @@
 # Handoff: the `standalone` branch, the first alpha and the rolling test releases
 
+This is a historical snapshot, including the release commands below. Use the current
+[release policy](release-channels.md) for publication. Pre-alpha is automatic; Alpha, Beta, Stable,
+and installer uploads require the repository owner's approval.
+
 First written Nov 8 2026, 4:20 am ET (Philadelphia time); brought up to date Nov 8, 10:10 am ET. It is
 for Joseph and the agents working for him. It covers
 what `standalone` is, how it was put together, how releases and channels work now, what Poki Setup
