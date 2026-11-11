@@ -88,7 +88,9 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
     private var focused: [String: Any]?
     private var cachedTree: (at: Date, tree: Tree)?
     private var treeTask: Task<Tree, Error>?
-    private var inputWarming = false
+    /// When a read last asked the input lane to get ready. The lane gives its screen-sharing session
+    /// back after 15 s without a call (it blocks the camera), so a later read warms it again.
+    private var inputWarmedAt: Date?
 
     init(screen: CGSize) { self.screen = screen }
 
@@ -116,7 +118,7 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
             focused = nil
             cachedTree = nil
             treeTask = nil
-            inputWarming = false
+            inputWarmedAt = nil
         }
     }
 
@@ -341,8 +343,8 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
             if let treeTask { return treeTask }
             let task = Task { Tree(value: try await native.call(["op": "ax_tree"])) }
             treeTask = task
-            if !inputWarming {
-                inputWarming = true
+            if inputWarmedAt.map({ Date().timeIntervalSince($0) > 10 }) ?? true {
+                inputWarmedAt = Date()
                 Task { _ = try? await input.call(["op": "warm_input"]) }
             }
             return task

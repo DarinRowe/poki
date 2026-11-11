@@ -1,5 +1,6 @@
 //! Experimental banner-free automation over the same paired CoreDevice services as the desktop
-//! bridge. One worker owns a persistent paired tunnel and screen-media session for the active run,
+//! bridge. One worker owns a persistent paired tunnel for the active run and a screen-media session
+//! that lasts while actions arrive (it is given back when they stop, because it blocks the camera),
 //! matching the desktop bridge's control timing without sharing state with XCTest or PokiLauncher.
 
 use crate::{
@@ -175,9 +176,24 @@ pub(crate) async fn serve(
     mut calls: tokio::sync::mpsc::UnboundedReceiver<Call>,
 ) {
     let mut session: Option<Session> = None;
-    while let Some(call) = calls.recv().await {
+    loop {
+        // The screen-sharing session that input rides on makes iOS refuse the camera to every app,
+        // so it is held only while actions are arriving and given back once they stop.
+        let idle = session.as_ref().and_then(|s| s.media.as_ref()).map(InputMedia::idle_limit);
+        let call = match idle {
+            Some(limit) => match tokio::time::timeout(limit, calls.recv()).await {
+                Ok(call) => call,
+                Err(_) => {
+                    release_media(&mut session).await;
+                    continue;
+                }
+            },
+            None => calls.recv().await,
+        };
+        let Some(call) = call else { break };
         if matches!(&call.request, Request::Reset) {
             let cleanup = detach_session_keyboard(&mut session).await;
+            release_media(&mut session).await;
             if cleanup.is_ok() { session = None; }
             (call.answer)(cleanup.map(|_| json!({"reset": true})));
             continue;
@@ -199,12 +215,33 @@ pub(crate) async fn serve(
         });
         if result.is_err() {
             let cleanup = detach_session_keyboard(&mut session).await;
+            release_media(&mut session).await;
             if cleanup.is_ok() { session = None; }
             result = with_cleanup(result, cleanup);
         }
         (call.answer)(result);
     }
     let _ = detach_session_keyboard(&mut session).await;
+    release_media(&mut session).await;
+}
+
+/// How long the screen-sharing session outlives the last action. An agent's next action usually
+/// comes within this, so a task keeps one session; after it the phone's camera works again.
+const MEDIA_IDLE: Duration = Duration::from_secs(15);
+/// With the simulated keyboard attached, Poki's own keyboard may be typing a long text with no calls
+/// arriving here, so the session waits out the longest typing budget before it gives up.
+const MEDIA_IDLE_TYPING: Duration = Duration::from_secs(300);
+
+/// Ends the screen-sharing session and keeps the tunnel. Closing the connection alone leaves the
+/// phone to notice on its own, so the stream is stopped explicitly, as the desktop bridge does.
+async fn release_media(session: &mut Option<Session>) {
+    let Some(mut media) = session.as_mut().and_then(|s| s.media.take()) else { return };
+    if let Some(keyboard) = media.keyboard.as_mut() {
+        let _ = tokio::time::timeout(Duration::from_secs(3), keyboard.close()).await;
+    }
+    media.keyboard = None;
+    let _ = tokio::time::timeout(Duration::from_secs(2), media.client.stop_media_stream()).await;
+    media.receivers.shutdown().await;
 }
 
 /// Dropping a tunnel is not the keyboard-removal protocol. Remove the virtual
@@ -416,8 +453,8 @@ fn validate(request: &Request) -> Result<()> {
 
 struct InputMedia {
     keyboard: Option<Keyboard>,
-    _client: idevice::core_device::DisplayServiceClient<Box<dyn idevice::ReadWrite>>,
-    _receivers: tokio::task::JoinSet<()>,
+    client: idevice::core_device::DisplayServiceClient<Box<dyn idevice::ReadWrite>>,
+    receivers: tokio::task::JoinSet<()>,
     touch: Touch,
 }
 
@@ -432,6 +469,10 @@ fn with_cleanup<T>(outcome: Result<T>, cleanup: Result<()>) -> Result<T> {
 }
 
 impl InputMedia {
+    fn idle_limit(&self) -> Duration {
+        if self.keyboard.is_some() { MEDIA_IDLE_TYPING } else { MEDIA_IDLE }
+    }
+
     async fn attach_keyboard(&mut self, device: &mut Device) -> Result<()> {
         if self.keyboard.is_none() {
             self.keyboard = Some(Keyboard::connect(device).await?);
@@ -462,8 +503,8 @@ impl InputMedia {
             .map_err(not_sent_error)?;
         Ok(Self {
             keyboard: None,
-            _client: opened.client,
-            _receivers: receivers,
+            client: opened.client,
+            receivers,
             touch,
         })
     }
