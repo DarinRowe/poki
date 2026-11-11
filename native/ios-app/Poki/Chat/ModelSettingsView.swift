@@ -22,7 +22,7 @@ struct ModelSettingsView: View {
                 ForEach(ModelProvider.allCases.filter(ModelAccounts.isSetUp)) { provider in
                     NavigationLink { AccountDetail(provider: provider) } label: { AccountRow(provider: provider) }
                 }
-                Button("Add Account") { adding = true }
+                Button("Add Account", systemImage: "plus") { adding = true }
             } header: {
                 Text("Accounts")
             } footer: {

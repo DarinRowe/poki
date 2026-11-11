@@ -32,9 +32,9 @@ struct PokiDetailsView: View {
                         NavigationLink(value: DetailsRoute.history) { LabeledContent("Last Action", value: lastRun) }
                     }
                     if model.sessionOn && !model.runnerPaused || chat.running {
-                        Button("Pause") { chat.stop(); model.pauseRunner() }
+                        Button("Pause", systemImage: "pause.fill") { chat.stop(); model.pauseRunner() }
                     } else if model.sessionOn {
-                        Button("Resume") { model.wakeRunner() }
+                        Button("Resume", systemImage: "play.fill") { model.wakeRunner() }
                     }
                     ForEach(issues) { issue in
                         IssueRow(issue: issue, openSetup: openSetup)

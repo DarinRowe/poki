@@ -56,7 +56,7 @@ struct PokiKeyboardPage: View {
                 Text("Open **Settings › General › Keyboard › Keyboards › Add New Keyboard** and choose **Poki**.")
                 Text("Tap **Poki** in that list and turn on **Allow Full Access**.")
                 Text("Keep your usual keyboards. Then switch to the Poki keyboard once in any text field, so Poki knows it is there.")
-                Button("Open Settings") {
+                Button("Open Settings", systemImage: "gear") {
                     if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
                 }
             } header: {

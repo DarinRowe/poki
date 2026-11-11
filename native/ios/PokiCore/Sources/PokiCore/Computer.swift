@@ -749,7 +749,7 @@ final class Computer: @unchecked Sendable {
         // The read above is the work's last screen; the owner then sees their own app again.
         if finish, error == nil {
             // Poki's keyboard, if it is up, gives way to the owner's own.
-            if runner.typesThroughKeyboard { _ = try? await runner.raw("POST", "/poki/keyboard/release", [:], timeout: 1, countsAsMiss: false) }
+            if runner.typesThroughKeyboard { _ = try? await runner.raw("POST", "/poki/keyboard/release", [:], timeout: 5, countsAsMiss: false) }
             let line = await returnToOrigin() ?? "finish: the app this task began in is not known, so the phone stays here"
             var lines = result.text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
             lines.insert(line, at: min(1, lines.count))

@@ -264,7 +264,7 @@ struct ConnectorDetail: View {
                 }
                 Text(verbatim: url.replacingOccurrences(of: secret.secret, with: "••••••"))
                     .font(.footnote.monospaced()).foregroundStyle(Color(.secondaryLabel)).textSelection(.disabled)
-                Button(copied ? "Copied" : "Copy Address") {
+                Button(copied ? "Copied" : "Copy Address", systemImage: copied ? "checkmark" : "doc.on.doc") {
                     UIPasteboard.general.string = url
                     copied = true
                 }
