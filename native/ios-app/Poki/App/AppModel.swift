@@ -287,8 +287,6 @@ final class AppModel {
     init(launcher: RunnerLauncher = RustLauncher(), pairer: DevicePairing = RustPairing(), automation: InProcessAutomation = PKInProcess.shared()) {
         ActivityController.endAll()
         self.automation = automation
-        activity.hidesWhenIdle = { [weak self] in self?.background.continuedRunIsOn ?? false }
-        activity.canStart = { [weak self] in self?.inFront ?? false }
         // A reinstall emptied the container: the pairing file comes back from the Keychain (and the
         // setup state did the same in `SetupState.load`), so the owner is not sent through setup again.
         if SetupVault.restorePairingIfMissing() { AppLog.shared.add("pairing", "pairing file restored from the Keychain after a reinstall") }
@@ -319,6 +317,9 @@ final class AppModel {
                            holdMicrophone: { [background] on in on ? background.pauseAudio() : background.resumeAudio() })
         self.launcher = launcher
         self.pairer = pairer
+        // After every stored property is set: these closures hold self.
+        activity.hidesWhenIdle = { [weak self] in self?.background.continuedRunIsOn ?? false }
+        activity.canStart = { [weak self] in self?.inFront ?? false }
         host.update(key: identity.signingKey, hashes: identity.accessHashes)
         host.onConsent { [weak self] client, callback, connector in
             await self?.askToConnect(client: client, callback: callback, connector: connector) ?? false
