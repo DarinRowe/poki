@@ -124,7 +124,7 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
     /// Testing Options: the tunnels are opened when Poki turns on and kept between tasks, so a
     /// phone that later has only cellular (where iOS opens no new tunnel) can still be used.
     static let keepTunnelKey = "poki.native.keepTunnel"
-    static var keepsTunnel: Bool { UserDefaults.standard.bool(forKey: keepTunnelKey) }
+    static var keepsTunnel: Bool { UserDefaults.standard.object(forKey: keepTunnelKey) as? Bool ?? true }
 
     /// Opens the three tunnels now. How many are open afterwards.
     @discardableResult

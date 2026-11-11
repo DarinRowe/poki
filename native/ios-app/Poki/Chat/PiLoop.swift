@@ -140,18 +140,18 @@ final class PiLoop {
     /// The provider's message for the owner. pi never puts the key in it; a sign-in that ran out says so.
     private static func words(_ message: String, provider: ModelProvider) -> String {
         if message.contains("No API key") || message.contains("missingApiKey") || message.isEmpty && !ModelKeys.hasKey(provider) {
-            return provider.signsIn ? String(localized: "Sign in to ChatGPT again: tap my picture, then Model.")
-                                    : String(localized: "Add your \(provider.name) key: tap my picture, then Model.")
+            return provider.signsIn ? String(localized: "Sign in to ChatGPT again. Tap my picture, then Model.")
+                                    : String(localized: "Add your \(provider.name) key. Tap my picture, then Model.")
         }
         // The provider's stream ended on an error event with nothing in it (the library prints the
         // missing fields as "undefined"): said plainly, with what is left of it when there is any.
         if message.contains("Error Code undefined") || message.hasSuffix(": undefined") {
             let rest = message.replacingOccurrences(of: "Error Code undefined:", with: "").replacingOccurrences(of: "undefined", with: "")
                 .trimmingCharacters(in: CharacterSet(charactersIn: " :"))
-            let said = String(localized: "\(provider.name) ended the answer with an error and gave no reason. This is usually brief on their side: tap Try Again.")
+            let said = String(localized: "\(provider.name) ended the answer with an error and gave no reason. This is usually brief on their side. Tap Try Again.")
             return rest.isEmpty ? said : said + " (" + rest + ")"
         }
-        return String(localized: "\(provider.name): \(message.isEmpty ? String(localized: "the request failed.") : message)")
+        return String(localized: "\(provider.name), \(message.isEmpty ? String(localized: "the request failed.") : message)")
     }
 }
 

@@ -55,7 +55,7 @@ final class AppModel {
     /// longer pause the runner stops, and the agent's next request starts it again.
     /// In-process: close the automation session (and iOS's banner) when Poki stands by. Off by
     /// default until a session reopened in the same launch is shown to answer reads on the phone.
-    var closeSessionWhenIdle: Bool = UserDefaults.standard.bool(forKey: "inProcess.closeWhenIdle") {
+    var closeSessionWhenIdle: Bool = UserDefaults.standard.object(forKey: "inProcess.closeWhenIdle") as? Bool ?? true {
         didSet { UserDefaults.standard.set(closeSessionWhenIdle, forKey: "inProcess.closeWhenIdle"); log.add("runner", "close the session when idle: \(closeSessionWhenIdle ? "on" : "off")") }
     }
     /// Agents › Approvals › Ask Before Sensitive Steps: how the owner is asked, or never. PokiCore
@@ -208,10 +208,10 @@ final class AppModel {
         if !approvals.isEmpty { return String(localized: "An approval is waiting for you.") }
         if sessionStarting { return String(localized: "Poki is turning on.") }
         if let step = stepUnderWay, sessionOn, Date().timeIntervalSince(step.started) < 120 {
-            return String(localized: "The agent is doing a step: \(step.summary).")
+            return String(localized: "The agent is doing a step, \(step.summary).")
         }
         let since = Date().timeIntervalSince(lastStepAt)
-        if since < 60 { return String(localized: "The agent acted \(Int(since)) s ago; Install opens a minute after its last step.") }
+        if since < 60 { return String(localized: "The agent acted \(Int(since)) s ago. Install opens a minute after its last step.") }
         return nil
     }
 
@@ -428,9 +428,9 @@ final class AppModel {
     /// Counts closes, so an open that began before one is not taken as the state after it.
     private var inProcessEpoch = 0
     private var inProcessWarmToken = 0
-    /// A session of this launch was closed. One reopened in the same launch answers no reads (the
-    /// phone, builds 144-149: every look timed out after a stand-by, a restart, or Off then On), so
-    /// Poki starts again as a new process for the next one instead.
+    /// A session of this launch was closed. One reopened in the same launch answered no reads on
+    /// the phone in builds 144-149, so the next open has to prove itself: it is taken when its first
+    /// read of the screen comes back, and otherwise Poki starts again as a new process.
     private var inProcessUsedUp = false
 
     /// Ends the in-process session (Automation Mode and the banner go with it) off the main thread.
@@ -510,6 +510,21 @@ final class AppModel {
                 }
                 // Only the latest open's answer clears the flag (a stale one was asked again meanwhile).
                 let ok = (result["ok"] as? Bool) == true
+                // After a close in this launch, an open counts only when it read the screen.
+                if self.inProcessUsedUp, token == self.inProcessWarmToken {
+                    let reads = (result["reused"] as? Bool) == true || (result["warm_read"] as? Bool) == true
+                    if ok, reads {
+                        self.inProcessUsedUp = false
+                        self.log.add("runner", "the session opened again in the same launch and reads the screen")
+                    } else if !self.inProcessPasscode {
+                        self.inProcessWarming = false
+                        self.log.add("runner", ok ? "the session opened again but its first read did not come back: Poki restarts for a new one"
+                                                  : "the session did not open again in this launch (\(result["code"] ?? "unknown")): Poki restarts for a new one")
+                        if self.inFront { self.relaunchNotice = true } else { self.relaunchForFreshSession() }
+                        self.inProcessSession = .opening
+                        return
+                    }
+                }
                 // A stale open's failure does not undo what a newer one is doing.
                 guard token == self.inProcessWarmToken || ok else { return }
                 if token == self.inProcessWarmToken { self.inProcessWarming = false }
@@ -842,7 +857,7 @@ final class AppModel {
                 // record from a computer (Poki Setup) fails its TLS session here every time.
                 if SetupStep.onDevicePairing, text.contains("device socket io failed"), Self.isLockdownRecord(path) {
                     if self.pairingTrouble == nil { self.log.add("pairing", "check: the computer's pairing file does not open the loopback on this iOS; pair on this iPhone") }
-                    self.pairingTrouble = String(localized: "the pairing file from a computer does not work over the loopback on this iOS version. Pair this iPhone here once; the pairing stays.")
+                    self.pairingTrouble = String(localized: "the pairing file from a computer does not work over the loopback on this iOS version. Pair this iPhone here once and the pairing stays.")
                     self.pairingUnchecked = nil
                     return false
                 }
@@ -870,11 +885,6 @@ final class AppModel {
         reconsiderMethod("turning on")
         // Turning on is the owner asking for automation again, after a cancelled passcode screen too.
         InProcessWDA.gate.withLock { $0.declined = false }
-        if automationPath == .inProcess, inProcessUsedUp, !Self.onSimulator {
-            // With Poki in front the owner is told first that it exits and must be opened again.
-            if inFront { relaunchNotice = true } else { relaunchForFreshSession() }
-            return
-        }
         // The first automation after a restart (or ever) brings up iOS's own passcode screen. With
         // Poki in front, the owner is told first that it is expected and that Poki cannot see it.
         // Start asks for everything at once: the note now, and on Continue the session's first open
@@ -1211,7 +1221,7 @@ final class AppModel {
         }
     }
 
-    private static let stuckNotice = "Poki Runner is still running after Stop. Swipe it away in the app switcher; the banner goes with it."
+    private static let stuckNotice = "Poki Runner is still running after Stop. Swipe it away in the app switcher and the banner goes with it."
     private func clearStuckNotice() { if problem == Self.stuckNotice { problem = nil } }
 
     /// The runner is off and starts on the next agent request.
@@ -1246,9 +1256,7 @@ final class AppModel {
             $0.since = stepUnderWay?.started ?? Date()
         }
         if automationPath == .inProcess, inProcessUsedUp {
-            log.add("runner", "an agent asked, but the session of this launch was closed: open Poki to start it again")
-            problem = String(localized: "Open Poki so agents can see the screen again: it restarts once.")
-            AttentionNotice.post(title: String(localized: "Open Poki"), body: String(localized: "An agent is waiting. Open Poki so it can see the screen again."))
+            log.add("runner", "an agent asked after the session of this launch was closed: opening a new one in place")
         }
         if automationPath == .inProcess, runner.isRunning { warmInProcess("an agent asked"); return }
         launchRunner()
@@ -1261,7 +1269,16 @@ final class AppModel {
         passcodeHint = inProcessPasscode || automationPath != .nativeServices && runner.state == "launching" && launchingSince.map { now.timeIntervalSince($0) > 10 } == true
         // On both paths the automation (the runner, or the in-process session) ends after the idle
         // time, so iOS's banner shows only while an agent works; the next request starts it again.
-        guard sessionOn, !runnerPaused, idleStopSeconds > 0, approvals.isEmpty, activityText == "Idle" else { return }
+        guard sessionOn, !runnerPaused, approvals.isEmpty, activityText == "Idle" else { return }
+        // The XCTest session is not needed once native services can start: after 20 s with no step,
+        // the method changes back and iOS's banner goes, without waiting out the idle time.
+        if automationPath == .inProcess, methodIsChosenForOwner, stepUnderWay == nil, now.timeIntervalSince(lastAgentActivity) >= 20,
+           AutomationChooser.choose(chooserConditions).method == .native {
+            Task { [core] in _ = await core.finishTask(switching: false) }
+            reconsiderMethod("no step for 20 s and native services can start", force: true)
+            return
+        }
+        guard idleStopSeconds > 0 else { return }
         if now.timeIntervalSince(lastAgentActivity) >= Double(idleStopSeconds) {
             let reason = "Stopped after \(idleStopSeconds / 60 > 0 ? "\(idleStopSeconds / 60) min" : "\(idleStopSeconds) s") without agent activity"
             // The task is over: the phone goes back to the app it began in while the runner can still
@@ -1693,7 +1710,7 @@ final class AppModel {
         case .password: "The screen asks for a password"
         case .verification: "The screen asks for a verification step"
         case .payment: "The screen asks you to confirm a payment"
-        case .other: "The agent cannot act on this screen; please do this step"
+        case .other: "The agent cannot act on this screen, please do this step"
         }
     }
 
@@ -1786,7 +1803,7 @@ final class AppModel {
     /// opened from AirDrop or Files. Returns the setup step to show, or nil when the link was none of these.
     func open(link url: URL) -> SetupStep? {
         if url.isFileURL {
-            do { try importPairingFile(from: url) } catch { pairingNote = String(localized: "Invalid Pairing File: \(error.localizedDescription)") }
+            do { try importPairingFile(from: url) } catch { pairingNote = String(localized: "Invalid Pairing File. \(error.localizedDescription)") }
             try? FileManager.default.removeItem(at: url)
             return .pairing
         }
@@ -1795,7 +1812,7 @@ final class AppModel {
         switch url.host() {
         case "pairing":
             if let text = item("data"), let data = Data(base64URL: text) {
-                do { try importPairingFile(data, how: "received by link") } catch { pairingNote = String(localized: "Invalid Pairing File: \(error.localizedDescription)") }
+                do { try importPairingFile(data, how: "received by link") } catch { pairingNote = String(localized: "Invalid Pairing File. \(error.localizedDescription)") }
             } else if let from = item("url").flatMap(URL.init(string:)), ["http", "https"].contains(from.scheme ?? "") {
                 let expected = item("sha256")?.lowercased()
                 pairingNote = String(localized: "Fetching the pairing file from \(from.host() ?? "your computer")…")
@@ -1806,7 +1823,7 @@ final class AppModel {
                             throw NSError(domain: "poki", code: 1, userInfo: [NSLocalizedDescriptionKey: String(localized: "the file does not match the link")])
                         }
                         try importPairingFile(data, how: "fetched from \(from.host() ?? "?")")
-                    } catch { pairingNote = String(localized: "Could not get the pairing file: \(error.localizedDescription)") }
+                    } catch { pairingNote = String(localized: "Could not get the pairing file. \(error.localizedDescription)") }
                 }
             } else {
                 pairingNote = String(localized: "The pairing link carried no file.")
@@ -2007,7 +2024,7 @@ final class AppModel {
             nativeTunnelsOpen: nativeTunnelsOpen,
             imageMounted: Self.localDDIMounted,
             xctestOpen: inProcessSession == .open,
-            xctestUnavailable: inProcessUsedUp || InProcessWDA.automationDeclined,
+            xctestUnavailable: InProcessWDA.automationDeclined,
             nativeFailures: Date().timeIntervalSince(lastNativeFailure) < 120 ? nativeFailures : 0,
             onWiFi: loopback.onWiFi,
             bannerAllowed: bannerAllowed || !Self.asksBeforeBanner)
@@ -2039,7 +2056,7 @@ final class AppModel {
         log.add("method", "\(automationPath.rawValue) to \(new.rawValue): \(why)")
         if automationPath == .inProcess {
             // The session's banner goes with it.
-            if inProcessSession == .open { closeInProcess("native services taking over") }
+            closeInProcess("native services taking over")
         } else {
             nativeTunnelsOpen = false
             Task { [nativeServicesWDA] in await nativeServicesWDA?.reset() }

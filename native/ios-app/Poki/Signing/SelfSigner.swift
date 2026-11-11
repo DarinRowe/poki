@@ -114,7 +114,7 @@ final class SelfSigner {
     /// Why Poki cannot download the update by itself, when it cannot. Nil when it can.
     var updateBlocker: String? {
         guard updateNotReady else { return nil }
-        if !signedIn { return String(localized: "To download updates by itself, Poki needs your Apple Account: sign in under Signing Options. Or update Poki from Poki Setup on your Mac.") }
+        if !signedIn { return String(localized: "To download updates by itself, Poki needs your Apple Account. Sign in under Signing Options. Or update Poki from Poki Setup on your Mac.") }
         if phone() == nil { return String(localized: "Poki can't reach this iPhone. Turn on the loopback, then try again.") }
         return nil
     }
@@ -164,7 +164,7 @@ final class SelfSigner {
     // MARK: Account
 
     func signIn(appleID: String, password: String, keepPassword: Bool) async {
-        await run("Signing in") {
+        await run(String(localized: "Signing in")) {
             _ = try await SignerBridge.call(["op": "sign_in", "apple_id": appleID, "password": password, "keep_password": keepPassword])
         }
         await reload()
@@ -172,13 +172,13 @@ final class SelfSigner {
     }
 
     func finishSignIn(code: String) async {
-        await run("Checking the code") { _ = try await SignerBridge.call(["op": "finish_sign_in", "code": code]) }
+        await run(String(localized: "Checking the code")) { _ = try await SignerBridge.call(["op": "finish_sign_in", "code": code]) }
         await reload()
         if signedIn { await loadTeams() }
     }
 
     func signOut() async {
-        await run("Signing out") { _ = try await SignerBridge.call(["op": "sign_out"]) }
+        await run(String(localized: "Signing out")) { _ = try await SignerBridge.call(["op": "sign_out"]) }
         teams = []
         await reload()
     }
@@ -189,7 +189,7 @@ final class SelfSigner {
     }
 
     func choose(team: Team) async {
-        await run("Choosing the team") { _ = try await SignerBridge.call(["op": "choose_team", "team_id": team.team_id]) }
+        await run(String(localized: "Choosing the team")) { _ = try await SignerBridge.call(["op": "choose_team", "team_id": team.team_id]) }
         await reload()
     }
 
@@ -425,7 +425,7 @@ final class SelfSigner {
         // Nothing may hold Poki up from here on: iOS replaces the app once it is neither in front
         // nor running, and a background task or a Live Activity kept it alive under the install.
         beforeClose?()
-        working = String(localized: "Finishing the update: Poki will close to finish it")
+        working = String(localized: "Finishing the update, Poki will close to finish it")
         // The last step: the owner is told Poki will close (the alert's OK steps aside, and iOS ends
         // Poki by itself otherwise); the notice says it again in case the alert was missed.
         installStepSince = Date()
@@ -572,7 +572,7 @@ enum SignerBridge {
                             let wrapped = (try? JSONSerialization.data(withJSONObject: ["v": object["value"] ?? NSNull()])) ?? Data("{\"v\":null}".utf8)
                             box.continuation?.resume(returning: wrapped)
                         } else {
-                            box.continuation?.resume(throwing: SignerError(message: object["error"] as? String ?? "The signer failed.", code: object["code"] as? String ?? ""))
+                            box.continuation?.resume(throwing: SignerError(message: object["error"] as? String ?? String(localized: "The signer failed."), code: object["code"] as? String ?? ""))
                         }
                         box.continuation = nil
                         unmanaged.release()
@@ -584,7 +584,7 @@ enum SignerBridge {
             if rc != 0 {
                 box.takeUnretainedValue().continuation = nil
                 box.release()
-                c.resume(throwing: SignerError(message: "The signer did not take the request.", code: "config"))
+                c.resume(throwing: SignerError(message: String(localized: "The signer did not take the request."), code: "config"))
             }
         }
     }

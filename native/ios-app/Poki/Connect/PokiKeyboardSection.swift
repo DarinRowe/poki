@@ -50,7 +50,7 @@ struct PokiKeyboardPage: View {
                     LabeledContent("Not Used Last Time") { Text(verbatim: last).foregroundStyle(.secondary) }
                 }
             } footer: {
-                Text("Poki types through its own keyboard panel, at a person’s pace. The panel has no keys: it shows while Poki types, and Take Over stops it.")
+                Text("Poki types through its own keyboard panel, at a person’s pace. The panel has no keys. It shows while Poki types, and Take Over stops it.")
             }
             // The same list as Setup's other steps (Turn On Developer Mode).
             HowToSection(lines: [

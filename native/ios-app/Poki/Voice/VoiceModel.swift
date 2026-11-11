@@ -110,12 +110,12 @@ enum VoiceError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .bridge(404, _): "The voice bridge doesn't know this address. Copy it again from the Mac."
-        case .bridge(let code, let reason): "The voice bridge answered \(code): \(reason)"
-        case .realtime(let code, let reason): "OpenAI answered \(code): \(reason)"
-        case .noBridge: "Set up Poki's model first (an OpenAI key talks fastest), or enter a voice bridge address from your Mac."
-        case .timeout(let what): "\(what) took too long."
-        case .noPath: "The voice connection could not reach OpenAI over this network. Check Wi-Fi or cellular, or a VPN or proxy app that blocks calls, then try again."
+        case .bridge(404, _): String(localized: "The voice bridge doesn't know this address. Copy it again from the Mac.")
+        case .bridge(let code, let reason): String(localized: "The voice bridge answered \(code), \(reason)")
+        case .realtime(let code, let reason): String(localized: "OpenAI answered \(code), \(reason)")
+        case .noBridge: String(localized: "Set up Poki's model first (an OpenAI key talks fastest), or enter a voice bridge address from your Mac.")
+        case .timeout(let what): String(localized: "\(what) took too long.")
+        case .noPath: String(localized: "The voice connection could not reach OpenAI over this network. Check Wi-Fi or cellular, or a VPN or proxy app that blocks calls, then try again.")
         case .noMicrophone: String(localized: "Poki can't use the microphone. Allow it in Settings, Privacy, Microphone.")
         }
     }
@@ -183,12 +183,12 @@ enum VoicePhase: Equatable {
 
     var label: String {
         switch self {
-        case .off: "Off"
-        case .connecting: "Connecting"
-        case .listening: "Listening"
-        case .hearing: "Hearing you"
-        case .thinking: "Working"
-        case .speaking: "Speaking"
+        case .off: String(localized: "Off")
+        case .connecting: String(localized: "Connecting")
+        case .listening: String(localized: "Listening")
+        case .hearing: String(localized: "Hearing you")
+        case .thinking: String(localized: "Working")
+        case .speaking: String(localized: "Speaking")
         case .lost(let why): why
         }
     }
@@ -331,7 +331,7 @@ final class VoiceModel {
     var route: String {
         if VoiceDirect.apiKey != nil { return String(localized: "Your OpenAI key, straight from this iPhone") }
         if let bridge { return String(localized: "Voice bridge at \(bridge.display)") }
-        if VoiceDirect.canDictate { return String(localized: "Dictation to \(ModelKeys.selectedModelName); Poki reads the answer aloud") }
+        if VoiceDirect.canDictate { return String(localized: "Dictation to \(ModelKeys.selectedModelName), Poki reads the answer aloud") }
         return String(localized: "Not set up")
     }
 
@@ -518,7 +518,7 @@ final class VoiceModel {
                 if left > .zero { wait = left; continue }
                 if waitingOnServer {
                     log.add("voice", "the server said nothing for \(inBackground ? Self.backgroundStall : Self.stall) while Poki waited on it: conversation ended")
-                    lines.append(VoiceLine(role: .note, text: "Poki stopped waiting: the server did not answer."))
+                    lines.append(VoiceLine(role: .note, text: String(localized: "Poki stopped waiting because the server did not answer.")))
                     stop()
                     return
                 }
@@ -606,7 +606,7 @@ final class VoiceModel {
     }
 
     private func startDictation() async {
-        guard await Dictation.allowed() else { phase = .lost(String(localized: "Poki needs the microphone and speech recognition: allow them in Settings › Poki.")); return }
+        guard await Dictation.allowed() else { phase = .lost(String(localized: "Poki needs the microphone and speech recognition. Allow them in Settings › Poki.")); return }
         let dictation = Dictation()
         dictation.onHeard = { [weak self] text in
             guard let self, self.phase == .hearing else { return }
@@ -660,8 +660,8 @@ final class VoiceModel {
     private func closed(_ reason: String, session number: Int) {
         guard number == session, link != nil else { return }
         endSession()
-        phase = .lost("Connection lost")
-        lines.append(VoiceLine(role: .note, text: "Connection lost (\(reason)). Nothing is sent again; reconnect to hear how running steps ended."))
+        phase = .lost(String(localized: "Connection lost"))
+        lines.append(VoiceLine(role: .note, text: String(localized: "Connection lost (\(reason)). Nothing is sent again. Reconnect to hear how running steps ended.")))
         endTranscript()
         log.add("voice", "connection lost: \(reason)")
     }
@@ -909,14 +909,14 @@ final class VoiceModel {
 
     private static func describe(_ call: VoiceCall) -> String {
         switch call.name {
-        case "get_ios_version": "Reading the iOS version"
-        case "open_settings": "Opening Settings"
-        case "read_screen": "Reading the screen"
-        case "open_app": "Opening an app"
-        case "tap_text": "Tapping"
-        case "go_home": "Going Home"
-        case "look": "Looking at the screen"
-        case "do": "Using the phone"
+        case "get_ios_version": String(localized: "Reading the iOS version")
+        case "open_settings": String(localized: "Opening Settings")
+        case "read_screen": String(localized: "Reading the screen")
+        case "open_app": String(localized: "Opening an app")
+        case "tap_text": String(localized: "Tapping")
+        case "go_home": String(localized: "Going Home")
+        case "look": String(localized: "Looking at the screen")
+        case "do": String(localized: "Using the phone")
         default: call.name
         }
     }

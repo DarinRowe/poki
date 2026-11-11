@@ -30,7 +30,7 @@ struct MemoryView: View {
             } header: {
                 Text("Routines")
             } footer: {
-                Text("An agent saves a routine after a task that worked; the next time it repeats the task in one step and stops where the screen differs. Swipe a routine to forget it.")
+                Text("An agent saves a routine after a task that worked. The next time it repeats the task in one step and stops where the screen differs. Swipe a routine to forget it.")
             }
 
             Section {
@@ -54,7 +54,7 @@ struct MemoryView: View {
             } header: {
                 Text("Move or Back Up")
             } footer: {
-                Text(message ?? String(localized: "One file with every routine and note. Importing merges it in; the newer copy of a routine wins. Poki Setup on your computer can back it up and put it back."))
+                Text(message ?? String(localized: "One file with every routine and note. Importing merges it in, and the newer copy of a routine wins. Poki Setup on your computer can back it up and put it back."))
             }
 
             Section {
@@ -78,7 +78,7 @@ struct MemoryView: View {
                     let data = try Data(contentsOf: url)
                     message = try store.importData(data, by: "import")
                 } catch {
-                    message = String(localized: "That file could not be imported: \(String(describing: error))")
+                    message = String(localized: "That file could not be imported. \(String(describing: error))")
                 }
                 reload()
             case .failure(let error):
@@ -131,6 +131,6 @@ private struct RoutineRow: View {
         let steps = String(localized: "\(routine.steps.count) steps")
         let runs = routine.runs == 0 ? String(localized: "not run yet") : String(localized: "worked \(routine.ok) of \(routine.runs)")
         let base = "\(steps), \(runs), \(routine.savedBy)"
-        return routine.stale ? String(localized: "Needs redoing: stopped twice in a row") + ", " + base : base
+        return routine.stale ? String(localized: "Needs redoing, stopped twice in a row") + ", " + base : base
     }
 }

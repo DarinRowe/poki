@@ -62,10 +62,10 @@ struct ApprovalsView: View {
                     .padding(.vertical, 4)
                 } footer: {
                     switch model.classifierLevel {
-                    case .permissive: Text("Permissive: your chat model approves a step in Poki’s own chat unless it clearly has nothing to do with what you asked, or you said no.")
-                    case .balanced: Text("Balanced: your chat model approves a step in Poki’s own chat when it directly serves what you asked for. You are asked about the rest.")
-                    case .strict: Text("Strict: your chat model approves a step in Poki’s own chat only when you asked for that exact action. You are asked about the rest.")
-                    case .everything: Text("Ask for Everything: nothing is approved automatically. Steps that follow straight after your answer in the same app do not ask again.")
+                    case .permissive: Text("Permissive. Your chat model approves a step in Poki’s own chat unless it clearly has nothing to do with what you asked, or you said no.")
+                    case .balanced: Text("Balanced. Your chat model approves a step in Poki’s own chat when it directly serves what you asked for. You are asked about the rest.")
+                    case .strict: Text("Strict. Your chat model approves a step in Poki’s own chat only when you asked for that exact action. You are asked about the rest.")
+                    case .everything: Text("Ask for Everything. Nothing is approved automatically. Steps that follow straight after your answer in the same app do not ask again.")
                     }
                 }
             }
@@ -79,8 +79,8 @@ struct AgentsView: View {
     /// The line under MCP Relay: the address to set, Poki being off, or the relay's live state.
     private var relayLine: String {
         if model.relayAddress == nil { return String(localized: "Set an address first") }
-        if !model.relayEnabled { return String(localized: "Off: agents can’t reach this iPhone") }
-        if !model.sessionOn { return String(localized: "Waiting for Poki: turn Poki on and agents can connect") }
+        if !model.relayEnabled { return String(localized: "Off, agents can’t reach this iPhone") }
+        if !model.sessionOn { return String(localized: "Waiting for Poki, turn Poki on and agents can connect") }
         return Health.relay(model).word
     }
 
@@ -149,8 +149,8 @@ struct AgentsView: View {
                     Text("External Agents")
                 } footer: {
                     Text(model.relayAddress == nil
-                         ? "Set your relay first: each agent gets its own MCP address on it."
-                         : "Each agent gets its own MCP address; add it as a remote MCP server in Claude, Codex or any MCP client. It takes the agent’s name and icon when the agent first connects, unless you renamed it. Swipe to revoke.")
+                         ? "Set your relay first. Each agent gets its own MCP address on it."
+                         : "Each agent gets its own MCP address. Add it as a remote MCP server in Claude, Codex or any MCP client. It takes the agent’s name and icon when the agent first connects, unless you renamed it. Swipe to revoke.")
                 }
 
                 Section {
@@ -264,7 +264,7 @@ struct AdvancedView: View {
                 }
             } header: { Text("Chat") } footer: {
                 Text(afterTask == "return" ? "Poki comes back to the front with its reply when a task ends."
-                     : "The phone stays where the task ended. Poki’s reply comes as a notification: touch and hold it to answer and carry on from there.")
+                     : "The phone stays where the task ended. Poki’s reply comes as a notification. Touch and hold it to answer and carry on from there.")
             }
             Section {
                 Button("Notification Settings", systemImage: "bell.badge") {
@@ -278,7 +278,7 @@ struct AdvancedView: View {
             } header: {
                 Text("Debugging")
             } footer: {
-                Text("Diagnostics: connection checks and this iPhone’s addresses. Testing Options: switches being tried.")
+                Text("Diagnostics has connection checks and this iPhone’s addresses. Testing Options has switches being tried.")
             }
         }
         .navigationTitle("Advanced")

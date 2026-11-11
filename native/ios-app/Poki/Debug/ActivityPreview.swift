@@ -30,7 +30,7 @@ struct ActivityPreview: View {
                     .foregroundStyle(Color(.label))
                 }
             } footer: {
-                Text("Starts that Live Activity on this iPhone. Lock the phone or go to the Home Screen to see it; the next one replaces it.")
+                Text("Starts that Live Activity on this iPhone. Lock the phone or go to the Home Screen to see it. The next one replaces it.")
             }
             Section {
                 Button(role: .destructive) {

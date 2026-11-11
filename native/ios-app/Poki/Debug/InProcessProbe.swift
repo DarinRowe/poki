@@ -416,9 +416,9 @@ struct AutomationMethodSection: View {
     var body: some View {
         Section {
             Picker("Method", selection: Binding(get: { saved ?? "automatic" }, set: { saved = $0 == "automatic" ? nil : $0 })) {
-                row("Automatic", "Native services when the connection is on, the XCTest session when it is not.", "wand.and.stars").tag("automatic")
-                row("Native Services", "No banner. Needs Wi-Fi and the loopback.", "bolt.horizontal").tag(AutomationPath.nativeServices.rawValue)
-                row("XCTest Session", "Works without Wi-Fi or the loopback. Shows iOS’s automation banner.", "rectangle.topthird.inset.filled").tag(AutomationPath.inProcess.rawValue)
+                row("Automatic", "Native services when the connection is on, the XCTest session when it is not.").tag("automatic")
+                row("Native Services", "No banner. Needs Wi-Fi and the loopback.").tag(AutomationPath.nativeServices.rawValue)
+                row("XCTest Session", "Works without Wi-Fi or the loopback. Shows iOS’s automation banner.").tag(AutomationPath.inProcess.rawValue)
             }
             .pickerStyle(.inline)
             .labelsHidden()
@@ -434,14 +434,10 @@ struct AutomationMethodSection: View {
         }
     }
 
-    private func row(_ title: LocalizedStringKey, _ detail: LocalizedStringKey, _ symbol: String) -> some View {
-        Label {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                Text(detail).font(.footnote).foregroundStyle(.secondary)
-            }
-        } icon: {
-            Image(systemName: symbol)
+    private func row(_ title: LocalizedStringKey, _ detail: LocalizedStringKey) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+            Text(detail).font(.footnote).foregroundStyle(.secondary)
         }
     }
 }

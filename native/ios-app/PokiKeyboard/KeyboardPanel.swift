@@ -125,15 +125,19 @@ struct KeyboardPanel: View {
     }
 }
 
-/// The panel's few words, in English or Simplified Chinese after the iPhone's language.
+/// The panel's few words, in English, Simplified or Traditional Chinese after the iPhone's language.
 enum Words {
     static let chinese = Locale.preferredLanguages.first?.hasPrefix("zh") ?? false
-    static var typing: String { chinese ? "Poki 正在输入" : "Poki is typing" }
-    static var takeOver: String { chinese ? "我来输入" : "Take Over" }
-    static var idleTitle: String { chinese ? "Poki 键盘" : "Poki Keyboard" }
-    static var idleDetail: String { chinese ? "Poki 工作时通过这里输入。要自己输入，请切换到你的键盘。" : "Poki types through here while it works. To type yourself, switch to your own keyboard." }
-    static var waiting: String { chinese ? "Poki 正在执行任务，下一段文字会从这里输入。" : "Poki is working on a task. Its next text is typed from here." }
-    static var fullAccess: String { chinese ? "请在“设置”里为 Poki 键盘打开“允许完全访问”，它才能收到 Poki 要输入的文字。" : "Turn on Allow Full Access for the Poki keyboard in Settings, so it can receive the text Poki types." }
-    static var switchKeyboard: String { chinese ? "切换键盘" : "Switch Keyboard" }
-    static var nextKeyboard: String { chinese ? "下一个键盘" : "Next Keyboard" }
+    static let traditional: Bool = {
+        let language = Locale.preferredLanguages.first ?? ""
+        return language.hasPrefix("zh-Hant") || language.hasPrefix("zh-TW") || language.hasPrefix("zh-HK") || language.hasPrefix("zh-MO")
+    }()
+    static var typing: String { traditional ? "Poki 正在輸入" : chinese ? "Poki 正在输入" : "Poki is typing" }
+    static var takeOver: String { traditional ? "我來輸入" : chinese ? "我来输入" : "Take Over" }
+    static var idleTitle: String { traditional ? "Poki 鍵盤" : chinese ? "Poki 键盘" : "Poki Keyboard" }
+    static var idleDetail: String { traditional ? "Poki 工作時透過這裡輸入。要自己輸入，請切換到你的鍵盤。" : chinese ? "Poki 工作时通过这里输入。要自己输入，请切换到你的键盘。" : "Poki types through here while it works. To type yourself, switch to your own keyboard." }
+    static var waiting: String { traditional ? "Poki 正在執行任務，下一段文字會從這裡輸入。" : chinese ? "Poki 正在执行任务，下一段文字会从这里输入。" : "Poki is working on a task. Its next text is typed from here." }
+    static var fullAccess: String { traditional ? "請在「設定」裡為 Poki 鍵盤開啟「允許完全訪問」，它才能收到 Poki 要輸入的文字。" : chinese ? "请在“设置”里为 Poki 键盘打开“允许完全访问”，它才能收到 Poki 要输入的文字。" : "Turn on Allow Full Access for the Poki keyboard in Settings, so it can receive the text Poki types." }
+    static var switchKeyboard: String { traditional ? "切換鍵盤" : chinese ? "切换键盘" : "Switch Keyboard" }
+    static var nextKeyboard: String { traditional ? "下一個鍵盤" : chinese ? "下一个键盘" : "Next Keyboard" }
 }
