@@ -300,7 +300,7 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
             }
         }
         func send(_ op: String, at frame: CGRect, _ more: [String: Any] = [:]) async throws {
-            var request: [String: Any] = ["op": op, "x": coordinate(frame.midX, across: screen.width), "y": coordinate(frame.midY, across: screen.height)]
+            var request: [String: Any] = ["op": op, "x": try coordinate(frame.midX, across: screen.width), "y": try coordinate(frame.midY, across: screen.height)]
             request.merge(more) { $1 }
             _ = try await input.call(request)
             queue.sync { cachedTree = nil }
