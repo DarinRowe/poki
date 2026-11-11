@@ -130,7 +130,9 @@ struct RootView: View {
         }
     }
 
-    var body: some View {
+    /// The tabs, apart from `body`: together with its alerts and handlers the one expression was more
+    /// than the compiler would type-check in its time limit.
+    private var tabs: some View {
         TabView(selection: $tab) {
             Tab(String(localized: "Poki"), systemImage: "bubble.left.and.bubble.right.fill", value: RootTab.chats) {
                 pokiTab.environment(\.horizontalSizeClass, width)
@@ -155,7 +157,11 @@ struct RootView: View {
         // The tab bar stays at the bottom on iPad too: in a wide window iOS moves it to a floating bar
         // at the top, over home's header. The tab bar reads the compact width here; each tab's own
         // content gets the real width back.
-        .environment(\.horizontalSizeClass, .compact)
+        .environment(\.horizontalSizeClass, UserInterfaceSizeClass.compact)
+    }
+
+    var body: some View {
+        tabs
         .onChange(of: tab) { old, new in
             // Leaving the Poki tab from a conversation (to Accounts, Setup, a connector): the Poki
             // tab is back at Sessions, with its tab bar, when you come back. Done without animation
@@ -204,26 +210,7 @@ struct RootView: View {
         // A tap on the Live Activity opens the screen its state is about (ActivityFace.link): the chat,
         // the setup step, or the Activity Log for a problem; `poki://voice` opens the chat too (it
         // never turns on the microphone).
-        .onOpenURL { url in
-            AppLog.shared.add("app", "opened by link poki://\(url.host() ?? "")")
-            // Pairing is not interrupted: it stays on the pairing step, where the PIN is.
-            guard !model.pairingUnderWay else { return }
-            // A pairing file or a setup link (from Poki Setup on a computer, AirDrop or Files) opens
-            // setup at that step, where the result is shown.
-            if let step = model.open(link: url) {
-                tab = .setup
-                setup = NavigationPath([step])
-            } else if url.host() == "setup", !url.absoluteString.contains("relay=") {
-                // The Live Activity during setup: the Setup tab.
-                tab = .setup
-            } else if url.host() == "log" {
-                // The Live Activity's problem: what went wrong is in the Activity Log.
-                openAgents(.activityLog)
-            } else {
-                if url.host() == "voice" { model.voice.open(url) }
-                tab = .chats; show(HomeRoute.chat)
-            }
-        }
+        .onOpenURL { url in open(link: url) }
         .onAppear(perform: openLaunchScreen)
         .task {
             #if DEBUG
@@ -233,6 +220,27 @@ struct RootView: View {
                 model.voice.openAtLaunch(url)
             }
             #endif
+        }
+    }
+
+    private func open(link url: URL) {
+        AppLog.shared.add("app", "opened by link poki://\(url.host() ?? "")")
+        // Pairing is not interrupted: it stays on the pairing step, where the PIN is.
+        guard !model.pairingUnderWay else { return }
+        // A pairing file or a setup link (from Poki Setup on a computer, AirDrop or Files) opens
+        // setup at that step, where the result is shown.
+        if let step = model.open(link: url) {
+            tab = .setup
+            setup = NavigationPath([step])
+        } else if url.host() == "setup", !url.absoluteString.contains("relay=") {
+            // The Live Activity during setup: the Setup tab.
+            tab = .setup
+        } else if url.host() == "log" {
+            // The Live Activity's problem: what went wrong is in the Activity Log.
+            openAgents(.activityLog)
+        } else {
+            if url.host() == "voice" { model.voice.open(url) }
+            tab = .chats; show(HomeRoute.chat)
         }
     }
 
