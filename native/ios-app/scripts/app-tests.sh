@@ -17,6 +17,8 @@ xcrun simctl bootstatus "$UDID" -b >/dev/null
 xcrun simctl install "$UDID" "$APP"
 # Setup's last item needs location; the tests check a phone with every item done.
 xcrun simctl privacy "$UDID" grant location-always "$BUNDLE"
+# Live voice asks for the microphone before it connects; an unanswered prompt would hold the tests.
+xcrun simctl privacy "$UDID" grant microphone "$BUNDLE"
 xcrun simctl terminate "$UDID" "$BUNDLE" >/dev/null 2>&1 || true
 
 # PokiTests read the English text, as on CI's simulator, whatever language this Mac's simulator uses.
