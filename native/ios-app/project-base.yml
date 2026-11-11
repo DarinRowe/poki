@@ -170,6 +170,8 @@ targets:
     dependencies:
       - target: Poki
       - package: PokiCore
+      - package: PiSwift
+        product: PiSwiftAI
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(POKI_BUNDLE_ID).tests

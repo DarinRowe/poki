@@ -24,6 +24,7 @@ final class PiLoop {
     var messages: [AgentMessage] { agent.state.messages }
 
     init(provider: ModelProvider, model: Model, tools: [ToolSpec], carrying messages: [AgentMessage] = [],
+         sessionID: String = UUID().uuidString.lowercased(),
          perform: @escaping @MainActor (ToolCall) async -> PokiCore.ToolAnswer) {
         self.provider = provider
         self.model = model
@@ -38,9 +39,38 @@ final class PiLoop {
         // agent/pi-session.mjs: low thinking, one tool call at a time.
         agent = Agent(AgentOptions(
             initialState: AgentState(model: model, thinkingLevel: .low, tools: agentTools, messages: messages),
+            // Stable Go session affinity for all model and tool-continuation requests.
+            sessionId: provider == .opencodeGo ? sessionID : nil,
+            identity: provider == .opencodeGo
+                ? ClientIdentity(userAgent: .custom("poki-ios/0.2.8"),
+                                 attribution: .value(ClientAttribution(name: "Poki", url: "https://github.com/JosssphZhou/poki")))
+                : nil,
             getApiKey: { _ in await ModelCredential.apiKey(for: provider) },
+            // Go's Anthropic and Gemini adapters also require Console Bearer auth.
+            // Resolve the key for EACH request so credential changes never leave stale headers.
+            getModelAuth: { model in
+                guard provider == .opencodeGo else { return nil }
+                guard let key = await ModelCredential.apiKey(for: provider) else {
+                    return AgentModelAuth(error: "OpenCode Go API key is missing.")
+                }
+                return Self.openCodeGoAuth(model: model, apiKey: key)
+            },
             toolExecution: .sequential
         ))
+    }
+
+    /// Authentication is resolved on every turn via AgentModelAuth. PiSwift's Anthropic
+    /// adapter uses x-api-key unless a Bearer header is supplied; Console needs Bearer.
+    /// The Google adapter still appends its SDK query parameter, but also needs Bearer.
+    nonisolated static func openCodeGoAuth(model: Model, apiKey: String) -> AgentModelAuth {
+        let headers: ProviderHeaders?
+        switch model.api {
+        case .anthropicMessages, .googleGenerativeAI:
+            headers = ["Authorization": "Bearer \(apiKey)"]
+        default:
+            headers = nil // OpenAI adapters already send Authorization: Bearer.
+        }
+        return AgentModelAuth(apiKey: apiKey, headers: headers)
     }
 
     /// The owner's message under this task's instructions, then pi's loop until the model answers

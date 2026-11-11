@@ -1,4 +1,5 @@
 import Foundation
+import PiSwiftAI
 
 /// The models each account offers the text chat: a few fast defaults per type (no-thinking models such
 /// as GPT-6.1 Terra and Claude Haiku first), plus whatever the provider's own model list returns for
@@ -13,13 +14,15 @@ enum ModelCatalog {
         case .deepseek: ["deepseek-flash"]
         case .gemini: ["gemini-3.8-flash"]
         case .openrouter: ["anthropic/claude-sonnet-5.5", "google/gemini-3.8-flash"]
+        case .opencodeGo: ["deepseek-v4.1-flash"]
         case .custom: Set(provider.models.map(\.id))
         }
     }
 
     /// The account's models: the built-in ones, fast first, then the listed ones.
     static func all(_ provider: ModelProvider) -> [ChatModelChoice] {
-        let builtIn = provider.models.sorted { fast($0.id) && !fast($1.id) }
+        let builtIn = provider.models.filter { provider != .opencodeGo || provider.piModel($0.id) != nil }
+            .sorted { fast($0.id) && !fast($1.id) }
         let known = Set(builtIn.map(\.id))
         return builtIn + listed(provider).filter { !known.contains($0.id) }
     }
@@ -84,6 +87,7 @@ enum ModelCatalog {
         case .openai: return lower.hasPrefix("gpt-") || lower.hasPrefix("o")
         case .anthropic: return lower.hasPrefix("claude")
         case .gemini: return lower.hasPrefix("gemini")
+        case .opencodeGo: return provider.piModel(id) != nil
         default: return true
         }
     }
@@ -112,6 +116,11 @@ enum ModelCatalog {
         case .openrouter:
             request = URLRequest(url: URL(string: "https://openrouter.ai/api/v1/models")!)
             if let key { request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization") }
+        case .opencodeGo:
+            guard let key else { return nil }
+            request = URLRequest(url: URL(string: "https://opencode.ai/inference/go/v1/models")!)
+            request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+            request.setValue("poki-ios/0.2.8", forHTTPHeaderField: "User-Agent")
         case .custom:
             let base = ModelKeys.customURL.trimmingCharacters(in: .whitespaces)
             guard let url = URL(string: base)?.appending(path: "models") else { return nil }

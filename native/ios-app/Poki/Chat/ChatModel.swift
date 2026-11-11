@@ -265,7 +265,7 @@ final class ChatModel {
         // Another model starts a new loop that carries the conversation over.
         if loop?.provider != provider || loop?.model.id != piModel.id {
             loop = PiLoop(provider: provider, model: piModel, tools: Harness.tools,
-                          carrying: loop?.messages ?? []) { [weak self] call in
+                          carrying: loop?.messages ?? [], sessionID: sessionID) { [weak self] call in
                 guard let self else { return PokiCore.ToolAnswer(text: "Task stopped. Action not executed.", jpeg: nil, isError: true) }
                 return await self.perform(call)
             }
