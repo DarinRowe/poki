@@ -17,8 +17,17 @@ enum AutomationPath: String, CaseIterable, Identifiable {
 
     /// The owner's choice in Testing Options (`automationPath`) when it names a path, otherwise the default.
     static func chosen(_ saved: String?, iOS: OperatingSystemVersion) -> AutomationPath {
-        saved.flatMap(AutomationPath.init(rawValue:)) ?? .nativeServices
+        saved.flatMap(AutomationPath.init(rawValue:)) ?? defaultPath(iOS: iOS)
     }
+
+    /// The paired services stream the screen and take touches only from iOS 27: on iOS 18.6.2 (#1) and
+    /// 26.6 (#18) native services could not tap, so earlier versions keep the XCTest session. The
+    /// iOS 27 line is the one DIYgod/pinky draws in internal/driver/ios/version.go (Apache-2.0).
+    static func defaultPath(iOS: OperatingSystemVersion) -> AutomationPath {
+        iOS.majorVersion >= 27 ? .nativeServices : .inProcess
+    }
+
+    static let thisPhoneDefault = defaultPath(iOS: ProcessInfo.processInfo.operatingSystemVersion)
 }
 
 /// Poki's own automation session as AppModel drives it: `PKInProcess`, or a fake in tests.
