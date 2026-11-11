@@ -92,7 +92,9 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
 
     init(screen: CGSize) { self.screen = screen }
 
-    var verifiesNativeTyping: Bool { true }
+    /// PokiCore asks Poki's keyboard first (`keyboard: true` on /wda/keys) and types the old way when
+    /// the keyboard declines.
+    var typesThroughKeyboard: Bool { true }
 
     /// Drops all paired tunnels without destroying the transport. The next call reconnects them,
     /// which gives PokiCore's existing restart policy the same clean boundary as the runner path.
@@ -131,17 +133,20 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
             if took > 5 { NSLog("%@", "PokiNativeServices timing: \(key) \(took) ms") }
         }
         do {
-            let value = try await answer(key, body: input, element: element, sourceIsXML: sourceIsXML)
+            let value = try await answer(key, body: input, element: element, sourceIsXML: sourceIsXML, timeout: timeout)
             return (200, (["value": value] as JSON).data())
         } catch {
+            // Only the owner's own tap on the keyboard panel's Take Over is a takeover. A field that
+            // moved or a keyboard that closed is an ordinary failure the agent reads and decides on.
             let e = error as NSError
-            let focusChanged = error.localizedDescription.localizedCaseInsensitiveContains("typing focus changed")
-            let code = (e.domain == "PokiKeyboard" && e.code == 2) || focusChanged ? "poki user takeover" : "unknown error"
+            // "poki typing stopped": the keyboard had the text and stopped part way, so it may be half
+            // in the field and is not typed again.
+            let code = e.domain != "PokiKeyboard" ? "unknown error" : e.code == 2 ? "poki user takeover" : "poki typing stopped"
             return (500, (["value": ["error": .string(code), "message": .string(error.localizedDescription)]] as JSON).data())
         }
     }
 
-    private func answer(_ key: String, body: JSON?, element: String?, sourceIsXML: Bool) async throws -> JSON {
+    private func answer(_ key: String, body: JSON?, element: String?, sourceIsXML: Bool, timeout: Double) async throws -> JSON {
         switch key {
         case "GET /status": return ["ready": true, "message": "experimental native services"]
         case "POST /session": return ["sessionId": "native-services"]
@@ -192,13 +197,19 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
         case "POST /wda/keys":
             let text = (body?["value"]?.array ?? []).compactMap(\.string).joined()
             guard !text.isEmpty else { throw Self.failure("no keys given") }
-            let preferred = PokiKeyboardTyping(screen: screen) { [input] request in try await input.call(request) }
-            if let value = try await preferred.type(text, clear: body?["clear"]?.bool ?? false) {
-                return ["textVerified": true, "value": .string(value)]
+            if body?["keyboard"]?.bool == true {
+                return try await typeThroughKeyboard(text, body: body, timeout: timeout)
             }
-            let engine = NativeIME(screen: screen) { [input] request in try await input.call(request) }
-            let value = try await engine.type(text, clear: body?["clear"]?.bool ?? false, frequency: body?["frequency"]?.int)
-            return ["textVerified": true, "value": .string(value)]
+            // Hardware key presses, and a paste for what the keys cannot type: the path before the
+            // keyboard, and still the one for password fields and apps that take no third-party keyboard.
+            for request in Self.typingRequests(text, frequency: body?["frequency"]?.int) {
+                let answer = try await input.call(request)
+                try Self.checkTypingResult(answer)
+            }
+            return .null
+        case "POST /poki/keyboard/release":
+            PokiKeyboardTyping.release()
+            return .null
         case "POST /wda/homescreen": _ = try await input.call(["op": "button", "button": "home"]); return .null
         case "POST /wda/lock": _ = try await input.call(["op": "button", "button": "lock"]); return .null
         case "POST /wda/pressButton": _ = try await input.call(["op": "button", "button": body?["name"]?.string ?? ""]); return .null
@@ -207,11 +218,43 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
         case "POST /wda/apps/terminate":
             guard let bundle = body?["bundleId"]?.string, !bundle.isEmpty else { throw Self.failure("bundleId is needed") }
             _ = try await native.call(["op": "terminate_app", "bundle_id": bundle]); return .null
-        case "POST /wda/getPasteboard", "POST /wda/setPasteboard":
-            throw Self.failure("Pasteboard access is disabled for native agent typing; use type without via:paste")
+        case "POST /wda/getPasteboard":
+            let result = try await native.call(["op": "pasteboard_get"])
+            let text = result["text"] as? String ?? ""
+            return .string(Data(text.utf8).base64EncodedString())
+        case "POST /wda/setPasteboard":
+            guard let encoded = body?["content"]?.string, let data = Data(base64Encoded: encoded) else { throw Self.failure("content must be base64 text") }
+            _ = try await native.call(["op": "pasteboard_set", "text": String(decoding: data, as: UTF8.self)])
+            return .null
         default: throw Self.failure("\(key) is not implemented in the experimental native-services path")
         }
     }
+
+    /// One whole text through Poki's keyboard. `declined` when the keyboard never had the text, so
+    /// PokiCore types it the old way; anything else is the keyboard's own account of what it typed.
+    private func typeThroughKeyboard(_ text: String, body: JSON?, timeout: Double) async throws -> JSON {
+        let keyboard = PokiKeyboardTyping { [input] request in try await input.call(request) }
+        var options = PokiKeyboardTyping.Options()
+        options.clear = body?["clear"]?.bool ?? false
+        options.hidden = body?["hidden"]?.bool ?? false
+        options.maySwitch = body?["focused"]?.bool ?? false
+        options.app = body?["app"]?.string
+        options.budget = timeout
+        switch try await keyboard.type(text, options) {
+        case .typed(let status):
+            return ["keyboard": "typed", "check": .string((status.check ?? .unknown).rawValue), "moved": .bool(status.moved), "tail": status.tail.map(JSON.string) ?? .null]
+        case .declined(let why):
+            // Off unless the owner turns it on: Chinese through the system's Pinyin keyboard, which
+            // reads the screen for every word it picks.
+            if UserDefaults.standard.bool(forKey: Self.systemPinyinKey), !options.hidden, text.contains(where: NativeIME.isHan), (try? NativeIME.plan(text)) != nil {
+                let engine = NativeIME(screen: screen) { [input] request in try await input.call(request) }
+                let value = try await engine.type(text, clear: options.clear, frequency: body?["frequency"]?.int)
+                return ["keyboard": "typed", "check": "matched", "moved": false, "tail": .string(String(value.suffix(200))), "via": "system Pinyin"]
+            }
+            return ["keyboard": "declined", "why": .string(why)]
+        }
+    }
+    static let systemPinyinKey = "poki.typing.systemPinyin"
 
     private func callPoint(_ op: String, body: JSON?) async throws {
         let point = try point(body, x: "x", y: "y")
@@ -313,6 +356,43 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
     private func coordinate(_ value: Double, across: CGFloat) -> Int {
         guard across > 1 else { return 0 }
         return max(0, min(65_535, Int((value / Double(across - 1) * 65_535).rounded())))
+    }
+    static func checkTypingResult(_ answer: [String: Any]) throws {
+        if answer["isError"] as? Bool == true {
+            throw Self.failure(answer["instruction"] as? String ?? answer["reason"] as? String ?? "Typing was not confirmed; read the field before retrying")
+        }
+    }
+
+    /// Keep edit keys as keystrokes, including those embedded in Unicode text.
+    /// Never turn a count of backspaces into Select All/Delete or paste Tab/Return literally.
+    static func typingRequests(_ text: String, frequency: Int?) -> [[String: Any]] {
+        func keys(_ value: String) -> [String: Any] {
+            var request: [String: Any] = ["op": "type_keys", "text": value]
+            if let frequency { request["frequency"] = frequency }
+            return request
+        }
+        if hidCanType(text) { return [keys(text)] }
+        var requests: [[String: Any]] = []
+        var run = ""
+        var controls = false
+        func flush() {
+            guard !run.isEmpty else { return }
+            requests.append(hidCanType(run) ? keys(run) : ["op": "type_text", "text": run, "clear": false, "submit": false])
+            run = ""
+        }
+        for scalar in text.unicodeScalars {
+            let isControl = scalar.value == 8 || scalar.value == 9 || scalar.value == 10
+            if isControl != controls { flush(); controls = isControl }
+            run.unicodeScalars.append(scalar)
+        }
+        flush()
+        return requests
+    }
+
+    private static func hidCanType(_ text: String) -> Bool {
+        text.unicodeScalars.allSatisfy { scalar in
+            scalar.value == 8 || scalar.value == 9 || scalar.value == 10 || (32...126).contains(scalar.value)
+        }
     }
     private static func looksLocked(_ tree: [String: Any]) -> Bool {
         let app = tree["foreground_app"] as? [String: Any]

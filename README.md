@@ -24,13 +24,12 @@
 </p>
 <!-- badges:end -->
 
-## Experimental Poki typing panel
+## Poki keyboard
 
-The pre-alpha implementation bundles an automation-only **Poki is typing** keyboard,
-preferred over native keyboard simulation when available. It includes local humanized
-Chinese Pinyin/English typing, user-takeover pauses, and early observation-based learning.
-It is **not yet device-validated**. See [setup, language/IME support, the pending test
-matrix, and the hidden user-routine experiment](docs/poki-keyboard.md).
+On the native path Poki types through its own keyboard panel at a person's pace, without
+reading the screen while it types. The panel has no keys and is not a keyboard for people:
+it shows while Poki types and has a Take Over button. Without it, Poki types with key
+presses as before. See [docs/poki-keyboard.md](docs/poki-keyboard.md).
 
 ## Quick start
 

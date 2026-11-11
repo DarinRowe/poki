@@ -1462,6 +1462,16 @@
         }
       }
     },
+    "Full Access lets the panel talk to Poki on this iPhone. It has no network access and never uses the clipboard. Without the panel, Poki types with key presses as before." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完全访问让面板能与本机上的 Poki 通信。它不联网，也不使用剪贴板。没有面板时，Poki 仍像以前一样用按键输入。"
+          }
+        }
+      }
+    },
     "Get LocalDevVPN on the App Store" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1763,6 +1773,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "密钥已添加"
+          }
+        }
+      }
+    },
+    "Keyboard" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "键盘"
           }
         }
       }
@@ -2110,6 +2130,16 @@
         }
       }
     },
+    "Needs Full Access" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需要完全访问"
+          }
+        }
+      }
+    },
     "Needs Wi-Fi" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2280,6 +2310,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "未设置"
+          }
+        }
+      }
+    },
+    "Not added" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未添加"
           }
         }
       }
@@ -3010,6 +3050,16 @@
         }
       }
     },
+    "Poki keyboard" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 键盘"
+          }
+        }
+      }
+    },
     "Poki log" : {
       "localizations" : {
         "zh-Hans" : {
@@ -3087,6 +3137,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ 之后 Poki 将无法打开。请把这台 iPhone 连上 Mac，让 agent 为它续签。"
+          }
+        }
+      }
+    },
+    "Poki types through its own keyboard panel, at a person’s pace. The panel has no keys: it shows while Poki types, and Take Over stops it. To set it up, add Poki under Settings → General → Keyboard → Keyboards, then allow Full Access. Keep your usual keyboards." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 通过自己的键盘面板以常人的速度输入。面板没有按键：Poki 输入时显示，轻点“接管”即可停止。设置方法：在“设置 → 通用 → 键盘 → 键盘”中添加 Poki，然后允许完全访问。请保留你常用的键盘。"
           }
         }
       }
@@ -3832,6 +3892,26 @@
         }
       }
     },
+    "Switch back when finished" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完成后切换回原键盘"
+          }
+        }
+      }
+    },
+    "Switch to it automatically" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动切换到 Poki 键盘"
+          }
+        }
+      }
+    },
     "THIS IPHONE" : {
       "localizations" : {
         "zh-Hans" : {
@@ -4229,6 +4309,16 @@
         }
       }
     },
+    "The system Pinyin keyboard is slower and reads the screen while it types." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系统拼音键盘较慢，并且输入时会读取屏幕。"
+          }
+        }
+      }
+    },
     "This Anthropic key can’t use %@." : {
       "localizations" : {
         "zh-Hans" : {
@@ -4493,6 +4583,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在代理 App 中启用 Poki 模块，或连接 LocalDevVPN。"
+          }
+        }
+      }
+    },
+    "Type Chinese with the system Pinyin keyboard" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用系统拼音键盘输入中文"
           }
         }
       }

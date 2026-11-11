@@ -1,111 +1,91 @@
-# Poki typing panel (pre-alpha)
+# Poki keyboard (typing panel)
 
-Poki bundles an automation-only keyboard extension. It occupies a keyboard-sized
-panel saying **Poki is typing**. There are no manual typing keys or candidate buttons. A system globe control remains
-available where iOS requires it, so the user can switch keyboards and take over.
-The extension is preferred for eligible native agent typing; the existing native
-Pinyin/HID engine remains the fallback, and XCTest remains selectable.
+Poki bundles a keyboard extension that only Poki types through. It is **not a keyboard
+for people**: it has no keys. While Poki types it shows "Poki is typing…", a progress
+bar and a **Take Over** button; otherwise it shows a short note and **Switch Keyboard**.
+The panel is plain SwiftUI on the system keyboard background (glass buttons on iOS 26
+and later, bordered buttons on iOS 18), with the system globe key where iOS asks for one.
 
-## Enable it
+It is used on the native-services path (no XCTest runner, no automation indicator).
+When the panel cannot be used, Poki types with key presses and a paste for what the
+keys cannot type, exactly as before the panel existed.
 
-After installing a build containing this change, enable **Poki** under iOS Settings
-→ General → Keyboard → Keyboards → Add New Keyboard, then enable **Allow Full Access**.
-Keep your usual English/Pinyin keyboards enabled. Full Access allows the extension
-and Poki to exchange commands in their local App Group. The extension contains no
-network client and never reads or writes the pasteboard.
+## Set it up
 
-Poki offers a short-lived transaction before selecting the named Poki row in an
-observable system keyboard picker. It does not change keyboard settings, reorder
-sources, or cycle blindly. Unknown picker labels/layouts use the native fallback.
-Only a live extension acknowledgment and unchanged focused field authorize typing.
-Current extension eligibility is append/end-of-field editing with readable surrounding
-context. Clear and selection/mid-field edits use the existing native implementation.
+1. Settings → General → Keyboard → Keyboards → Add New Keyboard → **Poki**.
+2. Tap Poki in that list and turn on **Allow Full Access**.
+3. Keep your usual keyboards.
 
-If accidentally selected while idle, the extension immediately calls
-`advanceToNextInputMode()`. It also advances when typing finishes or fails. That API
-asks iOS for the next source; it does not guarantee restoration of the previous
-source or preservation of iOS's recency ordering. Those behaviors need device checks.
-The panel uses an adaptive-width panel with a 260-point phone / 350-point iPad preferred height; floating/split keyboard
-behavior and orientation changes are unverified.
+Full Access is what lets the extension reach the App Group folder it shares with Poki.
+The extension has no network code and never touches the clipboard. Poki → Settings →
+Poki keyboard shows whether it is added and has answered, and holds the switches below.
 
-## IME behavior and humanization
+## How a `type` goes
 
-The receiving app is edited using `UITextDocumentProxy`, without clipboard insertion.
-Chinese groups use native marked text: incremental Pinyin, optional corrected typo,
-then replacement with the intended Chinese characters and `unmarkText()`. Groups
-follow lexical boundaries and never exceed six Chinese characters. The requested
-characters are known, so missing system dictionary candidates cannot substitute a
-wrong word. English uses direct character insertion and occasional corrected marked
-text. Punctuation, newline, and exact Backspace counts retain their order.
+1. Poki writes the request (text, clear, hidden) to the shared folder and posts a
+   Darwin notification.
+2. If the panel is the keyboard in use, it takes the request by renaming the file (so
+   only one side can ever own it), writes an acknowledgement, and types.
+3. If nothing acknowledges and a text field has the focus, Poki presses the hardware
+   input-source shortcut (Ctrl+Space) on its simulated keyboard, once per installed
+   keyboard at most, and stops at the first acknowledgement. **Nothing on the screen is
+   read to do this**: the acknowledgement is the only signal. A switch that fails is
+   remembered for that app for ten minutes so the next type does not try again.
+4. If there is still no acknowledgement, Poki withdraws the request (the same rename)
+   and types the old way. A request the panel has taken is never typed again by
+   anything else.
+5. The panel types at a person's pace: Latin text a key at a time with longer gaps at
+   word starts, Chinese a word at a time, long text faster. It checks its own work from
+   the text around the cursor and reports `matched`, `mismatch` or `unknown`. Poki does
+   **not** read the screen before or after: no focus wait, no read-back.
+6. When the action list ends, Poki asks the panel to leave, and it hands the field back
+   to the previous keyboard (**Switch back when finished**). Opened by hand, it leaves
+   on its own after a few seconds.
 
-Cadence variation, word-boundary pauses, and rare corrected composition errors run
-inside the extension. No screenshot round trip is required per keystroke. The app
-still checks the entire resulting field before reporting `textVerified`.
+Passwords: a secure field never shows a third-party keyboard, so those are typed with
+key presses as before. When a secure field is anywhere on screen the panel's report
+carries no text.
 
-This uses public IME APIs; it does not impersonate Apple's keyboard or guarantee
-identical composition events in every host app. Chinese transliteration still has
-polyphonic-word limitations, even though the committed target text is exact.
+## Stopping it
 
-## Takeover and early learning
+- **Take Over** stops the typing, and Poki pauses for the owner (the same owner-only
+  pause as before: the agent cannot dismiss it). The answer is `poki user takeover`.
+- Switching keyboards or leaving the field mid-text stops the typing. The answer is
+  `poki typing stopped`, delivery unknown: the text is never typed a second time, and
+  the agent reads the screen to see what is there.
+- A Return that submits the field ends the typing normally. It is not a takeover.
 
-Changing keyboards or leaving the field during an active session stops the worker.
-Poki does not switch back, invoke fallback, replay unfinished text, or send the next
-action. A user-only handoff waits for **Done**; the agent cannot dismiss or replace
-it. After Done, queued actions are refused once while a fresh screen is returned,
-so the agent must replan from the user's current state.
+## Settings
 
-Learning samples the ordinary screen reads while paused, then compares the final
-state. It records a bounded summary of observed apps and changed identifiable fields
-in Poki's local memory. It does not log touches or save screenshots or raw field
-values in that summary. The agent is instructed to distinguish corrections,
-manual progress, and unrelated activity, and not invent intent or unseen gestures.
-This is observation-based learning, not continuous detection of every manual touch.
-Secure fields and fields without stable identifiers are excluded from text learning.
-
-**Hidden experiment:** hold the **Poki keyboard** heading in Poki Settings for three
-seconds to reveal **Create routines from user demonstrations** (off by default).
-When enabled, an unambiguous final field replacement can be included in a saved
-routine as a parameterized user-demonstrated checkpoint. Ambiguous navigation becomes
-an explicit manual checkpoint. Replay stops for the owner at either kind; the early
-version does not replay inferred user actions unattended. Turning the option off
-prevents saving traces with manual gaps as though they were fully automated successes.
-
-## Validation status and tomorrow's checks
-
-**The extension, takeover integration, and learning changes have not been built or
-executed. Local computer and physical-device testing were paused at the owner's
-request.** Prior native-engine experiments are documented separately in
-[native-ime-testing.md](native-ime-testing.md); they do not validate this extension.
-No throughput claim is made for the extension yet.
-
-| Language / input | Implemented path | Device checks still required |
+| Switch | Default | Meaning |
 | --- | --- | --- |
-| English | Paced insertion, corrected marked typo, ASCII punctuation | Notes, Safari input/contenteditable, selection, Return/Send behavior |
-| Simplified Chinese Pinyin | Marked Pinyin → exact requested Han groups | Long fresh text, uncommon names, polyphonic words, repeated 4–6-character choices |
-| Mixed Chinese/English | Per-piece language hint and ordered composition | Multiple switches, punctuation, backspaces, no duplicate commits |
-| Traditional Chinese | Han conversion planner exists; not a distinct Traditional IME | Script-specific output and phonetic behavior; not certified supported |
-| Japanese | No Japanese IME implementation | Romaji → kana → kanji, marked ranges, cancellation; currently unsupported |
-| Korean | No Korean IME implementation | Jamo assembly and syllable deletion; currently unsupported |
-| French / Spanish / German | ASCII subset only | Accents, dead keys, composed/decomposed Unicode; currently rejected outside ASCII |
-| Arabic / Hebrew | Not implemented | RTL caret, punctuation, bidirectional context |
-| Emoji / combining sequences | Not implemented | Grapheme-safe insertion and deletion; currently rejected before input |
+| Switch to it automatically | on | Step 3 above. Off: the panel is used only when it is already the keyboard in use. |
+| Switch back when finished | on | Step 6 above. |
+| Type Chinese with the system Pinyin keyboard | off | The earlier engine ([native-ime-testing.md](native-ime-testing.md)). Slower, and it reads the screen while typing. Used only when the panel declines. |
 
-For iPhone and iPad separately: enable/disable Full Access, blocked third-party
-keyboards, accidental idle selection, source ordering before/after use, floating
-keyboard, orientation, background suspension, cancellation, stale leases, and extension
-termination. Switch to the normal keyboard halfway through Pinyin and English,
-correct a word, navigate to another screen, then tap Done. Confirm no further agent
-action occurs before Done, no partial input is replayed, and the next response reads
-the user's actual state. Repeat with the hidden learning switch on and off.
+Hold the **Poki keyboard** heading for three seconds to show the experimental
+**Create routines from user demonstrations** switch (off by default).
 
-Measure fresh long passages and repeat passages separately, including activation,
-completion/read-back, and at least 180 correctly committed characters per minute.
-Do not count a dispatched request or extension receipt as successful text entry.
+## How it is built
 
-## Packaging
+- `native/ios-app/KeyboardShared` is the shared code: the mailbox (`KeyboardLink`) and
+  the typing itself (`KeyboardTyper`, `KeyboardTypist`). It is a Swift package so its
+  tests run on Linux (`swift test` in that folder); the app and the extension compile
+  the same sources.
+- The mailbox uses atomic file renames only. There are **no file locks**: a lock held
+  on a shared-container file when the extension is suspended gets it killed by iOS
+  (`0xdead10cc`). Only the extension writes `status.json`.
+- `PokiKeyboard/` is the extension: `KeyboardViewController` (the mailbox, the text
+  proxy) and `KeyboardPanel` (the SwiftUI view).
+- `Poki/Runtime/PokiKeyboardTyping.swift` is the app side; `NativeServicesWDA` answers
+  `POST /wda/keys` with `keyboard: true` through it, and PokiCore asks for it when the
+  transport says `typesThroughKeyboard`.
 
-Both external-connection and local-connection editions embed `PokiKeyboard.appex`.
-Signing exports include the keyboard's App Group entitlement. Poki Setup's existing
-extension enumeration and bundle/group rewriting cover the new `.keyboard` bundle.
-Provisioning and install compatibility remain unverified until the next device run.
-A PR alone does not publish a pre-alpha: the normal main-merge workflow builds it.
+## Not yet checked on a device
+
+- That Ctrl+Space from the simulated hardware keyboard reaches a third-party keyboard in
+  the rotation on every iOS version. When it does not, the result is the fallback, not a
+  failure.
+- That iOS reports the added keyboards to the app (`AppleKeyboards`). When it does not,
+  Poki asks the panel only after it has answered once.
+- Floating and split keyboards on iPad, and landscape heights.

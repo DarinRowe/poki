@@ -207,6 +207,10 @@ jobs:
         timeout-minutes: 12
         run: swift test --package-path native/ios/PokiCore
 
+      - name: Poki keyboard tests
+        timeout-minutes: 5
+        run: swift test --package-path native/ios-app/KeyboardShared
+
       - name: Developer disk image mirror answers
         run: |
           # The files PokiCore's DeveloperDiskImage.ensure downloads on the phone.

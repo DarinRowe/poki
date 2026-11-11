@@ -9,3 +9,6 @@ PokiWidgets/Info.plist
 PokiWidgets/PokiWidgets.entitlements
 PokiTunnel/Info.plist
 PokiTunnel/PokiTunnel.entitlements
+PokiKeyboard/Info.plist
+PokiKeyboard/PokiKeyboard.entitlements
+KeyboardShared/.build/
