@@ -97,6 +97,10 @@ final class SoakTests: XCTestCase {
         var config = CoreConfig(approvalWait: 0.3, toolDeadline: 4, actionCap: 2, readTimeout: 1, busyWait: 0.2, runnerWait: 1, treeFormat: "json", humanize: false) // the fake speaks JSON
         config.sensitive.enabled = false
         let core = PokiCore(config: config, host: host, transport: chaos)
+        // Keep the normal-answer budget separate from the emergency backstop in Core.call. The
+        // backstop is deliberately looser; the explicit assertion below still verifies it never
+        // answers. This tighter limit catches calls that drift well past their normal budget even
+        // when they happen to finish before the backstop.
         let limit = config.toolDeadline + config.approvalWait + 1.5
 
         let menu: [(String, JSON)] = [
@@ -165,5 +169,67 @@ final class SoakTests: XCTestCase {
         print("soak: runner behaviour \(chaos.tally.sorted { $0.key < $1.key })")
         print("soak: first lines \(outcomes.sorted { $0.value > $1.value }.prefix(8))")
         XCTAssertGreaterThan(chaos.tally["hang", default: 0], 0, "the run had no hangs to survive")
+    }
+
+    /// A runner that is consistently slow can make several sequential parts of a read add up beyond
+    /// the normal call budget. The soak above uses bursty chaos (a hang, refusal, then normal answer)
+    /// and did not reliably exercise that shape. The old code let a read budgeted `readTimeout` (1 s)
+    /// take 2.3-3.4 s; a 4 s `do` could then exceed the 5.8 s normal budget, and at higher latency
+    /// hit the emergency backstop with "what was sent is unknown".
+    ///
+    /// The curve is not monotonic: a request slower than its own timeout is cut off and may end the
+    /// step early. The failing band is just below step timeouts, where sequential work is slow but
+    /// requests still complete. Assert against the normal budget, not the looser emergency backstop,
+    /// so this test also catches overruns that finish without invoking the backstop.
+    func testASlowRunnerStaysWithinTheNormalCallBudget() async throws {
+        for perRequest in [0.4, 0.6, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.5, 2.0] {
+            var config = CoreConfig(approvalWait: 0.3, toolDeadline: 4, actionCap: 2, readTimeout: 1, busyWait: 0.2, runnerWait: 1, treeFormat: "json", humanize: false)
+            config.sensitive.enabled = false
+            let core = PokiCore(config: config, host: FakeHost(), transport: SlowTransport(perRequest: perRequest))
+            for (name, args) in [("look", JSON.object([:])),
+                                 ("do", ["actions": [["tap": 1]]]),
+                                 ("do", ["actions": [["launch": "com.apple.Preferences"]]]),
+                                 ("do", ["actions": [["type": "hello", "ref": 3]]])] {
+                let normalLimit = config.toolDeadline + (name == "do" ? config.approvalWait : 0) + 1.5
+                let started = Date()
+                let result = await core.call(name, args)
+                let took = Date().timeIntervalSince(started)
+                XCTAssertLessThan(took, normalLimit, "call \(name) took \(String(format: "%.2f", took)) s against the \(normalLimit) s normal budget with every request answered in \(perRequest) s: \(result.text.prefix(200))")
+                // The point: the agent gets facts about the screen, not the backstop's "what was sent
+                // is unknown" — which is what a slow runner used to produce here.
+                XCTAssertFalse(result.text.contains("did not finish within") && result.text.hasPrefix("error:"), "the backstop answered a \(perRequest) s runner: \(result.text.prefix(200))")
+                XCTAssertFalse(result.text.isEmpty, "\(name) at \(perRequest) s answered nothing")
+            }
+        }
+    }
+}
+
+/// A runner that answers every request after the same delay, and does not answer at all the ones that
+/// would take longer than the timeout they were given (the transport's own `.timedOut`). The failing
+/// reads matter: a read that succeeds never runs its recovery paths, and those paths are where the
+/// deadline used to be lost.
+final class SlowTransport: HTTPTransport, @unchecked Sendable {
+    let perRequest: Double
+    init(perRequest: Double) { self.perRequest = perRequest }
+    func send(method: String, url: URL, body: Data?, timeout: Double) async throws -> (status: Int, body: Data) {
+        try? await Task.sleep(nanoseconds: UInt64(max(0, min(perRequest, timeout)) * 1e9))
+        if perRequest > timeout { throw TransportError.timedOut }
+        let path = url.path
+        let value: JSON
+        switch (method, path) {
+        case ("POST", let p) where p.hasSuffix("/session"): value = ["sessionId": .string("s1")]
+        case ("GET", let p) where p.hasSuffix("/source"):
+            value = ["value": ["type": .string("XCUIElementTypeApplication"), "label": .string("Settings"),
+                               "rect": ["x": .number(0), "y": .number(0), "width": .number(390), "height": .number(844)],
+                               "children": .array([])]]
+        case ("GET", let p) where p.hasSuffix("/screenshot"): value = ["value": .string(Data("png".utf8).base64EncodedString())]
+        case ("GET", let p) where p.hasSuffix("/wda/activeAppInfo"):
+            value = ["value": ["bundleId": .string("com.apple.Preferences"), "name": .string("Settings")]]
+        case ("GET", let p) where p.hasSuffix("/wda/locked"): value = ["value": .bool(false)]
+        case ("GET", let p) where p.hasSuffix("/wda/screen"): value = ["screenSize": ["width": .number(390), "height": .number(844)]]
+        case ("GET", let p) where p.hasSuffix("/status"): value = ["value": ["ready": .bool(true)]]
+        default: value = ["value": .null]
+        }
+        return (200, value.data())
     }
 }

@@ -99,7 +99,9 @@ final class Computer: @unchecked Sendable {
 
     func screenSize(until: Double) async throws -> ScreenSize {
         if let size { return size }
-        let s = try await runner.screenSize(timeout: max(0.5, min(3, until - now())))
+        let s = try await withDeadline(max(0, until - now()), "reading the screen size") { [runner] in
+            try await runner.screenSize(timeout: max(0.5, min(3, until - now())))
+        }
         size = s
         return s
     }
@@ -115,8 +117,28 @@ final class Computer: @unchecked Sendable {
     /// only what changed since the read before (a `do`); `full` lists every element, as the tree has it.
     func readAndReply(until: Double, full: Bool, changes: Bool = false, did: [String] = [], error: String? = nil, extra: [String] = []) async -> ToolResult {
         let budget = max(0.8, min(config.readTimeout, until - now() - 0.2))
-        let reading = await runner.read(timeout: budget, extra: max(0, min(4, until - now() - budget - 3)), format: config.treeFormat, callEnds: until)
-        if size == nil { _ = try? await screenSize(until: now() + 1.5) }
+        // The read is one step of the call and holds to the call's deadline like every other: its
+        // parts are started beside each other, but a queued one waits for the runner, a tree that was
+        // refused is asked again, and the host's own path is started when the runner gives no picture.
+        // Each of those is a new round trip, so the phase as a whole is what is bounded here (the
+        // soak: a read budgeted 1.0 s took 3.4 s and pushed a 4 s call to 6.6 s, past its backstop).
+        let reading: Reading
+        do {
+            reading = try await withDeadline(max(0.2, until - now()), "reading the screen") { [runner, config] in
+                await runner.read(timeout: budget, extra: max(0, min(4, until - now() - budget - 3)), format: config.treeFormat, callEnds: until)
+            }
+        } catch {
+            // The call's own time is up: answer with the read before (the branch below keeps its
+            // numbers and picture) and say why, rather than making the agent guess at a bare failure.
+            var fell: Reading = Reading()
+            fell.notes = ["the read did not finish in the call's time (\(error))"]
+            reading = fell
+        }
+        // The screen size is the read's own extra question, so it gets what the call has left rather
+        // than a fresh 1.5 s of its own: a second round trip started past the call's end is what made
+        // a call answer after its deadline had gone (the soak: 6.6 s against a 4 s deadline). Without
+        // the size the default stands, and a read that is over answers with what it already has.
+        if size == nil, until - now() > 0.4 { _ = try? await screenSize(until: min(now() + 1.5, until)) }
         let screen = size ?? ScreenSize(width: 10_000, height: 10_000)
         var notes = reading.notes
         if let modal = modalOnly(reading.elements) { notes.append(modal) }
@@ -649,10 +671,13 @@ final class Computer: @unchecked Sendable {
         did += moreDid
         error = moreError
         lastKind = moreKind ?? lastKind
+        var settled = 0.0
         if let lastKind {
             let pause = min(Self.settle[lastKind] ?? 0.4, max(0, until - now() - config.readTimeout - 0.3))
             if pause > 0.01 {
+                let before = now()
                 await sleep(seconds: pause)
+                settled = now() - before
                 did.append("paused \(Int((pause * 1000).rounded())) ms before reading")
             }
         }
@@ -716,10 +741,10 @@ final class Computer: @unchecked Sendable {
         // whose parts said 5 s answered after 29.8 s).
         let total = now() - callStarted
         let readTook = now() - readStarted
-        let parts = (prepared - callStarted) + actionsTook + readTook + approvalWaited
+        let parts = (prepared - callStarted) + actionsTook + settled + readTook + approvalWaited
         lastCallTook = total
         if total >= 8 || total - parts > 2 {
-            result.text += "\ntook: \(Self.seconds(total)) s in all: \(Self.seconds(prepared - callStarted)) s before the actions (runner start, busy wait, lock check), \(Self.seconds(actionsTook)) s actions, \(Self.seconds(readTook)) s read\(approvalWaited > 0 ? ", \(Self.seconds(approvalWaited)) s the owner's approval" : "")\(total - parts > 2 ? ", \(Self.seconds(total - parts)) s elsewhere" : "")"
+            result.text += "\ntook: \(Self.seconds(total)) s in all: \(Self.seconds(prepared - callStarted)) s before the actions (runner start, busy wait, lock check), \(Self.seconds(actionsTook)) s actions, \(Self.seconds(settled)) s waiting for the screen to settle, \(Self.seconds(readTook)) s read\(approvalWaited > 0 ? ", \(Self.seconds(approvalWaited)) s the owner's approval" : "")\(total - parts > 2 ? ", \(Self.seconds(total - parts)) s elsewhere" : "")"
         }
         // The read above is the work's last screen; the owner then sees their own app again.
         if finish, error == nil {

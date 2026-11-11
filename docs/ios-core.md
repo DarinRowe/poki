@@ -362,8 +362,12 @@ on the phone; the next first `look` of a task in that app names the saved routin
   together). The action time starts when the actions do, after the runner's start and the lock
   check (seen on the phone: a launch sent while the runner was starting had its time used up
   before it went, and a batch of Home, tap and drag had 6 s for all three), by at most
-  `runnerWait` (15 s): the call's backstop allows that much for the start, and a call pushed past
-  the backstop answers with nothing (the soak test caught one at 6.3 s against a 4 s deadline).
+  `runnerWait` (15 s): the call's backstop allows that much for the start. The backstop is a
+  backstop: it should never be what answers. A call that reaches it answers with nothing, which
+  is the worst answer the agent can get (the soak test caught one at 6.3 s against a 4 s
+  deadline, and the read was what spent the time — its parts each started under their own
+  timeout, so a read budgeted 1.0 s could run for 3.4 s; the read now holds to the call's
+  deadline like every other step).
 - At the deadline the tool answers anyway, saying which step did not finish and whether it may
   have been delivered, plus the last good read if any. A late runner answer is dropped.
 - Two refused or broken runner requests in a row mark the runner unhealthy: PokiCore calls
