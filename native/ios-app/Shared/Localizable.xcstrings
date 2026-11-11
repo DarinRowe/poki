@@ -840,7 +840,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请确认开发者模式已开启（设置 › 隐私与安全性 › 开发者模式），并且 iOS 是 17.4 或更高版本。"
+            "value" : "请确认开发者模式已开启（设置 › 隐私与安全 › 开发者模式），并且 iOS 是 17.4 或更高版本。"
           }
         }
       }
@@ -2593,7 +2593,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "打开“**设置 › 隐私与安全性 › 开发者模式**”。"
+            "value" : "打开“**设置 › 隐私与安全 › 开发者模式**”。"
           }
         }
       }
@@ -2604,7 +2604,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "打开“**设置 › 隐私与安全性 › 开发者模式**”。安装 Poki Runner 后会显示此选项。"
+            "value" : "打开“**设置 › 隐私与安全 › 开发者模式**”。安装 Poki Runner 后会显示此选项。"
           }
         }
       }
@@ -3301,13 +3301,13 @@
         }
       }
     },
-    "Poki will open Settings. Go to **Privacy & Security › Developer Mode** and tap **Pair with Poki**." : {
+    "Poki opens the main Settings page. Go to **Privacy & Security › Developer Mode** and tap **Pair with Poki**." : {
       "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 将打开“设置”。前往“**隐私与安全性 › 开发者模式**”并轻点“**与 Poki 配对**”。"
+            "value" : "Poki 将打开“设置”首页。前往“**隐私与安全 › 开发者模式**”并轻点“**Pair with Poki（与 Poki 配对）**”。"
           }
         }
       }
@@ -4709,7 +4709,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "开启开发者模式：设置 › 隐私与安全性 › 开发者模式，然后重启手机。"
+            "value" : "开启开发者模式：设置 › 隐私与安全 › 开发者模式，然后重启手机。"
           }
         }
       }
