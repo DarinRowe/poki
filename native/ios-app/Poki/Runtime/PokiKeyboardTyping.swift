@@ -24,10 +24,11 @@ final class PokiKeyboardTyping {
         var budget = 30.0
     }
 
-    /// Holds the globe key of the keyboard on screen and taps Poki in its list. Nil when Poki was
-    /// tapped, else why not.
-    let chooseFromGlobe: () async throws -> String?
-    init(chooseFromGlobe: @escaping () async throws -> String?) { self.chooseFromGlobe = chooseFromGlobe }
+    /// Chooses Poki from the globe key's list of the keyboard on screen: why it could not, or nil,
+    /// and whether it went the quick way (from the list's remembered places, without reading it).
+    /// `true` asks for the list to be read afresh.
+    let chooseFromGlobe: (Bool) async throws -> (why: String?, quick: Bool)
+    init(chooseFromGlobe: @escaping (Bool) async throws -> (why: String?, quick: Bool)) { self.chooseFromGlobe = chooseFromGlobe }
 
     // MARK: What is set up
 
@@ -99,7 +100,9 @@ final class PokiKeyboardTyping {
             // The keyboard takes the request as it comes up with the field's focus; a keyboard already
             // up answers in a few milliseconds.
             let switching = options.maySwitch && Self.setting(Self.autoSwitchKey) && !Self.switchFailedLately(options.app)
-            var accepted = try await acknowledged(id, in: directory, within: min(0.8, max(0.3, left())))
+            // A panel that last said it was not on screen is not waited for: straight to the switch.
+            let up = Self.lastStatus?.visible == true
+            var accepted = try await acknowledged(id, in: directory, within: up || !switching ? min(0.8, max(0.3, left())) : 0.12)
             var whyNot: String?
             if !accepted, switching {
                 whyNot = try await bringUp(id, in: directory, left: left)
@@ -189,9 +192,15 @@ final class PokiKeyboardTyping {
     /// two touches). Returns nil once the keyboard itself has answered, else why it did not.
     private func bringUp(_ id: String, in directory: URL, left: () -> Double) async throws -> String? {
         guard left() > 3 else { return "there was no time left to switch keyboards" }
-        if let why = try await chooseFromGlobe() { return why }
+        let first = try await chooseFromGlobe(false)
+        if let why = first.why { return why }
         // The extension may start cold.
-        if try await acknowledged(id, in: directory, within: min(3, max(1, left()))) { return nil }
+        if try await acknowledged(id, in: directory, within: first.quick ? 1.6 : min(3, max(1, left()))) { return nil }
+        if first.quick, left() > 3 {
+            // The list was not where it was last time: once more, reading it.
+            if let why = try await chooseFromGlobe(true).why { return why }
+            if try await acknowledged(id, in: directory, within: min(3, max(1, left()))) { return nil }
+        }
         return "it was chosen from the globe key's list but did not answer (the field may take no other keyboard, or Full Access is off)"
     }
 }

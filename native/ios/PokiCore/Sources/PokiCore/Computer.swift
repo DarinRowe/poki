@@ -749,7 +749,6 @@ final class Computer: @unchecked Sendable {
         // The read above is the work's last screen; the owner then sees their own app again.
         if finish, error == nil {
             // Poki's keyboard, if it is up, gives way to the owner's own.
-            if runner.typesThroughKeyboard { _ = try? await runner.raw("POST", "/poki/keyboard/release", [:], timeout: 5, countsAsMiss: false) }
             let line = await returnToOrigin() ?? "finish: the app this task began in is not known, so the phone stays here"
             var lines = result.text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
             lines.insert(line, at: min(1, lines.count))
@@ -766,9 +765,14 @@ final class Computer: @unchecked Sendable {
 
     /// Ends the task: the app it began in comes to the front again (the home screen by the Home
     /// button), and nothing is sent when it is in front already. nil when no task was open.
-    func returnToOrigin() async -> String? {
-        guard let task = origin else { return nil }
+    /// `fallback` is the app's bundle for a task whose first call could not tell which app was in
+    /// front (the tree was late), so no origin was kept.
+    func returnToOrigin(fallback: String? = nil) async -> String? {
+        let known = origin
         origin = nil
+        // Whether or not there is an app to go back to.
+        await releaseKeyboard()
+        guard let task = known ?? fallback.map({ (app: Foreground(bundleID: $0, name: nil), session: String?.none, lastCall: now()) }) else { return nil }
         guard let bundle = task.app.bundleID else { return nil }
         let front = try? await runner.call("GET", "/wda/activeAppInfo", timeout: 1.5)
         if front?["bundleId"]?.string == bundle { return "finish: \(task.app.describe), where the task began, is in front" }
@@ -792,6 +796,12 @@ final class Computer: @unchecked Sendable {
         } catch {
             return "finish: \(task.app.describe), where the task began, could not be brought back (\(error))"
         }
+    }
+
+    /// Poki's keyboard, if it is up, gives way to the owner's own.
+    func releaseKeyboard() async {
+        guard runner.typesThroughKeyboard else { return }
+        _ = try? await runner.raw("POST", "/poki/keyboard/release", [:], timeout: 5, countsAsMiss: false)
     }
 
     static func seconds(_ t: Double) -> String { String(format: "%.1f", max(0, t)) }

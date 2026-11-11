@@ -20,7 +20,7 @@ enum ApprovalNotice {
         let approvals = UNNotificationCategory(identifier: category, actions: [allowAction, denyAction], intentIdentifiers: [],
                                                options: [.hiddenPreviewsShowTitle])
         let center = UNUserNotificationCenter.current()
-        center.setNotificationCategories([approvals])
+        center.setNotificationCategories([approvals, ChatReplyNotice.category])
         center.delegate = ApprovalNoticeDelegate.shared
     }
 
@@ -56,6 +56,13 @@ final class ApprovalNoticeDelegate: NSObject, UNUserNotificationCenterDelegate, 
     static let shared = ApprovalNoticeDelegate()
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+        if response.notification.request.content.categoryIdentifier == ChatReplyNotice.categoryID {
+            // Typed on the notification: the chat goes on from where the owner is. A plain tap opens Poki.
+            if let typed = (response as? UNTextInputNotificationResponse)?.userText.trimmingCharacters(in: .whitespacesAndNewlines), !typed.isEmpty {
+                await MainActor.run { ChatReplyNotice.answer(typed) }
+            }
+            return
+        }
         guard let id = response.notification.request.content.userInfo["approval"] as? String else { return }
         let action = response.actionIdentifier
         guard action == ApprovalNotice.allow || action == ApprovalNotice.deny else { return }
@@ -65,6 +72,47 @@ final class ApprovalNoticeDelegate: NSObject, UNUserNotificationCenterDelegate, 
     /// While Poki is open the banner still shows, so the buttons are there too.
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
         [.banner, .sound, .list]
+    }
+}
+
+/// Poki's reply at the end of a chat task, when Poki is not in front: the owner reads it where they
+/// are and can answer on the notification itself (touch and hold it, or pull it down, for Reply), and
+/// the chat carries on from there. A tap opens Poki.
+enum ChatReplyNotice {
+    static let categoryID = "chat.reply"
+    static let replyAction = "chat.reply.text"
+    static let id = "chat-reply"
+
+    static var category: UNNotificationCategory {
+        let reply = UNTextInputNotificationAction(identifier: replyAction, title: String(localized: "Reply"), options: [],
+                                                  icon: UNNotificationActionIcon(systemImageName: "arrowshape.turn.up.left"),
+                                                  textInputButtonTitle: String(localized: "Send"),
+                                                  textInputPlaceholder: String(localized: "Message Poki"))
+        return UNNotificationCategory(identifier: categoryID, actions: [reply], intentIdentifiers: [], options: [])
+    }
+
+    @MainActor static func post(_ text: String, session: String) {
+        let content = UNMutableNotificationContent()
+        content.title = "Poki"
+        content.body = String(text.prefix(400))
+        content.categoryIdentifier = categoryID
+        content.userInfo = ["chat": session]
+        content.sound = .default
+        content.interruptionLevel = .timeSensitive
+        content.threadIdentifier = "chat"
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [id])
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
+    }
+
+    @MainActor static func clear() {
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [id])
+    }
+
+    /// The owner's words from the notification, into the chat as if typed there.
+    @MainActor static func answer(_ text: String) {
+        guard let chat = AskPoki.chat else { return }
+        AppLog.shared.add("chat", "reply from the notification")
+        chat.send(text)
     }
 }
 

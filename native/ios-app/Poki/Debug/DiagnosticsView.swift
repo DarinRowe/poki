@@ -95,7 +95,7 @@ struct LogView: View {
 }
 
 /// Setup › Advanced › Testing Options: switches being tried, all in one place. Ask Before Sensitive
-/// Steps is in Agents › Approvals.
+/// Steps and the Auto-Classifier are in Agents › Approvals.
 struct TestingOptionsView: View {
     @Environment(AppModel.self) private var model
     @AppStorage(NativeServicesWDA.inputWithoutScreenSharingKey) private var bareInput = false
@@ -105,16 +105,10 @@ struct TestingOptionsView: View {
             AutomationMethodSection()
             Section {
                 Toggle("ask_poki Tool", isOn: $model.askPokiTool)
-                Toggle("Auto-Classifier", isOn: $model.approvalClassifier)
-                if model.approvalClassifier {
-                    Picker("Permissiveness", selection: $model.classifierLevel) {
-                        ForEach(ApprovalClassifier.Level.allCases) { Text($0.title).tag($0) }
-                    }
-                }
             } header: {
                 Text("Agents")
             } footer: {
-                Text("Both off by default. ask_poki lets outside agents hand a repetitive task to Poki's own agent. The auto-classifier answers approvals in your place: it asks your chat model, out of sight, whether what you said asks for the step, and allows or refuses it with nothing for you to tap; a yes from you in the chat or a live call lets a refused step through next time. With no chat model set up it refuses every sensitive step. Changes take effect the next time Poki opens.")
+                Text("Off by default. ask_poki lets outside agents hand a repetitive task to Poki's own agent. Changes take effect the next time Poki opens. The Auto-Classifier is in Agents › Approvals.")
             }
             Section {
                 Toggle("Input Without Screen Sharing", isOn: $bareInput)

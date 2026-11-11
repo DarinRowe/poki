@@ -49,8 +49,8 @@ struct MemoryView: View {
             }
 
             Section {
-                if let exportURL { ShareLink("Export Memory", item: exportURL) }
-                Button("Import Memory") { importing = true }
+                if let exportURL { ShareLink(item: exportURL) { Label("Export Memory", systemImage: "square.and.arrow.up") } }
+                Button("Import Memory", systemImage: "square.and.arrow.down") { importing = true }
             } header: {
                 Text("Move or Back Up")
             } footer: {

@@ -21,7 +21,26 @@ final class FakeDocument: KeyboardDocument {
     }
     var contextAfter: String? { String(text[cursor...].prefix { $0 != "\n" }) }
     var selectedText: String? { nil }
+    /// Characters before the cursor that are the composition.
+    var marked = 0
+    /// A field that does not take a composition back: its letters stay as text.
+    var keepsMarked = false
+    /// Every composition shown, in order.
+    var compositions: [String] = []
+    func setMarked(_ s: String) {
+        if !keepsMarked {
+            text.removeSubrange((cursor - marked)..<cursor)
+            cursor -= marked
+        }
+        text.insert(contentsOf: Array(s), at: cursor)
+        cursor += s.count
+        marked = keepsMarked ? 0 : s.count
+        if !s.isEmpty { compositions.append(s) }
+    }
     func insert(_ s: String) {
+        text.removeSubrange((cursor - marked)..<cursor)
+        cursor -= marked
+        marked = 0
         text.insert(contentsOf: Array(s), at: cursor)
         cursor += s.count
         afterInsert?(self)
@@ -73,6 +92,55 @@ final class KeyboardSharedTests: XCTestCase {
         // A tokenizer that drops text is not trusted.
         let lossy = KeyboardTyper.plan("我们一起", words: { _ in ["我们"] }, using: &g)
         XCTAssertEqual(lossy.map(\.text).joined(), "我们一起")
+    }
+
+    static let pinyin = ["你好": "nǐ hǎo", "世界": "shì jiè", "装": "zhuāng"]
+    func composed(_ text: String) -> [KeyboardTyper.Step] {
+        var g = SeededGenerator(state: 7)
+        return KeyboardTyper.plan(text, pinyin: { Self.pinyin[$0] }, using: &g)
+    }
+
+    func testPlanTypesPinyinThenTheWord() {
+        let plan = composed("Hi 你好")
+        XCTAssertEqual(plan.map(\.text), ["H", "i", " ", "n", "ni", "nih", "niha", "nihao", "你好"])
+        XCTAssertEqual(plan.map(\.kind), [.insert, .insert, .insert, .compose, .compose, .compose, .compose, .compose, .commit])
+        XCTAssertEqual(plan.map(\.count).reduce(0, +), 5)
+        // A word with no Pinyin goes in whole.
+        XCTAssertEqual(composed("一").map(\.kind), [.insert])
+        // As fast as the app allows for (0.12 s a character), even at six letters a character.
+        var g = SeededGenerator(state: 3)
+        let long = KeyboardTyper.plan(String(repeating: "装", count: 600), words: { $0.map(String.init) }, pinyin: { _ in "zhuāng" }, using: &g)
+        XCTAssertLessThan(KeyboardTyper.seconds(of: long), 600 * 0.12)
+    }
+
+    func testComposesInTheFieldAndLeavesOnlyTheWord() async {
+        let document = FakeDocument("Dear ")
+        let outcome = await KeyboardTypist().run(request("你好世界!"), on: document, steps: composed("你好世界!"), sleep: { _ in })
+        XCTAssertEqual(document.string, "Dear 你好世界!")
+        XCTAssertTrue(document.compositions.contains("nihao"))
+        XCTAssertTrue(document.compositions.contains("shijie"))
+        XCTAssertEqual(outcome.typed, 5)
+        XCTAssertTrue(outcome.finished)
+        XCTAssertEqual(outcome.check, .matched)
+    }
+
+    func testAFieldThatKeepsTheLettersGetsTheWordWhole() async {
+        let document = FakeDocument()
+        document.keepsMarked = true
+        let outcome = await KeyboardTypist().run(request("你好世界"), on: document, steps: composed("你好世界"), sleep: { _ in })
+        XCTAssertEqual(document.string, "你好世界")
+        XCTAssertEqual(outcome.check, .matched)
+    }
+
+    func testStopInAWordLeavesNoPinyin() async {
+        let document = FakeDocument()
+        let typist = KeyboardTypist()
+        var shown = 0
+        _ = await typist.run(request("你好"), on: document, steps: composed("你好"), sleep: { _ in }, composing: { _ in
+            shown += 1
+            if shown == 3 { typist.stop() }
+        })
+        XCTAssertEqual(document.string, "")
     }
 
     func testPlanPaceIsBounded() {

@@ -130,6 +130,7 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
         let key = "\(method) \(path)"
         let ownsInput = method == "POST" && !["/session", "/appium/settings"].contains(path)
         if ownsInput { await inputGate.acquire() }
+        if ownsInput, path != "/poki/keyboard/release" { holdKeyboard() }
         defer { if ownsInput { inputGate.release() } }
         try Task.checkCancellation()
         let input = body.flatMap { try? JSON.parse($0) }
@@ -249,9 +250,9 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
     /// One whole text through Poki's keyboard. `declined` when the keyboard never had the text, so
     /// PokiCore types it the old way; anything else is the keyboard's own account of what it typed.
     private func typeThroughKeyboard(_ text: String, body: JSON?, timeout: Double) async throws -> JSON {
-        let keyboard = PokiKeyboardTyping { [weak self] in
-            guard let self else { return "Poki was turned off" }
-            return try await self.chooseKeyboardFromGlobe()
+        let keyboard = PokiKeyboardTyping { [weak self] fresh in
+            guard let self else { return ("Poki was turned off", false) }
+            return try await self.chooseKeyboardFromGlobe(fresh: fresh)
         }
         var options = PokiKeyboardTyping.Options()
         options.clear = body?["clear"]?.bool ?? false
@@ -283,10 +284,21 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
     /// The keyboard the owner had when Poki's was chosen from the globe key's list, to go back to.
     private var keyboardBefore: String?
 
-    /// Switches keyboards as a person does: holds the globe key of the keyboard on screen, then taps
-    /// one keyboard in the list that opens. `to` nil is Poki's keyboard, else the keyboard of that
-    /// name. Nil when it was tapped, else why not.
-    private func chooseKeyboardFromGlobe(to other: String? = nil) async throws -> String? {
+    /// Where each keyboard sits in the globe key's list, learnt the last time the list was read, with
+    /// the globe key's own place then: `[name: [x, y]]` in screen points, "globe" among them. The
+    /// list opens at the same place each time, so the next switch needs no look at it.
+    static let keyboardListKey = "poki.keyboard.listPlaces"
+    /// The keyboard the owner had the last time the list was seen open.
+    static let ownerKeyboardKey = "poki.keyboard.ownerKeyboard"
+
+    /// Switches keyboards as a person does with the globe key of the keyboard on screen. `to` nil is
+    /// Poki's keyboard, else the keyboard of that name. Returns why it could not, or nil once the
+    /// keyboard was chosen, and whether that was the quick way.
+    ///
+    /// The quick way, when the list's places are known: one touch that holds the globe key, slides to
+    /// the keyboard and lifts, as a practised thumb does. Otherwise, or with `fresh`, the key is held,
+    /// the list is read, and the keyboard is tapped; the places are kept for next time.
+    private func chooseKeyboardFromGlobe(to other: String? = nil, fresh: Bool = false) async throws -> (why: String?, quick: Bool) {
         typealias Item = (label: String, frame: CGRect, selected: Bool)
         func items(_ tree: [String: Any]) -> [Item] {
             (tree["elements"] as? [[String: Any]] ?? []).compactMap { (e: [String: Any]) -> Item? in
@@ -299,22 +311,51 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
                 return (label: label, frame: frame, selected: selected)
             }
         }
-        func send(_ op: String, at frame: CGRect, _ more: [String: Any] = [:]) async throws {
-            var request: [String: Any] = ["op": op, "x": try coordinate(frame.midX, across: screen.width), "y": try coordinate(frame.midY, across: screen.height)]
+        func unit(_ point: CGPoint) throws -> (x: Int, y: Int) {
+            (try coordinate(point.x, across: screen.width), try coordinate(point.y, across: screen.height))
+        }
+        func send(_ op: String, at point: CGPoint, _ more: [String: Any] = [:]) async throws {
+            let at = try unit(point)
+            var request: [String: Any] = ["op": op, "x": at.x, "y": at.y]
             request.merge(more) { $1 }
             _ = try await input.call(request)
             queue.sync { cachedTree = nil }
         }
+        func centre(_ frame: CGRect) -> CGPoint { CGPoint(x: frame.midX, y: frame.midY) }
+        let defaults = UserDefaults.standard
+        let name = other ?? PokiKeyboardTyping.displayName
         let before = items(try await readTree())
         guard let globe = before.first(where: { Self.globeLabels.contains($0.label) }) else {
-            return "no keyboard with a globe key is on screen (no text field has the focus, or the field takes only its own keyboard)"
+            return ("no keyboard with a globe key is on screen (no text field has the focus, or the field takes only its own keyboard)", false)
         }
-        try await send("long_press", at: globe.frame, ["duration_ms": 650])
-        let name = other ?? PokiKeyboardTyping.displayName
+        let places = defaults.dictionary(forKey: Self.keyboardListKey) as? [String: [Double]] ?? [:]
+        func place(_ key: String) -> CGPoint? { places[key].flatMap { $0.count == 2 ? CGPoint(x: $0[0], y: $0[1]) : nil } }
+        if !fresh, let was = place("globe"), let target = place(name),
+           abs(was.x - globe.frame.midX) < 2, abs(was.y - globe.frame.midY) < 2 {
+            let from = try unit(centre(globe.frame)), to = try unit(target)
+            // To Poki's keyboard the hold is a little longer, and the list is read once while it is
+            // open under the finger, for the keyboard the owner has now (the one with the tick).
+            let hold = other == nil ? 680 : 520
+            async let touch = input.call(["op": "drag", "x1": from.x, "y1": from.y, "x2": to.x, "y2": to.y, "hold_ms": hold, "duration_ms": 170, "end_hold_ms": 70])
+            if other == nil {
+                try? await Task.sleep(nanoseconds: 540_000_000)
+                queue.sync { cachedTree = nil }
+                let known = Set(before.map(\.label))
+                if let open = try? await readTree(),
+                   let had = items(open).first(where: { !known.contains($0.label) && $0.selected && !$0.label.hasPrefix(name) })?.label {
+                    queue.sync { keyboardBefore = had }
+                    defaults.set(had, forKey: Self.ownerKeyboardKey)
+                }
+            }
+            _ = try await touch
+            queue.sync { cachedTree = nil }
+            return (nil, true)
+        }
+        try await send("long_press", at: centre(globe.frame), ["duration_ms": 560])
         let known = Set(before.map(\.label))
         // The list opens under the finger and stays after it lifts.
         var listed: [Item] = [], item: Item?
-        for wait in [250, 350, 500] {
+        for wait in [120, 250, 450] {
             try await Task.sleep(nanoseconds: UInt64(wait) * 1_000_000)
             listed = items(try await readTree()).filter { !known.contains($0.label) }
             item = listed.first { $0.label == name } ?? listed.first { $0.label.hasPrefix(name) }
@@ -322,27 +363,63 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
         }
         guard let item else {
             // Close the list where it opened, so the next touch is not spent on it.
-            try? await send("tap", at: globe.frame)
-            return other == nil
-                ? "the globe key's list did not show \(name) (is the Poki keyboard added under Settings › General › Keyboard › Keyboards?)"
-                : "the globe key's list did not show \(name)"
+            try? await send("tap", at: centre(globe.frame))
+            defaults.removeObject(forKey: Self.keyboardListKey)
+            return (other == nil
+                ? "the globe key's list did not show \(name) (is the Poki keyboard turned on under Settings › Poki › Keyboards?)"
+                : "the globe key's list did not show \(name)", false)
         }
+        var learnt: [String: [Double]] = ["globe": [globe.frame.midX, globe.frame.midY]]
+        for entry in listed { learnt[entry.label] = [entry.frame.midX, entry.frame.midY] }
+        if item.label != name { learnt[name] = learnt[item.label] }
+        defaults.set(learnt, forKey: Self.keyboardListKey)
         if other == nil {
             let had = listed.first { $0.selected && $0.label != item.label }?.label
             queue.sync { keyboardBefore = had }
+            if let had { defaults.set(had, forKey: Self.ownerKeyboardKey) }
         }
-        try await send("tap", at: item.frame)
-        return nil
+        try await send("tap", at: centre(item.frame))
+        return (nil, false)
     }
 
     /// Poki's keyboard gives way to the owner's own at the end of a task: through the globe key's
     /// list when Poki's keyboard was chosen from it, else by the keyboard itself.
     private func releaseKeyboard() async {
-        let had: String? = queue.sync { defer { keyboardBefore = nil }; return keyboardBefore }
-        if let had, PokiKeyboardTyping.setting(PokiKeyboardTyping.switchBackKey) {
-            do { if try await chooseKeyboardFromGlobe(to: had) == nil { return } } catch {}
+        if let directory = KeyboardLink.directory { KeyboardLink.remove(KeyboardLink.holdFile, in: directory) }
+        heldAt = .distantPast
+        let seen: String? = queue.sync { defer { keyboardBefore = nil }; return keyboardBefore }
+        // The keyboard seen ticked in this task, else the one seen the last time the list was read.
+        let had = seen ?? UserDefaults.standard.string(forKey: Self.ownerKeyboardKey)
+        // Only when the panel is up: a globe key held on the owner's own keyboard would change it.
+        if let had, PokiKeyboardTyping.setting(PokiKeyboardTyping.switchBackKey), PokiKeyboardTyping.lastStatus?.visible == true {
+            do {
+                let chosen = try await chooseKeyboardFromGlobe(to: had)
+                if chosen.why == nil, await panelGone(within: chosen.quick ? 0.9 : 1.5) { return }
+                // The list was not where it was last time: once more, reading it.
+                if chosen.quick, try await chooseKeyboardFromGlobe(to: had, fresh: true).why == nil, await panelGone(within: 1.5) { return }
+            } catch {}
         }
         PokiKeyboardTyping.release()
+    }
+
+    private func panelGone(within seconds: Double) async -> Bool {
+        let deadline = Date().addingTimeInterval(seconds)
+        while Date() < deadline {
+            if PokiKeyboardTyping.lastStatus?.visible != true { return true }
+            try? await Task.sleep(nanoseconds: 30_000_000)
+        }
+        return PokiKeyboardTyping.lastStatus?.visible != true
+    }
+
+    /// While an agent works, the panel is told to stay up with nothing to type (KeyboardLink.Hold),
+    /// so it is there for the next field. Renewed with the agent's inputs, at most every 20 s.
+    private var heldAt = Date.distantPast
+    private func holdKeyboard() {
+        guard typesThroughKeyboard, PokiKeyboardTyping.available, Date().timeIntervalSince(heldAt) > 20, let directory = KeyboardLink.directory else { return }
+        heldAt = Date()
+        // A leave asked for at the end of the last task must not send the panel away in this one.
+        KeyboardLink.remove(KeyboardLink.releaseFile, in: directory)
+        KeyboardLink.write(KeyboardLink.Hold(expires: Date().addingTimeInterval(180)), KeyboardLink.holdFile, in: directory)
     }
 
     private func callPoint(_ op: String, body: JSON?) async throws {

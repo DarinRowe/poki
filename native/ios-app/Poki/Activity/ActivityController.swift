@@ -118,7 +118,7 @@ final class ActivityController {
             ? ActivityContent(state: state, staleDate: nil, relevanceScore: 0) : nil
         let policy: ActivityUIDismissalPolicy = final == nil ? .immediate : .after(.now.addingTimeInterval(15 * 60))
         state.outcomes = []; state.guide = nil; state.pin = nil; state.since = nil; state.event = nil
-        state.stepCount = 0; state.failedCount = 0; state.endedAt = nil; state.decision = nil
+        state.stepCount = 0; state.failedCount = 0; state.endedAt = nil; state.decision = nil; state.plan = nil
         let previous = tail
         tail = Task { await previous?.value; await activity.end(final, dismissalPolicy: policy) }
     }
@@ -161,6 +161,7 @@ final class ActivityController {
         let runPhases: Set<PokiState.Phase> = [.working, .approval, .deciding, .handoff]
         if state.phase == .working, !runPhases.contains(old.phase) {
             state.stepCount = 0; state.failedCount = 0; state.endedAt = nil; state.outcomes = []
+            if old.phase == .done || old.phase == .idle { state.plan = nil }
             if state.since == nil { state.since = now }
             // The runner's start and the agent's first step are one start.
             if !runAnnounced {
@@ -236,15 +237,28 @@ final class ActivityController {
         }
     }
 
+    /// The chat's task ended: the run is finished now, not after the quiet wait. `alert` false when
+    /// the chat tells the owner itself (its reply notification).
+    func finishNow(alert: Bool) {
+        finishTimer?.cancel()
+        guard state.phase == .working, state.approval == nil, state.handoff == nil else { return }
+        inStep = false
+        finish(alert: alert)
+    }
+
     private func finishRun(ifCount count: Int) {
         guard state.phase == .working, state.approval == nil, !inStep, state.stepCount == count, count > 0 else { return }
+        finish(alert: true)
+    }
+
+    private func finish(alert: Bool) {
         state.phase = .done
         runAnnounced = false
         state.endedAt = Date()
         state.headline = "Finished"
         setEvent(.finished, "Finished")
         let summary = state.runSummary
-        send(alert: ordinary(String(activity: "Agent finished"), summary), critical: true)
+        send(alert: alert ? ordinary(String(activity: "Agent finished"), summary) : nil, critical: true)
         armFold()
     }
 
@@ -259,7 +273,7 @@ final class ActivityController {
                 state.phase = .idle
                 state.headline = "Waiting for agent"
                 state.outcomes = []; state.stepCount = 0; state.failedCount = 0
-                state.since = nil; state.endedAt = nil; state.event = nil
+                state.since = nil; state.endedAt = nil; state.event = nil; state.plan = nil
             }
         }
     }

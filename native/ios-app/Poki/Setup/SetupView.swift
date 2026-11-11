@@ -625,6 +625,8 @@ private struct PairingPage: View {
 
 private struct BackgroundPage: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var refresh = UIApplication.shared.backgroundRefreshStatus
 
     var body: some View {
         Section {
@@ -647,6 +649,20 @@ private struct BackgroundPage: View {
                  : model.background.denied ? "Location Services is off for Poki. It keeps itself running with silent audio, which iOS may stop during calls or other audio."
                  : "iOS needs a background mode to keep apps running. Poki uses lowest-accuracy location with Always Allow, which shows no location indicator, and never records your location.")
         }
+        Section {
+            LabeledContent {
+                if refresh == .available { Image(systemName: "checkmark.circle.fill").foregroundStyle(.green) }
+                else { Text("Off").foregroundStyle(.orange) }
+            } label: {
+                Label("Background App Refresh", systemImage: "arrow.clockwise")
+            }
+            Button("Open Settings", systemImage: "gear") { openSettings(model, for: .background) }
+        } footer: {
+            Text(refresh == .available ? "Keep Background App Refresh on for Poki. With it off, iOS stops Poki soon after it leaves the screen."
+                 : refresh == .restricted ? "Background App Refresh is restricted on this iPhone (Low Power Mode, Screen Time or a profile turns it off), so iOS may stop Poki in the background."
+                 : "Turn on **Background App Refresh** on Poki’s page in Settings, and under Settings › General › Background App Refresh. With it off, iOS stops Poki soon after it leaves the screen.")
+        }
+        .onChange(of: scenePhase) { _, phase in if phase == .active { refresh = UIApplication.shared.backgroundRefreshStatus } }
         Section {
             LabeledContent {
                 if model.activitiesEnabled { Image(systemName: "checkmark.circle.fill").foregroundStyle(.green) }
@@ -875,30 +891,43 @@ struct SetupGuide: View {
     @Environment(AppModel.self) private var model
     @State private var index: Int
 
+    /// The Poki keyboard is the guide's last page where Poki types through it. It is not one of the
+    /// steps Poki waits for: without it, plain text is still typed with key presses.
+    private static var keyboardPage: Bool { AutomationPath.current == .nativeServices }
+
     init(start: SetupStep?) {
-        _index = State(initialValue: start.flatMap { SetupStep.shown.firstIndex(of: $0) } ?? 0)
+        let steps = SetupStep.shown
+        // With every step done, the guide opens on the keyboard while that is still to add.
+        let fallback = Self.keyboardPage && !PokiKeyboardState().ready && start == nil ? steps.count : 0
+        _index = State(initialValue: start.flatMap { steps.firstIndex(of: $0) } ?? fallback)
     }
 
     private var steps: [SetupStep] { SetupStep.shown }
+    private var count: Int { steps.count + (Self.keyboardPage ? 1 : 0) }
 
     var body: some View {
         NavigationStack {
-            SetupStepPage(step: steps[index])
-                .id(steps[index])
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
-                    ToolbarItemGroup(placement: .bottomBar) {
-                        Button("Back", systemImage: "chevron.left") { index -= 1 }.disabled(index == 0)
-                        Spacer()
-                        Text("\(index + 1) of \(steps.count)").font(.footnote).foregroundStyle(Color(.secondaryLabel))
-                        Spacer()
-                        if index + 1 < steps.count {
-                            Button("Next", systemImage: "chevron.right") { index += 1 }
-                        } else {
-                            Button("Done") { dismiss() }.bold()
-                        }
+            Group {
+                if index < steps.count {
+                    SetupStepPage(step: steps[index]).id(steps[index].rawValue)
+                } else {
+                    PokiKeyboardPage().id("keyboard")
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
+                ToolbarItemGroup(placement: .bottomBar) {
+                    Button("Back", systemImage: "chevron.left") { index -= 1 }.disabled(index == 0)
+                    Spacer()
+                    Text("\(index + 1) of \(count)").font(.footnote).foregroundStyle(Color(.secondaryLabel))
+                    Spacer()
+                    if index + 1 < count {
+                        Button("Next", systemImage: "chevron.right") { index += 1 }
+                    } else {
+                        Button("Done") { dismiss() }.bold()
                     }
                 }
+            }
         }
     }
 }

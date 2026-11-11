@@ -53,9 +53,17 @@ struct PokiKeyboardPage: View {
                 Text("Poki types through its own keyboard panel, at a person’s pace. The panel has no keys: it shows while Poki types, and Take Over stops it.")
             }
             Section {
-                Text("Open **Settings › General › Keyboard › Keyboards › Add New Keyboard** and choose **Poki**.")
-                Text("Tap **Poki** in that list and turn on **Allow Full Access**.")
-                Text("Keep your usual keyboards. Then switch to the Poki keyboard once in any text field, so Poki knows it is there.")
+                // Numbered as Setup's other steps are (Turn On Developer Mode).
+                NumberedLines(lines: [
+                    "Tap **Open Settings** below.",
+                    "On Poki’s page, tap **Keyboards**.",
+                    "Turn on **Poki**, then **Allow Full Access**.",
+                ])
+                .padding(.vertical, 4)
+                Text("If Poki’s page has no Keyboards row, open **Settings › General › Keyboard › Keyboards › Add New Keyboard**, choose **Poki**, then tap it in that list and turn on **Allow Full Access**.")
+                    .font(.footnote).foregroundStyle(.secondary)
+                Text("Keep your usual keyboards. Poki switches to its keyboard when it types and back to yours when it is done.")
+                    .font(.footnote).foregroundStyle(.secondary)
                 Button("Open Settings", systemImage: "gear") {
                     if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
                 }
