@@ -258,6 +258,7 @@ final class VoiceModelTests: XCTestCase {
         let opening = Task { await h.connect() }
         for _ in 0..<1000 where h.voice.phase != .connecting { await Task.yield() }
         XCTAssertEqual(h.voice.phase, .connecting)
+        XCTAssertTrue(h.voice.isLive, "the bar says Live Voice while it connects, not turn by turn")
         NotificationCenter.default.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
         await opening.value
         XCTAssertFalse(h.voice.isOn)
