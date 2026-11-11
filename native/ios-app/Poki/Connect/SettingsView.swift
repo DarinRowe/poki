@@ -53,8 +53,6 @@ struct SettingsDestination: View {
 
 /// Agents and Relay: this iPhone, the agents' MCP addresses, the runner and this iPhone's setup.
 struct SettingsHome: View {
-    @State private var showLearning = false
-    @AppStorage("poki.experimental.userRoutines") private var userRoutines = false
     @Environment(AppModel.self) private var model
     var push: (SettingsRoute) -> Void
     var openSetup: () -> Void
@@ -104,19 +102,7 @@ struct SettingsHome: View {
                 if model.relayAddress == nil { Text("Set your relay address first: each agent’s address is on your relay.") }
             }
 
-            Section {
-                Text("Poki keyboard").font(.headline)
-                    .onLongPressGesture(minimumDuration: 3) { showLearning.toggle() }
-                if showLearning {
-                    Toggle("Create routines from user demonstrations", isOn: $userRoutines)
-                    Text("Experimental. Observed corrections become user-assisted checkpoints, never guessed taps or unattended replay. Off by default.").font(.footnote)
-                }
-                Text("For faster agent typing, enable Poki in Settings → General → Keyboard → Keyboards → Add New Keyboard, then allow Full Access. Keep your usual keyboards enabled.")
-                Text("The panel only says ‘Poki is typing’. It leaves automatically when finished. Switching keyboards while it types pauses Poki until you tap Done. Native typing remains the fallback.")
-                    .font(.footnote).foregroundStyle(.secondary)
-                Text("Full Access is used for local communication with Poki. This keyboard does not use the clipboard or send your typing over the network.")
-                    .font(.footnote).foregroundStyle(.secondary)
-            }
+            PokiKeyboardSection()
 
             if model.automationPath == .inProcess {
                 Section {

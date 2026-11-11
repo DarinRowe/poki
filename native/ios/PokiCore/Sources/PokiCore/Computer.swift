@@ -469,14 +469,9 @@ final class Computer: @unchecked Sendable {
     /// ended first, up to 6 s on its own) 14 s. A type is a tap, a wait for the focus and the keys (and
     /// a wait for a busy runner): 9 s. A wait_until gets the time it asks for (up to 10 s) plus a read:
     /// 8000 ms asked became 6000 under the action cap (gym, an app relaunch under the wait).
-    static func nativeTypingBudget(_ text: String) -> Double {
-        // Each word needs fresh candidate and field reads. Keep a finite ceiling;
-        // an uncertain or timed-out edit is never automatically replayed.
-        min(300, max(60, 45 + Double(text.count) * 3))
-    }
-
+    /// A call that types through Poki's keyboard gets the time its texts need at a keyboard's pace.
     func toolBudget(_ actions: [JSON]) -> Double {
-        guard runner.verifiesNativeTyping, actions.contains(where: { $0["type"] != nil }) else { return config.toolDeadline }
+        guard runner.typesThroughKeyboard, actions.contains(where: { $0["type"] != nil }) else { return config.toolDeadline }
         return max(config.toolDeadline, min(300, actions.reduce(0) { $0 + actionCap($1) }) + config.readTimeout + 2)
     }
 
@@ -485,7 +480,7 @@ final class Computer: @unchecked Sendable {
         if action["run"] != nil { return max(config.actionCap, config.toolDeadline - config.readTimeout - 1) }
         if action["launch"] != nil { return max(config.actionCap, action["launch"]?["fresh"]?.bool == true ? 14 : 9) }
         if action["scroll_to"] != nil { return max(config.actionCap, Self.scrollCap) }
-        if action["type"] != nil { return max(config.actionCap, runner.verifiesNativeTyping ? Self.nativeTypingBudget(action["type"]?.text ?? "") : 9) }
+        if action["type"] != nil { return max(config.actionCap, runner.typesThroughKeyboard ? Self.keyboardTypingBudget(action["type"]?.text ?? "") : 9) }
         if action["wait_until"] != nil { return max(config.actionCap, min(10, max(0.2, (action["wait_until"]?["ms"]?.double ?? 3000) / 1000)) + 1.5) }
         return config.actionCap
     }
@@ -726,6 +721,8 @@ final class Computer: @unchecked Sendable {
         }
         // The read above is the work's last screen; the owner then sees their own app again.
         if finish, error == nil {
+            // Poki's keyboard, if it is up, gives way to the owner's own.
+            if runner.typesThroughKeyboard { _ = try? await runner.raw("POST", "/poki/keyboard/release", [:], timeout: 1, countsAsMiss: false) }
             let line = await returnToOrigin() ?? "finish: the app this task began in is not known, so the phone stays here"
             var lines = result.text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
             lines.insert(line, at: min(1, lines.count))
@@ -838,7 +835,7 @@ final class Computer: @unchecked Sendable {
                 error = "cancelled at action \(index + 1)"
                 break
             } catch let failure {
-                if let takeover = failure as? RunnerError, takeover.code == "poki user takeover" {
+                if let takeover = failure as? RunnerError, takeover.code == Runner.takeoverCode {
                     let h = Handoff(id: UUID().uuidString, kind: "other",
                         text: "You took over typing. Edit the text, then tap Done when Poki may continue. The unfinished text will not be replayed.",
                         requested: Date(), ownerOnly: true)
@@ -865,7 +862,9 @@ final class Computer: @unchecked Sendable {
                 // the field holds decides (see recoverType). Every other action that may have been
                 // delivered is never sent again by us.
                 var recoveryNote = "", recoveryLog = ""
-                if !runner.verifiesNativeTyping, let text = action["type"]?.text, action["via"]?.string != "paste", !(failure is ActionFailure), failure is RunnerError || failure is DeadlineExceeded {
+                // Not after Poki's keyboard took the text and stopped part way: that is never typed again.
+                let partial = (failure as? RunnerError)?.code.map(Runner.partialTypingCodes.contains) ?? false
+                if !partial, let text = action["type"]?.text, action["via"]?.string != "paste", !(failure is ActionFailure), failure is RunnerError || failure is DeadlineExceeded {
                     let recovered = await recoverType(action, text: text, why: why, until: until - config.readTimeout - 0.5)
                     if let done = recovered.done {
                         lastKind = "type"

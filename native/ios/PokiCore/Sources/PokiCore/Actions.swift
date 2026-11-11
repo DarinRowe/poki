@@ -266,6 +266,16 @@ extension Computer {
             if let ref = action["ref"] {
                 try await tap(try point(ref), within: frame(of: ref))
             }
+            let hidden = describe(action).hasSuffix("(hidden)")
+            let via = action["via"]?.string == "paste" ? "pasted" : "typed"
+            let clear = action["clear"]?.bool ?? false
+            // Poki's own keyboard first, where there is one: it waits for the field itself and says
+            // what the field holds afterwards, so the screen is not read for the focus or to read
+            // the text back. Declined (nil), the text goes the usual way below, as it always has.
+            if via == "typed", let typed = try await typeThroughKeyboard(text, clear: clear, hidden: hidden, target: target, tapped: action["ref"] != nil, until: until) {
+                if let ref = action["ref"]?.int { typedInto = (ref, text) }
+                return ("type", "\(describe(action)) (typed)\(typed)\(safariAddressNote(target, text))")
+            }
             // Keys go to the focused field; a tap takes a moment to focus one (seen on the phone:
             // text typed right after the tap went nowhere). Wait for a field to be focused, up to
             // 2 s, then type anyway and say when none was.
@@ -274,9 +284,6 @@ extension Computer {
             // The note stands only when the text did not read back: the keyboard of a search
             // field in a navigation bar came after the wait, and the text had landed (gym, Settings).
             func focusNote(_ landed: Bool) -> String { focused || landed ? "" : "; no field was focused when the text went (no keyboard came up in \(Int((focusWait * 1000).rounded())) ms), so it may have gone nowhere" }
-            let hidden = describe(action).hasSuffix("(hidden)")
-            let via = action["via"]?.string == "paste" ? "pasted" : "typed"
-            let clear = action["clear"]?.bool ?? false
             var note = ""
             if via == "pasted" {
                 note = try await paste(text, clear: clear, until: until, target: target)
@@ -427,6 +434,47 @@ extension Computer {
         return ActionFailure(message: "launch \(bundle) was refused by the runner: \(quoted ?? String(m.prefix(200)) + "…")", delivery: .notSent)
     }
 
+    /// What a text may take through Poki's keyboard, with the time to bring the keyboard up from
+    /// another one and, if it declines, to type the usual way after all.
+    static func keyboardTypingBudget(_ text: String) -> Double {
+        min(280, 22 + 0.12 * Double(text.count))
+    }
+
+    /// The whole text through Poki's own keyboard, in one request (`HTTPTransport.typesThroughKeyboard`).
+    /// Returns the note for the answer, or nil when the keyboard never had the text: it is not set up,
+    /// did not come up, or the field takes no third-party keyboard (iOS gives password fields its own).
+    /// A text the keyboard took is never typed again another way: a stop part way is thrown.
+    func typeThroughKeyboard(_ text: String, clear: Bool, hidden: Bool, target: Element?, tapped: Bool, until: Double) async throws -> String? {
+        // iOS shows its own keyboard in a password field, never a third-party one.
+        guard runner.typesThroughKeyboard, target?.isSecure != true, target?.type != "SecureTextField", !text.isEmpty, text.count <= 2000 else { return nil }
+        // What is left after the keyboard must still do for the usual way.
+        let budget = until - now() - 4
+        guard budget >= 2 else { return nil }
+        // Another keyboard is switched away from only when a field is believed to have the focus:
+        // the action tapped one, or the last read listed a keyboard. Not when the field is not
+        // named and a password field is on the screen: the focus may be in that one.
+        let focused = tapped || (lastAll.contains { $0.type == "Keyboard" } && !lastElements.contains(where: \.isSecure))
+        // `hidden`: a password field is on the screen, so nothing of the field's text comes back.
+        var body: [String: JSON] = ["value": .array(text.map { .string(String($0)) }), "clear": .bool(clear), "keyboard": true, "focused": .bool(focused), "hidden": .bool(hidden)]
+        if let app = lastForeground?.bundleID { body["app"] = .string(app) }
+        let answer = try await runner.call("POST", "/wda/keys", .object(body), timeout: budget, countsAsMiss: false)
+        guard answer["keyboard"]?.string == "typed" else { return nil }
+        let by = answer["via"]?.string.map { "the \($0) keyboard" } ?? "Poki's keyboard"
+        let tail = answer["tail"]?.string
+        func shown(_ s: String) -> String { "\"\(s.count > 120 ? "…" + String(s.suffix(110)) : s)\"" }
+        if answer["moved"]?.bool == true {
+            return "; by \(by); the focus moved to another field while it typed (the app moved it on, or the owner did), so check where the text went"
+        }
+        switch answer["check"]?.string {
+        case "matched":
+            return "; by \(by), which confirms the text before the cursor ends with it"
+        case "mismatch":
+            return "; by \(by), but the text before the cursor now ends \(hidden || tail == nil ? "differently" : shown(tail ?? "")), which is not what was typed (the app may format or correct it): check the field"
+        default:
+            return "; by \(by); it could not see the field afterwards (after a Return, or in a field that shows a keyboard nothing), so check the result on the screen"
+        }
+    }
+
     /// The whole text as key presses in one request. Clearing deletes what the focused field holds
     /// with Delete keys in the same request: WDA's element clear retries until the value is empty,
     /// which a field like Safari's address bar never reports (that took 25 s).
@@ -436,15 +484,6 @@ extension Computer {
     /// answer says what happened. Returns a note for the answer.
     @discardableResult
     func type(_ text: String, clear: Bool, hidden: Bool = false, target: Element? = nil, until: Double = .infinity) async throws -> String {
-        if runner.verifiesNativeTyping {
-            // One composition transaction. Humanized bursts, guessed Backspace counts and
-            // generic retries would change IME state or duplicate a partially committed edit.
-            let value = try await runner.call("POST", "/wda/keys", ["value": .array(text.map { .string(String($0)) }), "clear": .bool(clear)], timeout: max(1, min(Self.nativeTypingBudget(text), until - now())))
-            guard value["textVerified"]?.bool == true else {
-                throw ActionFailure(message: "Native typing was not verified; read the field before continuing", delivery: .unknown)
-            }
-            return "; native field contents verified; simulated keyboard detached"
-        }
         var deletes = 0
         var before: String?
         if clear {

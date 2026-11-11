@@ -631,7 +631,7 @@ extension Computer {
             catch let failure as ActionFailure {
                 refs[Self.runRef] = nil
                 throw stop(index, failure.message, failure.delivery)
-            } catch let takeover as RunnerError where takeover.code == "poki user takeover" {
+            } catch let takeover as RunnerError where takeover.code == Runner.takeoverCode {
                 refs[Self.runRef] = nil
                 _ = stop(index, "the owner took over", .unknown)
                 throw takeover
