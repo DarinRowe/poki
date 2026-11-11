@@ -408,10 +408,8 @@ final class InProcessProbe: ObservableObject {
     }
 }
 
-/// Settings > Diagnostics: the automation path switch and the probes (kept in this branch, where
-/// DiagnosticsView hosts it; ESP-152 removed it on a line where it had no caller).
-struct InProcessSection: View {
-    @ObservedObject var probe = InProcessProbe.shared
+/// Testing Options: which way Poki controls the phone. Takes effect when Poki starts again.
+struct AutomationMethodSection: View {
     @AppStorage("automationPath") private var path = AutomationPath.nativeServices.rawValue
     private let running = AutomationPath.current
 
@@ -419,55 +417,18 @@ struct InProcessSection: View {
         Section {
             Picker("Method", selection: $path) {
                 Text("XCTest session").tag(AutomationPath.inProcess.rawValue)
-                Text("Native services (experimental)").tag(AutomationPath.nativeServices.rawValue)
+                Text("Native services").tag(AutomationPath.nativeServices.rawValue)
             }
             if path != running.rawValue {
                 Text("Takes effect when Poki starts again.").font(.caption).foregroundStyle(.orange)
             }
-            ProbeField(probe: probe).frame(height: 44)
-            HStack {
-                Button("Port 8100") { Task { await probe.portCheck() } }
-                Button("Separate session") { Task { await probe.separateTrial() } }
-            }.disabled(probe.running)
-            Button("Compare methods (5 rounds)") { Task { await probe.benchmark(rounds: 5) } }.disabled(probe.running)
-            HStack {
-                Button("Prepare") { Task { await probe.prepareOnly() } }
-                Spacer()
-                Button("Read") { Task { await probe.readOnly() } }
-                Spacer()
-                Button("Self test") { Task { await probe.selfTest() } }
-            }
-            .buttonStyle(.borderless).disabled(probe.running)
-            HStack {
-                TextField("x", text: $probe.x).keyboardType(.numberPad)
-                TextField("y", text: $probe.y).keyboardType(.numberPad)
-                TextField("s", text: $probe.delay).keyboardType(.numberPad)
-                Button("Later") { Task { await probe.later() } }.buttonStyle(.borderless).disabled(probe.running)
-            }
-            .monospacedDigit()
-            ForEach(probe.lines.indices.reversed(), id: \.self) { i in Text(probe.lines[i]).font(.caption2.monospaced()).textSelection(.enabled) }
         } header: {
-            Text("In-process automation")
+            Text("Automation")
         } footer: {
-            Text("Native services is an experimental banner-free path using the same paired accessibility, screenshot and HID services as the Mac/Linux bridge. Agent typing uses verified keyboard input and Chinese candidate selection without the pasteboard. Changes take effect when Poki starts again.")
+            Text("Native services controls the phone through its paired accessibility, screenshot and input services, with no automation session and no banner. The XCTest session is the earlier way, with iOS’s automation banner.")
         }
         .onAppear {
             if path == AutomationPath.runner.rawValue { path = AutomationPath.nativeServices.rawValue }
         }
     }
-}
-
-private struct ProbeField: UIViewRepresentable {
-    let probe: InProcessProbe
-    func makeUIView(context: Context) -> UITextField {
-        let field = UITextField()
-        field.placeholder = "In-process test field"
-        field.borderStyle = .roundedRect
-        field.autocorrectionType = .no
-        field.spellCheckingType = .no
-        field.accessibilityIdentifier = "inprocess-field"
-        probe.field = field
-        return field
-    }
-    func updateUIView(_ view: UITextField, context: Context) { probe.field = view }
 }

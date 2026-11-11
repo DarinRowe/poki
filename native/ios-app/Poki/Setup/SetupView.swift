@@ -421,7 +421,7 @@ private struct ProxyAppPage: View {
                     Button("Open \(app.name)") { choose(); openApp() }
                 case .snippet(let line):
                     Text(verbatim: line).font(.system(.footnote, design: .monospaced)).textSelection(.enabled)
-                    Button(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc") {
+                    Button(copied ? "Copied" : "Copy") {
                         choose(); UIPasteboard.general.string = line; copied = true
                     }
                     Button("Open \(app.name)") { openApp() }
@@ -530,7 +530,7 @@ private struct PairingPage: View {
                 Label("Tap **Pair with Poki** and enter the code shown here and on the Lock Screen.", systemImage: "2.circle")
             }
             Section {
-                Button("Open Settings", systemImage: "gear") { openSettings(model, for: .pairing) }
+                Button("Open Settings") { openSettings(model, for: .pairing) }
                 Button("Cancel Pairing", role: .destructive) { model.cancelPairing() }
             }
         case .failed(let why)?:
@@ -578,11 +578,11 @@ private struct PairingPage: View {
         }
         Section {
             if PairingScanner.available {
-                Button("Scan Pairing Code", systemImage: "qrcode.viewfinder") { scanning = true }
+                Button("Scan Pairing Code") { scanning = true }
             }
-            Button("Import Pairing File", systemImage: "doc.badge.plus") { importing = true }
+            Button("Import Pairing File") { importing = true }
             if SetupStep.onDevicePairing && model.pairing == nil && model.pairingTrouble == nil && model.pairingPath != nil {
-                Button("Pair Again", systemImage: "arrow.triangle.2.circlepath") { Self.pair(model) }
+                Button("Pair Again") { Self.pair(model) }
             }
         } header: {
             Text("Other Ways")
@@ -626,12 +626,12 @@ private struct BackgroundPage: View {
                 Label("Location", systemImage: "location")
             }
             if model.background.denied {
-                Button("Open Settings", systemImage: "gear") { openSettings(model, for: .background) }
+                Button("Open Settings") { openSettings(model, for: .background) }
             } else if !model.background.allowed {
                 Button("Allow Location Access") { model.background.requestPermission() }
             } else if !model.background.always {
                 Button("Change to Always Allow") { model.background.requestPermission() }
-                Button("Open Settings", systemImage: "gear") { openSettings(model, for: .background) }
+                Button("Open Settings") { openSettings(model, for: .background) }
             }
         } footer: {
             Text(model.background.always ? "Poki stays active in the background without the location indicator, and never records your location."
@@ -647,7 +647,7 @@ private struct BackgroundPage: View {
                 Label("Live Activities", systemImage: "platter.filled.bottom.iphone")
             }
             if !model.activitiesEnabled {
-                Button("Open Settings", systemImage: "gear") { openSettings(model, for: .background) }
+                Button("Open Settings") { openSettings(model, for: .background) }
             }
         } footer: {
             Text(model.activitiesEnabled ? "Poki shows steps, pairing codes and approvals on the Lock Screen." : "Turn them on to see the agent’s steps and approve sensitive actions.")
@@ -672,12 +672,17 @@ struct SetupChecklist: View {
                 ForEach(SetupStep.shown) { step in
                     NavigationLink(value: step) { SetupStepRow(step: step) }
                 }
+                // Poki's own keyboard, which it types through on this path. It does not hold Poki
+                // back: without it, plain text is still typed with key presses.
+                if AutomationPath.current == .nativeServices {
+                    NavigationLink { PokiKeyboardPage() } label: { PokiKeyboardSetupRow() }
+                }
             } footer: {
                 Text(model.setupComplete ? "Everything Poki needs is in place." : "Poki needs every item ticked before an agent or the chat can use this iPhone. Items tick themselves when the phone can check them.")
             }
             SigningSection()
             Section {
-                Button { guiding = true } label: { Label("Setup Guide", systemImage: "list.number") }
+                Button("Setup Guide") { guiding = true }
             } footer: {
                 Text("Walks through every item in order. You can close it at any time and pick up from this list.")
             }
@@ -751,7 +756,7 @@ struct SetupStepPage: View {
                 }
             }
             Section {
-                Button("Open Settings", systemImage: "gear") { openSettings(model, for: step) }
+                Button("Open Settings") { openSettings(model, for: step) }
                 Toggle(confirmTitle, isOn: confirmBinding)
             } footer: {
                 Text("iOS doesn’t let Poki check this one, so turn the switch on once it’s done.")

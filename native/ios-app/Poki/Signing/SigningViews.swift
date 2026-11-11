@@ -120,8 +120,7 @@ struct SigningSection: View {
             // one tap downloads and installs it (or, without an Apple Account, opens the sign-in).
             if signer.updateNotReady {
                 if signer.signedIn {
-                    Button("Download and Install Update", systemImage: "arrow.down.circle") { Task { await signer.downloadAndInstallUpdate() } }
-                        .disabled(signer.working != nil)
+                    action("Download and Install Update", id: "download") { await signer.downloadAndInstallUpdate() }
                 } else {
                     NavigationLink {
                         Form { AccountPage() }
@@ -135,20 +134,37 @@ struct SigningSection: View {
                 // Idle is partly time (a minute since the last agent step), which nothing observes, so
                 // the row looks again every few seconds instead of staying as it was first drawn.
                 TimelineView(.periodic(from: .now, by: 5)) { _ in
-                    Button(next.kind == "update" ? "Install Update" : "Install Refresh", systemImage: "arrow.down.app") { Task { await signer.install() } }
-                        .disabled(signer.working != nil)
+                    action(next.kind == "update" ? "Install Update" : "Install Refresh", id: "install") { await signer.install() }
                 }
             }
             if signer.signedIn {
-                Button("Prepare Refresh Now", systemImage: "arrow.clockwise") { Task { await signer.prepare(kind: "refresh") } }
-                    .disabled(signer.working != nil)
+                action("Prepare Refresh Now", id: "refresh") { await signer.prepare(kind: "refresh") }
             }
         } header: {
-            Text("Signing")
+            Text("Updates")
         } footer: {
             Text(footer)
         }
         SignerActivityRows(signer: signer)
+    }
+
+    /// The action last tapped, which shows a spinner while it runs.
+    @State private var pressed: String?
+
+    /// One action row: its title in the tint with no symbol, as in Settings, and the system's
+    /// spinner at the trailing edge from the tap until the work ends.
+    private func action(_ title: LocalizedStringKey, id: String, _ work: @escaping () async -> Void) -> some View {
+        Button {
+            pressed = id
+            Task { await work(); if pressed == id { pressed = nil } }
+        } label: {
+            HStack {
+                Text(title)
+                Spacer()
+                if pressed == id, signer.working != nil { ProgressView() }
+            }
+        }
+        .disabled(signer.working != nil)
     }
 
     private var countdownColor: Color {

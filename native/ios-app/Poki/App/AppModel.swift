@@ -122,7 +122,10 @@ final class AppModel {
     private(set) var passcodeHint = false
     /// Turning on now will probably bring up iOS's passcode screen (no automation has started since
     /// this iPhone last restarted, or ever): the owner is told first (`passcodeHeadsUp`).
-    var passcodeExpected: Bool { UserDefaults.standard.double(forKey: Self.automationBootKey) != BootClock.current }
+    var passcodeExpected: Bool {
+        // Native services start no UI Automation, so iOS never asks for the passcode there.
+        automationPath != .nativeServices && UserDefaults.standard.double(forKey: Self.automationBootKey) != BootClock.current
+    }
     /// The note before iOS's passcode screen is showing; Continue turns Poki on.
     var passcodeHeadsUp = false
     private var passcodeHeadsUpReconnect = true
@@ -1104,7 +1107,7 @@ final class AppModel {
         if automationPath == .inProcess, inProcessWarming, !inProcessPasscode, now.timeIntervalSince(inProcessWarmStarted) > 5 {
             beginPasscodeWait()
         }
-        passcodeHint = inProcessPasscode || runner.state == "launching" && launchingSince.map { now.timeIntervalSince($0) > 10 } == true
+        passcodeHint = inProcessPasscode || automationPath != .nativeServices && runner.state == "launching" && launchingSince.map { now.timeIntervalSince($0) > 10 } == true
         // On both paths the automation (the runner, or the in-process session) ends after the idle
         // time, so iOS's banner shows only while an agent works; the next request starts it again.
         guard sessionOn, !runnerPaused, idleStopSeconds > 0, approvals.isEmpty, activityText == "Idle" else { return }
@@ -1199,7 +1202,7 @@ final class AppModel {
         default: break
         }
         if status.state != "launching" { launchingSince = nil; passcodeHint = inProcessPasscode }
-        if status.code == "passcode", runner.code != "passcode" {
+        if status.code == "passcode", runner.code != "passcode", automationPath != .nativeServices {
             // iOS is asking for the passcode before the first UI automation after a restart. The
             // launcher waits minutes for it; the person is asked on the Live Activity, and the agent
             // reads a plain "starting" meanwhile (coreState).

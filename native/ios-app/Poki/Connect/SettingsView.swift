@@ -40,7 +40,6 @@ struct SettingsDestination: View {
         switch route {
         case .connector(let secret): ConnectorDetail(secret: secret, back: pop)
         case .relay: RelayView(back: pop)
-        // Diagnostics pushes its own pages (Log, Live Activity Preview) and pops itself.
         case .diagnostics: DiagnosticsView(path: Binding(get: { [.diagnostics] }, set: { new in
             if new.count > 1, let last = new.last { push(last) } else if new.isEmpty { pop() }
         }))
@@ -102,8 +101,6 @@ struct SettingsHome: View {
                 if model.relayAddress == nil { Text("Set your relay address first: each agent’s address is on your relay.") }
             }
 
-            PokiKeyboardSection()
-
             if model.automationPath == .inProcess {
                 Section {
                     Toggle("Hide Banner When Idle", isOn: $model.closeSessionWhenIdle)
@@ -153,8 +150,8 @@ struct SettingsHome: View {
                 Text(model.automationPath == .inProcess
                      ? "iOS shows the automation banner only while Poki’s automation session is open. Poki opens it when an agent asks and closes it when idle. Memory holds the routines and notes every agent shares."
                      : model.automationPath == .nativeServices
-                     ? "Experimental native services controls the phone without an XCTest automation session or its banner. Change it in Diagnostics."
-                     : "Memory holds the routines and notes every agent shares. Diagnostics: logs, checks, background hold, addresses, and Live Activity preview.")
+                     ? "Native services controls the phone without an XCTest automation session or its banner. Change it under Setup › Advanced › Testing Options."
+                     : "Memory holds the routines and notes every agent shares.")
             }
         }
         .navigationTitle("Agents and Relay")
@@ -267,7 +264,7 @@ struct ConnectorDetail: View {
                 }
                 Text(verbatim: url.replacingOccurrences(of: secret.secret, with: "••••••"))
                     .font(.footnote.monospaced()).foregroundStyle(Color(.secondaryLabel)).textSelection(.disabled)
-                Button(copied ? "Copied" : "Copy Address", systemImage: copied ? "checkmark" : "doc.on.doc") {
+                Button(copied ? "Copied" : "Copy Address") {
                     UIPasteboard.general.string = url
                     copied = true
                 }

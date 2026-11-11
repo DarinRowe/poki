@@ -1,62 +1,115 @@
 import SwiftUI
 import UIKit
 
-/// Settings → Poki keyboard: whether the typing panel is set up, and how Poki uses it.
-struct PokiKeyboardSection: View {
+/// What Poki knows of its keyboard: iOS lists it as added, and it has answered (which takes Full Access).
+struct PokiKeyboardState {
+    var added = PokiKeyboardTyping.added
+    var answered = PokiKeyboardTyping.lastStatus != nil
+    var lastDecline = UserDefaults.standard.string(forKey: PokiKeyboardTyping.lastDeclineKey)
+
+    var ready: Bool { answered && (added || PokiKeyboardTyping.keyboards.isEmpty) }
+    var word: LocalizedStringKey {
+        if ready { return "Ready" }
+        if added || answered { return "Needs Full Access" }
+        return "Not Added"
+    }
+}
+
+/// Setup's row for the keyboard: a tick, or what is missing.
+struct PokiKeyboardSetupRow: View {
+    @State private var state = PokiKeyboardState()
+    @Environment(\.scenePhase) private var scenePhase
+
+    var body: some View {
+        LabeledContent {
+            if state.ready {
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green).accessibilityLabel(Text("Done"))
+            } else {
+                Text(state.word).foregroundStyle(.orange)
+            }
+        } label: {
+            Label("Add the Poki Keyboard", systemImage: "keyboard")
+        }
+        .onAppear { state = PokiKeyboardState() }
+        .onChange(of: scenePhase) { _, phase in if phase == .active { state = PokiKeyboardState() } }
+    }
+}
+
+/// Setup › Add the Poki Keyboard: what it is for, how to add it, and whether it has answered.
+struct PokiKeyboardPage: View {
+    @State private var state = PokiKeyboardState()
+    @Environment(\.scenePhase) private var scenePhase
+
+    var body: some View {
+        Form {
+            Section {
+                LabeledContent("Keyboard") {
+                    Text(state.word).foregroundStyle(state.ready ? Color.secondary : Color.orange)
+                }
+                if let last = state.lastDecline {
+                    LabeledContent("Not Used Last Time") { Text(verbatim: last).foregroundStyle(.secondary) }
+                }
+            } footer: {
+                Text("Poki types through its own keyboard panel, at a person’s pace. The panel has no keys: it shows while Poki types, and Take Over stops it.")
+            }
+            Section {
+                Text("Open **Settings › General › Keyboard › Keyboards › Add New Keyboard** and choose **Poki**.")
+                Text("Tap **Poki** in that list and turn on **Allow Full Access**.")
+                Text("Keep your usual keyboards. Then switch to the Poki keyboard once in any text field, so Poki knows it is there.")
+                Button("Open Settings") {
+                    if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                }
+            } header: {
+                Text("How to Add It")
+            } footer: {
+                Text("Full Access lets the panel talk to Poki on this iPhone. It has no network access and never uses the clipboard.")
+            }
+        }
+        .navigationTitle("Poki Keyboard")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear { state = PokiKeyboardState() }
+        .onChange(of: scenePhase) { _, phase in if phase == .active { state = PokiKeyboardState() } }
+    }
+}
+
+/// Setup › Advanced › Typing: how text is entered, and the keyboard's switches.
+struct TypingSettingsSection: View {
+    @AppStorage(NativeServicesWDA.typingMethodKey) private var method = "keyboard"
     @AppStorage(PokiKeyboardTyping.autoSwitchKey) private var autoSwitch = true
     @AppStorage(PokiKeyboardTyping.switchBackKey) private var switchBack = true
     @AppStorage(NativeServicesWDA.systemPinyinKey) private var systemPinyin = false
     @AppStorage("poki.experimental.userRoutines") private var userRoutines = false
     @State private var showLearning = false
-    @State private var added = PokiKeyboardTyping.added
-    @State private var answered = PokiKeyboardTyping.lastStatus != nil
-    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         Section {
-            LabeledContent("Keyboard") {
-                Text(state).foregroundStyle(ready ? Color.secondary : Color.orange)
+            Picker("Text Entry", selection: $method) {
+                Text("Poki Keyboard").tag("keyboard")
+                Text("Paste").tag("paste")
             }
-            if !ready {
-                Button("Open Settings") {
-                    if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
-                }
+            if method != "paste" {
+                Toggle("Switch to It Automatically", isOn: $autoSwitch)
+                Toggle("Switch Back When Finished", isOn: $switchBack)
+                Toggle("System Pinyin Keyboard for Chinese", isOn: $systemPinyin)
             }
-            Toggle("Switch to it automatically", isOn: $autoSwitch)
-            Toggle("Switch back when finished", isOn: $switchBack)
-            Toggle("Type Chinese with the system Pinyin keyboard", isOn: $systemPinyin)
             if showLearning {
                 Toggle("Create routines from user demonstrations", isOn: $userRoutines)
             }
         } header: {
-            Text("Poki keyboard")
+            Text("Typing")
                 .onLongPressGesture(minimumDuration: 3) { showLearning.toggle() }
         } footer: {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Poki types through its own keyboard panel, at a person’s pace. The panel has no keys: it shows while Poki types, and Take Over stops it. To set it up, add Poki under Settings → General → Keyboard → Keyboards, then allow Full Access. Keep your usual keyboards.")
-                Text("Full Access lets the panel talk to Poki on this iPhone. It has no network access and never uses the clipboard. Without the panel, Poki types with key presses as before.")
-                if systemPinyin {
-                    Text("The system Pinyin keyboard is slower and reads the screen while it types.")
+                if method == "paste" {
+                    Text("Poki types with key presses and pastes what the keys can’t type, such as Chinese and emoji. Your clipboard is put back afterwards. The Poki keyboard is not used.")
+                } else {
+                    Text("Poki types through its own keyboard and never touches the clipboard. When the keyboard can’t be used, plain text is typed with key presses, and other text is not entered.")
+                    if systemPinyin { Text("The system Pinyin keyboard is slower and reads the screen while it types.") }
                 }
                 if showLearning {
                     Text("Experimental. Observed corrections become user-assisted checkpoints, never guessed taps or unattended replay. Off by default.")
                 }
             }
         }
-        .onAppear(perform: refresh)
-        .onChange(of: scenePhase) { _, phase in if phase == .active { refresh() } }
-    }
-
-    private var ready: Bool { answered && (added || PokiKeyboardTyping.keyboards.isEmpty) }
-
-    private var state: LocalizedStringKey {
-        if ready { return "Ready" }
-        if added || answered { return "Needs Full Access" }
-        return "Not added"
-    }
-
-    private func refresh() {
-        added = PokiKeyboardTyping.added
-        answered = PokiKeyboardTyping.lastStatus != nil
     }
 }

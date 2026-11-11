@@ -190,7 +190,9 @@ struct IslandBottom: View {
 struct CompactLeading: View {
     var face: ActivityFace
     var body: some View {
-        RingGlyph(face: face).padding(.leading, 2).environment(\.colorScheme, .dark)
+        // Kept clear of the camera: the ring is drawn inside its frame, and the space is on the
+        // camera's side (seen on the phone: the ring ran under the camera's edge).
+        RingGlyph(face: face).padding(.trailing, 6).environment(\.colorScheme, .dark)
     }
 }
 
@@ -243,14 +245,16 @@ struct RingGlyph: View {
             case .none:
                 EmptyView()
             case .fraction(let value):
-                Circle().stroke(color.opacity(0.25), lineWidth: 2.5)
-                Circle().trim(from: 0, to: max(0.04, min(1, value)))
+                // Inset by half the line, so the stroke stays inside the frame.
+                Circle().inset(by: 1.25).stroke(color.opacity(0.25), lineWidth: 2.5)
+                Circle().inset(by: 1.25).trim(from: 0, to: max(0.04, min(1, value)))
                     .stroke(color, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
                     .rotationEffect(.degrees(-90))
             case .timer(let range):
                 ProgressView(timerInterval: range, countsDown: true, label: { EmptyView() }, currentValueLabel: { EmptyView() })
                     .progressViewStyle(.circular)
                     .tint(color)
+                    .frame(width: Self.size, height: Self.size)
             }
             Image(systemName: face.symbol)
                 .symbolRenderingMode(.monochrome)
@@ -259,6 +263,7 @@ struct RingGlyph: View {
                 .transaction { $0.animation = nil }
         }
         .frame(width: Self.size, height: Self.size)
+        .clipped()
         .accessibilityHidden(true)
     }
 }
