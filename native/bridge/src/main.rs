@@ -396,6 +396,94 @@ async fn main() {
     }
 }
 
+fn select_usbmux_device(
+    devices: Vec<idevice::usbmuxd::UsbmuxdDevice>,
+    udid: &str,
+) -> Option<idevice::usbmuxd::UsbmuxdDevice> {
+    // A Wi-Fi sync entry can precede the same phone's working cable link.
+    devices
+        .into_iter()
+        .filter(|device| device.udid == udid)
+        .min_by_key(|device| !matches!(device.connection_type, idevice::usbmuxd::Connection::Usb))
+}
+
+#[cfg(test)]
+mod usbmux_selection_tests {
+    use super::select_usbmux_device;
+    use idevice::usbmuxd::{Connection, UsbmuxdDevice};
+
+    fn device(udid: &str, id: u32, connection_type: Connection) -> UsbmuxdDevice {
+        UsbmuxdDevice {
+            udid: udid.into(),
+            device_id: id,
+            connection_type,
+        }
+    }
+    fn wifi(udid: &str, id: u32) -> UsbmuxdDevice {
+        device(udid, id, Connection::Network("127.0.0.1".parse().unwrap()))
+    }
+
+    #[test]
+    fn prefers_the_requested_phones_usb_link_in_either_inventory_order() {
+        for devices in [
+            vec![wifi("target", 1), device("target", 2, Connection::Usb)],
+            vec![device("target", 2, Connection::Usb), wifi("target", 1)],
+        ] {
+            assert_eq!(
+                select_usbmux_device(devices, "target").unwrap().device_id,
+                2
+            );
+        }
+    }
+
+    #[test]
+    fn keeps_the_existing_first_match_when_no_usb_link_is_available() {
+        assert_eq!(
+            select_usbmux_device(vec![wifi("target", 1), wifi("target", 2)], "target")
+                .unwrap()
+                .device_id,
+            1
+        );
+        assert_eq!(
+            select_usbmux_device(
+                vec![device("target", 3, Connection::Unknown("other".into()))],
+                "target"
+            )
+            .unwrap()
+            .device_id,
+            3
+        );
+    }
+
+    #[test]
+    fn never_selects_another_phone_or_changes_the_first_equal_priority_match() {
+        assert_eq!(
+            select_usbmux_device(
+                vec![device("other", 1, Connection::Usb), wifi("target", 2)],
+                "target"
+            )
+            .unwrap()
+            .device_id,
+            2
+        );
+        assert!(
+            select_usbmux_device(vec![device("other", 1, Connection::Usb)], "target").is_none()
+        );
+        assert_eq!(
+            select_usbmux_device(
+                vec![
+                    device("target", 2, Connection::Usb),
+                    device("target", 3, Connection::Usb)
+                ],
+                "target"
+            )
+            .unwrap()
+            .device_id,
+            2
+        );
+    }
+}
+
 async fn connect_device(
     udid: &str,
 ) -> Result<(
@@ -405,7 +493,8 @@ async fn connect_device(
     idevice::provider::UsbmuxdProvider,
 )> {
     let mut mux = UsbmuxdConnection::default().await?;
-    let device = mux.get_device(udid).await?;
+    let device = select_usbmux_device(mux.get_devices().await?, udid)
+        .ok_or(idevice::IdeviceError::DeviceNotFound)?;
     let provider = device.to_provider(UsbmuxdAddr::from_env_var()?, "poki-mcp");
     let proxy = CoreDeviceProxy::connect(&provider).await?;
     let port = proxy.tunnel_info().server_rsd_port;
