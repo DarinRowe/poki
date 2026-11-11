@@ -4,6 +4,46 @@ import XCTest
 @testable import Poki
 
 final class NativeServicesWDATests: XCTestCase {
+    func testNativeCoordinatesRejectOutOfViewportBeforeHID() throws {
+        let native = NativeServicesWDA(screen: CGSize(width: 402, height: 874))
+        for (x, y) in [(-1.0, 20.0), (402.0, 20.0), (20.0, -1.0), (20.0, 874.0), (Double.nan, 20.0), (20.0, Double.infinity)] {
+            let source: JSON = ["type": "pointer", "parameters": ["pointerType": "touch"], "actions": [
+                ["type": "pointerMove", "x": .number(x), "y": .number(y)],
+                ["type": "pointerDown"], ["type": "pointerUp"],
+            ]]
+            XCTAssertThrowsError(try native.finger(source), "Invalid point \(x),\(y) must not become an edge tap")
+        }
+    }
+
+    func testNativeCoordinateRejectionIncludesLaterDragPointsAndInvalidViewports() throws {
+        let source: JSON = ["type": "pointer", "parameters": ["pointerType": "touch"], "actions": [
+            ["type": "pointerMove", "x": 10, "y": 10], ["type": "pointerDown"],
+            ["type": "pointerMove", "x": 402, "y": 20, "duration": 50], ["type": "pointerUp"],
+        ]]
+        XCTAssertThrowsError(try NativeServicesWDA(screen: CGSize(width: 402, height: 874)).finger(source))
+        let tap: JSON = ["type": "pointer", "parameters": ["pointerType": "touch"], "actions": [
+            ["type": "pointerMove", "x": 0, "y": 0], ["type": "pointerDown"], ["type": "pointerUp"],
+        ]]
+        for size in [CGSize.zero, CGSize(width: 1, height: 874), CGSize(width: CGFloat.nan, height: 874)] {
+            XCTAssertThrowsError(try NativeServicesWDA(screen: size).finger(tap))
+        }
+    }
+
+    func testNativeCoordinateEndpointsAndFractionalPositionsRemainSupported() throws {
+        let native = NativeServicesWDA(screen: CGSize(width: 402, height: 874))
+        let source: JSON = ["type": "pointer", "parameters": ["pointerType": "touch"], "actions": [
+            ["type": "pointerMove", "x": 0, "y": 0], ["type": "pointerDown"],
+            ["type": "pointerMove", "x": 200.5, "y": 436.5, "duration": 25],
+            ["type": "pointerMove", "x": 401, "y": 873, "duration": 25], ["type": "pointerUp"],
+        ]]
+        let points = try native.finger(source)
+        XCTAssertEqual(points[0]["x"] as? Int, 0)
+        XCTAssertEqual(points[1]["x"] as? Int, 32768)
+        XCTAssertEqual(points[1]["y"] as? Int, 32768)
+        XCTAssertEqual(points[2]["x"] as? Int, 65535)
+        XCTAssertEqual(points[2]["y"] as? Int, 65535)
+    }
+
     @MainActor
     func testChineseInputVerificationRejectsUnknownAndOtherLanguages() {
         for language in ["zh", "zh-Hans", "zh-Hant", "zh_CN"] {

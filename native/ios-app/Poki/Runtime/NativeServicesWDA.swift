@@ -309,16 +309,16 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
                 x = nextX; y = nextY
                 if touching {
                     elapsed += max(0.001, action["duration"]?.double ?? 0)
-                    points.append(["x": coordinate(nextX, across: screen.width), "y": coordinate(nextY, across: screen.height), "time_ms": elapsed])
+                    points.append(["x": try coordinate(nextX, across: screen.width), "y": try coordinate(nextY, across: screen.height), "time_ms": elapsed])
                 }
             case "pointerDown":
                 guard !touching, let x, let y else { throw Self.failure("pointerDown needs an initial pointerMove") }
                 touching = true
-                points.append(["x": coordinate(x, across: screen.width), "y": coordinate(y, across: screen.height), "time_ms": 0.0])
+                points.append(["x": try coordinate(x, across: screen.width), "y": try coordinate(y, across: screen.height), "time_ms": 0.0])
             case "pause":
                 guard touching, let x, let y else { throw Self.failure("pause needs a pointerDown") }
                 elapsed += max(0.001, action["duration"]?.double ?? 0)
-                points.append(["x": coordinate(x, across: screen.width), "y": coordinate(y, across: screen.height), "time_ms": elapsed])
+                points.append(["x": try coordinate(x, across: screen.width), "y": try coordinate(y, across: screen.height), "time_ms": elapsed])
             case "pointerUp":
                 guard touching else { throw Self.failure("pointerUp needs a pointerDown") }
                 touching = false; lifted = true
@@ -327,7 +327,7 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
         }
         guard lifted, !touching, let x, let y, !points.isEmpty else { throw Self.failure("the touch pointer did not lift") }
         if points.count == 1 {
-            points.append(["x": coordinate(x, across: screen.width), "y": coordinate(y, across: screen.height), "time_ms": 50.0])
+            points.append(["x": try coordinate(x, across: screen.width), "y": try coordinate(y, across: screen.height), "time_ms": 50.0])
         }
         return points
     }
@@ -365,12 +365,14 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
 
     private func point(_ body: JSON?, x: String, y: String) throws -> (x: Int, y: Int) {
         guard let px = body?[x]?.double, let py = body?[y]?.double else { throw Self.failure("\(x) and \(y) are needed") }
-        return (coordinate(px, across: screen.width), coordinate(py, across: screen.height))
+        return (try coordinate(px, across: screen.width), try coordinate(py, across: screen.height))
     }
     /// CoreDevice HID uses 0...65535 over each full display axis, while WDA and PokiCore use UIKit
     /// points. Use the same end-point mapping as the Mac/Linux bridge.
-    private func coordinate(_ value: Double, across: CGFloat) -> Int {
-        guard across > 1 else { return 0 }
+    private func coordinate(_ value: Double, across: CGFloat) throws -> Int {
+        guard value.isFinite, across.isFinite, across > 1, value >= 0, value < Double(across) else {
+            throw Self.failure("Touch coordinates must be finite and inside the current viewport")
+        }
         return max(0, min(65_535, Int((value / Double(across - 1) * 65_535).rounded())))
     }
     static func checkTypingResult(_ answer: [String: Any]) throws {

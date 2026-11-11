@@ -6,6 +6,12 @@ import XCTest
 final class FaultTests: XCTestCase {
     /// A focused field that keeps what /wda/keys and the paste menu put in it.
     final class Field: @unchecked Sendable {
+        let frame: [Double]
+        let menuFrame: [Double]
+        init(frame: [Double] = [16, 100, 358, 44], menuFrame: [Double] = [150, 50, 80, 40]) {
+            self.frame = frame
+            self.menuFrame = menuFrame
+        }
         let value = LockedBox("")
         let clipboard = LockedBox<String?>("owner's clipboard")
         /// The keyboard is up (a field has the focus), as the tree shows it.
@@ -14,8 +20,8 @@ final class FaultTests: XCTestCase {
         /// The tree as the field's app shows it: the field with its value, the keyboard when up, and
         /// the Paste menu once it was opened.
         func tree() -> JSON {
-            var children: [Node] = [Node("TextField", "Note", [16, 100, 358, 44], value: value.value)]
-            if menuShown.value { children.append(Node("MenuItem", "Paste", [150, 50, 80, 40])) }
+            var children: [Node] = [Node("TextField", "Note", frame, value: value.value)]
+            if menuShown.value { children.append(Node("MenuItem", "Paste", menuFrame)) }
             if keyboard.value { children.append(Node("Keyboard", nil, [0, 500, 390, 344], [Node("Button", "space", [100, 800, 190, 40])])) }
             func json(_ n: Node) -> JSON {
                 ["type": .string("XCUIElementType\(n.type)"), "label": n.label.map(JSON.string) ?? .null, "value": n.value.map(JSON.string) ?? .null, "rect": ["x": .number(n.frame[0]), "y": .number(n.frame[1]), "width": .number(n.frame[2]), "height": .number(n.frame[3])], "children": .array(n.children.map(json))]
@@ -48,8 +54,12 @@ final class FaultTests: XCTestCase {
                     return (200, ["value": .null])
                 }
             }
-            wda.set("POST /wda/tap") { [value, clipboard] body in
-                if body?["x"]?.double == 190, body?["y"]?.double == 70 { value.update { $0 += clipboard.value ?? "" } }
+            wda.set("POST /wda/tap") { [self] body in
+                if menuShown.value, let x = body?["x"]?.double, let y = body?["y"]?.double,
+                   (menuFrame[0]..<(menuFrame[0] + menuFrame[2])).contains(x),
+                   (menuFrame[1]..<(menuFrame[1] + menuFrame[3])).contains(y) {
+                    value.update { $0 += clipboard.value ?? "" }
+                }
                 return (200, ["value": .null])
             }
         }
@@ -298,6 +308,69 @@ final class FaultTests: XCTestCase {
         XCTAssertEqual(field.value.value, "密码不是这个")
         XCTAssertEqual(field.clipboard.value, "owner's clipboard", "the owner's clipboard is restored")
         XCTAssertTrue(result.text.contains("(pasted); the field now reads \"密码不是这个\""), result.text)
+    }
+
+    func testOffscreenPasteFieldIsRejectedBeforeClearingOrChangingTheClipboard() async {
+        let (core, wda, _) = makeCore()
+        let field = Field(frame: [400, 100, 20, 40])
+        field.value.value = "old"
+        field.install(wda)
+        do {
+            _ = try await core.computer.paste("new", clear: true, until: now() + 6)
+            XCTFail("an off-screen field must be refused")
+        } catch {
+            XCTAssertTrue(String(describing: error).contains("not_hittable"))
+        }
+        XCTAssertEqual(field.value.value, "old")
+        XCTAssertEqual(field.clipboard.value, "owner's clipboard")
+        XCTAssertTrue(wda.bodies("POST /wda/keys").isEmpty)
+        XCTAssertTrue(wda.bodies("POST /wda/setPasteboard").isEmpty)
+        XCTAssertTrue(wda.bodies("POST /wda/touchAndHold").isEmpty)
+    }
+
+    func testPasteUsesTheVisiblePartOfTheFieldBeforeAndAfterClearing() async {
+        for enabled in [false, true] {
+            for (frame, menuFrame) in [
+                ([380.0, 100, 20, 40], [150.0, 50, 80, 40]),
+                ([100.0, 834, 40, 20], [150.0, 50, 80, 40]),
+                ([16.0, 100, 358, 44], [150.0, 50, 80, 40]),
+                ([16.0, 100, 358, 44], [380.0, 50, 20, 40]),
+                ([16.0, 100, 358, 44], [100.0, 834, 40, 20]),
+            ] {
+                for clear in [false, true] {
+                    let (core, wda, _) = makeCore { $0.humanize = enabled }
+                    core.computer.humanize = Humanize(enabled: enabled, seed: 35)
+                    let field = Field(frame: frame, menuFrame: menuFrame)
+                    field.value.value = "old"
+                    field.install(wda)
+                    // Model the edit menu and its effect for shaped input as well as legacy input.
+                    wda.set("POST /actions") { body in
+                        let steps = body?["actions"]?[0]?["actions"]?.array ?? []
+                        if steps.reduce(0.0, { $0 + ($1["duration"]?.double ?? 0) }) >= 600 {
+                            field.menuShown.value = true
+                        } else if let move = steps.first(where: { $0["type"]?.string == "pointerMove" }),
+                                  let x = move["x"]?.double, let y = move["y"]?.double,
+                                  (menuFrame[0]..<(menuFrame[0] + menuFrame[2])).contains(x),
+                                  (menuFrame[1]..<(menuFrame[1] + menuFrame[3])).contains(y), field.menuShown.value {
+                            field.value.update { $0 += field.clipboard.value ?? "" }
+                        }
+                        return (200, ["value": .null])
+                    }
+                    _ = await core.call("look", [:])
+                    let result = await core.call("do", ["actions": [["type": "new 中文", "ref": 1, "via": "paste", "clear": .bool(clear)]]])
+                    XCTAssertFalse(result.text.contains("not_hittable:"), result.text)
+                    XCTAssertTrue(field.menuShown.value, result.text)
+                    XCTAssertEqual(field.value.value, (clear ? "" : "old") + "new 中文", result.text)
+                    XCTAssertEqual(field.clipboard.value, "owner's clipboard")
+                    for body in wda.bodies("POST /actions") {
+                        for step in body["actions"]?[0]?["actions"]?.array ?? [] where step["type"]?.string == "pointerMove" {
+                            XCTAssertTrue((0..<390).contains(step["x"]?.double ?? -1))
+                            XCTAssertTrue((0..<844).contains(step["y"]?.double ?? -1))
+                        }
+                    }
+                }
+            }
+        }
     }
 
     func testAnUnreadableClipboardIsNeverOverwritten() async {
