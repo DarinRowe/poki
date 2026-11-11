@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import Observation
 import PokiCore
@@ -105,6 +106,7 @@ enum VoiceError: LocalizedError {
     case timeout(String)
     /// The connection was set up but no network path to OpenAI opened (the ICE state at the end).
     case noPath(String)
+    case noMicrophone
 
     var errorDescription: String? {
         switch self {
@@ -114,6 +116,7 @@ enum VoiceError: LocalizedError {
         case .noBridge: "Set up Poki's model first (an OpenAI key talks fastest), or enter a voice bridge address from your Mac."
         case .timeout(let what): "\(what) took too long."
         case .noPath: "The voice connection could not reach OpenAI over this network. Check Wi-Fi or cellular, or a VPN or proxy app that blocks calls, then try again."
+        case .noMicrophone: String(localized: "Poki can't use the microphone. Allow it in Settings, Privacy, Microphone.")
         }
     }
 }
@@ -374,6 +377,10 @@ final class VoiceModel {
         session += 1
         let number = session
         do {
+            // Asked before connecting: otherwise iOS asks once the conversation is already listening, and
+            // a refusal leaves one that hears nothing.
+            if microphone, !(await AVAudioApplication.requestRecordPermission()) { throw VoiceError.noMicrophone }
+            guard number == session else { return }
             let token: VoiceBridge.Token
             if let key { token = try await VoiceDirect.token(apiKey: key) } else { token = try await bridge!.token() }
             // Ended (End, or the button again) while the key was exchanged.
@@ -401,6 +408,9 @@ final class VoiceModel {
                 try await link.connect(secret: retry.value, microphone: microphone, direct: true)
             }
             guard number == session else { link.close(); return }
+            // The server owes session.created now; the microphone is on while Poki waits for it.
+            lastActivity = time.now()
+            watchForStall(session: number)
             link.setRemoteVolume(muted ? 0 : 1)
             log.add("voice", "connected (\(token.model)), session \(number)")
             if microphone { link.diagnose { [log] line in log.add("voice", line) } }
@@ -413,6 +423,8 @@ final class VoiceModel {
             holdingMicrophone = false
             phase = .lost(error.localizedDescription)
             log.add("voice", "could not connect: \(error.localizedDescription)")
+            // The bar that said Connecting goes with the connection: the reason stays in the chat.
+            onConversationEnded?([VoiceLine(role: .note, text: error.localizedDescription)], Date())
         }
     }
 
@@ -489,7 +501,7 @@ final class VoiceModel {
     /// The server owes something: the end of the person's speech, an answer, the end of the audio. A step
     /// that is running is not the server's to answer for, and it has its own time limits.
     private var waitingOnServer: Bool {
-        (awaitingAnswer || activeResponse != nil || wantsResponse || phase == .hearing || phase == .speaking)
+        !ready || (awaitingAnswer || activeResponse != nil || wantsResponse || phase == .hearing || phase == .speaking)
             && !calls.contains { $0.state == .running }
     }
 
