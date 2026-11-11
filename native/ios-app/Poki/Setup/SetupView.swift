@@ -351,18 +351,14 @@ private struct LoopbackPage: View {
         }
         .disabled(externalLocked)
 
+        AutomationMethodSection()
+
         // Native services come first where the iPhone has them. Where they cannot start, the XCTest
         // session can (no loopback needed once the developer image is mounted; PR #91, issue 35),
         // with iOS's banner: the owner says here who decides that.
         Section {
-            if AutomationPath.thisPhoneDefault == .nativeServices {
-                Picker(selection: $asksBeforeBanner) {
-                    Label("Ask Me First", systemImage: "questionmark.bubble").tag(true)
-                    Label("Decide Automatically", systemImage: "wand.and.stars").tag(false)
-                } label: {
-                    Label("Without a Connection", systemImage: "arrow.triangle.branch")
-                }
-                .disabled(AutomationPath.pinned != nil)
+            if AutomationPath.thisPhoneDefault == .nativeServices, AutomationPath.pinned == nil {
+                Toggle(isOn: $asksBeforeBanner) { Label("Ask Before Showing the Banner", systemImage: "questionmark.bubble") }
             }
             LabeledContent {
                 Text(AppModel.localDDIMounted ? "Mounted" : "Not Mounted").foregroundStyle(AppModel.localDDIMounted ? Color.secondary : Color.orange)
@@ -370,21 +366,19 @@ private struct LoopbackPage: View {
                 Label("Developer Image", systemImage: "externaldrive")
             }
         } header: {
-            Text("When the Connection Is Off")
+            Text("Without Wi-Fi or Loopback")
         } footer: {
-            Text(AutomationPath.pinned != nil
-                 ? "A method is chosen in Testing Options, so Poki does not choose here. Set it to Automatic to let Poki choose."
-                 : AutomationPath.thisPhoneDefault == .nativeServices
-                 ? "Poki controls this iPhone without any banner when the local connection answers. When it does not (no Wi-Fi, or the loopback is off), Poki can still work another way, which shows iOS’s automation banner while it works and may ask for your passcode once. Ask Me First has the agent ask you before using it. Decide Automatically lets Poki use it and go back when the connection returns. It needs the developer image mounted, which lasts until this iPhone restarts."
-                 : "On this iOS version Poki works through iOS’s test session. Once the developer image is mounted, it can start with no local connection at all, until this iPhone restarts.")
+            if AutomationPath.thisPhoneDefault == .nativeServices, AutomationPath.pinned == nil {
+                Text("Poki can still work, with iOS’s automation banner on screen.")
+            }
         }
 
         Section {
-            Toggle(isOn: $keepTunnel) { Label("Keep the Connection for Cellular", systemImage: "antenna.radiowaves.left.and.right") }
+            Toggle(isOn: $keepTunnel) { Label("Keep the Connection on Cellular", systemImage: "antenna.radiowaves.left.and.right") }
         } header: {
-            Text("Testing: Leaving Wi-Fi")
+            Text("Cellular")
         } footer: {
-            Text("Off by default. iOS only lets Poki open its connection to this iPhone on Wi-Fi, but one that is already open goes on over cellular. With this on, Poki opens it as soon as it turns on and keeps it between tasks instead of closing it. If Poki is closed or your proxy app reconnects, it needs Wi-Fi again. For the native services method. Takes effect the next time Poki turns on.")
+            Text("Keeps working after you leave Wi-Fi. Applies the next time Poki turns on.")
         }
 
         if model.tunnel.available {
@@ -820,24 +814,61 @@ struct ContributeSection: View {
                 LabeledContent {
                     Image(systemName: "arrow.up.forward").font(.footnote.weight(.semibold)).foregroundStyle(Color(.tertiaryLabel))
                 } label: {
-                    Label("Star Poki on GitHub", systemImage: "star")
+                    Label { Text("Star Poki on GitHub").foregroundStyle(Color(.label)) } icon: { Image(systemName: "star") }
                 }
             }
-            Button {
-                openURL(URL(string: "https://github.com/JosssphZhou/poki/issues/new/choose")!)
-            } label: {
-                LabeledContent {
-                    Image(systemName: "arrow.up.forward").font(.footnote.weight(.semibold)).foregroundStyle(Color(.tertiaryLabel))
-                } label: {
-                    Label("Report Bugs & Issues", systemImage: "ladybug")
-                }
-            }
+            NavigationLink { ReportIssuePage() } label: { Label("Report Bugs & Issues", systemImage: "exclamationmark.bubble") }
         } header: {
             Text("Contribute")
         } footer: {
-            Text("Poki is open source. Both open GitHub in your browser.")
+            Text("Poki is open source and relies on its community.")
         }
-        .foregroundStyle(Color(.label))
+    }
+}
+
+/// Setup › Contribute › Report Bugs & Issues: what a good report holds, the log to attach, and the way to GitHub.
+struct ReportIssuePage: View {
+    @Environment(\.openURL) private var openURL
+    @State private var copied = false
+    @State private var logFile: URL?
+
+    var body: some View {
+        Form {
+            HowToSection(lines: [
+                "Make the problem happen again, then come back here.",
+                "Copy or save the log below.",
+                "Open a new issue. Say what you did, what you expected and what happened, and attach the log.",
+            ])
+            Section {
+                Button {
+                    UIPasteboard.general.string = AppLog.shared.text
+                    copied = true
+                } label: {
+                    Label(copied ? "Copied" : "Copy Log", systemImage: copied ? "checkmark" : "doc.on.doc")
+                }
+                if let logFile {
+                    ShareLink(item: logFile) { Label("Save or Share Log", systemImage: "square.and.arrow.up") }
+                }
+            } header: {
+                Text("Log")
+            } footer: {
+                Text("Issues are public. Read the log before you post it.")
+            }
+            Section {
+                Button {
+                    openURL(URL(string: "https://github.com/JosssphZhou/poki/issues/new/choose")!)
+                } label: {
+                    Label("Open a New Issue on GitHub", systemImage: "arrow.up.forward.square")
+                }
+            }
+        }
+        .navigationTitle("Report Bugs & Issues")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            // A file, so the share sheet offers Save to Files.
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("Poki-log.txt")
+            if (try? AppLog.shared.text.write(to: url, atomically: true, encoding: .utf8)) != nil { logFile = url }
+        }
     }
 }
 

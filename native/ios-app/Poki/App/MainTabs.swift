@@ -254,7 +254,7 @@ struct AdvancedView: View {
 
     var body: some View {
         Form {
-            if model.automationPath == .nativeServices { TypingSettingsSection() }
+            if model.automationPath != .runner { TypingSettingsSection() }
             Section {
                 Picker(selection: $afterTask) {
                     Text("Notify Me").tag("notify")
@@ -278,7 +278,7 @@ struct AdvancedView: View {
             } header: {
                 Text("Debugging")
             } footer: {
-                Text("Diagnostics: connection checks and this iPhone’s addresses. Testing Options: the automation method and switches being tried.")
+                Text("Diagnostics: connection checks and this iPhone’s addresses. Testing Options: switches being tried.")
             }
         }
         .navigationTitle("Advanced")

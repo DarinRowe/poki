@@ -1945,22 +1945,6 @@
         }
       }
     },
-    "Diagnostics: connection checks and this iPhone’s addresses. Testing Options: the automation method and switches being tried." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "诊断：连接检查和本机地址。测试选项：自动化方式和试验中的开关。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "診斷：連線檢查和本機地址。測試選項：自動化方式和試驗中的開關。"
-          }
-        }
-      }
-    },
     "Disconnect Local Connection" : {
       "localizations" : {
         "zh-Hans" : {
@@ -3472,54 +3456,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "名稱，例如 Claude"
-          }
-        }
-      }
-    },
-    "Native services" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "原生服务"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "原生服務"
-          }
-        }
-      }
-    },
-    "Native services controls the phone through its paired accessibility, screenshot and input services, with no automation session and no banner. The XCTest session is the earlier way, with iOS’s automation banner." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "原生服务通过已配对的辅助功能、截屏和输入服务控制手机，没有自动化会话，也没有横幅。XCTest 会话是早期的方式，会显示 iOS 的自动化横幅。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "原生服務透過已配對的輔助功能、截圖和輸入服務控制手機，沒有自動化會話，也沒有橫幅。XCTest 會話是早期的方式，會顯示 iOS 的自動化橫幅。"
-          }
-        }
-      }
-    },
-    "Native services controls the phone without an XCTest automation session or its banner. Change it under Setup › Advanced › Testing Options." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "原生服务无需 XCTest 自动化会话及其横幅即可控制手机。可在“设置 › 高级 › 测试选项”中更改。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "原生服務無需 XCTest 自動化會話及其橫幅即可控制手機。可在「設定 › 高階 › 測試選項」中更改。"
           }
         }
       }
@@ -11351,22 +11287,6 @@
         }
       }
     },
-    "XCTest session" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "XCTest 会话"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "XCTest 會話"
-          }
-        }
-      }
-    },
     "Takes effect when Poki starts again." : {
       "localizations" : {
         "zh-Hans" : {
@@ -14759,22 +14679,6 @@
         }
       }
     },
-    "Poki is open source. Both open GitHub in your browser." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Poki 是开源项目。两个选项都会在浏览器中打开 GitHub。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Poki 是開源專案。兩個選項都會在瀏覽器中開啟 GitHub。"
-          }
-        }
-      }
-    },
     "Needed" : {
       "localizations" : {
         "zh-Hans" : {
@@ -15095,54 +14999,6 @@
         }
       }
     },
-    "Keep the Connection for Cellular" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "为蜂窝网络保持连接"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "為蜂窩網路保持連線"
-          }
-        }
-      }
-    },
-    "Testing: Leaving Wi-Fi" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "测试：离开 Wi-Fi"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "測試：離開 Wi-Fi"
-          }
-        }
-      }
-    },
-    "Off by default. iOS only lets Poki open its connection to this iPhone on Wi-Fi, but one that is already open goes on over cellular. With this on, Poki opens it as soon as it turns on and keeps it between tasks instead of closing it. If Poki is closed or your proxy app reconnects, it needs Wi-Fi again. For the native services method. Takes effect the next time Poki turns on." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "默认关闭。iOS 只允许 Poki 在 Wi-Fi 下建立与此 iPhone 的连接，但已建立的连接可以在蜂窝网络下继续使用。开启后，Poki 一开启就会建立连接，并在任务之间保持而不关闭。如果 Poki 被关闭或代理 App 重新连接，则需要再次连接 Wi-Fi。适用于原生服务方式。下次开启 Poki 时生效。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "預設關閉。iOS 只允許 Poki 在 Wi-Fi 下建立與此 iPhone 的連線，但已建立的連線可以在蜂窩網路下繼續使用。開啟後，Poki 一開啟就會建立連線，並在任務之間保持而不關閉。如果 Poki 被關閉或代理 App 重新連線，則需要再次連線 Wi-Fi。適用於原生服務方式。下次開啟 Poki 時生效。"
-          }
-        }
-      }
-    },
     "Automatic" : {
       "localizations" : {
         "zh-Hans" : {
@@ -15271,70 +15127,6 @@
         }
       }
     },
-    "Ask Me First" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "先询问我"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "先詢問我"
-          }
-        }
-      }
-    },
-    "Decide Automatically" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "自动决定"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "自動決定"
-          }
-        }
-      }
-    },
-    "Without a Connection" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "没有连接时"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "沒有連線時"
-          }
-        }
-      }
-    },
-    "When the Connection Is Off" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "连接关闭时"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "連線關閉時"
-          }
-        }
-      }
-    },
     "How Poki reaches this iPhone: through your proxy app’s loopback, and what it does when that is off." : {
       "localizations" : {
         "zh-Hans" : {
@@ -15351,50 +15143,322 @@
         }
       }
     },
-    "A method is chosen in Testing Options, so Poki does not choose here. Set it to Automatic to let Poki choose." : {
+    "Ask Before Showing the Banner" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已在测试选项中选定方式，因此 Poki 不会在这里自动选择。将其设为“自动”即可让 Poki 选择。"
+            "value" : "显示横幅前先询问"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已在測試選項中選定方式，因此 Poki 不會在這裡自動選擇。將其設為「自動」即可讓 Poki 選擇。"
+            "value" : "顯示橫幅前先詢問"
           }
         }
       }
     },
-    "Poki controls this iPhone without any banner when the local connection answers. When it does not (no Wi-Fi, or the loopback is off), Poki can still work another way, which shows iOS’s automation banner while it works and may ask for your passcode once. Ask Me First has the agent ask you before using it. Decide Automatically lets Poki use it and go back when the connection returns. It needs the developer image mounted, which lasts until this iPhone restarts." : {
+    "Cellular" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "本机连接有响应时，Poki 控制此 iPhone 不会显示任何横幅。没有响应时（没有 Wi-Fi，或回环已关闭），Poki 仍可用另一种方式工作，工作期间会显示 iOS 的自动化横幅，并可能要求输入一次密码。“先询问我”会让智能体在使用前先征求你的同意。“自动决定”则让 Poki 直接使用，并在连接恢复后切换回来。这需要已挂载开发者映像，挂载状态会保持到此 iPhone 重新启动。"
+            "value" : "蜂窝网络"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "本機連線有響應時，Poki 控制此 iPhone 不會顯示任何橫幅。沒有響應時（沒有 Wi-Fi，或迴環已關閉），Poki 仍可用另一種方式工作，工作期間會顯示 iOS 的自動化橫幅，並可能要求輸入一次密碼。「先詢問我」會讓AI 代理在使用前先徵求你的同意。「自動決定」則讓 Poki 直接使用，並在連線恢復後切換回來。這需要已掛載開發者映像，掛載狀態會保持到此 iPhone 重新啟動。"
+            "value" : "行動網路"
           }
         }
       }
     },
-    "On this iOS version Poki works through iOS’s test session. Once the developer image is mounted, it can start with no local connection at all, until this iPhone restarts." : {
+    "Keep the Connection on Cellular" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在此 iOS 版本上，Poki 通过 iOS 的测试会话工作。开发者映像挂载后，无需任何本机连接即可启动，直到此 iPhone 重新启动。"
+            "value" : "在蜂窝网络下保持连接"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在此 iOS 版本上，Poki 透過 iOS 的測試會話工作。開發者映像掛載後，無需任何本機連線即可啟動，直到此 iPhone 重新啟動。"
+            "value" : "在行動網路下保持連線"
+          }
+        }
+      }
+    },
+    "Keeps working after you leave Wi-Fi. Applies the next time Poki turns on." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "离开 Wi-Fi 后继续工作。下次开启 Poki 时生效。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "離開 Wi-Fi 後繼續運作。下次開啟 Poki 時生效。"
+          }
+        }
+      }
+    },
+    "Poki can still work, with iOS’s automation banner on screen." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 仍可工作，屏幕上会显示 iOS 的自动化横幅。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 仍可運作，螢幕上會顯示 iOS 的自動化橫幅。"
+          }
+        }
+      }
+    },
+    "Poki is open source and relies on its community." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 是开源项目，依靠社区的力量。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 是開源專案，仰賴社群的力量。"
+          }
+        }
+      }
+    },
+    "Without Wi-Fi or Loopback" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有 Wi-Fi 或回环时"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "沒有 Wi-Fi 或迴環時"
+          }
+        }
+      }
+    },
+    "Diagnostics: connection checks and this iPhone’s addresses. Testing Options: switches being tried." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "诊断：连接检查和本机地址。测试选项：试验中的开关。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "診斷：連線檢查和本機地址。測試選項：試驗中的開關。"
+          }
+        }
+      }
+    },
+    "Native services controls the phone without an XCTest automation session or its banner. Change it under Setup › Set Up the Local Connection." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "原生服务无需 XCTest 自动化会话及其横幅即可控制手机。可在“设置引导 › 设置本机连接”中更改。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "原生服務無需 XCTest 自動化會話及其橫幅即可控制手機。可在「設定引導 › 設定本機連線」中更改。"
+          }
+        }
+      }
+    },
+    "Native Services" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "原生服务"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "原生服務"
+          }
+        }
+      }
+    },
+    "XCTest Session" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "XCTest 会话"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "XCTest 會話"
+          }
+        }
+      }
+    },
+    "Native services when the connection is on, the XCTest session when it is not." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "连接开启时使用原生服务，否则使用 XCTest 会话。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "連線開啟時使用原生服務，否則使用 XCTest 會話。"
+          }
+        }
+      }
+    },
+    "No banner. Needs Wi-Fi and the loopback." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有横幅。需要 Wi-Fi 和回环。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "沒有橫幅。需要 Wi-Fi 和迴環。"
+          }
+        }
+      }
+    },
+    "Works without Wi-Fi or the loopback. Shows iOS’s automation banner." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无需 Wi-Fi 或回环即可工作。会显示 iOS 的自动化横幅。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無需 Wi-Fi 或迴環即可運作。會顯示 iOS 的自動化橫幅。"
+          }
+        }
+      }
+    },
+    "Make the problem happen again, then come back here." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "让问题再次出现，然后回到这里。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "讓問題再次出現，然後回到這裡。"
+          }
+        }
+      }
+    },
+    "Copy or save the log below." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拷贝或保存下方的日志。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拷貝或儲存下方的日誌。"
+          }
+        }
+      }
+    },
+    "Open a new issue. Say what you did, what you expected and what happened, and attach the log." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新建一个 issue。说明你做了什么、预期的结果和实际发生的情况，并附上日志。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新增一個 issue。說明你做了什麼、預期的結果和實際發生的情況，並附上日誌。"
+          }
+        }
+      }
+    },
+    "Save or Share Log" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存或共享日志"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "儲存或分享日誌"
+          }
+        }
+      }
+    },
+    "Issues are public. Read the log before you post it." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Issue 是公开的。发布前请先看一遍日志。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Issue 是公開的。發佈前請先看一遍日誌。"
+          }
+        }
+      }
+    },
+    "Open a New Issue on GitHub" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 GitHub 上新建 Issue"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 GitHub 上新增 Issue"
           }
         }
       }

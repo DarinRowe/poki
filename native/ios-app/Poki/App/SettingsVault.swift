@@ -20,6 +20,8 @@ enum SettingsVault {
         let defaults = UserDefaults.standard
         var restored = 0
         for (key, value) in saved where kept(key) && defaults.object(forKey: key) == nil {
+            // A method saved before Automatic became the default is not put back.
+            if key == "automationPath", !defaults.bool(forKey: AutomationPath.automaticDefaultKey) { continue }
             defaults.set(value, forKey: key)
             restored += 1
         }

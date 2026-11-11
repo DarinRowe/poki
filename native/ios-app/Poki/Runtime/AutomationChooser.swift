@@ -13,7 +13,7 @@ enum AutomationChooser {
     struct Conditions: Equatable {
         /// The iOS major version: native services cannot tap below 27 (issues 1 and 18).
         var iOS = 27
-        /// The owner chose a method in Testing Options: nothing is decided for them.
+        /// The owner chose a method on the local connection page: nothing is decided for them.
         var pinned: Method?
         /// The method in use now.
         var current = Method.native
@@ -65,7 +65,7 @@ enum AutomationChooser {
     /// it is the one method there is (before iOS 27), where the owner chose it, or where native
     /// services cannot start and the owner agreed to the banner.
     static func choose(_ c: Conditions) -> Choice {
-        if let pinned = c.pinned { return Choice(method: pinned, why: "chosen in Testing Options") }
+        if let pinned = c.pinned { return Choice(method: pinned, why: "chosen by the owner") }
         if c.iOS < 27 { return Choice(method: .xctest, why: "native services cannot send touches before iOS 27") }
         let xctestPossible = !c.xctestUnavailable && (c.imageMounted || c.xctestOpen)
         let failing = c.nativeFailures >= nativeFailureLimit
@@ -91,7 +91,7 @@ enum AutomationChooser {
 }
 
 extension AutomationPath {
-    /// The method the owner chose in Testing Options, if any: nothing is then chosen for them.
+    /// The method the owner chose on the local connection page, if any: nothing is then chosen for them.
     /// Read once, as `current` is: a change takes effect when Poki starts again.
-    static let pinned = UserDefaults.standard.string(forKey: "automationPath").flatMap(AutomationPath.init(rawValue:))
+    static let pinned = savedMethod.flatMap(AutomationPath.init(rawValue:))
 }
