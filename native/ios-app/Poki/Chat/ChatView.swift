@@ -214,7 +214,7 @@ struct ChatTranscript<Footer: View>: View {
                 .transition(PlanMotion.stepTransition)
         case .plan(let steps):
             HStack {
-                PlanBubble(steps: steps, tail: isLast(i, poki: true), live: live && i == entries.indices.last(where: { if case .plan = entries[$0] { true } else { false } }))
+                PlanBubble(steps: steps, tail: isLast(i, poki: true), live: live && i == entries.indices.last(where: { if case .plan = entries[$0].kind { true } else { false } }))
                     // The lifted bubble keeps the bubble's own outline, small corner included.
                     .contentShape(.contextMenuPreview, UnevenRoundedRectangle(topLeadingRadius: .cornerRadius, bottomLeadingRadius: isLast(i, poki: true) ? .tailRadius : .cornerRadius,
                                                                               bottomTrailingRadius: .cornerRadius, topTrailingRadius: .cornerRadius, style: .continuous))
