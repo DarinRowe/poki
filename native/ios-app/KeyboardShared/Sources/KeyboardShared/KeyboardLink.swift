@@ -49,6 +49,14 @@ enum KeyboardLink {
         var expires: Date
     }
 
+    /// A task of Poki's is under way: the panel stays up with nothing to type, so the agent does not
+    /// have to bring it back for the next field. Poki renews it as the task goes on; the keyboard
+    /// only reads it.
+    struct Hold: Codable, Equatable {
+        var expires: Date
+    }
+
+    static let holdFile = "hold.json"
     static let requestFile = "request.json"
     static let statusFile = "status.json"
     static let cancelFile = "cancel.json"

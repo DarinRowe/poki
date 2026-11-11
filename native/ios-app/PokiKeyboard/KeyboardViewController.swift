@@ -14,6 +14,11 @@ private final class ProxyDocument: KeyboardDocument {
     func insert(_ text: String) { controller.textDocumentProxy.insertText(text) }
     func deleteBackward() { controller.textDocumentProxy.deleteBackward() }
     func moveCursor(by offset: Int) { controller.textDocumentProxy.adjustTextPosition(byCharacterOffset: offset) }
+    func setMarked(_ text: String) {
+        let proxy = controller.textDocumentProxy
+        proxy.setMarkedText(text, selectedRange: NSRange(location: text.utf16.count, length: 0))
+        if text.isEmpty { proxy.unmarkText() }
+    }
 }
 
 /// Poki's keyboard: a panel with no keys that types what Poki sends it (KeyboardLink), the way any
@@ -21,7 +26,8 @@ private final class ProxyDocument: KeyboardDocument {
 ///
 /// It stays out of the owner's way: it leaves for the next keyboard a few seconds after it comes up
 /// with nothing to type, a while after it last typed, and at once when Poki says the task is over or
-/// the owner takes over.
+/// the owner takes over. While a task of Poki's is under way (KeyboardLink.Hold) it does not leave by
+/// itself, so the agent never has to bring it back between two fields.
 final class KeyboardViewController: UIInputViewController {
     private let model = PanelModel()
     private let globe = UIButton(type: .system)
@@ -80,7 +86,7 @@ final class KeyboardViewController: UIInputViewController {
         ])
 
         model.takeOver = { [weak self] in self?.takeOver() }
-        model.switchKeyboard = { [weak self] in self?.leave() }
+        model.switchKeyboard = { [weak self] in self?.leave(asked: true) }
 
         if !Self.listening {
             Self.listening = true
@@ -155,6 +161,13 @@ final class KeyboardViewController: UIInputViewController {
 
     private func refreshMode() {
         model.mode = typist != nil ? .typing : hasFullAccess ? .idle : .needsFullAccess
+        model.held = heldUntil != nil
+    }
+
+    /// When the hold of Poki's task under way runs out; nil with no task.
+    private var heldUntil: Date? {
+        guard let directory, let hold = KeyboardLink.read(KeyboardLink.Hold.self, KeyboardLink.holdFile, in: directory), hold.expires > Date() else { return nil }
+        return hold.expires
     }
 
     @discardableResult
@@ -175,11 +188,13 @@ final class KeyboardViewController: UIInputViewController {
             }
             return
         }
+        let held = heldUntil != nil
+        if model.held != held { model.held = held }
         if let request = KeyboardLink.take(KeyboardLink.Request.self, KeyboardLink.requestFile, in: directory) {
             begin(request)
         } else if let release = KeyboardLink.take(KeyboardLink.Release.self, KeyboardLink.releaseFile, in: directory), release.expires > Date() {
-            // The task is over: back to the owner's keyboard.
-            scheduleLeave(after: 0.3)
+            // The task is over: back to the owner's keyboard, at once.
+            leave(asked: true)
         }
     }
 
@@ -200,18 +215,23 @@ final class KeyboardViewController: UIInputViewController {
         guard writeStatus() else { return }
         let typist = KeyboardTypist()
         self.typist = typist
-        model.progress = 0
+        model.text = request.hidden ? nil : request.text
+        model.total = request.text.count
+        model.typed = 0
+        model.composing = ""
         refreshMode()
         var random = SystemRandomNumberGenerator()
-        let steps = KeyboardTyper.plan(request.text, words: Self.words, using: &random)
-        let total = max(1, request.text.count)
+        // A password is never composed: nothing of it is shown, in the field or on the panel.
+        let steps = KeyboardTyper.plan(request.text, words: Self.words, pinyin: request.hidden ? nil : Self.pinyin, using: &random)
         Task { @MainActor [self] in
             let outcome = await typist.run(request, on: ProxyDocument(self), steps: steps, progress: { [weak self] typed in
                 guard let self else { return }
-                self.model.progress = Double(typed) / Double(total)
+                self.model.typed = typed
                 self.status.typed = typed
                 // Often enough for Poki to see that the keyboard is alive.
                 if Date().timeIntervalSince(self.lastStatusWrite) > 0.4 { self.writeStatus() }
+            }, composing: { [weak self] letters in
+                self?.model.composing = letters
             })
             self.finish(outcome)
         }
@@ -235,9 +255,10 @@ final class KeyboardViewController: UIInputViewController {
             status.note = cancelled ? "Poki cancelled the typing" : "the keyboard was closed or changed while typing"
         }
         writeStatus()
+        model.composing = ""
         refreshMode()
         if tookOver {
-            leave()
+            leave(asked: true)
         } else if visible {
             scheduleLeave(after: Self.lingerSeconds)
         }
@@ -260,11 +281,23 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     /// To the next keyboard, once for each time the panel comes up, and never in the middle of typing.
-    private func leave() {
+    /// By itself (`asked` false) it does not leave while a task of Poki's is under way: it looks again
+    /// when that task's hold runs out.
+    private func leave(asked: Bool = false) {
         leaveWork?.cancel()
         guard visible, !left, typist == nil else { return }
+        if !asked, let until = heldUntil {
+            model.held = true
+            scheduleLeave(after: max(1, until.timeIntervalSinceNow + 0.5))
+            return
+        }
         left = true
         advanceToNextInputMode()
+    }
+
+    /// A word's Pinyin, as the system romanizes it ("你好" gives "nǐ hǎo").
+    private static func pinyin(_ word: String) -> String? {
+        word.applyingTransform(.mandarinToLatin, reverse: false)
     }
 
     /// A run of Chinese as words, the units a Pinyin keyboard commits.

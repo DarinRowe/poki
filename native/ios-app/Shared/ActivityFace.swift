@@ -170,6 +170,16 @@ extension PokiState {
         switch phase {
         case .working:
             let name = app ?? String(activity: "Working")
+            if let plan, plan.total > 0 {
+                // The chat's plan: its steps done, the one under way, and "2/5" as the count.
+                let count = "\(min(plan.current, plan.total))/\(plan.total)"
+                return ActivityFace(
+                    symbol: "hand.tap.fill", status: name, shortStatus: name, tone: .accent, meta: .text(count),
+                    content: ActivityWords.step(headline), bottom: .stop,
+                    compact: .text(count, .plain),
+                    steps: Array(repeating: true, count: max(0, min(plan.current, plan.total) - 1)), stepUnderWay: true,
+                    ring: .fraction(Double(max(0, plan.current - 1)) / Double(plan.total)))
+            }
             return ActivityFace(
                 symbol: "hand.tap.fill", status: name, shortStatus: name, tone: .accent, meta: .text(step),
                 content: ActivityWords.step(headline), bottom: .stop,
@@ -203,7 +213,7 @@ extension PokiState {
                 meta: endedAt.map { .clock($0) } ?? .none,
                 content: runSummary, bottom: .none,
                 compact: .text(word, .done),
-                steps: outcomes, finished: true,
+                steps: plan.map { Array(repeating: true, count: $0.total) } ?? outcomes, finished: true,
                 ring: .fraction(1))
         case .problem:
             let short = label == "Pairing Failed" ? String(activity: "Failed") : String(activity: "Stopped")

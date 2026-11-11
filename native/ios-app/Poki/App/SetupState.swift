@@ -140,7 +140,7 @@ enum SetupStep: String, CaseIterable, Identifiable {
         case .loopback: "arrow.triangle.2.circlepath"
         case .pairing: "link"
         case .automation: "hand.tap"
-        case .background: "location"
+        case .background: "infinity"
         }
     }
 

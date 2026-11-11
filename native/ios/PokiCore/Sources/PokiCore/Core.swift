@@ -397,15 +397,28 @@ public final class PokiCore: @unchecked Sendable {
     /// The task is over (the app stops an idle runner, or its chat's turn ended): the phone goes back
     /// to the app the task began in. Nothing happens while a tool call runs or when no task is open.
     /// `switching: false` only forgets the task, for a runner the owner stopped: nothing is sent to it.
-    public func finishTask(switching: Bool = true) async -> String? { await endTask(session: nil, switching: switching) }
+    ///
+    /// `returnTo` is the app to go back to when the task's first call could not tell which app was in
+    /// front (the chat inside Poki knows it began in Poki). `stay` leaves the phone where the task
+    /// ended: only Poki's keyboard gives way, and the owner is told another way.
+    public func finishTask(switching: Bool = true, returnTo: String? = nil, stay: Bool = false) async -> String? {
+        await endTask(session: nil, switching: switching, returnTo: returnTo, stay: stay)
+    }
 
     /// Only the session that began the task ends it; nil ends any.
-    func endTask(session: String?, switching: Bool = true) async -> String? {
+    func endTask(session: String?, switching: Bool = true, returnTo: String? = nil, stay: Bool = false) async -> String? {
         guard await gate.enter(waiting: config.busyWait) else { return nil }
         defer { gate.leave() }
         if let session, computer.origin?.session != session { return nil }
         guard switching else { computer.origin = nil; return nil }
-        return await computer.returnToOrigin()
+        if stay {
+            let open = computer.origin != nil || returnTo != nil
+            computer.origin = nil
+            guard open else { return nil }
+            await computer.releaseKeyboard()
+            return "finish: the phone stays where the task ended"
+        }
+        return await computer.returnToOrigin(fallback: returnTo)
     }
 
     // MARK: MCP over HTTP (Streamable HTTP, JSON answers only)

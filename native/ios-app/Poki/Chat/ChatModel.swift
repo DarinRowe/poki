@@ -44,6 +44,26 @@ enum ChatNote: Equatable, Codable {
     case modelChecking
     case modelApproved(String)
     case modelDeclined(String)
+    /// An approval with what was asked and how it was answered, drawn as a card.
+    case approval(ApprovalNote)
+}
+
+/// One approval in the chat: the step, why it needed an answer, who answered and what they said.
+struct ApprovalNote: Equatable, Codable {
+    enum State: String, Codable { case asking, allowed, refused, expired }
+    var id: String
+    var summary: String
+    var app: String
+    /// PokiCore's reason for asking: `sending a message ("send")`.
+    var why: String
+    /// The auto-classifier answers; false when the owner does.
+    var byModel: Bool
+    var state: State
+    /// The model's reason, when it answered.
+    var reason = ""
+    /// A refusal the owner can lift by saying yes in the chat (With Message Reply).
+    var reply = false
+    var answered: Date?
 }
 
 /// The chat: the owner's messages, Poki's answers and the steps it takes, and the model loop that runs
@@ -99,6 +119,7 @@ final class ChatModel {
         self.kind = kind
         self.requester = requester
         app.addShellObserver { [weak self] event in self?.observe(event) }
+        app.addApprovalObserver { [weak self] id in self?.waitsForOwner(id) }
         if kind == .handoff { return }
         // A live voice conversation is part of this chat: what was said and done stays in its history.
         if requester == nil { app.voice.onConversationEnded = { [weak self] lines, started in self?.appendVoice(lines, started: started) } }
@@ -301,6 +322,7 @@ final class ChatModel {
 
     private func began(_ engine: String, _ provider: ModelProvider, _ model: String) {
         taskStart = Date(); toolCalls = 0; taskResult = nil
+        app.chatTaskBegan()
         AppLog.shared.add("chat", "task started: \(engine), \(provider.rawValue)/\(model)")
     }
 
@@ -346,14 +368,22 @@ final class ChatModel {
     private func ended(_ outcome: PiLoop.Outcome, delivered youID: UUID) {
         finishPlan()
         // The turn is over: the phone goes back to the app the task began in (Poki's chat, where the
-        // reply is), as a client's finish does (ESP-176). Nothing moves when it is in front already.
-        app.finishTask()
+        // reply is), or stays where it is and the reply goes out as a notification that can be answered
+        // there (Advanced › When a Task Ends).
+        var reply: String?
         switch outcome {
-        case .done: markDelivered(youID)
+        case .done:
+            markDelivered(youID)
+            reply = entries.reversed().lazy.compactMap { entry -> String? in if case .poki(let text) = entry.kind { return text }; return nil }.first
         case .stopped: add(.poki(String(localized: "Stopped.")))
-        case .overTurns: add(.poki(String(localized: "I stopped after \(Self.maxTurns) steps. Tell me how to go on.")))
-        case .failed(let words): add(.note(.problem(words)))
+        case .overTurns:
+            reply = String(localized: "I stopped after \(Self.maxTurns) steps. Tell me how to go on.")
+            add(.poki(reply ?? ""))
+        case .failed(let words):
+            reply = words
+            add(.note(.problem(words)))
         }
+        if case .stopped = outcome { app.finishTask() } else { app.chatTaskEnded(reply: reply, session: sessionID, acted: toolCalls > 0) }
     }
 
     /// Ends the task now, as far as the chat goes: it says Stopped and takes the next message at once.
@@ -458,6 +488,7 @@ final class ChatModel {
     /// appears when the model reaches it, as the board draws them.
     private func showPlan(_ plan: [String], current: Int) {
         modelPlan = plan
+        app.chatPlan(total: plan.count, current: current)
         updatePlan { steps in
             if steps.count > current { steps.removeLast(steps.count - current) }
             for i in 0..<current {
@@ -495,22 +526,27 @@ final class ChatModel {
                     steps.append(PlanStep(approval.summary, state: .waiting))
                 }
             }
-            setNote(ApprovalClassifier.isOn ? .modelChecking : .waiting)
-        case .approvalEnded(let id, let approved) where ApprovalClassifier.isOn:
-            let why = ApprovalClassifier.verdicts[id]?.reason ?? ""
-            setNote(approved == true ? .modelApproved(why) : .modelDeclined(why))
+            let route = ApprovalClassifier.route(approval, voiceOn: app.voice.isOn)
+            // Asking is off: the step goes straight through, with nothing to show.
+            guard route != .allow else { break }
+            // Each approval has its own card: it stays in the conversation with its answer.
+            noteID = nil
+            asked = ApprovalNote(id: approval.id, summary: approval.summary, app: approval.app, why: approval.reason,
+                                 byModel: route != .owner, state: .asking)
+            setNote(.approval(asked!))
+        case .approvalEnded(let id, let approved):
             updatePlan { steps in
                 for i in steps.indices where steps[i].state == .waiting { steps[i].state = approved == true ? .current : .failed }
             }
-        case .approvalEnded(_, let approved):
-            switch approved {
-            case true?: setNote(.approved(Date()))
-            case false?: setNote(.declined)
-            case nil: setNote(.expired)
-            }
-            updatePlan { steps in
-                for i in steps.indices where steps[i].state == .waiting { steps[i].state = approved == true ? .current : .failed }
-            }
+            guard var note = asked, note.id == id else { break }
+            note.state = approved == true ? .allowed : approved == false ? .refused : .expired
+            note.byModel = ApprovalClassifier.modelAnswered(id)
+            note.reason = note.byModel ? (ApprovalClassifier.verdicts[id]?.reason ?? "") : ""
+            note.reply = note.byModel && ApprovalClassifier.mode == .reply
+            note.answered = Date()
+            asked = nil
+            setNote(.approval(note))
+            noteID = nil
         // The agent handed a screen to the person (a passcode, a payment): the current step waits for
         // them, as for an approval, until they tap Done on the Live Activity.
         case .handoffRequested:
@@ -542,6 +578,18 @@ final class ChatModel {
     /// The task ended: a step still marked current was the last one done.
     private func finishPlan() {
         updatePlan { steps in for i in steps.indices where steps[i].state == .current { steps[i].state = .done } }
+    }
+
+    /// The approval the chat is showing as asked, until its answer comes.
+    private var asked: ApprovalNote?
+
+    /// The model would not allow it and the owner is asked on a card: the chat's card says so.
+    private func waitsForOwner(_ id: String) {
+        guard var note = asked, note.id == id else { return }
+        note.byModel = false
+        note.reason = ApprovalClassifier.verdicts[id]?.reason ?? ""
+        asked = note
+        setNote(.approval(note))
     }
 
     private func setNote(_ note: ChatNote) {

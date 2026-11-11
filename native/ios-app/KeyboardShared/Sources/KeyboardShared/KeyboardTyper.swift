@@ -10,15 +10,34 @@ protocol KeyboardDocument: AnyObject {
     func insert(_ text: String)
     func deleteBackward()
     func moveCursor(by offset: Int)
+    /// The composition under the cursor, as an input method shows the letters typed so far; "" ends
+    /// it with nothing left in the field.
+    func setMarked(_ text: String)
 }
 
 /// How a text is typed: what goes in with each keyboard insertion, and the pause before it.
 enum KeyboardTyper {
     struct Step: Equatable {
+        enum Kind: Equatable {
+            /// Goes into the field as it is.
+            case insert
+            /// The Pinyin letters typed so far for the word that follows, shown as the composition.
+            case compose
+            /// The word that replaces the composition, as when a candidate is picked.
+            case commit
+        }
         /// What one insertion carries; "\u{8}" is one Delete.
         var text: String
         /// Seconds waited before it.
         var pause: Double
+        var kind = Kind.insert
+        /// Characters of the request this step puts in.
+        var count: Int { kind == .compose ? 0 : text.count }
+    }
+
+    /// The Pinyin letters a person types for a word, from its romanization ("nǐ hǎo" gives "nihao").
+    static func letters(_ romanized: String) -> String {
+        String(romanized.lowercased().decomposedStringWithCanonicalMapping.unicodeScalars.filter { ("a"..."z").contains($0) }.map(Character.init))
     }
 
     static let backspace: Character = "\u{8}"
@@ -43,7 +62,11 @@ enum KeyboardTyper {
     /// person's thumbs. Chinese goes in a word at a time, the way a Pinyin keyboard commits a chosen
     /// candidate, after about the time its Pinyin takes. A short text is paced slower than a long one,
     /// so a message never takes minutes. `words` splits a run of Chinese into words.
-    static func plan<G: RandomNumberGenerator>(_ text: String, words: (String) -> [String] = pairs, using random: inout G) -> [Step] {
+    ///
+    /// With `pinyin` (a word's Pinyin, letters only), a Chinese word is typed the way a person types
+    /// it: its Pinyin a key at a time into the composition, then the word in its place, as when the
+    /// candidate is picked. A word with no Pinyin goes in whole.
+    static func plan<G: RandomNumberGenerator>(_ text: String, words: (String) -> [String] = pairs, pinyin: ((String) -> String?)? = nil, using random: inout G) -> [Step] {
         let long = text.count > 40
         var steps: [Step] = []
         var han = ""
@@ -54,6 +77,19 @@ enum KeyboardTyper {
             // A tokenizer that loses a character must not lose it from the text.
             for word in (split.joined() == han ? split : pairs(han)) where !word.isEmpty {
                 for piece in word.count > 4 ? pairs(word) : [word] {
+                    if let keys = pinyin?(piece).map(letters), !keys.isEmpty, keys.count <= 8 * piece.count {
+                        var shown = ""
+                        for key in keys {
+                            shown.append(key)
+                            var pause = long ? Double.random(in: 0.008...0.018, using: &random) : Double.random(in: 0.022...0.048, using: &random)
+                            // The thumb finds the first key of a word a little later.
+                            if shown.count == 1 { pause += long ? Double.random(in: 0.004...0.012, using: &random) : Double.random(in: 0.025...0.070, using: &random) }
+                            steps.append(Step(text: shown, pause: pause, kind: .compose))
+                        }
+                        // The glance at the candidates, and the tap on the first.
+                        steps.append(Step(text: piece, pause: long ? Double.random(in: 0.015...0.035, using: &random) : Double.random(in: 0.050...0.110, using: &random), kind: .commit))
+                        continue
+                    }
                     let each = long ? Double.random(in: 0.030...0.060, using: &random) : Double.random(in: 0.055...0.100, using: &random)
                     steps.append(Step(text: piece, pause: 0.02 + each * Double(piece.count)))
                 }
@@ -125,19 +161,49 @@ final class KeyboardTypist {
 
     func run(_ request: KeyboardLink.Request, on document: KeyboardDocument, steps: [KeyboardTyper.Step],
              sleep: (Double) async -> Void = { try? await Task.sleep(nanoseconds: UInt64(max(0, $0) * 1_000_000_000)) },
-             progress: (Int) -> Void = { _ in }) async -> Outcome {
+             progress: (Int) -> Void = { _ in }, composing: (String) -> Void = { _ in }) async -> Outcome {
         let total = request.text.count
         let startDocument = document.documentID
         if request.clear { await clear(document, sleep: sleep) }
         let baseline = document.contextBefore ?? ""
         var typed = 0
+        // Whether this field shows a composition and lets it go again, found at the first one. A
+        // field that keeps the letters gets its Chinese whole, with no Pinyin before it.
+        var composes: Bool?
+        var open = false
         for step in steps {
             await sleep(step.pause)
             if stopped { break }
-            if step.text == String(KeyboardTyper.backspace) { document.deleteBackward() } else { document.insert(step.text) }
-            typed += step.text.count
-            progress(typed)
+            switch step.kind {
+            case .compose:
+                if composes == nil {
+                    let before = document.contextBefore
+                    document.setMarked(step.text)
+                    await sleep(0.03)
+                    document.setMarked("")
+                    await sleep(0.03)
+                    let after = document.contextBefore
+                    composes = after == before
+                    if composes == false, let after, after == (before ?? "") + step.text {
+                        for _ in step.text { document.deleteBackward() }
+                    }
+                }
+                guard composes == true else { continue }
+                document.setMarked(step.text)
+                open = true
+                composing(step.text)
+            case .commit:
+                if open { document.setMarked(""); open = false }
+                composing("")
+                document.insert(step.text)
+            case .insert:
+                if step.text == String(KeyboardTyper.backspace) { document.deleteBackward() } else { document.insert(step.text) }
+            }
+            typed += step.count
+            if step.kind != .compose { progress(typed) }
         }
+        // Stopped in the middle of a word: its Pinyin does not stay in the field.
+        if open { document.setMarked(""); composing("") }
         // Stopped after the last character is still all of it.
         let finished = typed >= total
         // The field answers through another process: give the last insertion a moment to show.

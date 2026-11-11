@@ -121,11 +121,37 @@ struct AgentsView: View {
                 }
 
                 Section {
-                    Toggle("Ask Before Sensitive Steps", isOn: $model.askBeforeSensitiveSteps)
+                    Picker(selection: $model.approvalMode) {
+                        ForEach(ApprovalClassifier.Mode.allCases) { Text($0.title).tag($0) }
+                    } label: {
+                        Label("Ask Before Sensitive Steps", systemImage: "hand.raised")
+                    }
+                    if model.approvalMode != .off {
+                        Picker(selection: $model.classifierLevel) {
+                            ForEach(ApprovalClassifier.Level.allCases) { Text($0.title).tag($0) }
+                        } label: {
+                            Label("Sensitivity", systemImage: "dial.medium")
+                        }
+                    }
                 } header: {
                     Text("Approvals")
                 } footer: {
-                    Text("Poki asks you before an agent pays, deletes, sends a message, places a call, types a password or does anything in Wallet: on the Live Activity, in a notification, or here in Poki. Turned off, agents do all of that without asking. Changes take effect the next time Poki opens.")
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Sensitive steps are paying, deleting, sending a message, placing a call, typing a password and anything in Wallet.")
+                        switch model.approvalMode {
+                        case .reply: Text("With Message Reply, Poki asks you in the chat and your yes lets the step through. Away from Poki you can answer from the notification. Outside agents have no chat, so their steps ask with Allow and Don’t Allow.")
+                        case .confirm: Text("With Confirmation, you tap Allow or Don’t Allow on the Live Activity, in a notification, or here in Poki.")
+                        case .off: Text("Agents do all of that without asking.")
+                        }
+                        if model.approvalMode != .off {
+                            if model.classifierLevel == .everything {
+                                Text("Ask for Everything: nothing is approved automatically. Steps that follow straight after your answer in the same app do not ask again.")
+                            } else {
+                                Text("Permissive, Balanced and Strict let your chat model approve steps in Poki’s own chat that fit what you asked for, and only ask you about the rest. The chat and the Activity Log show each decision.")
+                            }
+                        }
+                        Text("Turning asking on or off takes effect the next time Poki opens.")
+                    }
                 }
 
                 Section {
@@ -185,11 +211,23 @@ enum SetupRoute: Hashable { case advanced }
 /// Setup › Advanced: preferences and debugging tools.
 struct AdvancedView: View {
     @Environment(AppModel.self) private var model
+    @AppStorage(AppModel.afterTaskKey) private var afterTask = "notify"
     var push: (SettingsRoute) -> Void
 
     var body: some View {
         Form {
             if model.automationPath == .nativeServices { TypingSettingsSection() }
+            Section {
+                Picker(selection: $afterTask) {
+                    Text("Notify Me").tag("notify")
+                    Text("Return to Poki").tag("return")
+                } label: {
+                    Label("When a Task Ends", systemImage: "flag.checkered")
+                }
+            } header: { Text("Chat") } footer: {
+                Text(afterTask == "return" ? "Poki comes back to the front with its reply when a task ends."
+                     : "The phone stays where the task ended. Poki’s reply comes as a notification: touch and hold it to answer and carry on from there.")
+            }
             Section {
                 Button("Notification Settings", systemImage: "bell.badge") {
                     if let url = URL(string: UIApplication.openNotificationSettingsURLString) { UIApplication.shared.open(url) }
