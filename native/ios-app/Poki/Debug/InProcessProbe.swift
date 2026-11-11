@@ -417,13 +417,14 @@ struct AutomationMethodSection: View {
 
     var body: some View {
         Section {
-            Picker("Method", selection: Binding(get: { path }, set: { saved = $0 })) {
+            Picker("Method", selection: Binding(get: { saved ?? "automatic" }, set: { saved = $0 == "automatic" ? nil : $0 })) {
+                Text("Automatic").tag("automatic")
                 Text("XCTest session").tag(AutomationPath.inProcess.rawValue)
                 Text("Native services").tag(AutomationPath.nativeServices.rawValue)
             }
-            Text(saved == nil ? "Default for iOS \(ProcessInfo.processInfo.operatingSystemVersion.majorVersion)" : "Chosen here")
+            Text(saved == nil ? "Poki chooses between tasks, native services first where iOS has them" : "Chosen here")
                 .font(.caption).foregroundStyle(.secondary)
-            if path != running.rawValue {
+            if saved != AutomationPath.pinned?.rawValue {
                 Text("Takes effect when Poki starts again.").font(.caption).foregroundStyle(.orange)
             }
         } header: {

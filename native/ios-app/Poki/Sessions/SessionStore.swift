@@ -52,7 +52,7 @@ struct SavedSession: Codable, Identifiable, Equatable {
             case .you(let text, _), .request(let text, _): return text
             case .step(let text, let ok): return ok == false ? String(localized: "\(text), failed") : text
             case .plan(let steps):
-                if let step = steps.last(where: { $0.state == .waiting }) { return String(localized: "\(step.text) · waiting for you") }
+                if let step = steps.last(where: { $0.state == .waiting }) { return String(localized: "\(step.text), waiting for you") }
                 if let step = steps.last { return step.text }
             case .note(.waiting): return String(localized: "Waiting for your OK")
             case .note(.problem(let text)): return text
@@ -68,7 +68,7 @@ struct SavedSession: Codable, Identifiable, Equatable {
         switch kind {
         case .poki: return autoName ?? (title == String(localized: "New conversation") ? "Poki" : String(title.prefix(40)))
         case .agent: return client ?? String(localized: "An agent")
-        case .handoff: return autoName.map { "\(client ?? String(localized: "An agent")) · \($0)" } ?? "\(client ?? String(localized: "An agent")) → Poki"
+        case .handoff: return autoName.map { "\(client ?? String(localized: "An agent")): \($0)" } ?? "\(client ?? String(localized: "An agent")) → Poki"
         case .voice: return autoName ?? (title.isEmpty ? String(localized: "Voice chat") : String(title.prefix(40)))
         }
     }

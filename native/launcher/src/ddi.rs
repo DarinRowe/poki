@@ -18,6 +18,13 @@ pub fn mounted(device: &Device) -> bool {
     MOUNTED_MARKERS.iter().all(|name| device.rsd.services.contains_key(*name))
 }
 
+/// The XCTest framework of a mounted image, as the app's own process sees it: what an in-process
+/// session needs, whether or not the developer services can be reached (PR #91).
+pub fn mounted_locally() -> bool {
+    cfg!(target_os = "ios")
+        && Path::new("/System/Developer/Library/Frameworks/XCUIAutomation.framework/XCUIAutomation").is_file()
+}
+
 pub fn files_present(dir: &str) -> bool {
     !dir.is_empty() && DDI_FILES.iter().all(|name| Path::new(dir).join(name).is_file())
 }

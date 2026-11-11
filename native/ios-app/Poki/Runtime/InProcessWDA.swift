@@ -48,6 +48,8 @@ extension PKInProcess: InProcessAutomation, @unchecked Sendable {}
 enum InProcessSession: Equatable {
     case opening
     case open
+    /// An open failed and Poki is trying again by itself (attempt 1 to `repairs`).
+    case repairing(attempt: Int)
     /// prepare answered no: its code and detail.
     case failed(code: String, detail: String)
     /// iOS is asking the owner for the passcode before it allows automation.
@@ -55,19 +57,46 @@ enum InProcessSession: Equatable {
     /// iOS asked for the passcode and nobody entered it before it gave up (about a minute).
     case passcodeMissed
 
+    /// How often Poki tries a failed open again by itself before it says so.
+    static let repairs = 3
+
+    /// What a failure code means and the one thing that fixes it, in words the owner can act on.
+    static func cause(_ code: String) -> (what: String, fix: String) {
+        switch code {
+        case "developer_framework_unavailable":
+            return ("the developer disk image is not mounted, so iOS's automation framework is missing",
+                    "Open Poki, go to Setup and check Set Up the Local Connection and Pair This iPhone; Poki mounts the developer disk image again once both have a tick")
+        case "enable_failed":
+            return ("iOS refused to turn on Automation Mode",
+                    "Open Settings › Developer and turn on Enable UI Automation, then open Poki; if iOS asks for the passcode, enter it")
+        case "session_timeout", "session_failed":
+            return ("iOS's test service (testmanagerd) did not answer",
+                    "Restart this iPhone, open Poki and tap Start; enter the passcode when iOS asks")
+        case "session_api_unavailable":
+            return ("this iOS version does not offer the automation session Poki uses",
+                    "Update Poki to the latest build; this iOS version needs a build that supports it")
+        default:
+            return ("the reason is in Poki's log",
+                    "Open Poki › Setup › Advanced › Log, copy the log and report it; turning Poki off and on starts a new session")
+        }
+    }
+
     /// What PokiCore reads while the launcher runs. A failure is answered at once, with its fix.
     var agentState: RunnerState {
         switch self {
         case .open: return .running
         case .opening: return .starting("opening the in-process session; it takes a few seconds the first time")
+        case .repairing(let attempt):
+            return .starting("the automation session did not open, and Poki is opening it again by itself (attempt \(attempt) of \(Self.repairs)). Nothing was sent and nothing is needed from you or the owner: call again in about 5 s")
         case .waitingForPasscode:
             return .starting("waiting for the owner to enter the iPhone passcode on the phone: iOS asks for it before it allows automation, after Poki restarts and 8 hours after the last time. Only the owner can do this; the Live Activity asks them. Call again in about 10 s")
         case .passcodeMissed:
             return .failed("the owner did not enter the iPhone passcode when iOS asked for it to allow automation (cancelled, or a minute passed). Nothing was sent, and Poki does not ask again by itself: the owner turns Poki off and on to be asked again",
                            fix: "Turn Poki off and on, then enter the iPhone passcode when iOS asks for it to allow automation")
         case .failed(let code, let detail):
-            return .failed("the in-process session could not be opened (\(code)\(detail.isEmpty ? "" : ": \(detail)")); Poki tries again on the next call",
-                           fix: "Open Poki and, if iOS asks, enter the passcode to allow automation")
+            let cause = Self.cause(code)
+            return .failed("the automation session could not be opened after \(Self.repairs) tries by Poki itself (\(code)\(detail.isEmpty ? "" : ": \(detail)")): \(cause.what). Nothing was sent. Tell the owner exactly this: \(cause.fix). Poki tries again on your next call",
+                           fix: cause.fix)
         }
     }
 }

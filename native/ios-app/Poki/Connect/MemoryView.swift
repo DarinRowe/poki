@@ -130,7 +130,7 @@ private struct RoutineRow: View {
     private var detail: String {
         let steps = String(localized: "\(routine.steps.count) steps")
         let runs = routine.runs == 0 ? String(localized: "not run yet") : String(localized: "worked \(routine.ok) of \(routine.runs)")
-        let base = "\(steps) · \(runs) · \(routine.savedBy)"
-        return routine.stale ? String(localized: "Needs redoing: stopped twice in a row") + " · " + base : base
+        let base = "\(steps), \(runs), \(routine.savedBy)"
+        return routine.stale ? String(localized: "Needs redoing: stopped twice in a row") + ", " + base : base
     }
 }

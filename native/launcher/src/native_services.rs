@@ -55,6 +55,11 @@ fn drag_duration() -> u64 {
 #[serde(tag = "op", rename_all = "snake_case")]
 pub(crate) enum Request {
     Reset,
+    /// Opens the tunnel and nothing on it, so it is there before it is needed: iOS lets a tunnel
+    /// opened on Wi-Fi go on over cellular, and opens no new one there.
+    Hold,
+    /// The end of a task with the tunnel kept: the keyboard and the screen-sharing session go.
+    Release,
     WarmInput,
     /// Explicit native agent composition session. Keep the keyboard attached
     /// between composing Pinyin and selecting verified OS candidates.
@@ -195,6 +200,26 @@ pub(crate) async fn serve(
             None => calls.recv().await,
         };
         let Some(call) = call else { break };
+        if matches!(&call.request, Request::Release) {
+            let cleanup = detach_session_keyboard(&mut session).await;
+            release_media(&mut session).await;
+            // A keyboard that would not come off is only removed with its tunnel.
+            if cleanup.is_err() { session = None; }
+            (call.answer)(Ok(json!({"released": true, "tunnel": session.is_some()})));
+            continue;
+        }
+        if matches!(&call.request, Request::Hold) {
+            let result = match session {
+                Some(_) => Ok(json!({"held": true, "opened": false})),
+                None => match tokio::time::timeout(call.request.timeout(), Session::connect(&config)).await {
+                    Ok(Ok(opened)) => { session = Some(opened); Ok(json!({"held": true, "opened": true})) }
+                    Ok(Err(error)) => Err(error),
+                    Err(_) => Err("the tunnel did not open in time".into()),
+                },
+            };
+            (call.answer)(result);
+            continue;
+        }
         if matches!(&call.request, Request::Reset) {
             let cleanup = detach_session_keyboard(&mut session).await;
             release_media(&mut session).await;
@@ -280,7 +305,7 @@ impl Request {
             .map(|milliseconds| Duration::from_millis(milliseconds.saturating_add(10_000)))
             .unwrap_or_else(|| match self {
                 Self::AxTree { .. } | Self::Screenshot => Duration::from_secs(15),
-                Self::WarmInput => Duration::from_secs(25),
+                Self::WarmInput | Self::Hold => Duration::from_secs(25),
                 Self::Reset => Duration::from_secs(2),
                 _ => Duration::from_secs(30),
             })

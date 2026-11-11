@@ -24,7 +24,12 @@ struct MessageBubble: View {
                 .padding(.vertical, .messageVerticalPadding)
                 .padding(.horizontal, 14)
                 .background(backgroundStyle, in: shape)
+                // The bubble is one flat layer with its own outline, so the lifted copy of it (the
+                // long press) is cut to the same outline and the small corner stays where it is.
+                .clipShape(shape)
+                .compositingGroup()
                 .contentShape(.contextMenuPreview, shape)
+                .contentShape(.interaction, shape)
                 .contextMenu {
                     copyButton { UIPasteboard.general.string = text }
                 }

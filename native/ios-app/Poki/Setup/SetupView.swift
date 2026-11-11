@@ -154,7 +154,7 @@ extension SetupStep {
         switch self {
         case .runner: "Install Poki Runner"
         case .developerMode: "Turn On Developer Mode"
-        case .loopback: "Turn On Loopback"
+        case .loopback: "Set Up the Local Connection"
         case .pairing: "Pair This iPhone"
         case .automation: "Allow UI Automation"
         case .background: "Keep Poki Running"
@@ -165,7 +165,7 @@ extension SetupStep {
         switch self {
         case .runner: "The helper app that taps and types for your agent. Poki starts it; you never open it."
         case .developerMode: SetupStep.inProcess ? "Allows Poki to use this iPhone’s developer services." : "Allows this iPhone to run Poki Runner."
-        case .loopback: "Allows Poki to reach this iPhone’s developer services through your proxy app."
+        case .loopback: "How Poki reaches this iPhone: through your proxy app’s loopback, and what it does when that is off."
         case .pairing: "Gives Poki its own key to this iPhone. The key stays on this device."
         case .automation: SetupStep.inProcess ? "Allows Poki to control other apps." : "Allows Poki Runner to control other apps."
         case .background: "Keeps Poki connected in the background and shows its activity on the Lock Screen."
@@ -185,6 +185,27 @@ extension SetupStep {
     default: destination = UIApplication.openSettingsURLString
     }
     if let url = URL(string: destination) { UIApplication.shared.open(url) }
+}
+
+/// A page's numbered steps, the same on every setup page: the section "How To", one row a step.
+struct HowToSection<Footer: View>: View {
+    var lines: [String]
+    var footer: Footer
+    init(lines: [String], @ViewBuilder footer: () -> Footer) { self.lines = lines; self.footer = footer() }
+    var body: some View {
+        Section {
+            ForEach(Array(lines.enumerated()), id: \.offset) { i, line in
+                Label { Text(LocalizedStringKey(line)) } icon: { Image(systemName: "\(i + 1).circle") }
+            }
+        } header: {
+            Text("How To")
+        } footer: {
+            footer
+        }
+    }
+}
+extension HowToSection where Footer == EmptyView {
+    init(lines: [String]) { self.init(lines: lines) { EmptyView() } }
 }
 
 private struct InstructionsCard: View {
@@ -286,6 +307,8 @@ private struct NoteLine: View {
 private struct LoopbackPage: View {
     @Environment(AppModel.self) private var model
     @State private var copied: String?
+    @AppStorage(AppModel.askBeforeBannerKey) private var asksBeforeBanner = true
+    @AppStorage(NativeServicesWDA.keepTunnelKey) private var keepTunnel = false
 
     var body: some View {
         let monitor = model.loopback
@@ -328,6 +351,42 @@ private struct LoopbackPage: View {
         }
         .disabled(externalLocked)
 
+        // Native services come first where the iPhone has them. Where they cannot start, the XCTest
+        // session can (no loopback needed once the developer image is mounted; PR #91, issue 35),
+        // with iOS's banner: the owner says here who decides that.
+        Section {
+            if AutomationPath.thisPhoneDefault == .nativeServices {
+                Picker(selection: $asksBeforeBanner) {
+                    Label("Ask Me First", systemImage: "questionmark.bubble").tag(true)
+                    Label("Decide Automatically", systemImage: "wand.and.stars").tag(false)
+                } label: {
+                    Label("Without a Connection", systemImage: "arrow.triangle.branch")
+                }
+                .disabled(AutomationPath.pinned != nil)
+            }
+            LabeledContent {
+                Text(AppModel.localDDIMounted ? "Mounted" : "Not Mounted").foregroundStyle(AppModel.localDDIMounted ? Color.secondary : Color.orange)
+            } label: {
+                Label("Developer Image", systemImage: "externaldrive")
+            }
+        } header: {
+            Text("When the Connection Is Off")
+        } footer: {
+            Text(AutomationPath.pinned != nil
+                 ? "A method is chosen in Testing Options, so Poki does not choose here. Set it to Automatic to let Poki choose."
+                 : AutomationPath.thisPhoneDefault == .nativeServices
+                 ? "Poki controls this iPhone without any banner when the local connection answers. When it does not (no Wi-Fi, or the loopback is off), Poki can still work another way, which shows iOS’s automation banner while it works and may ask for your passcode once. Ask Me First has the agent ask you before using it. Decide Automatically lets Poki use it and go back when the connection returns. It needs the developer image mounted, which lasts until this iPhone restarts."
+                 : "On this iOS version Poki works through iOS’s test session. Once the developer image is mounted, it can start with no local connection at all, until this iPhone restarts.")
+        }
+
+        Section {
+            Toggle(isOn: $keepTunnel) { Label("Keep the Connection for Cellular", systemImage: "antenna.radiowaves.left.and.right") }
+        } header: {
+            Text("Testing: Leaving Wi-Fi")
+        } footer: {
+            Text("Off by default. iOS only lets Poki open its connection to this iPhone on Wi-Fi, but one that is already open goes on over cellular. With this on, Poki opens it as soon as it turns on and keeps it between tasks instead of closing it. If Poki is closed or your proxy app reconnects, it needs Wi-Fi again. For the native services method. Takes effect the next time Poki turns on.")
+        }
+
         if model.tunnel.available {
             Section {
                 switch model.tunnel.state {
@@ -357,11 +416,11 @@ private struct LoopbackPage: View {
     }
 
     private func proxyLabel(_ name: String, id: String, installed: Bool, sub: LocalizedStringKey? = nil) -> some View {
+        // Which app the loopback comes from cannot be told from here (the check only sees whether
+        // 10.7.0.1 answers), so a row says what is known: the app is installed, or it is the one chosen.
         let chosen = model.setup.proxyApp == id
-        let working = chosen && model.loopback.isWorking
         return LabeledContent {
-            if working { Text("Working").foregroundStyle(.green) }
-            else if chosen { Text("Not Answering").foregroundStyle(.orange) }
+            if chosen { Text("Chosen") }
             else if installed { Text("Installed") }
         } label: {
             // The app's own icon, the size and corners of Settings' app rows.
@@ -408,13 +467,7 @@ private struct ProxyAppPage: View {
 
     var body: some View {
         Form {
-            Section {
-                ForEach(Array(app.steps.enumerated()), id: \.offset) { i, line in
-                    Label { Text(LocalizedStringKey(line)) } icon: { Image(systemName: "\(i + 1).circle") }
-                }
-            } header: {
-                Text("How To")
-            } footer: {
+            HowToSection(lines: app.steps) {
                 if !app.documented {
                     Text("As reported by users of \(app.name); not checked against its documentation. The status on the Loopback page tells whether it works.")
                 } else if !app.minimumVersion.isEmpty {
@@ -435,7 +488,26 @@ private struct ProxyAppPage: View {
                     Button("Open \(app.name)") { openApp() }
                 }
             }
-            Section { LoopbackStatusRow() }
+            Section {
+                LoopbackStatusRow()
+                Button("Check Again", systemImage: "arrow.clockwise") { model.loopback.check() }
+            } footer: {
+                // What the two developer ports said, so a report can name it.
+                if !model.loopback.isWorking, !model.loopback.lastProbe.isEmpty {
+                    Text("Last check: \(model.loopback.lastProbe). \(model.loopback.state == .noAnswer ? String(localized: "A tunnel gave this iPhone a 10.7.0.x address, but nothing answers through it.") : String(localized: "No tunnel has given this iPhone a 10.7.0.x address."))")
+                }
+            }
+            if !app.troubleshooting.isEmpty {
+                Section {
+                    ForEach(Array(app.troubleshooting.enumerated()), id: \.offset) { _, line in
+                        Label { Text(LocalizedStringKey(line)) } icon: { Image(systemName: "wrench.and.screwdriver") }
+                    }
+                } header: {
+                    Text("If It Still Does Not Answer")
+                } footer: {
+                    Text("Gathered from what users of \(app.name) and other loopback tools report. Try them in order; the status above checks again every few seconds.")
+                }
+            }
         }
         .navigationTitle(Text(verbatim: app.name))
         .navigationBarTitleDisplayMode(.inline)
@@ -454,10 +526,10 @@ private struct LocalDevVPNPage: View {
     @Environment(AppModel.self) private var model
     var body: some View {
         Form {
-            Section("How To") {
-                Label("No proxy app? Install LocalDevVPN, a free loopback app built for this.", systemImage: "1.circle")
-                Label("Open it and tap Connect, then return to Poki. It may disconnect another VPN app.", systemImage: "2.circle")
-            }
+            HowToSection(lines: [
+                "No proxy app? Install LocalDevVPN, a free loopback app built for this.",
+                "Open it and tap Connect, then return to Poki. It may disconnect another VPN app.",
+            ])
             Section {
                 Button("Get LocalDevVPN on the App Store") {
                     model.chooseConnection(.proxy); model.setup.proxyApp = "localdevvpn"; model.guide(.loopback)
@@ -477,7 +549,7 @@ private struct LoopbackStatusRow: View {
     var body: some View {
         let working = model.loopback.isWorking
         LabeledContent("Loopback") {
-            Text(working ? "Working" : model.loopback.state == .noAnswer ? "No Answer" : "Checking…")
+            Text(working ? "Working" : model.loopback.state == .noAnswer ? "No Answer" : model.loopback.state == .off ? "Not On" : "Checking…")
                 .foregroundStyle(working ? Color.green : Color.secondary)
         }
         .onAppear { model.loopback.resume() }
@@ -552,9 +624,27 @@ private struct PairingPage: View {
                 }
             } else if model.pairingPath != nil {
                 Section {
-                    Label(model.pairingVerifiedAt.map { String(localized: "Paired. The phone accepted it at \($0.formatted(date: .omitted, time: .shortened)).") }
-                            ?? String(localized: "Paired. Checked the next time the runner starts."), systemImage: "checkmark.seal.fill")
+                    if let at = model.pairingVerifiedAt {
+                        Label(String(localized: "Paired. The phone accepted it at \(at.formatted(date: .omitted, time: .shortened))."), systemImage: "checkmark.seal.fill")
+                    } else if model.pairingChecking {
+                        LabeledContent { ProgressView() } label: { Label("Paired. Asking the phone…", systemImage: "checkmark.seal") }
+                    } else if !model.loopback.isWorking {
+                        Label("Paired. The phone is asked once the loopback is on.", systemImage: "checkmark.seal")
+                    } else if model.pairingUnchecked != nil {
+                        Label("Paired, but the phone did not answer the check.", systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+                    } else {
+                        Label("Paired. Not checked yet.", systemImage: "checkmark.seal")
+                    }
+                    if model.loopback.isWorking, !model.pairingChecking {
+                        Button("Check Again", systemImage: "arrow.clockwise") { Task { await model.verifyPairing(force: true) } }
+                    }
+                } footer: {
+                    if model.pairingVerifiedAt == nil, !model.pairingChecking, model.loopback.isWorking, let why = model.pairingUnchecked {
+                        Text("10.7.0.1 takes the connection, but the pairing service behind it did not answer (\(why)). Reconnect your proxy app or LocalDevVPN and check Wi-Fi, then tap Check Again. The pairing itself is kept.")
+                    }
                 }
+                // Opening the page asks the phone, so what it shows is from now.
+                .task { await model.verifyPairing(force: model.pairingVerifiedAt.map { Date().timeIntervalSince($0) > 60 } ?? true) }
             } else if SetupStep.onDevicePairing {
                 Section("How To") {
                     Label("Connect to Wi‑Fi and tap **Start Pairing**. Allow local network access when prompted.", systemImage: "1.circle")
@@ -676,9 +766,6 @@ private struct BackgroundPage: View {
         } footer: {
             Text(model.activitiesEnabled ? "Poki shows steps, pairing codes and approvals on the Lock Screen." : "Turn them on to see the agent’s steps and approve sensitive actions.")
         }
-        Section { EmptyView() } footer: {
-            Text(SetupStep.inProcess ? "The first time Poki turns on after a restart, iOS asks for your passcode to allow automation. Enter it once; Poki never sees it." : "The first time Poki Runner starts after a restart, iOS asks for your passcode to allow automation. Enter it once; Poki never sees it.")
-        }
     }
 }
 
@@ -701,9 +788,12 @@ struct SetupChecklist: View {
                 if AutomationPath.current == .nativeServices {
                     NavigationLink { PokiKeyboardPage() } label: { PokiKeyboardSetupRow() }
                 }
+            } header: {
+                Text("Checklist")
             } footer: {
                 Text(model.setupComplete ? "Everything Poki needs is in place." : "Poki needs every item ticked before an agent or the chat can use this iPhone. Items tick themselves when the phone can check them.")
             }
+            ContributeSection()
             SigningSection()
             Section {
                 Button("Setup Guide", systemImage: "list.number") { guiding = true }
@@ -715,6 +805,39 @@ struct SetupChecklist: View {
         .navigationTitle("Setup")
         .onAppear { model.loopback.resume() }
         .sheet(isPresented: $guiding) { SetupGuide(start: SetupStep.shown.first { !model.isDone($0) }) }
+    }
+}
+
+/// Setup › Contribute: a star on GitHub (with a thank-you a moment later) and the issues page.
+struct ContributeSection: View {
+    @Environment(\.openURL) private var openURL
+    var body: some View {
+        Section {
+            Button {
+                openURL(URL(string: "https://github.com/JosssphZhou/poki")!)
+                ThanksNotice.post()
+            } label: {
+                LabeledContent {
+                    Image(systemName: "arrow.up.forward").font(.footnote.weight(.semibold)).foregroundStyle(Color(.tertiaryLabel))
+                } label: {
+                    Label("Star Poki on GitHub", systemImage: "star")
+                }
+            }
+            Button {
+                openURL(URL(string: "https://github.com/JosssphZhou/poki/issues/new/choose")!)
+            } label: {
+                LabeledContent {
+                    Image(systemName: "arrow.up.forward").font(.footnote.weight(.semibold)).foregroundStyle(Color(.tertiaryLabel))
+                } label: {
+                    Label("Report Bugs & Issues", systemImage: "ladybug")
+                }
+            }
+        } header: {
+            Text("Contribute")
+        } footer: {
+            Text("Poki is open source. Both open GitHub in your browser.")
+        }
+        .foregroundStyle(Color(.label))
     }
 }
 
@@ -774,11 +897,7 @@ struct SetupStepPage: View {
             } footer: {
                 Text(step.pageSummary)
             }
-            Section("How To") {
-                ForEach(Array(lines.enumerated()), id: \.offset) { i, line in
-                    Label { Text(LocalizedStringKey(line)) } icon: { Image(systemName: "\(i + 1).circle") }
-                }
-            }
+            HowToSection(lines: lines)
             Section {
                 Button("Open Settings", systemImage: "gear") { openSettings(model, for: step) }
                 Toggle(confirmTitle, isOn: confirmBinding)

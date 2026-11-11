@@ -10,7 +10,70 @@ import SwiftUI
 //   debugging tools behind the button at the top right.
 
 /// Agents › a page.
-enum AgentsRoute: Hashable { case accounts, voice, activityLog }
+enum AgentsRoute: Hashable { case accounts, voice, activityLog, approvals }
+
+/// Agents › Safety › Approvals: how Poki asks before a sensitive step, and how much it decides itself.
+struct ApprovalsView: View {
+    @Environment(AppModel.self) private var model
+
+    private var levels: [ApprovalClassifier.Level] { ApprovalClassifier.Level.allCases }
+
+    var body: some View {
+        @Bindable var model = model
+        // The slider's four stops are the four levels, least asking on the left.
+        let stop = Binding<Double>(
+            get: { Double(levels.firstIndex(of: model.classifierLevel) ?? 1) },
+            set: { model.classifierLevel = levels[min(levels.count - 1, max(0, Int($0.rounded())))] })
+        Form {
+            Section {
+                Picker(selection: $model.approvalMode) {
+                    ForEach(ApprovalClassifier.Mode.allCases) { Text($0.title).tag($0) }
+                } label: {
+                    Label("Ask Me", systemImage: "hand.raised")
+                }
+            } footer: {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Sensitive steps are paying, deleting, sending a message, placing a call, typing a password and anything in Wallet.")
+                    switch model.approvalMode {
+                    case .reply: Text("With Message Reply, Poki asks you in the chat and your yes lets the step through. Away from Poki you can answer from the notification. Outside agents have no chat, so their steps ask with Allow and Don’t Allow.")
+                    case .confirm: Text("With Confirmation, you tap Allow or Don’t Allow on the Live Activity, in a notification, or here in Poki.")
+                    case .off: Text("Agents do all of that without asking.")
+                    }
+                    Text("Turning asking on or off takes effect the next time Poki opens.")
+                }
+            }
+            if model.approvalMode != .off {
+                Section {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Label("Sensitivity", systemImage: "dial.medium")
+                            Spacer()
+                            Text(model.classifierLevel.title).foregroundStyle(.secondary)
+                        }
+                        Slider(value: stop, in: 0...Double(levels.count - 1), step: 1) {
+                            Text("Sensitivity")
+                        } minimumValueLabel: {
+                            Image(systemName: "bolt").foregroundStyle(.secondary).accessibilityLabel(Text("Asks least"))
+                        } maximumValueLabel: {
+                            Image(systemName: "lock.shield").foregroundStyle(.secondary).accessibilityLabel(Text("Asks most"))
+                        }
+                        .accessibilityValue(Text(model.classifierLevel.title))
+                    }
+                    .padding(.vertical, 4)
+                } footer: {
+                    switch model.classifierLevel {
+                    case .permissive: Text("Permissive: your chat model approves a step in Poki’s own chat unless it clearly has nothing to do with what you asked, or you said no.")
+                    case .balanced: Text("Balanced: your chat model approves a step in Poki’s own chat when it directly serves what you asked for. You are asked about the rest.")
+                    case .strict: Text("Strict: your chat model approves a step in Poki’s own chat only when you asked for that exact action. You are asked about the rest.")
+                    case .everything: Text("Ask for Everything: nothing is approved automatically. Steps that follow straight after your answer in the same app do not ask again.")
+                    }
+                }
+            }
+        }
+        .navigationTitle("Approvals")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
 
 struct AgentsView: View {
     /// The line under MCP Relay: the address to set, Poki being off, or the relay's live state.
@@ -121,43 +184,17 @@ struct AgentsView: View {
                 }
 
                 Section {
-                    Picker(selection: $model.approvalMode) {
-                        ForEach(ApprovalClassifier.Mode.allCases) { Text($0.title).tag($0) }
-                    } label: {
-                        Label("Ask Before Sensitive Steps", systemImage: "hand.raised")
+                    NavigationLink(value: AgentsRoute.approvals) {
+                        LabeledContent {
+                            Text(model.approvalMode == .off ? String(localized: "Off") : model.classifierLevel.title)
+                                .foregroundStyle(model.approvalMode == .off ? Color.orange : Color.secondary)
+                        } label: { Label("Approvals", systemImage: "hand.raised") }
                     }
-                    if model.approvalMode != .off {
-                        Picker(selection: $model.classifierLevel) {
-                            ForEach(ApprovalClassifier.Level.allCases) { Text($0.title).tag($0) }
-                        } label: {
-                            Label("Sensitivity", systemImage: "dial.medium")
-                        }
-                    }
-                } header: {
-                    Text("Approvals")
-                } footer: {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Sensitive steps are paying, deleting, sending a message, placing a call, typing a password and anything in Wallet.")
-                        switch model.approvalMode {
-                        case .reply: Text("With Message Reply, Poki asks you in the chat and your yes lets the step through. Away from Poki you can answer from the notification. Outside agents have no chat, so their steps ask with Allow and Don’t Allow.")
-                        case .confirm: Text("With Confirmation, you tap Allow or Don’t Allow on the Live Activity, in a notification, or here in Poki.")
-                        case .off: Text("Agents do all of that without asking.")
-                        }
-                        if model.approvalMode != .off {
-                            if model.classifierLevel == .everything {
-                                Text("Ask for Everything: nothing is approved automatically. Steps that follow straight after your answer in the same app do not ask again.")
-                            } else {
-                                Text("Permissive, Balanced and Strict let your chat model approve steps in Poki’s own chat that fit what you asked for, and only ask you about the rest. The chat and the Activity Log show each decision.")
-                            }
-                        }
-                        Text("Turning asking on or off takes effect the next time Poki opens.")
-                    }
-                }
-
-                Section {
                     NavigationLink(value: AgentsRoute.activityLog) { Label("Activity Log", systemImage: "list.bullet.rectangle") }
+                } header: {
+                    Text("Safety")
                 } footer: {
-                    Text("Every action any agent ran on this iPhone. It can’t be deleted.")
+                    Text("When Poki asks you before a sensitive step, and the record of every action any agent ran on this iPhone.")
                 }
             }
             .listStyle(.insetGrouped)
@@ -167,6 +204,7 @@ struct AgentsView: View {
                 case .accounts: ModelSettingsView()
                 case .voice: VoiceView(embedded: true)
                 case .activityLog: ActionLogView(openSession: openSession)
+                case .approvals: ApprovalsView()
                 }
             }
             .navigationDestination(for: SettingsRoute.self) { route in

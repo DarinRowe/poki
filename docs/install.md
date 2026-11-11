@@ -127,6 +127,19 @@ To use a physical iPhone, first pair it with your Mac over USB. After that, keep
 | Screenshots work, but touch fails with `no display service` | The developer disk image on the iPhone lacks the display service. See [Touch and text input fail](physical-iphone.md#touch-and-text-input-fail). |
 | `This device is not recording` from `bin/call.mjs` | A recording ends when its session closes. Record from one MCP client session. |
 
+## The iPhone app at a glance
+
+- Languages: English, Simplified Chinese and Traditional Chinese, following the iPhone's language.
+- On iOS 26 and later, with iOS's background task keeping Poki alive, the Live Activity shows only
+  while there is something to show (a task, an approval, a problem) and hides when Poki is idle.
+  When you leave Poki during a task, Poki swipes iOS's background banner up so it does not cover the app.
+- Where iOS asks for the passcode before automation (the XCTest session), it asks when you tap Start,
+  while you are there, not in the middle of a task. A session that fails to open is reopened by Poki itself.
+- Before an update installs, Poki ends its Live Activity and background task.
+- Agents › Safety holds Approvals and the Activity Log. Settings has a Contribute section above Updates.
+- How Poki picks its control method, and what happens without a loopback: see
+  [ios-loopback.md](ios-loopback.md#which-method-does-the-work).
+
 ## Names and distribution
 
 The repository is `poki`. The command, the MCP server key, and the package name stay `poki-mcp`, because the npm name `poki` belongs to another project. `package.json` is marked `"private": true`; this repository is used from source and does not publish an npm package.

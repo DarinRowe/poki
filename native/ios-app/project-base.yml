@@ -50,10 +50,10 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         PokiAppGroup: $(POKI_APP_GROUP)
-        # English and Simplified Chinese (Shared/Localizable.xcstrings, Poki/InfoPlist.xcstrings); Poki
+        # English, Simplified and Traditional Chinese (Shared/Localizable.xcstrings, Poki/InfoPlist.xcstrings); Poki
         # follows the iPhone's language.
         CFBundleDevelopmentRegion: en
-        CFBundleLocalizations: [en, zh-Hans]
+        CFBundleLocalizations: [en, zh-Hans, zh-Hant]
         # Every page is the website's blue (or the night blue): white status bar text throughout.
         UIStatusBarStyle: UIStatusBarStyleLightContent
         UIViewControllerBasedStatusBarAppearance: false
@@ -194,7 +194,7 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         PokiAppGroup: $(POKI_APP_GROUP)
         CFBundleDevelopmentRegion: en
-        CFBundleLocalizations: [en, zh-Hans]
+        CFBundleLocalizations: [en, zh-Hans, zh-Hant]
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
         UIAppFonts: [Geist-Regular.ttf, Geist-Medium.ttf, Geist-SemiBold.ttf, Geist-Bold.ttf, Geist-Black.ttf]
