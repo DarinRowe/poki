@@ -24,13 +24,6 @@
 </p>
 <!-- badges:end -->
 
-## Poki keyboard
-
-On the native path Poki types through its own keyboard panel at a person's pace, without
-reading the screen while it types. The panel has no keys and is not a keyboard for people:
-it shows while Poki types and has a Take Over button. Nothing is pasted unless you choose
-Paste in Advanced. See [docs/poki-keyboard.md](docs/poki-keyboard.md).
-
 ## Quick start
 
 ### Poki on your iPhone
@@ -156,6 +149,13 @@ Physical iPhone support has been verified only on iPhones using the Chinese inte
     <img alt="Star History chart" src="https://api.star-history.com/chart?repos=JosssphZhou/poki&type=date&legend=top-left">
   </picture>
 </a>
+
+## Poki keyboard
+
+On the native path Poki types through its own keyboard panel at a person's pace, without
+reading the screen while it types. The panel has no keys and is not a keyboard for people:
+it shows while Poki types and has a Take Over button. Nothing is pasted unless you choose
+Paste in Advanced. See [docs/poki-keyboard.md](docs/poki-keyboard.md).
 
 ## Core contributors
 
