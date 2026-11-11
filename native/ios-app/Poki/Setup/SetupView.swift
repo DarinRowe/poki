@@ -93,7 +93,7 @@ struct SetupView: View {
                 "Open **Settings › General › VPN & Device Management**, tap your Apple ID, then tap **Trust**.",
                 "Don’t open Poki Runner yourself. Poki starts it when an agent needs this iPhone.",
             ])
-            SetupFootnote(text: "With a free Apple ID, self-signed apps expire after 7 days and are limited to 3 at a time; Poki and Poki Runner use 2. For free Apple ID signing, install the external-connection build and use LocalDevVPN or a compatible VPN app.")
+            SetupFootnote(text: "With a free Apple ID, self-signed apps expire after 7 days and are limited to 3 at a time. Poki and Poki Runner use 2. For free Apple ID signing, install the external-connection build and use LocalDevVPN or a compatible VPN app.")
             ConfirmCard(step: .runner, title: "Poki Runner is installed and trusted", isOn: binding(\.runnerInstalled))
         case .developerMode:
             InstructionsCard(lines: [
@@ -165,7 +165,7 @@ extension SetupStep {
         switch self {
         case .runner: "The helper app that taps and types for your agent. Poki starts it; you never open it."
         case .developerMode: SetupStep.inProcess ? "Allows Poki to use this iPhone’s developer services." : "Allows this iPhone to run Poki Runner."
-        case .loopback: "How Poki reaches this iPhone: through your proxy app’s loopback, and what it does when that is off."
+        case .loopback: "How Poki reaches this iPhone through your proxy app’s loopback, and what it does when that is off."
         case .pairing: "Gives Poki its own key to this iPhone. The key stays on this device."
         case .automation: SetupStep.inProcess ? "Allows Poki to control other apps." : "Allows Poki Runner to control other apps."
         case .background: "Keeps Poki connected in the background and shows its activity on the Lock Screen."
@@ -308,7 +308,7 @@ private struct LoopbackPage: View {
     @Environment(AppModel.self) private var model
     @State private var copied: String?
     @AppStorage(AppModel.askBeforeBannerKey) private var asksBeforeBanner = true
-    @AppStorage(NativeServicesWDA.keepTunnelKey) private var keepTunnel = false
+    @AppStorage(NativeServicesWDA.keepTunnelKey) private var keepTunnel = true
 
     var body: some View {
         let monitor = model.loopback
@@ -346,23 +346,19 @@ private struct LoopbackPage: View {
         } footer: {
             if let chosen = model.setup.proxyApp, !monitor.isWorking, model.setup.loopback == .proxy {
                 let name = ProxyApps.all.first { $0.id == chosen }?.name ?? "LocalDevVPN"
-                Text("\(name) is chosen, but nothing answers at 10.7.0.1 right now. Open \(name), make sure it is connected with the loopback on, then come back; this page updates by itself.")
+                Text("\(name) is chosen, but nothing answers at 10.7.0.1 right now. Open \(name), make sure it is connected with the loopback on, then come back. This page updates by itself.")
             }
         }
         .disabled(externalLocked)
+
+        AutomationMethodSection()
 
         // Native services come first where the iPhone has them. Where they cannot start, the XCTest
         // session can (no loopback needed once the developer image is mounted; PR #91, issue 35),
         // with iOS's banner: the owner says here who decides that.
         Section {
-            if AutomationPath.thisPhoneDefault == .nativeServices {
-                Picker(selection: $asksBeforeBanner) {
-                    Label("Ask Me First", systemImage: "questionmark.bubble").tag(true)
-                    Label("Decide Automatically", systemImage: "wand.and.stars").tag(false)
-                } label: {
-                    Label("Without a Connection", systemImage: "arrow.triangle.branch")
-                }
-                .disabled(AutomationPath.pinned != nil)
+            if AutomationPath.thisPhoneDefault == .nativeServices, AutomationPath.pinned == nil {
+                Toggle(isOn: $asksBeforeBanner) { Label("Ask Before the Banner", systemImage: "questionmark.bubble") }
             }
             LabeledContent {
                 Text(AppModel.localDDIMounted ? "Mounted" : "Not Mounted").foregroundStyle(AppModel.localDDIMounted ? Color.secondary : Color.orange)
@@ -370,21 +366,19 @@ private struct LoopbackPage: View {
                 Label("Developer Image", systemImage: "externaldrive")
             }
         } header: {
-            Text("When the Connection Is Off")
+            Text("Without Wi-Fi or Loopback")
         } footer: {
-            Text(AutomationPath.pinned != nil
-                 ? "A method is chosen in Testing Options, so Poki does not choose here. Set it to Automatic to let Poki choose."
-                 : AutomationPath.thisPhoneDefault == .nativeServices
-                 ? "Poki controls this iPhone without any banner when the local connection answers. When it does not (no Wi-Fi, or the loopback is off), Poki can still work another way, which shows iOS’s automation banner while it works and may ask for your passcode once. Ask Me First has the agent ask you before using it. Decide Automatically lets Poki use it and go back when the connection returns. It needs the developer image mounted, which lasts until this iPhone restarts."
-                 : "On this iOS version Poki works through iOS’s test session. Once the developer image is mounted, it can start with no local connection at all, until this iPhone restarts.")
+            if AutomationPath.thisPhoneDefault == .nativeServices, AutomationPath.pinned == nil {
+                Text("Poki can still work, with iOS’s automation banner on screen.")
+            }
         }
 
         Section {
-            Toggle(isOn: $keepTunnel) { Label("Keep the Connection for Cellular", systemImage: "antenna.radiowaves.left.and.right") }
+            Toggle(isOn: $keepTunnel) { Label("Keep on Cellular", systemImage: "antenna.radiowaves.left.and.right") }
         } header: {
-            Text("Testing: Leaving Wi-Fi")
+            Text("Cellular")
         } footer: {
-            Text("Off by default. iOS only lets Poki open its connection to this iPhone on Wi-Fi, but one that is already open goes on over cellular. With this on, Poki opens it as soon as it turns on and keeps it between tasks instead of closing it. If Poki is closed or your proxy app reconnects, it needs Wi-Fi again. For the native services method. Takes effect the next time Poki turns on.")
+            Text("Keeps working after you leave Wi-Fi. Applies the next time Poki turns on.")
         }
 
         if model.tunnel.available {
@@ -410,7 +404,7 @@ private struct LoopbackPage: View {
             } header: {
                 Text("Other Ways")
             } footer: {
-                Text(model.connectionInUse ? "Stop Poki and finish pairing before changing the local connection." : "No extra app needed. Poki connects only to this iPhone; your normal traffic and DNS stay on their usual routes. iOS shows it as a VPN, so it may disconnect another VPN app.")
+                Text(model.connectionInUse ? "Stop Poki and finish pairing before changing the local connection." : "No extra app needed. Poki connects only to this iPhone. Your normal traffic and DNS stay on their usual routes. iOS shows it as a VPN, so it may disconnect another VPN app.")
             }
         }
     }
@@ -469,7 +463,7 @@ private struct ProxyAppPage: View {
         Form {
             HowToSection(lines: app.steps) {
                 if !app.documented {
-                    Text("As reported by users of \(app.name); not checked against its documentation. The status on the Loopback page tells whether it works.")
+                    Text("As reported by users of \(app.name) and not checked against its documentation. The status on the Loopback page tells whether it works.")
                 } else if !app.minimumVersion.isEmpty {
                     Text("\(app.name) \(app.minimumVersion) or later.")
                 }
@@ -494,7 +488,7 @@ private struct ProxyAppPage: View {
             } footer: {
                 // What the two developer ports said, so a report can name it.
                 if !model.loopback.isWorking, !model.loopback.lastProbe.isEmpty {
-                    Text("Last check: \(model.loopback.lastProbe). \(model.loopback.state == .noAnswer ? String(localized: "A tunnel gave this iPhone a 10.7.0.x address, but nothing answers through it.") : String(localized: "No tunnel has given this iPhone a 10.7.0.x address."))")
+                    Text("Last check \(model.loopback.lastProbe). \(model.loopback.state == .noAnswer ? String(localized: "A tunnel gave this iPhone a 10.7.0.x address, but nothing answers through it.") : String(localized: "No tunnel has given this iPhone a 10.7.0.x address."))")
                 }
             }
             if !app.troubleshooting.isEmpty {
@@ -505,7 +499,7 @@ private struct ProxyAppPage: View {
                 } header: {
                     Text("If It Still Does Not Answer")
                 } footer: {
-                    Text("Gathered from what users of \(app.name) and other loopback tools report. Try them in order; the status above checks again every few seconds.")
+                    Text("Gathered from what users of \(app.name) and other loopback tools report. Try them in order. The status above checks again every few seconds.")
                 }
             }
         }
@@ -618,9 +612,9 @@ private struct PairingPage: View {
         default:
             if let trouble = model.pairingTrouble {
                 Section {
-                    Label(String(localized: "The phone no longer accepts this pairing: \(trouble)"), systemImage: "exclamationmark.triangle")
+                    Label(String(localized: "The phone no longer accepts this pairing. \(trouble)"), systemImage: "exclamationmark.triangle")
                 } footer: {
-                    Text(SetupStep.onDevicePairing ? "This happens after a restore, a reset of Location & Privacy, or when the phone forgot Poki. Pair again; the old key is replaced." : "This happens after a restore, a reset of Location & Privacy, or when the phone forgot Poki. Pair again from Poki Setup on your computer and send the new file here; the old key is replaced.")
+                    Text(SetupStep.onDevicePairing ? "This happens after a restore, a reset of Location & Privacy, or when the phone forgot Poki. Pair again and the old key is replaced." : "This happens after a restore, a reset of Location & Privacy, or when the phone forgot Poki. Pair again from Poki Setup on your computer and send the new file here. The old key is replaced.")
                 }
             } else if model.pairingPath != nil {
                 Section {
@@ -653,13 +647,13 @@ private struct PairingPage: View {
                 }
             } else {
                 Section {
-                    Label("Pairing on the phone itself needs iOS 27; this iPhone runs iOS \(UIDevice.current.systemVersion). Pair it from a computer instead.", systemImage: "1.circle")
+                    Label("Pairing on the phone itself needs iOS 27, and this iPhone runs iOS \(UIDevice.current.systemVersion). Pair it from a computer instead.", systemImage: "1.circle")
                     Label("Open **Poki Setup** on your Mac or PC, connect this iPhone by cable, and tap **Pair**. Tap **Trust** on the iPhone when asked.", systemImage: "2.circle")
-                    Label("Send the pairing file here: tap **Scan Pairing Code** below (or scan Poki Setup's code with the Camera), AirDrop the file to this iPhone and open it with Poki, or tap **Import Pairing File** below.", systemImage: "3.circle")
+                    Label("Send the pairing file here. Tap **Scan Pairing Code** below (or scan Poki Setup's code with the Camera), AirDrop the file to this iPhone and open it with Poki, or tap **Import Pairing File** below.", systemImage: "3.circle")
                 } header: {
                     Text("How To")
                 } footer: {
-                    Text("No Poki Setup yet? Any lockdown pairing file works: pymobiledevice3, jitterbugpair or StikPair make one.")
+                    Text("No Poki Setup yet? Any lockdown pairing file works. pymobiledevice3, jitterbugpair or StikPair make one.")
                 }
             }
         }
@@ -692,7 +686,7 @@ private struct PairingPage: View {
         .task { while !Task.isCancelled { model.lookForHandedPairing(); try? await Task.sleep(for: .seconds(3)) } }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.propertyList, .xml, .data]) { result in
             do { try model.importPairingFile(from: result.get()); importError = nil }
-            catch { importError = String(localized: "Invalid Pairing File: \(error.localizedDescription)") }
+            catch { importError = String(localized: "Invalid Pairing File. \(error.localizedDescription)") }
         }
     }
 
@@ -820,24 +814,61 @@ struct ContributeSection: View {
                 LabeledContent {
                     Image(systemName: "arrow.up.forward").font(.footnote.weight(.semibold)).foregroundStyle(Color(.tertiaryLabel))
                 } label: {
-                    Label("Star Poki on GitHub", systemImage: "star")
+                    Label { Text("Star Poki on GitHub").foregroundStyle(Color(.label)) } icon: { Image(systemName: "star") }
                 }
             }
-            Button {
-                openURL(URL(string: "https://github.com/JosssphZhou/poki/issues/new/choose")!)
-            } label: {
-                LabeledContent {
-                    Image(systemName: "arrow.up.forward").font(.footnote.weight(.semibold)).foregroundStyle(Color(.tertiaryLabel))
-                } label: {
-                    Label("Report Bugs & Issues", systemImage: "ladybug")
-                }
-            }
+            NavigationLink { ReportIssuePage() } label: { Label("Report Bugs & Issues", systemImage: "exclamationmark.bubble") }
         } header: {
             Text("Contribute")
         } footer: {
-            Text("Poki is open source. Both open GitHub in your browser.")
+            Text("Poki is open source and relies on its community.")
         }
-        .foregroundStyle(Color(.label))
+    }
+}
+
+/// Setup › Contribute › Report Bugs & Issues: what a good report holds, the log to attach, and the way to GitHub.
+struct ReportIssuePage: View {
+    @Environment(\.openURL) private var openURL
+    @State private var copied = false
+    @State private var logFile: URL?
+
+    var body: some View {
+        Form {
+            HowToSection(lines: [
+                "Make the problem happen again, then come back here.",
+                "Copy or save the log below.",
+                "Open a new issue. Say what you did, what you expected and what happened, and attach the log.",
+            ])
+            Section {
+                Button {
+                    UIPasteboard.general.string = AppLog.shared.text
+                    copied = true
+                } label: {
+                    Label(copied ? "Copied" : "Copy Log", systemImage: copied ? "checkmark" : "doc.on.doc")
+                }
+                if let logFile {
+                    ShareLink(item: logFile) { Label("Save or Share Log", systemImage: "square.and.arrow.up") }
+                }
+            } header: {
+                Text("Log")
+            } footer: {
+                Text("Issues are public. Read the log before you post it.")
+            }
+            Section {
+                Button {
+                    openURL(URL(string: "https://github.com/JosssphZhou/poki/issues/new/choose")!)
+                } label: {
+                    Label("Open a New Issue on GitHub", systemImage: "arrow.up.forward.square")
+                }
+            }
+        }
+        .navigationTitle("Report Bugs & Issues")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            // A file, so the share sheet offers Save to Files.
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("Poki-log.txt")
+            if (try? AppLog.shared.text.write(to: url, atomically: true, encoding: .utf8)) != nil { logFile = url }
+        }
     }
 }
 

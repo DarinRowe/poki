@@ -188,21 +188,21 @@ struct RootView: View {
         .alert("Poki Will Close to Finish the Update", isPresented: Binding(get: { model.signer.finishNotice }, set: { if !$0 { model.signer.finishNoticeAnswered() } })) {
             Button("OK") { model.signer.finishNoticeAnswered() }
         } message: {
-            Text("The update is almost in. Poki will close to finish it; open Poki again afterwards.")
+            Text("The update is almost in. Poki will close to finish it. Open Poki again afterwards.")
         }
         // Turning on after Off: Poki exits by itself and has to be opened again.
         .alert("Poki Restarts to Turn On", isPresented: Binding(get: { model.relaunchNotice }, set: { if !$0 { model.relaunchNotice = false } })) {
             Button("Cancel", role: .cancel) { model.relaunchNotice = false }
             Button("Continue") { model.continueRelaunch() }
         } message: {
-            Text("Poki closes by itself so agents can see the screen again. Open Poki again afterwards, from the notification or the Home Screen; it turns on when it opens.")
+            Text("Poki closes by itself so agents can see the screen again. Open Poki again afterwards, from the notification or the Home Screen. It turns on when it opens.")
         }
         // Before the first automation after a restart: iOS's passcode screen is next, and expected.
         .alert("Enter Your Passcode Next", isPresented: Binding(get: { model.passcodeHeadsUp }, set: { if !$0 { model.passcodeHeadsUp = false } })) {
             Button("Cancel", role: .cancel) { model.passcodeHeadsUp = false }
             Button("Continue") { model.continueAfterPasscodeHeadsUp() }
         } message: {
-            Text("This is the first time Poki starts automation since your iPhone restarted, so iOS will ask for your passcode on the next screen. That screen belongs to iOS: Poki can’t see or read what you enter, and it asks only once until the next restart.")
+            Text("This is the first time Poki starts automation since your iPhone restarted, so iOS will ask for your passcode on the next screen. That screen belongs to iOS. Poki can’t see or read what you enter, and it asks only once until the next restart.")
         }
         .onChange(of: scenePhase, initial: true) { _, phase in
             if phase == .active { model.becameActive(); AskPoki.refresh(); model.startSigner(); model.signer.clearNotices(); model.signer.maintain(); Task { await model.verifyPairing() } } else if phase == .background { model.wentToBackground() }

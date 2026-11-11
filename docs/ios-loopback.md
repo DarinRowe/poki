@@ -94,20 +94,27 @@ failed twice in a row. A request under way always finishes on the method it bega
 
 - Before iOS 27 the XCTest session is the only method. It now starts without a loopback when the
   image is already mounted.
-- From iOS 27 native services come first. When they cannot start, the page's "When the Connection
-  Is Off" setting decides: "Ask Me First" (the default) has the agent ask the owner, and
-  "Decide Automatically" lets Poki use the XCTest session and go back to native services when the
-  connection returns.
+- From iOS 27 native services come first. When they cannot start, the page's "Ask Before the
+  Banner" switch decides: on (the default), the agent asks the owner; off, Poki uses
+  the XCTest session and goes back to native services when the connection returns.
 - The question has three forms. On Wi-Fi with the loopback off, the agent nudges the owner to turn
   it on. With no Wi-Fi, it asks whether to connect or to start anyway. When native services keep
   failing although the connection answers, it asks whether to go on with the banner method. The
   owner answers the agent (which calls `use_banner_method` with `owner_said_yes: true`) or taps
   the card in Poki's chat. A yes holds until Poki is turned off.
-- A method set in Testing Options (anything but Automatic) is never changed.
+- The page's Method picker (Automatic, Native Services, XCTest Session) starts on Automatic. A
+  method chosen there is never changed by Poki.
+- The XCTest session closes when it is not needed, and iOS's banner goes with it: when Poki
+  stands by, and 20 s after the last step once native services can start. The next request opens
+  a new session in the same launch. It counts only when its first read of the screen comes back.
+  Otherwise Poki restarts as a new process and posts a notification to open it.
+- With the XCTest session, text is typed through the Poki keyboard too (chosen from the globe
+  key's list), unless Paste is chosen under Advanced. XCTest's own typing is used only when the
+  keyboard declines, as in a password field.
 - An XCTest session closed in a launch cannot be opened again in that launch, so after going back
   to native services the banner method is not offered again until Poki restarts.
 
-"Keep the Connection for Cellular" (off by default, a test) opens the native-services tunnels as
+"Keep on Cellular" (on by default) opens the native-services tunnels as
 Poki turns on and keeps them between tasks, because a tunnel opened on Wi-Fi goes on over cellular.
 
 ## Acceptance

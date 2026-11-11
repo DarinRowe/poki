@@ -54,13 +54,13 @@ final class OpenAIClient: ModelClient {
             case 403, 404: String(localized: "This OpenAI key can’t use \(ModelKeys.selectedModelName).")
             case 429 where code == "insufficient_quota": String(localized: "This OpenAI key has no credit left. Check billing at platform.openai.com.")
             case 429: String(localized: "OpenAI says the key has hit its rate limit. Try again in a minute.")
-            default: String(localized: "OpenAI answered \(status): \(text)")
+            default: String(localized: "OpenAI answered \(status), \(text)")
             }
             throw ModelFailure(errorDescription: words)
         }
         if json["status"] as? String == "failed" {
             let text = ((json["error"] as? [String: Any])?["message"] as? String) ?? ""
-            throw ModelFailure(errorDescription: String(localized: "OpenAI answered \(status): \(text)"))
+            throw ModelFailure(errorDescription: String(localized: "OpenAI answered \(status), \(text)"))
         }
         let output = json["output"] as? [[String: Any]] ?? []
         input.append(contentsOf: output)

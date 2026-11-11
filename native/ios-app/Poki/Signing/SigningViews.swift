@@ -53,7 +53,7 @@ struct AccountPage: View {
                     .textContentType(.password)
                 Toggle("Keep Me Signed In", isOn: $keepPassword)
             } footer: {
-                Text("A free Apple Account works: Poki signs itself for 7 days at a time and gets ready to sign again before then. Your Apple ID and password go only to Apple. The anisette server Poki asks for its device headers never sees them.")
+                Text("A free Apple Account works. Poki signs itself for 7 days at a time and gets ready to sign again before then. Your Apple ID and password go only to Apple. The anisette server Poki asks for its device headers never sees them.")
             }
             Section {
                 Button("Sign In") { Task { await signer.signIn(appleID: appleID, password: password, keepPassword: keepPassword); password = "" } }
@@ -242,7 +242,7 @@ struct SigningOptionsPage: View {
             } header: {
                 Text("Release Channel")
             } footer: {
-                Text("Poki downloads and signs updates from this channel ahead of time, the same way Poki Setup does. Stable gets full releases only; Beta, Alpha and Pre-alpha get earlier builds.")
+                Text("Poki downloads and signs updates from this channel ahead of time, the same way Poki Setup does. Stable gets full releases only. Beta, Alpha and Pre-alpha get earlier builds.")
             }
             Section {
                 LabeledContent("Installed") { Text(verbatim: "\(signer.installedVersion) (\(signer.installedBuild))") }

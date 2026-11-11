@@ -76,7 +76,7 @@ struct SettingsHome: View {
                 }
                 .padding(.vertical, 4)
             } footer: {
-                Text("The relay forwards requests to this iPhone while Poki is open or in the background. It stores nothing; when offline, clients receive an error.")
+                Text("The relay forwards requests to this iPhone while Poki is open or in the background. It stores nothing. When offline, clients receive an error.")
             }
 
             Section {
@@ -98,7 +98,7 @@ struct SettingsHome: View {
             } header: {
                 Text("Agents")
             } footer: {
-                if model.relayAddress == nil { Text("Set your relay address first: each agent’s address is on your relay.") }
+                if model.relayAddress == nil { Text("Set your relay address first. Each agent’s address is on your relay.") }
             }
 
             if model.automationPath == .inProcess {
@@ -107,7 +107,7 @@ struct SettingsHome: View {
                 } header: {
                     Text("Automation")
                 } footer: {
-                    Text("Ends the automation session, and iOS’s banner with it, when the agent stops. Being tested: if the agent can’t see the screen after this, turn it off and open Poki again.")
+                    Text("Ends the automation session, and iOS’s banner with it, when the agent stops. Being tested. If the agent can’t see the screen after this, turn it off and open Poki again.")
                 }
             }
             // The in-process path has no Poki Runner to start or stop (ESP-152).
@@ -150,7 +150,7 @@ struct SettingsHome: View {
                 Text(model.automationPath == .inProcess
                      ? "iOS shows the automation banner only while Poki’s automation session is open. Poki opens it when an agent asks and closes it when idle. Memory holds the routines and notes every agent shares."
                      : model.automationPath == .nativeServices
-                     ? "Native services controls the phone without an XCTest automation session or its banner. Change it under Setup › Advanced › Testing Options."
+                     ? "Native services controls the phone without an XCTest automation session or its banner. Change it under Setup › Set Up the Local Connection."
                      : "Memory holds the routines and notes every agent shares.")
             }
         }
@@ -221,7 +221,7 @@ struct RelayView: View {
 
     /// "Online", or "Offline: why" with PokiCore's reason as it came.
     private var statusText: String {
-        if case .offline(let why) = model.relayStatus { return "\(Health.relay(model).word): \(why)" }
+        if case .offline(let why) = model.relayStatus { return "\(Health.relay(model).word), \(why)" }
         return Health.relay(model).word
     }
 

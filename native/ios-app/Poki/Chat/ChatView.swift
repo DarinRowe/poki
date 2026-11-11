@@ -59,7 +59,7 @@ struct ChatView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button("New Conversation", systemImage: "square.and.pencil", action: chat.newConversation).disabled(chat.running)
-                    Menu("Chat Model: \(ModelKeys.selectedModelName)", systemImage: "bubble.left.and.text.bubble.right") {
+                    Menu("Chat Model \(ModelKeys.selectedModelName)", systemImage: "bubble.left.and.text.bubble.right") {
                         ForEach(ModelProvider.allCases.filter { ModelAccounts.isSetUp($0) && ModelAccounts.canChat($0) }) { provider in
                             Section(provider.name) {
                                 ForEach(ModelCatalog.available(provider)) { choice in
@@ -75,7 +75,7 @@ struct ChatView: View {
                         }
                     }
                     if VoiceDirect.apiKey != nil {
-                        Menu("Voice Model: \(VoiceDirect.model)", systemImage: "waveform") {
+                        Menu("Voice Model \(VoiceDirect.model)", systemImage: "waveform") {
                             ForEach(ModelCatalog.voiceAvailable) { choice in
                                 Button { ModelCatalog.voiceModel = choice.id } label: {
                                     if VoiceDirect.model == choice.id { Label(choice.name, systemImage: "checkmark") } else { Text(choice.name) }
@@ -483,10 +483,10 @@ private struct NoteLine: View {
         case .problem(let text): text
         case .approval(let note): note.summary
         case .modelChecking: String(localized: "The model is checking this step")
-        case .modelApproved(let why): why.isEmpty ? String(localized: "Approved by model") : String(localized: "Approved by model: \(why)")
+        case .modelApproved(let why): why.isEmpty ? String(localized: "Approved by model") : String(localized: "Approved by model, \(why)")
         case .modelDeclined(let why):
             why.isEmpty ? String(localized: "Not approved by model. Say yes in the chat to let it through.")
-                : String(localized: "Not approved by model: \(why). Say yes in the chat to let it through.")
+                : String(localized: "Not approved by model, \(why). Say yes in the chat to let it through.")
         }
     }
 }
@@ -744,7 +744,7 @@ final class FieldDictation {
         Task {
             guard await Dictation.allowed() else {
                 starting = false
-                problem = String(localized: "Poki needs the microphone and speech recognition: allow them in Settings › Poki.")
+                problem = String(localized: "Poki needs the microphone and speech recognition. Allow them in Settings › Poki.")
                 return
             }
             guard starting else { return }
@@ -838,7 +838,7 @@ struct LiveVoiceBar: View {
     private var detail: String {
         switch voice.phase {
         case .connecting: String(localized: "Connecting…")
-        case .listening: voice.isLive ? String(localized: "Listening. Just talk; Poki answers when you pause.") : String(localized: "Ready")
+        case .listening: voice.isLive ? String(localized: "Listening. Just talk and Poki answers when you pause.") : String(localized: "Ready")
         case .hearing: String(localized: "Hearing you…")
         case .thinking: String(localized: "Working on it…")
         case .speaking: String(localized: "Speaking")

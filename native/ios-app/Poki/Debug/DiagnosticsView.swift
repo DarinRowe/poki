@@ -14,7 +14,7 @@ struct DiagnosticsView: View {
             Section {
                 if let loop = loopbackInterface(addresses) {
                     Text(verbatim: "\(loop.interface)  \(loop.address)").font(.body.monospaced().weight(.semibold))
-                    Text(loop.ipv6.isEmpty ? "No IPv6 on this interface" : "IPv6 present: \(loop.ipv6.joined(separator: ", "))")
+                    Text(loop.ipv6.isEmpty ? "No IPv6 on this interface" : "IPv6 present, \(loop.ipv6.joined(separator: ", "))")
                         .font(.footnote.monospaced()).foregroundStyle(loop.ipv6.isEmpty ? Color.secondary : Color.red)
                 } else {
                     Text("No interface has a 10.7.0.x address. Check that your proxy app is on and its loopback module is enabled.")
@@ -55,7 +55,7 @@ struct DiagnosticsView: View {
         let label = r.label.replacingOccurrences(of: " (10.7.0.1)", with: "")
         let outcome = r.outcome.prefix(1).uppercased() + r.outcome.dropFirst()
         func local(_ s: String) -> String { Bundle.main.localizedString(forKey: s, value: s, table: nil) }
-        return String(localized: "\(local(label)): \(local(outcome))")
+        return String(localized: "\(local(label)), \(local(outcome))")
     }
 
     private func run() async {
@@ -102,7 +102,6 @@ struct TestingOptionsView: View {
     var body: some View {
         @Bindable var model = model
         Form {
-            AutomationMethodSection()
             Section {
                 Toggle("ask_poki Tool", isOn: $model.askPokiTool)
             } header: {

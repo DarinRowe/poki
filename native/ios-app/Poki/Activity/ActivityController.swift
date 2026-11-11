@@ -104,7 +104,7 @@ final class ActivityController {
                     await MainActor.run { if self?.activity?.id == started.id { self?.activity = nil } }
                 }
             }
-        } catch { lastError = String(localized: "The Live Activity did not start: \(error.localizedDescription)") }
+        } catch { lastError = String(localized: "The Live Activity did not start. \(error.localizedDescription)") }
     }
 
     /// Counts a finished step for the step line and the run's summary.
