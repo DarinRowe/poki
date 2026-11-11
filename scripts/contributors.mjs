@@ -123,12 +123,12 @@ const label = r => (r.entry?.categories ?? []).map(c => categories[c] ?? c).join
 const link = n => `[#${n}](https://github.com/${repo}/issues/${n})`;
 
 function markdown(result, generated) {
-  const line = r => `| [${r.login}](${r.profile}) | ${r.entry?.summary ?? '(no summary yet)'} | ${(r.entry?.basis ?? []).map(n => /^#\d+$/.test(n) ? link(n.slice(1)) : n).join(' ')} | ${r.first ? day(r.first) : '-'} | ${label(r) } |`;
+  const line = r => `| [${mdName(r)}](${r.profile}) | ${r.entry?.summary ?? '(no summary yet)'} | ${(r.entry?.basis ?? []).map(n => /^#\d+$/.test(n) ? link(n.slice(1)) : n).join(' ')} | ${r.first ? day(r.first) : '-'} | ${label(r) } |`;
   const head = '| GitHub user | What they did | Basis | First contribution | Category |\n| --- | --- | --- | --- | --- |';
   const out = [`# Poki contributors (generated ${generated})`, '', `## Counted (${result.counted.length})`, '', head, ...result.counted.map(line)];
   out.push('', `## Community, early feedback and attempts (${result.community.length})`, '', head, ...result.community.map(line));
   out.push('', `## Pending a decision, 待主控定 (${result.pending.length})`, '', '| GitHub user | Activity | Why it is not counted yet |', '| --- | --- | --- |');
-  for (const r of result.pending) out.push(`| [${r.login}](${r.profile}) | ${activity(r)} | ${r.entry?.note ?? 'no signal that a change followed'} |`);
+  for (const r of result.pending) out.push(`| [${mdName(r)}](${r.profile}) | ${activity(r)} | ${r.entry?.note ?? 'no signal that a change followed'} |`);
   return `${out.join('\n')}\n`;
 }
 
@@ -138,7 +138,10 @@ function activity(r) {
 
 // ---- README wall -------------------------------------------------------
 
-const escapeAttr = s => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+const escapeAttr = s => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/\*/g, '&#42;');
+// An entry can set "display" to show a different name than the GitHub login. Links still use the login.
+const shownName = r => r.entry?.display ?? r.login;
+const mdName = r => shownName(r).replace(/\*/g, '\\*');
 function refKind(people) {
   const kinds = new Map();
   for (const p of people) {
@@ -152,7 +155,7 @@ function renderLine(text, kinds) {
 }
 function renderWall(rows, language, kinds) {
   const cells = rows.map(r => {
-    const name = escapeAttr(r.login);
+    const name = escapeAttr(shownName(r));
     const text = r.entry.lines[language] ?? r.entry.lines.en;
     const avatar = new URL(r.avatar); avatar.searchParams.set('size', '240');
     return `<td align="center" valign="top" width="33%"><a href="${r.profile}"><img src="${avatar}" width="120" height="120" alt="${name}"/><br /><sub><b>${name}</b></sub></a><br />${renderLine(text, kinds)}</td>`;
@@ -186,7 +189,7 @@ try {
 
   if (outDir) {
     mkdirSync(outDir, { recursive: true });
-    const view = r => ({ login: r.login, profile: r.profile, avatar: r.avatar, status: r.status ?? r.auto, categories: r.entry?.categories ?? [], summary: r.entry?.summary ?? null, basis: r.entry?.basis ?? [], first_contribution: r.first ? day(r.first) : null, on_readme_wall: r.onWall, signals: r.signals, note: r.entry?.note ?? null });
+    const view = r => ({ login: r.login, display: shownName(r), profile: r.profile, avatar: r.avatar, status: r.status ?? r.auto, categories: r.entry?.categories ?? [], summary: r.entry?.summary ?? null, basis: r.entry?.basis ?? [], first_contribution: r.first ? day(r.first) : null, on_readme_wall: r.onWall, signals: r.signals, note: r.entry?.note ?? null });
     writeFileSync(join(outDir, '贡献者名单.json'), `${JSON.stringify({ repo, generated, counted: result.counted.map(view), community: result.community.map(view), pending: result.pending.map(view), excluded: result.excluded.map(view) }, null, 2)}\n`);
     writeFileSync(join(outDir, '贡献者名单.md'), markdown(result, generated));
   }

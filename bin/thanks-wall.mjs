@@ -43,7 +43,7 @@ function people() {
   for (const item of gh(`repos/${repo}/issues?state=all&per_page=100`, '--paginate', '--slurp').flat()) {
     const user = item.user;
     if (!user || user.type === 'Bot' || user.login.endsWith('[bot]') || user.login === owner || !listed.has(user.login)) continue;
-    byLogin.set(user.login, { login: user.login, profile: user.html_url, avatar: user.avatar_url });
+    byLogin.set(user.login, { login: user.login, display: curated[user.login].display ?? user.login, profile: user.html_url, avatar: user.avatar_url });
   }
   const missing = [...listed].filter(login => !byLogin.has(login));
   if (missing.length) throw new Error(`No issue or pull request found for: ${missing.join(', ')}`);
@@ -58,11 +58,11 @@ function formatAvatarUrl(avatarUrl) {
 }
 
 function escapeName(name) {
-  return name.replace(/\|/g, '&#124;').replace(/"/g, '&quot;');
+  return name.replace(/\|/g, '&#124;').replace(/"/g, '&quot;').replace(/\*/g, '&#42;');
 }
 
 function formatPerson(person) {
-  const name = escapeName(person.login);
+  const name = escapeName(person.display);
   return `<a href="${person.profile}"><img src="${formatAvatarUrl(person.avatar)}" width="${imageSize}" height="${imageSize}" alt="${name}"/><br /><sub><b>${name}</b></sub></a>`;
 }
 
