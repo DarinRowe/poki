@@ -2867,22 +2867,6 @@
         }
       }
     },
-    "Keep your usual keyboards. Then switch to the Poki keyboard once in any text field, so Poki knows it is there." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "保留你常用的键盘。然后在任意输入框中切换到 Poki 键盘一次，让 Poki 知道它已就绪。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "保留你常用的鍵盤。然後在任意輸入框中切換到 Poki 鍵盤一次，讓 Poki 知道它已就緒。"
-          }
-        }
-      }
-    },
     "Keeps Poki connected in the background and shows its activity on the Lock Screen." : {
       "localizations" : {
         "zh-Hans" : {
@@ -3484,22 +3468,6 @@
         }
       }
     },
-    "Needs Full Access" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "需要完全访问"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "需要完全訪問"
-          }
-        }
-      }
-    },
     "Needs Wi-Fi" : {
       "localizations" : {
         "zh-Hans" : {
@@ -3907,6 +3875,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "通知"
+          }
+        }
+      }
+    },
+    "One More Step" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "还差一步"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "還差一步"
           }
         }
       }
@@ -6466,6 +6450,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "用系統拼音鍵盤輸入中文"
+          }
+        }
+      }
+    },
+    "Tap here, then switch keyboards" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点这里，然后切换键盘"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "點這裡，然後切換鍵盤"
+          }
+        }
+      }
+    },
+    "Tap the globe key below the keyboard and switch to Poki once. Poki only needs to see its panel appear, no typing. If the panel asks for Full Access, turn it on in Settings." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "轻点键盘下方的地球键，切到 Poki 一次。看到 Poki 的面板出现就行，不用打字。如果面板提示需要完全访问，就回设置里打开。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "輕點鍵盤下方的地球鍵，切到 Poki 一次。看到 Poki 的面板出現就行，不用打字。如果面板提示需要完全訪問，就回設定裡開啟。"
           }
         }
       }

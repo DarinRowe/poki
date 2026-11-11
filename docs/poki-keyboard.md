@@ -22,6 +22,10 @@ On an iOS version whose app page has no Keyboards row: Settings → General → 
 Keyboards → Add New Keyboard → **Poki**, then tap it in that list and turn on Full Access.
 Keep your usual keyboards.
 
+Poki cannot read Full Access itself: the keyboard tells it the first time its panel comes up.
+Until then the step reads **One More Step**, and its page shows a text field. Tap it, tap the
+globe key and switch to Poki once.
+
 Full Access is what lets the extension reach the App Group folder it shares with Poki.
 The extension has no network code and never touches the clipboard.
 

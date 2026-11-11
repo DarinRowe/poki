@@ -1,16 +1,21 @@
 import SwiftUI
 import UIKit
 
-/// What Poki knows of its keyboard: iOS lists it as added, and it has answered (which takes Full Access).
+/// What Poki knows of its keyboard: iOS lists it as added, and it has answered. Poki cannot read
+/// Full Access itself (#162): the keyboard answers the first time it comes up with it, so an added
+/// keyboard that has not answered only needs to be shown once.
 struct PokiKeyboardState {
     var added = PokiKeyboardTyping.added
     var answered = PokiKeyboardTyping.lastStatus != nil
     var lastDecline = UserDefaults.standard.string(forKey: PokiKeyboardTyping.lastDeclineKey)
+    /// iOS says which keyboards are added (an empty list rules nothing out).
+    var listed = !PokiKeyboardTyping.keyboards.isEmpty
 
-    var ready: Bool { answered && (added || PokiKeyboardTyping.keyboards.isEmpty) }
+    var ready: Bool { answered && (added || !listed) }
+    var waitingForPanel: Bool { added && !answered }
     var word: LocalizedStringKey {
         if ready { return "Ready" }
-        if added || answered { return "Needs Full Access" }
+        if waitingForPanel { return "One More Step" }
         return "Not Added"
     }
 }
@@ -38,6 +43,9 @@ struct PokiKeyboardSetupRow: View {
 /// Setup › Add the Poki Keyboard: what it is for, how to add it, and whether it has answered.
 struct PokiKeyboardPage: View {
     @State private var state = PokiKeyboardState()
+    @State private var wasAway = false
+    @State private var trial = ""
+    @FocusState private var trying: Bool
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -55,13 +63,24 @@ struct PokiKeyboardPage: View {
             } footer: {
                 Text("Poki types through its own keyboard panel, at a person’s pace. The panel has no keys. It shows while Poki types, and Take Over stops it.")
             }
-            // The same list as Setup's other steps (Turn On Developer Mode).
-            HowToSection(lines: [
-                "Tap **Open Settings** below.",
-                "On Poki’s page, tap **Keyboards**.",
-                "Turn on **Poki**, then **Allow Full Access**.",
-            ]) {
-                Text("If Poki’s page has no Keyboards row, open **Settings › General › Keyboard › Keyboards › Add New Keyboard**, choose **Poki**, then tap it in that list and turn on **Allow Full Access**.")
+            // Added, but the panel has not come up: a field here, so it can be shown without leaving Poki.
+            if state.waitingForPanel {
+                Section {
+                    TextField("Tap here, then switch keyboards", text: $trial).focused($trying)
+                } footer: {
+                    Text("Tap the globe key below the keyboard and switch to Poki once. Poki only needs to see its panel appear, no typing. If the panel asks for Full Access, turn it on in Settings.")
+                }
+            }
+            // The same list as Setup's other steps (Turn On Developer Mode). Once the keyboard is added these
+            // steps are behind the person, so only the field above is left.
+            if !state.waitingForPanel {
+                HowToSection(lines: [
+                    "Tap **Open Settings** below.",
+                    "On Poki’s page, tap **Keyboards**.",
+                    "Turn on **Poki**, then **Allow Full Access**.",
+                ]) {
+                    Text("If Poki’s page has no Keyboards row, open **Settings › General › Keyboard › Keyboards › Add New Keyboard**, choose **Poki**, then tap it in that list and turn on **Allow Full Access**.")
+                }
             }
             Section {
                 Button("Open Settings", systemImage: "gear") {
@@ -73,8 +92,29 @@ struct PokiKeyboardPage: View {
         }
         .navigationTitle("Poki Keyboard")
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear { state = PokiKeyboardState() }
-        .onChange(of: scenePhase) { _, phase in if phase == .active { state = PokiKeyboardState() } }
+        .onAppear {
+            state = PokiKeyboardState()
+            trying = state.waitingForPanel
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background { wasAway = true }
+            guard phase == .active else { return }
+            state = PokiKeyboardState()
+            // Back from Settings with the keyboard just added.
+            if wasAway && state.waitingForPanel { trying = true }
+            wasAway = false
+        }
+        // The panel writes its status the moment it comes up; nothing tells Poki, so look while waiting.
+        .task(id: state.waitingForPanel && scenePhase == .active) {
+            guard state.waitingForPanel, scenePhase == .active else { return }
+            while (try? await Task.sleep(for: .milliseconds(500))) != nil {
+                let now = PokiKeyboardState()
+                guard !now.waitingForPanel else { continue }
+                trying = false
+                state = now
+                return
+            }
+        }
     }
 }
 
