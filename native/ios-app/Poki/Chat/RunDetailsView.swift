@@ -65,7 +65,7 @@ struct RunDetailsView: View {
                             }
                             if let app = entry.app { Text(verbatim: app).font(.footnote).foregroundStyle(.secondary) }
                             if let detail = entry.detail { Text(verbatim: detail).font(.footnote).foregroundStyle(entry.ok ? Color.secondary : Color.orange) }
-                            if let why = entry.why { Text(verbatim: why).font(.footnote).foregroundStyle(.secondary) }
+                            if let why = entry.why { Text(verbatim: ActivityWords.reason(why)).font(.footnote).foregroundStyle(.secondary) }
                             if entry.kind == nil, entry.text != ActivityWords.label(entry.text) {
                                 Text(verbatim: entry.text).font(.caption.monospaced()).foregroundStyle(.secondary)
                             }

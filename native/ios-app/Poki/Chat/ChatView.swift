@@ -481,7 +481,7 @@ private struct NoteLine: View {
         case .declined: String(localized: "Not approved, so Poki skipped that step")
         case .expired: String(localized: "The approval ran out, so Poki skipped that step")
         case .problem(let text): text
-        case .approval(let note): note.summary
+        case .approval(let note): ActivityWords.label(note.summary)
         case .modelChecking: String(localized: "The model is checking this step")
         case .modelApproved(let why): why.isEmpty ? String(localized: "Approved by model") : String(localized: "Approved by model, \(why)")
         case .modelDeclined(let why):
@@ -536,7 +536,7 @@ struct ApprovalNoteCard: View {
 
     /// "Messages · sending a message": the app and PokiCore's reason, without its quoted word.
     private var context: String {
-        let why = note.why.split(separator: "(").first.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
+        let why = ActivityWords.reason(note.why)
         let app = note.app.isEmpty || note.app == "unknown" || note.app.contains("(") ? nil : note.app
         return [app, why.isEmpty ? nil : why].compactMap { $0 }.joined(separator: ", ")
     }
@@ -553,13 +553,13 @@ struct ApprovalNoteCard: View {
                     Text(at.formatted(date: .omitted, time: .shortened)).font(.system(size: 11)).foregroundStyle(ChatColor.secondary)
                 }
             }
-            Text(verbatim: note.summary).font(.system(size: 15)).foregroundStyle(Color(.label))
+            Text(verbatim: ActivityWords.label(note.summary)).font(.system(size: 15)).foregroundStyle(Color(.label))
                 .fixedSize(horizontal: false, vertical: true)
             if !context.isEmpty {
                 Text(verbatim: context).font(.system(size: 12)).foregroundStyle(ChatColor.secondary)
             }
             if !note.reason.isEmpty {
-                Text(verbatim: note.reason).font(.system(size: 13)).foregroundStyle(ChatColor.pending)
+                Text(verbatim: Bundle.main.localizedString(forKey: note.reason, value: note.reason, table: nil)).font(.system(size: 13)).foregroundStyle(ChatColor.pending)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if note.state == .refused, note.reply {

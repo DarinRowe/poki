@@ -62,7 +62,14 @@ struct Issue: Identifiable {
     }
 
     /// Text from PokiCore and the launcher stays as it came; Poki's own sentences are localized.
-    private static func local(_ text: String) -> String { Bundle.main.localizedString(forKey: text, value: text, table: nil) }
+    private static func local(_ text: String) -> String {
+        // The one sentence with a live value in it: the phone's own reason stays as it came.
+        let refused = "The phone refused the pairing (", again = "). Pair again in Setup."
+        if text.hasPrefix(refused), text.hasSuffix(again) {
+            return String(localized: "The phone refused the pairing (\(String(text.dropFirst(refused.count).dropLast(again.count)))). Pair again in Setup.")
+        }
+        return Bundle.main.localizedString(forKey: text, value: text, table: nil)
+    }
 
     @MainActor static func current(_ model: AppModel) -> [Issue] {
         var out: [Issue] = []

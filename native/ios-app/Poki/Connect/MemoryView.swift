@@ -59,8 +59,8 @@ struct MemoryView: View {
 
             Section {
                 DisclosureGroup("Advanced", isExpanded: $advanced) {
-                    if let bundleURL { ShareLink("Share Run Log for Maintainers", item: bundleURL) }
-                    Button("Clear Memory", role: .destructive) { confirmClear = true }
+                    if let bundleURL { ShareLink(item: bundleURL) { Label("Share Run Log for Maintainers", systemImage: "square.and.arrow.up") } }
+                    Button("Clear Memory", systemImage: "trash", role: .destructive) { confirmClear = true }
                 }
             } footer: {
                 if advanced { Text("The run log lists each routine run, where it stopped and how long it took, with no typed text. It helps the Poki maintainers make routines more reliable.") }
