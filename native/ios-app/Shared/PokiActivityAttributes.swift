@@ -57,16 +57,7 @@ struct PokiActivityAttributes: ActivityAttributes {
         /// seconds. ActivityController clears it.
         var event: Event?
 
-        /// The plan the chat's model published: the Live Activity then counts the plan's steps, as the
-        /// chat's plan bubble does, not the single taps under them.
-        var plan: Plan?
-
         static let outcomeLimit = 12
-    }
-    struct Plan: Codable, Hashable {
-        var total: Int
-        /// The step under way, from 1.
-        var current: Int
     }
     struct Event: Codable, Hashable {
         enum Kind: String, Codable, Hashable { case started, app, finished, approved, denied, expired, problem, paired, code, handoff, resumed }

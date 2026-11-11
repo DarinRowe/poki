@@ -19,11 +19,9 @@ final class BridgeStub: URLProtocol {
 /// The Realtime connection: the test plays the server's events in and sees what was sent and whether it was closed.
 final class FakeConnection: VoiceConnection, @unchecked Sendable {
     var onEvent: (@MainActor ([String: Any]) -> Void)?
-    /// What connecting throws: a key OpenAI refused, no network.
-    var failure: Error?
     private(set) var closed = false
     private(set) var sent: [[String: Any]] = []
-    func connect(secret: String, microphone: Bool, direct: Bool) async throws { if let failure { throw failure } }
+    func connect(secret: String, microphone: Bool, direct: Bool) async throws {}
     func send(_ event: [String: Any]) -> Bool { sent.append(event); return true }
     func setRemoteVolume(_ value: Double) {}
     func diagnose(_ write: @escaping @MainActor (String) -> Void) {}
@@ -91,23 +89,20 @@ final class VoiceModelTests: XCTestCase {
         let time: FakeTime
         private(set) var links: [FakeConnection] = []
         private(set) var microphone: [Bool] = []
-        /// The lines of each ended conversation, as the chat gets them.
-        private(set) var ended: [[VoiceLine]] = []
         var link: FakeConnection { links.last! }
 
-        @MainActor init(phoneTool: @escaping @MainActor (String, String) async -> (String, Bool) = { _, _ in ("", false) },
-                        failConnect: Error? = nil) {
+        @MainActor init(phoneTool: @escaping @MainActor (String, String) async -> (String, Bool) = { _, _ in ("", false) }) {
             let time = FakeTime()
             self.time = time
             var made: (() -> FakeConnection)!
             var held: ((Bool) -> Void)!
             voice = VoiceModel(clearTap: { _, _, _ in .clear }, phoneTool: phoneTool, holdMicrophone: { held($0) },
                                connection: { onEvent, _ in let link = made(); link.onEvent = onEvent; return link }, time: time.clock)
-            made = { [unowned self] in let link = FakeConnection(); link.failure = failConnect; self.links.append(link); return link }
+            made = { [unowned self] in let link = FakeConnection(); self.links.append(link); return link }
             held = { [unowned self] in self.microphone.append($0) }
             _ = voice.setBridge(BridgeStub.address)
             // As in the app: an ended conversation goes into the chat, and its lines leave the voice model.
-            voice.onConversationEnded = { [unowned self] lines, _ in self.ended.append(lines) }
+            voice.onConversationEnded = { _, _ in }
         }
 
         /// Connected, before the server's session.created.
@@ -226,39 +221,12 @@ final class VoiceModelTests: XCTestCase {
         XCTAssertFalse(h.voice.isOn)
     }
 
-    /// Connected, and the server never says the session is ready: Poki does not sit on "Connecting" with
-    /// the microphone on. The 60 s wait for a silent server ends it, and the chat says so.
-    func testAConnectionWhoseSessionNeverStartsEndsAfterSixtySeconds() async {
-        let h = Harness()
-        await h.connect()
-        XCTAssertEqual(h.voice.phase, .connecting)
-        await h.time.advance(59)
-        XCTAssertTrue(h.voice.isOn)
-        await h.time.advance(1)
-        XCTAssertFalse(h.voice.isOn)
-        XCTAssertTrue(h.link.closed)
-        XCTAssertEqual(h.microphone, [true, false])
-        XCTAssertEqual(h.ended.last?.map(\.role), [.note])
-    }
-
-    /// The connection fails (a key OpenAI refuses, no network): the bar that said "Connecting" goes with
-    /// it, so the reason is left in the chat instead of vanishing.
-    func testAConnectionThatFailsSaysWhyInTheChat() async {
-        let h = Harness(failConnect: VoiceError.realtime(401, "Incorrect API key provided"))
-        await h.connect()
-        XCTAssertFalse(h.voice.isOn)
-        XCTAssertEqual(h.microphone, [true, false])
-        let said = h.ended.last?.map(\.text).joined() ?? ""
-        XCTAssertTrue(said.contains("OpenAI answered 401: Incorrect API key provided"), said)
-    }
-
     /// Talk to Poki, then Home before it has connected: it never opens the microphone in the background.
     func testGoingToTheBackgroundWhileConnectingEndsTheConversation() async {
         let h = Harness()
         let opening = Task { await h.connect() }
         for _ in 0..<1000 where h.voice.phase != .connecting { await Task.yield() }
         XCTAssertEqual(h.voice.phase, .connecting)
-        XCTAssertTrue(h.voice.isLive, "the bar says Live Voice while it connects, not turn by turn")
         NotificationCenter.default.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
         await opening.value
         XCTAssertFalse(h.voice.isOn)

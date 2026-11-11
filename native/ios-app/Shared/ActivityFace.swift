@@ -142,11 +142,6 @@ extension PokiState {
             face.status = word
             face.shortStatus = word
             face.tone = event.tone
-            // Compact text and its adjacent glyph are one status. A transient
-            // event must not recolor only the glyph (for example blue + green Ready).
-            if case .text(let text, _) = face.compact {
-                face.compact = .text(text, event.tone)
-            }
         }
         if stale, phase == .working || phase == .handoff {
             // The app stopped updating (closed, or iOS suspended it): say so, and drop the action,
@@ -170,16 +165,6 @@ extension PokiState {
         switch phase {
         case .working:
             let name = app ?? String(activity: "Working")
-            if let plan, plan.total > 0 {
-                // The chat's plan: its steps done, the one under way, and "2/5" as the count.
-                let count = "\(min(plan.current, plan.total))/\(plan.total)"
-                return ActivityFace(
-                    symbol: "hand.tap.fill", status: name, shortStatus: name, tone: .accent, meta: .text(count),
-                    content: ActivityWords.step(headline), bottom: .stop,
-                    compact: .text(count, .plain),
-                    steps: Array(repeating: true, count: max(0, min(plan.current, plan.total) - 1)), stepUnderWay: true,
-                    ring: .fraction(Double(max(0, plan.current - 1)) / Double(plan.total)))
-            }
             return ActivityFace(
                 symbol: "hand.tap.fill", status: name, shortStatus: name, tone: .accent, meta: .text(step),
                 content: ActivityWords.step(headline), bottom: .stop,
@@ -213,7 +198,7 @@ extension PokiState {
                 meta: endedAt.map { .clock($0) } ?? .none,
                 content: runSummary, bottom: .none,
                 compact: .text(word, .done),
-                steps: plan.map { Array(repeating: true, count: $0.total) } ?? outcomes, finished: true,
+                steps: outcomes, finished: true,
                 ring: .fraction(1))
         case .problem:
             let short = label == "Pairing Failed" ? String(activity: "Failed") : String(activity: "Stopped")

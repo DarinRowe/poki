@@ -10,7 +10,7 @@
 //   ease, easeInOut) and its box fills with the item's colour.
 // - motion://examples/react/typewriter-change-content: the step under way types its new text, first
 //   backspacing to the part both texts share, one character at a time at 0.2 of the typing interval,
-//   with the cursor blinking every 0.5 s after it finishes. The cursor here is a round dot in the text.
+//   with the cursor blinking every 0.5 s after it finishes.
 // The typing pace is Poki's own: 75 ms a character, and 250 ms more after a comma or a full stop.
 // Motion+ is Motion's paid library (motion.dev/plus); these are its examples' parameters in SwiftUI, not its code.
 import SwiftUI
@@ -98,24 +98,19 @@ struct TypewriterText: View {
     static let blink: Double = 0.5
 
     var body: some View {
-        // The cursor is a round dot set in the text itself, so it follows the last word onto a new
-        // line when the words wrap. It holds still while typing and blinks once done.
-        TimelineView(.periodic(from: .now, by: Self.blink)) { context in
-            let on = typing || Int(context.date.timeIntervalSinceReferenceDate / Self.blink) % 2 == 0
-            Self.line(shown, font: font, color: color, dot: on)
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
+            Text(verbatim: shown).font(font).foregroundStyle(color)
+            TimelineView(.periodic(from: .now, by: Self.blink / 2)) { context in
+                // The cursor holds still while typing and blinks once done (opacity [1, 1, 0, 0]).
+                let on = typing || Int(context.date.timeIntervalSinceReferenceDate / (Self.blink / 2)) % 2 == 0
+                Rectangle().fill(color).frame(width: 2, height: 15).opacity(on ? 1 : 0).padding(.leading, 3)
+            }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(verbatim: text))
         .onAppear { shown = ""; type(to: text) }
         .onChange(of: text) { _, new in type(to: new) }
         .onDisappear { runner?.cancel() }
-    }
-
-    /// The words and the dot as one text. A hidden dot keeps its place, so the line does not shift.
-    static func line(_ shown: String, font: Font, color: Color, dot: Bool) -> Text {
-        let words = Text(verbatim: shown).font(font).foregroundStyle(color)
-        let cursor = Text(verbatim: "\u{00A0}\u{25CF}").font(.system(size: 9)).baselineOffset(1.5).foregroundStyle(dot ? color : Color.clear)
-        return words + cursor
     }
 
     private func type(to target: String) {

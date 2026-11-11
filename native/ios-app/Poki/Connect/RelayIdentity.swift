@@ -66,8 +66,8 @@ final class RelayIdentity {
         _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
         let taken = Set(secrets.map(\.name))
         var next = 1
-        while taken.contains(String(localized: "Connector \(next)")) { next += 1 }
-        let secret = ConnectorSecret(name: name.isEmpty ? String(localized: "Connector \(next)") : name, secret: Data(bytes).base64URL, created: Date(), named: !name.isEmpty)
+        while taken.contains("Connector \(next)") { next += 1 }
+        let secret = ConnectorSecret(name: name.isEmpty ? "Connector \(next)" : name, secret: Data(bytes).base64URL, created: Date(), named: !name.isEmpty)
         secrets.append(secret)
         save()
         return secret

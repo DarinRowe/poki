@@ -31,20 +31,6 @@ final class InProcessProbe: ObservableObject {
     @Published var delay = "8"
     weak var field: UITextField?
 
-    static func isChineseInputLanguage(_ language: String?) -> Bool {
-        guard let language else { return false }
-        let tag = language.lowercased().replacingOccurrences(of: "_", with: "-")
-        return tag == "zh" || tag.hasPrefix("zh-")
-    }
-
-    /// This evidence is valid only for our focused diagnostics field, never
-    /// inferred from the installed keyboards or reused for another app.
-    var focusedInputLanguage: String? {
-        guard UIApplication.shared.applicationState == .active,
-              let field, field.isFirstResponder else { return nil }
-        return field.textInputMode?.primaryLanguage
-    }
-
     let queue = DispatchQueue(label: "poki.inprocess.probe", qos: .userInitiated)
     private var record: [[String: Any]] = []
 
@@ -68,7 +54,7 @@ final class InProcessProbe: ObservableObject {
             case "tools": await toolsCycle(model: model, app: defaults.string(forKey: "pokiProbeApp") ?? "local.pokimcp.fixture")
             case "gym": await gymScorecard(model: model)
             case "chat": await chatCycle(model: model)
-            case "bench": await benchmark(rounds: defaults.integer(forKey: "pokiBenchRounds") > 0 ? defaults.integer(forKey: "pokiBenchRounds") : 5)
+            case "bench": await benchmark(model: model, rounds: defaults.integer(forKey: "pokiBenchRounds") > 0 ? defaults.integer(forKey: "pokiBenchRounds") : 5)
             default: await prepareOnly()
             }
         }
@@ -408,36 +394,64 @@ final class InProcessProbe: ObservableObject {
     }
 }
 
-/// Set Up the Local Connection: which way Poki controls the phone. Takes effect when Poki starts again.
-struct AutomationMethodSection: View {
-    /// nil is Automatic: Poki chooses between tasks.
-    @AppStorage("automationPath") private var saved: String?
+/// Settings > Diagnostics: the automation path switch and the probes (kept in this branch, where
+/// DiagnosticsView hosts it; ESP-152 removed it on a line where it had no caller).
+struct InProcessSection: View {
+    @ObservedObject var probe = InProcessProbe.shared
+    @Environment(AppModel.self) private var model
+    @AppStorage("automationPath") private var path = AutomationPath.inProcess.rawValue
+    private let running = AutomationPath.current
 
     var body: some View {
         Section {
-            Picker("Method", selection: Binding(get: { saved ?? "automatic" }, set: { saved = $0 == "automatic" ? nil : $0 })) {
-                row("Automatic", "Native services when the connection is on, the XCTest session when it is not.").tag("automatic")
-                row("Native Services", "No banner. Needs Wi-Fi and the loopback.").tag(AutomationPath.nativeServices.rawValue)
-                row("XCTest Session", "Works without Wi-Fi or the loopback. Shows iOS’s automation banner.").tag(AutomationPath.inProcess.rawValue)
+            Picker("Agents' actions go through", selection: $path) {
+                Text("Poki Runner").tag(AutomationPath.runner.rawValue)
+                Text("Poki itself").tag(AutomationPath.inProcess.rawValue)
             }
-            .pickerStyle(.inline)
-            .labelsHidden()
+            if path != running.rawValue {
+                Text("Takes effect when Poki starts again.").font(.caption).foregroundStyle(.orange)
+            }
+            ProbeField(probe: probe).frame(height: 44)
+            HStack {
+                Button("Port 8100") { Task { await probe.portCheck() } }
+                Button("Separate session") { Task { await probe.separateTrial() } }
+            }.disabled(probe.running)
+            Button("Compare both paths (5 rounds)") { Task { await probe.benchmark(model: model, rounds: 5) } }.disabled(probe.running)
+            HStack {
+                Button("Prepare") { Task { await probe.prepareOnly() } }
+                Spacer()
+                Button("Read") { Task { await probe.readOnly() } }
+                Spacer()
+                Button("Self test") { Task { await probe.selfTest() } }
+            }
+            .buttonStyle(.borderless).disabled(probe.running)
+            HStack {
+                TextField("x", text: $probe.x).keyboardType(.numberPad)
+                TextField("y", text: $probe.y).keyboardType(.numberPad)
+                TextField("s", text: $probe.delay).keyboardType(.numberPad)
+                Button("Later") { Task { await probe.later() } }.buttonStyle(.borderless).disabled(probe.running)
+            }
+            .monospacedDigit()
+            ForEach(probe.lines.indices.reversed(), id: \.self) { i in Text(probe.lines[i]).font(.caption2.monospaced()).textSelection(.enabled) }
         } header: {
-            Text("Method")
+            Text("In-process automation")
         } footer: {
-            if saved != AutomationPath.pinned?.rawValue {
-                Text("Takes effect when Poki starts again.").foregroundStyle(.orange)
-            }
-        }
-        .onAppear {
-            if saved == AutomationPath.runner.rawValue { saved = nil }
+            Text("Taps and types from Poki itself, without Poki Runner. Self test taps the field above and types into it. Later waits, then taps the point (x, y) and types, in whatever app is in front.")
         }
     }
+}
 
-    private func row(_ title: LocalizedStringKey, _ detail: LocalizedStringKey) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-            Text(detail).font(.footnote).foregroundStyle(.secondary)
-        }
+private struct ProbeField: UIViewRepresentable {
+    let probe: InProcessProbe
+    func makeUIView(context: Context) -> UITextField {
+        let field = UITextField()
+        field.placeholder = "In-process test field"
+        field.borderStyle = .roundedRect
+        field.autocorrectionType = .no
+        field.spellCheckingType = .no
+        field.accessibilityIdentifier = "inprocess-field"
+        probe.field = field
+        return field
     }
+    func updateUIView(_ view: UITextField, context: Context) { probe.field = view }
 }

@@ -119,10 +119,9 @@ struct ChatGPTSignIn: View {
             Form {
                 Section {
                     Button("Continue with ChatGPT") { login.inApp = true; run { try await login.signIn() } }.disabled(working)
-                    // No Safari choice: OpenAI only redirects to http://127.0.0.1:1455, and Safari shows its
-                    // own insecure-page warning before loading that. Poki's sheet hands it to the listener.
+                    Button("Continue in Safari") { login.inApp = false; run { try await login.signIn() } }.disabled(working)
                 } footer: {
-                    Text("Poki uses your ChatGPT Plus or Pro plan through OpenAI’s Sign in with ChatGPT. The sign-in stays in this iPhone’s Keychain. An OpenAI API key works too, as a backup. Add it under OpenAI.")
+                    Text("Poki uses your ChatGPT Plus or Pro plan through OpenAI’s Sign in with ChatGPT. The sign-in stays in this iPhone’s Keychain. An OpenAI API key works too, as a backup: add it under OpenAI.")
                 }
                 if let problem { Text(verbatim: problem).foregroundStyle(Color(.systemRed)) }
                 if ChatGPTAccount.signedIn {

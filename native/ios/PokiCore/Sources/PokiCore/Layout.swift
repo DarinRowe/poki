@@ -50,10 +50,7 @@ struct Layout {
         func free(_ p: (x: Double, y: Double)) -> Bool { !over.contains { $0.contains(p) } }
         // An element cut by the screen's edge is touched at the centre of its visible part, not at
         // the point of it nearest its own centre (gym: a tap at the screen's bottom edge, y 874).
-        let requested = target.frame.centre
-        let strictlyInside = requested.x > visible.x && requested.x < visible.maxX
-            && requested.y > visible.y && requested.y < visible.maxY
-        let centre = strictlyInside ? requested : visible.centre
+        let centre = visible.contains(target.frame.centre) ? target.frame.centre : visible.centre
         if free(centre) { return (centre, nil, true) }
         var best: (point: (x: Double, y: Double), distance: Double)?
         let steps = 9

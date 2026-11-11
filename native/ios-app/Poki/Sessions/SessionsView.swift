@@ -97,9 +97,6 @@ struct SessionsView: View {
             }
         }
         .listStyle(.insetGrouped)
-        // The grouped list leaves a section's worth of space above its first row; under the search
-        // field that read as a hole.
-        .contentMargins(.top, 6, for: .scrollContent)
         // Home's own header: a soft translucent blue that fades into the list, the bear and "Poki" in
         // Geist at the top left. The other pages keep the system's plain bars.
         .scrollContentBackground(.hidden)
@@ -121,7 +118,7 @@ struct SessionsView: View {
         .toolbar {
             HomeBrand()
             ToolbarItem(placement: .topBarTrailing) {
-                PowerButton(state: !model.setupLooksComplete && !model.canStartWithoutLoopback ? .paused : model.sessionOn ? .ready : .stopped,
+                PowerButton(state: !model.setupLooksComplete ? .paused : model.sessionOn ? .ready : .stopped,
                             turnOn: { model.startSession() }, turnOff: { chat.stop(); model.stopSession() }, openSetup: openSetup)
             }
         }
@@ -164,7 +161,7 @@ struct SessionsView: View {
     private var agentsLine: String {
         let live = SessionStore.shared.liveAgentCount
         switch model.relayStatus {
-        case .ready: return live > 0 ? String(localized: "Online, \(live) live") : String(localized: "Online")
+        case .ready: return live > 0 ? String(localized: "Online · \(live) live") : String(localized: "Online")
         case .connecting: return String(localized: "Connecting")
         case .offline: return String(localized: "Offline")
         case .off: return model.identity.secrets.isEmpty ? String(localized: "None yet") : String(localized: "Off")
@@ -349,8 +346,7 @@ struct SessionRow: View {
                     Text(session.live ? String(localized: "now") : ChatTime.row(session.updated)).font(.system(size: 15)).foregroundStyle(ChatColor.secondary)
                     Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(Color(.tertiaryLabel))
                 }
-                // The mark sits on the first line of the text, not at the middle of two lines.
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                HStack(spacing: 4) {
                     outcomeMark
                     Text(verbatim: subtitle).font(.system(size: 15)).foregroundStyle(ChatColor.secondary).lineLimit(2)
                 }
@@ -422,7 +418,7 @@ struct SessionView: View {
 
     var body: some View {
         let session = SessionStore.shared.session(id)
-        ChatTranscript(entries: (AskPoki.live(id)?.entries ?? session?.entries) ?? [], typing: AskPoki.live(id)?.awaitingModel ?? false, live: AskPoki.live(id)?.running ?? (session?.live == true), canRetry: false, retry: {}, session: id) {
+        ChatTranscript(entries: (AskPoki.live(id)?.entries ?? session?.entries) ?? [], typing: AskPoki.live(id)?.awaitingModel ?? false, canRetry: false, retry: {}) {
             if session?.live == true, let approval = model.approvals.first {
                 ApprovalCard(approval: approval) { approved in model.resolve(approval, approved: approved) }
             }
@@ -452,9 +448,9 @@ struct SessionView: View {
     private func caption(_ session: SavedSession?) -> String {
         guard let session else { return "" }
         switch session.kind {
-        case .agent: return String(localized: "Over MCP, \(ChatTime.row(session.started))")
-        case .handoff: return String(localized: "Handed to Poki, \(ChatTime.row(session.started))")
-        case .voice: return String(localized: "Voice, \(ChatTime.row(session.started))")
+        case .agent: return String(localized: "Over MCP · \(ChatTime.row(session.started))")
+        case .handoff: return String(localized: "Handed to Poki · \(ChatTime.row(session.started))")
+        case .voice: return String(localized: "Voice · \(ChatTime.row(session.started))")
         case .poki: return ""
         }
     }
@@ -462,33 +458,13 @@ struct SessionView: View {
 
 /// An approval waiting for the owner, in the chat and in the session that asked for it (also in the
 /// Dynamic Island, which iOS hides while Poki is in front).
-/// Native services cannot start and the XCTest session could: the owner's choice, as a card.
-struct MethodAskCard: View {
-    var ask: AutomationChooser.Ask
-    var answer: (Bool) -> Void
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Start Another Way?").font(.system(size: 15, weight: .semibold))
-            Text(verbatim: AppModel.ownerWords(ask)).font(.system(size: 15)).foregroundStyle(Color(.label))
-            HStack {
-                Button("Keep Waiting", systemImage: "hourglass") { answer(false) }.buttonStyle(.bordered)
-                Button("Start With Banner", systemImage: "play.fill") { answer(true) }.buttonStyle(.borderedProminent)
-            }
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 16, style: .continuous))
-        .padding(.top, 8)
-    }
-}
-
 struct ApprovalCard: View {
     var approval: PendingApproval
     var answer: (Bool) -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Allow this step?").font(.system(size: 15, weight: .semibold))
-            Text(verbatim: ActivityWords.label(approval.summary)).font(.system(size: 15)).foregroundStyle(Color(.label))
+            Text(verbatim: approval.summary).font(.system(size: 15)).foregroundStyle(Color(.label))
             HStack {
                 Button("Don’t Allow") { answer(false) }.buttonStyle(.bordered)
                 Button("Allow") { answer(true) }.buttonStyle(.borderedProminent)

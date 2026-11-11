@@ -27,15 +27,7 @@ public struct RunnerError: Error, CustomStringConvertible, Sendable {
 
 /// One HTTP exchange. URLSession on the phone; a fake in tests.
 public protocol HTTPTransport: Sendable {
-    /// The transport can type a whole text through Poki's own keyboard: `POST /wda/keys` with
-    /// `keyboard: true` answers `{keyboard: "typed", check, tail, moved}`, or `{keyboard: "declined"}`
-    /// when the keyboard never had the text and it is to be typed the usual way.
-    var typesThroughKeyboard: Bool { get }
     func send(method: String, url: URL, body: Data?, timeout: Double) async throws -> (status: Int, body: Data)
-}
-
-public extension HTTPTransport {
-    var typesThroughKeyboard: Bool { false }
 }
 
 public enum TransportError: Error, Sendable {
@@ -118,7 +110,6 @@ struct SnapshotLimits: Equatable, Sendable {
 public final class Runner: @unchecked Sendable {
     public let url: URL
     let transport: HTTPTransport
-    var typesThroughKeyboard: Bool { transport.typesThroughKeyboard }
     private let state = LockedBox<(session: String?, misses: Int)>((nil, 0))
     /// Called after `unhealthyAfter` silent requests in a row: at once when the runner refused or
     /// broke the connection, and only after a `GET /status` probe also went unanswered for
@@ -246,18 +237,13 @@ public final class Runner: @unchecked Sendable {
         let value = parsed["value"] ?? parsed
         if let code = value["error"]?.string {
             let message = (value["message"]?.string ?? code).split(separator: "\n").first.map(String.init) ?? code
-            throw RunnerError(message: "the runner refused \(method) \(Self.short(path)): \(message)", delivery: Self.partialTypingCodes.contains(code) ? .unknown : .notSent, status: result.status, code: code)
+            throw RunnerError(message: "the runner refused \(method) \(Self.short(path)): \(message)", delivery: .notSent, status: result.status, code: code)
         }
         if !(200..<300).contains(result.status) {
             throw RunnerError(message: "the runner answered HTTP \(result.status) to \(method) \(Self.short(path))", delivery: .notSent, status: result.status)
         }
         return value
     }
-
-    /// Refusals after which part of a text may be in the field: the owner took over on Poki's
-    /// keyboard, or the keyboard stopped part way. The text is never sent again after these.
-    static let takeoverCode = "poki user takeover"
-    static let partialTypingCodes: Set<String> = [takeoverCode, "poki typing stopped"]
 
     /// This side gave up on a queued request. The runner still serves it, and everything sent after
     /// it waits its turn behind it, so the next action would run late, after the model had moved on

@@ -50,8 +50,6 @@ public struct RoutineStep: Codable, Equatable, Sendable {
     public var app: String?
     /// A type into a password field: the text was not kept, so a run stops here for the agent.
     public var secret: Bool?
-    /// An observed user correction/checkpoint; never replayed unattended.
-    public var userDemonstrated: Bool? = nil
 }
 
 public struct RoutineStop: Codable, Equatable, Sendable {
@@ -459,9 +457,6 @@ extension Computer {
 
     /// The task's recorded steps as a routine (nil and why, when they cannot make one).
     func routine(named name: String, description: String, read: [String], expect: [String]?, by: String) -> (Routine?, String) {
-        if traceHasUserGap && !config.userRoutineLearning() {
-            return (nil, "This task includes a user intervention. User-assisted routine creation is disabled; save an evidence-backed note instead.")
-        }
         let recorded = trace
         guard !recorded.isEmpty else { return (nil, "nothing was recorded in this task yet: a routine is made of the do actions sent since the task began (the first look or do after a finish)") }
         var params: [String: String] = [:]
@@ -542,15 +537,6 @@ extension Computer {
 
         var previous: String?
         for (index, step) in routine.steps.enumerated() {
-            if step.userDemonstrated == true {
-                let h = Handoff(id: UUID().uuidString, kind: "other",
-                    text: "This routine includes a user-demonstrated correction or navigation. Complete this step yourself, then tap Done. Poki will read the result before continuing.",
-                    requested: Date(), ownerOnly: true)
-                handoff.value = h
-                beginUserIntervention(h)
-                emit(.handoffRequested(id: h.id, kind: h.kind, text: h.text, app: lastForeground?.describe))
-                throw stop(index, "user-demonstrated checkpoint: waiting for the owner; this step was not replayed")
-            }
             if step.secret == true { throw stop(index, "it types into a password field, which a routine never keeps: type it yourself") }
             var action = step.action
             // The text with its parameters filled in.
@@ -631,10 +617,6 @@ extension Computer {
             catch let failure as ActionFailure {
                 refs[Self.runRef] = nil
                 throw stop(index, failure.message, failure.delivery)
-            } catch let takeover as RunnerError where takeover.code == Runner.takeoverCode {
-                refs[Self.runRef] = nil
-                _ = stop(index, "the owner took over", .unknown)
-                throw takeover
             } catch {
                 refs[Self.runRef] = nil
                 throw stop(index, "\(error)", .unknown)
@@ -701,9 +683,7 @@ extension Computer {
 
     /// A new task: its recording starts empty.
     func beginRecording() {
-        guard !handoffWaiting, intervention == nil else { return }
         trace = []
-        traceHasUserGap = false
         routineRanWhole = false
     }
 

@@ -10,77 +10,14 @@ import SwiftUI
 //   debugging tools behind the button at the top right.
 
 /// Agents › a page.
-enum AgentsRoute: Hashable { case accounts, voice, activityLog, approvals }
-
-/// Agents › Safety › Approvals: how Poki asks before a sensitive step, and how much it decides itself.
-struct ApprovalsView: View {
-    @Environment(AppModel.self) private var model
-
-    private var levels: [ApprovalClassifier.Level] { ApprovalClassifier.Level.allCases }
-
-    var body: some View {
-        @Bindable var model = model
-        // The slider's four stops are the four levels, least asking on the left.
-        let stop = Binding<Double>(
-            get: { Double(levels.firstIndex(of: model.classifierLevel) ?? 1) },
-            set: { model.classifierLevel = levels[min(levels.count - 1, max(0, Int($0.rounded())))] })
-        Form {
-            Section {
-                Picker(selection: $model.approvalMode) {
-                    ForEach(ApprovalClassifier.Mode.allCases) { Text($0.title).tag($0) }
-                } label: {
-                    Label("Ask Me", systemImage: "hand.raised")
-                }
-            } footer: {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Sensitive steps are paying, deleting, sending a message, placing a call, typing a password and anything in Wallet.")
-                    switch model.approvalMode {
-                    case .reply: Text("With Message Reply, Poki asks you in the chat and your yes lets the step through. Away from Poki you can answer from the notification. Outside agents have no chat, so their steps ask with Allow and Don’t Allow.")
-                    case .confirm: Text("With Confirmation, you tap Allow or Don’t Allow on the Live Activity, in a notification, or here in Poki.")
-                    case .off: Text("Agents do all of that without asking.")
-                    }
-                    Text("Turning asking on or off takes effect the next time Poki opens.")
-                }
-            }
-            if model.approvalMode != .off {
-                Section {
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack {
-                            Label("Sensitivity", systemImage: "dial.medium")
-                            Spacer()
-                            Text(model.classifierLevel.title).foregroundStyle(.secondary)
-                        }
-                        Slider(value: stop, in: 0...Double(levels.count - 1), step: 1) {
-                            Text("Sensitivity")
-                        } minimumValueLabel: {
-                            Image(systemName: "bolt").foregroundStyle(.secondary).accessibilityLabel(Text("Asks least"))
-                        } maximumValueLabel: {
-                            Image(systemName: "lock.shield").foregroundStyle(.secondary).accessibilityLabel(Text("Asks most"))
-                        }
-                        .accessibilityValue(Text(model.classifierLevel.title))
-                    }
-                    .padding(.vertical, 4)
-                } footer: {
-                    switch model.classifierLevel {
-                    case .permissive: Text("Permissive. Your chat model approves a step in Poki’s own chat unless it clearly has nothing to do with what you asked, or you said no.")
-                    case .balanced: Text("Balanced. Your chat model approves a step in Poki’s own chat when it directly serves what you asked for. You are asked about the rest.")
-                    case .strict: Text("Strict. Your chat model approves a step in Poki’s own chat only when you asked for that exact action. You are asked about the rest.")
-                    case .everything: Text("Ask for Everything. Nothing is approved automatically. Steps that follow straight after your answer in the same app do not ask again.")
-                    }
-                }
-            }
-        }
-        .navigationTitle("Approvals")
-        .navigationBarTitleDisplayMode(.inline)
-    }
-}
+enum AgentsRoute: Hashable { case accounts, voice, activityLog }
 
 struct AgentsView: View {
     /// The line under MCP Relay: the address to set, Poki being off, or the relay's live state.
     private var relayLine: String {
         if model.relayAddress == nil { return String(localized: "Set an address first") }
-        if !model.relayEnabled { return String(localized: "Off, agents can’t reach this iPhone") }
-        if !model.sessionOn { return String(localized: "Waiting for Poki, turn Poki on and agents can connect") }
+        if !model.relayEnabled { return String(localized: "Off: agents can’t reach this iPhone") }
+        if !model.sessionOn { return String(localized: "Waiting for Poki: turn Poki on and agents can connect") }
         return Health.relay(model).word
     }
 
@@ -149,8 +86,8 @@ struct AgentsView: View {
                     Text("External Agents")
                 } footer: {
                     Text(model.relayAddress == nil
-                         ? "Set your relay first. Each agent gets its own MCP address on it."
-                         : "Each agent gets its own MCP address. Add it as a remote MCP server in Claude, Codex or any MCP client. It takes the agent’s name and icon when the agent first connects, unless you renamed it. Swipe to revoke.")
+                         ? "Set your relay first: each agent gets its own MCP address on it."
+                         : "Each agent gets its own MCP address; add it as a remote MCP server in Claude, Codex or any MCP client. It takes the agent’s name and icon when the agent first connects, unless you renamed it. Swipe to revoke.")
                 }
 
                 Section {
@@ -184,17 +121,17 @@ struct AgentsView: View {
                 }
 
                 Section {
-                    NavigationLink(value: AgentsRoute.approvals) {
-                        LabeledContent {
-                            Text(model.approvalMode == .off ? String(localized: "Off") : model.classifierLevel.title)
-                                .foregroundStyle(model.approvalMode == .off ? Color.orange : Color.secondary)
-                        } label: { Label("Approvals", systemImage: "hand.raised") }
-                    }
-                    NavigationLink(value: AgentsRoute.activityLog) { Label("Activity Log", systemImage: "list.bullet.rectangle") }
+                    Toggle("Ask Before Sensitive Steps", isOn: $model.askBeforeSensitiveSteps)
                 } header: {
-                    Text("Safety")
+                    Text("Approvals")
                 } footer: {
-                    Text("When Poki asks you before a sensitive step, and the record of every action any agent ran on this iPhone.")
+                    Text("Poki asks you before an agent pays, deletes, sends a message, places a call, types a password or does anything in Wallet: on the Live Activity, in a notification, or here in Poki. Turned off, agents do all of that without asking. Changes take effect the next time Poki opens.")
+                }
+
+                Section {
+                    NavigationLink(value: AgentsRoute.activityLog) { Label("Activity Log", systemImage: "list.bullet.rectangle") }
+                } footer: {
+                    Text("Every action any agent ran on this iPhone. It can’t be deleted.")
                 }
             }
             .listStyle(.insetGrouped)
@@ -204,7 +141,6 @@ struct AgentsView: View {
                 case .accounts: ModelSettingsView()
                 case .voice: VoiceView(embedded: true)
                 case .activityLog: ActionLogView(openSession: openSession)
-                case .approvals: ApprovalsView()
                 }
             }
             .navigationDestination(for: SettingsRoute.self) { route in
@@ -249,36 +185,28 @@ enum SetupRoute: Hashable { case advanced }
 /// Setup › Advanced: preferences and debugging tools.
 struct AdvancedView: View {
     @Environment(AppModel.self) private var model
-    @AppStorage(AppModel.afterTaskKey) private var afterTask = "notify"
     var push: (SettingsRoute) -> Void
 
     var body: some View {
+        @Bindable var model = model
         Form {
-            if model.automationPath != .runner { TypingSettingsSection() }
-            Section {
-                Picker(selection: $afterTask) {
-                    Text("Notify Me").tag("notify")
-                    Text("Return to Poki").tag("return")
-                } label: {
-                    Label("When a Task Ends", systemImage: "flag.checkered")
-                }
-            } header: { Text("Chat") } footer: {
-                Text(afterTask == "return" ? "Poki comes back to the front with its reply when a task ends."
-                     : "The phone stays where the task ended. Poki’s reply comes as a notification. Touch and hold it to answer and carry on from there.")
+            if model.automationPath == .runner {
+                Section {
+                    LabeledContent("Runner", value: Health.runner(model).word)
+                    Picker("Stop When Idle For", selection: $model.idleStopSeconds) {
+                        ForEach(SettingsHome.idleChoices, id: \.0) { Text($0.1).tag($0.0) }
+                    }
+                } header: { Text("Poki Runner") }
             }
             Section {
-                Button("Notification Settings", systemImage: "bell.badge") {
+                Button("Notifications") {
                     if let url = URL(string: UIApplication.openNotificationSettingsURLString) { UIApplication.shared.open(url) }
                 }
-            } header: { Text("Notifications") }
-            Section {
-                NavigationLink(value: SettingsRoute.diagnostics) { Label("Diagnostics", systemImage: "stethoscope") }
-                NavigationLink(value: SettingsRoute.log) { Label("Log", systemImage: "doc.text") }
-                NavigationLink { TestingOptionsView() } label: { Label("Testing Options", systemImage: "flask") }
-            } header: {
-                Text("Debugging")
+                NavigationLink("Diagnostics", value: SettingsRoute.diagnostics)
+                NavigationLink("Log", value: SettingsRoute.log)
+                NavigationLink("Live Activity Preview", value: SettingsRoute.activityPreview)
             } footer: {
-                Text("Diagnostics has connection checks and this iPhone’s addresses. Testing Options has switches being tried.")
+                Text("Diagnostics: connection checks, the background hold, this iPhone’s addresses and the in-process automation switch.")
             }
         }
         .navigationTitle("Advanced")

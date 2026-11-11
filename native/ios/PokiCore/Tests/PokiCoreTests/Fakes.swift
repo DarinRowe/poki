@@ -10,8 +10,6 @@ final class FakeWDA: HTTPTransport, @unchecked Sendable {
     private let lock = NSLock()
     private var routes: [String: Route] = [:]
     private(set) var log: [(method: String, path: String, body: JSON?)] = []
-    /// Set for a transport with Poki's keyboard (the native-services path on the phone).
-    var typesThroughKeyboard = false
 
     init() {
         set("POST /session") { _ in (200, ["value": ["sessionId": "s1"]]) }

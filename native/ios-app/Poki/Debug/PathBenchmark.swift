@@ -2,8 +2,7 @@ import Foundation
 import PokiCore
 import UIKit
 
-/// The same requests through the XCTest-session and native-services in-process methods, interleaved
-/// round by round:
+/// The same requests through Poki Runner and through Poki's own process, interleaved round by round:
 /// tap the probe field, type the sample, swipe, read (tree and screenshot). Each is timed from the
 /// request to its answer, with PokiCore's `Runner` as the client on both sides, and checked: the tap
 /// by the field taking the focus, the text by reading the field, the read by the field being in the
@@ -18,15 +17,23 @@ extension InProcessProbe {
         var note: String
     }
 
-    func benchmark(rounds: Int) async {
+    func benchmark(model: AppModel, rounds: Int) async {
         guard begin("compare paths, \(rounds) rounds") else { return }
         defer { end() }
         guard await prepare(), let field else { return }
-        let nativePath = NativeServicesWDA(screen: UIScreen.main.bounds.size)
-        let paths: [(String, Runner)] = [
-            ("native-services", Runner(url: URL(string: "http://127.0.0.1:8100")!, transport: nativePath)),
-            ("xctest-session", Runner(url: URL(string: "http://127.0.0.1:8100")!, transport: InProcessWDA(screen: UIScreen.main.bounds.size))),
-        ]
+        var paths: [(String, Runner)] = [("in-process", Runner(url: URL(string: "http://127.0.0.1:8100")!, transport: InProcessWDA(screen: UIScreen.main.bounds.size)))]
+        if model.automationPath == .runner {
+            if !model.runner.isRunning { model.wakeRunner() }
+            let by = Date().addingTimeInterval(60)
+            while !model.runner.isRunning, Date() < by { try? await Task.sleep(for: .seconds(0.5)) }
+            if model.runner.isRunning {
+                paths.insert(("runner", Runner(url: URL(string: "http://127.0.0.1:8100")!)), at: 0)
+            } else {
+                note("runner: not running after 60 s (\(model.runner.title)); only the in-process path is measured", ["step": "runner_missing"])
+            }
+        } else {
+            note("Poki started with the in-process path, so the runner is not measured", ["step": "runner_skipped"])
+        }
         var samples: [Sample] = []
         for round in 1...rounds {
             for (name, runner) in paths {
@@ -47,7 +54,6 @@ extension InProcessProbe {
                      ["step": "summary", "path": name, "action": action, "median_ms": median, "ok": mine.count - failed, "count": mine.count, "ms": times])
             }
         }
-        await nativePath.reset()
     }
 
     /// The front app's tree read once by Poki Runner and once by Poki's own process, a moment apart and
@@ -100,24 +106,18 @@ extension InProcessProbe {
         var out: [Sample] = []
         field.text = ""
         field.resignFirstResponder()
-        reveal(field)
-        try? await Task.sleep(for: .seconds(0.3))
+        try? await Task.sleep(for: .seconds(0.5))
         let frame = field.convert(field.bounds, to: nil)
 
         let (tapMs, tapError) = await timed { _ = try await runner.call("POST", "/wda/tap", ["x": .number(Double(frame.midX)), "y": .number(Double(frame.midY))], timeout: 5) }
         try? await Task.sleep(for: .seconds(0.6))
-        let focused = tapError == nil && field.isFirstResponder
-        out.append(Sample(path: name, action: "tap", ms: tapMs, ok: focused, note: tapError ?? (focused ? "" : "field not focused")))
+        out.append(Sample(path: name, action: "tap", ms: tapMs, ok: tapError == nil && field.isFirstResponder, note: tapError ?? (field.isFirstResponder ? "" : "field not focused")))
 
         let text = Self.sample
-        if focused {
-            let (typeMs, typeError) = await timed { _ = try await runner.call("POST", "/wda/keys", ["value": .array(text.map { .string(String($0)) })], timeout: 8) }
-            try? await Task.sleep(for: .seconds(0.5))
-            let same = field.text == text
-            out.append(Sample(path: name, action: "type", ms: typeMs, ok: typeError == nil && same, note: typeError ?? (same ? "" : "field holds \(field.text?.count ?? 0) characters")))
-        } else {
-            out.append(Sample(path: name, action: "type", ms: 0, ok: false, note: "skipped: tap did not focus the field"))
-        }
+        let (typeMs, typeError) = await timed { _ = try await runner.call("POST", "/wda/keys", ["value": .array(text.map { .string(String($0)) })], timeout: 8) }
+        try? await Task.sleep(for: .seconds(0.5))
+        let same = field.text == text
+        out.append(Sample(path: name, action: "type", ms: typeMs, ok: typeError == nil && same, note: typeError ?? (same ? "" : "field holds \(field.text?.count ?? 0) characters")))
         field.resignFirstResponder()
         try? await Task.sleep(for: .seconds(0.4))
 
@@ -127,10 +127,6 @@ extension InProcessProbe {
         }
         try? await Task.sleep(for: .seconds(0.8))
         out.append(Sample(path: name, action: "swipe", ms: swipeMs, ok: swipeError == nil, note: swipeError ?? ""))
-        // The swipe is measured, but it must not move the fixture out of the next read or the next
-        // method. This also makes the benchmark stable if the owner scrolls its live results.
-        reveal(field)
-        try? await Task.sleep(for: .seconds(0.3))
 
         var found = false, pictureBytes = 0
         let (readMs, readError) = await timed {
@@ -142,18 +138,5 @@ extension InProcessProbe {
         }
         out.append(Sample(path: name, action: "read", ms: readMs, ok: readError == nil && found && pictureBytes > 0, note: readError ?? "tree has the field: \(found), picture \(pictureBytes) bytes"))
         return out
-    }
-
-    private func reveal(_ field: UIView) {
-        var ancestor = field.superview
-        while let view = ancestor {
-            if let scroll = view as? UIScrollView {
-                let rect = field.convert(field.bounds, to: scroll).insetBy(dx: -16, dy: -80)
-                scroll.scrollRectToVisible(rect, animated: false)
-                scroll.layoutIfNeeded()
-                return
-            }
-            ancestor = view.superview
-        }
     }
 }

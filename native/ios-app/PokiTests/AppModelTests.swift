@@ -190,19 +190,6 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(UserDefaults.standard.integer(forKey: "idleStopSeconds.v4"), 120)
         model.idleStopSeconds = 60
     }
-
-    /// Native services tap only from iOS 27, so an iPhone on an earlier iOS that never chose a method
-    /// starts on the XCTest session. A method the owner chose in Testing Options stays, on any iOS.
-    func testDefaultAutomationPathFollowsTheIOSVersionAndKeepsTheOwnersChoice() {
-        func iOS(_ major: Int, _ minor: Int = 0) -> OperatingSystemVersion { OperatingSystemVersion(majorVersion: major, minorVersion: minor, patchVersion: 0) }
-        XCTAssertEqual(AutomationPath.chosen(nil, iOS: iOS(18, 6)), .inProcess, "#1: native services could not tap on iOS 18.6.2")
-        XCTAssertEqual(AutomationPath.chosen(nil, iOS: iOS(26, 6)), .inProcess, "#18: native services could not tap on iOS 26.6")
-        XCTAssertEqual(AutomationPath.chosen(nil, iOS: iOS(27)), .nativeServices)
-        XCTAssertEqual(AutomationPath.chosen("in-process", iOS: iOS(27)), .inProcess)
-        XCTAssertEqual(AutomationPath.chosen("native-services", iOS: iOS(26)), .nativeServices)
-        XCTAssertEqual(AutomationPath.chosen("runner", iOS: iOS(18)), .runner)
-        XCTAssertEqual(AutomationPath.chosen("gone-in-an-update", iOS: iOS(26)), .inProcess)
-    }
 }
 
 @MainActor
@@ -219,7 +206,7 @@ final class ApprovalDefaultTests: XCTestCase {
         let core = LiveCore(host: AppCoreHost(), transport: URLSessionTransport())
         let tap = await core.clearTap(on: "Send", inApp: "com.apple.MobileSMS", named: "Messages", waiting: 0.2)
         XCTAssertFalse(tap.mayTap, "\(tap)")
-        XCTAssertNotEqual(AppModel(launcher: FakeLauncher(), pairer: FakePairing()).approvalMode, .off)
+        XCTAssertTrue(AppModel(launcher: FakeLauncher(), pairer: FakePairing()).askBeforeSensitiveSteps)
     }
 
     /// An owner who turned asking off keeps that choice.

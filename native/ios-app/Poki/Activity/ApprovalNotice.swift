@@ -20,7 +20,7 @@ enum ApprovalNotice {
         let approvals = UNNotificationCategory(identifier: category, actions: [allowAction, denyAction], intentIdentifiers: [],
                                                options: [.hiddenPreviewsShowTitle])
         let center = UNUserNotificationCenter.current()
-        center.setNotificationCategories([approvals, ChatReplyNotice.category])
+        center.setNotificationCategories([approvals])
         center.delegate = ApprovalNoticeDelegate.shared
     }
 
@@ -55,91 +55,16 @@ enum ApprovalNotice {
 final class ApprovalNoticeDelegate: NSObject, UNUserNotificationCenterDelegate, @unchecked Sendable {
     static let shared = ApprovalNoticeDelegate()
 
-    // The completion-handler forms, answered on the main thread. The async forms finish on another
-    // thread, and iOS stops the app for that when a tap on a notification is what opened it.
-    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
-                                withCompletionHandler completionHandler: @escaping () -> Void) {
-        let content = response.notification.request.content
-        let category = content.categoryIdentifier
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+        guard let id = response.notification.request.content.userInfo["approval"] as? String else { return }
         let action = response.actionIdentifier
-        let typed = (response as? UNTextInputNotificationResponse)?.userText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let approval = content.userInfo["approval"] as? String
-        Task { @MainActor in
-            if category == ChatReplyNotice.categoryID {
-                // Typed on the notification: the chat goes on from where the owner is. A plain tap opens Poki.
-                if action == ChatReplyNotice.replyAction, let typed, !typed.isEmpty { ChatReplyNotice.answer(typed) }
-            } else if let approval, action == ApprovalNotice.allow || action == ApprovalNotice.deny {
-                ApprovalIntentBridge.submit(ApprovalDecision(approvalID: approval, approved: action == ApprovalNotice.allow))
-            }
-            completionHandler()
-        }
+        guard action == ApprovalNotice.allow || action == ApprovalNotice.deny else { return }
+        await MainActor.run { ApprovalIntentBridge.submit(ApprovalDecision(approvalID: id, approved: action == ApprovalNotice.allow)) }
     }
 
     /// While Poki is open the banner still shows, so the buttons are there too.
-    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
-                                withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        completionHandler([.banner, .sound, .list])
-    }
-}
-
-/// Poki's reply at the end of a chat task, when Poki is not in front: the owner reads it where they
-/// are and can answer on the notification itself (touch and hold it, or pull it down, for Reply), and
-/// the chat carries on from there. A tap opens Poki.
-enum ChatReplyNotice {
-    static let categoryID = "chat.reply"
-    static let replyAction = "chat.reply.text"
-    static let id = "chat-reply"
-
-    static var category: UNNotificationCategory {
-        let reply = UNTextInputNotificationAction(identifier: replyAction, title: String(localized: "Reply"), options: [],
-                                                  icon: UNNotificationActionIcon(systemImageName: "arrowshape.turn.up.left"),
-                                                  textInputButtonTitle: String(localized: "Send"),
-                                                  textInputPlaceholder: String(localized: "Message Poki"))
-        return UNNotificationCategory(identifier: categoryID, actions: [reply], intentIdentifiers: [], options: [])
-    }
-
-    @MainActor static func post(_ text: String, session: String) {
-        let content = UNMutableNotificationContent()
-        content.title = "Poki"
-        content.body = String(text.prefix(400))
-        content.categoryIdentifier = categoryID
-        content.userInfo = ["chat": session]
-        content.sound = .default
-        content.interruptionLevel = .timeSensitive
-        content.threadIdentifier = "chat"
-        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [id])
-        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
-    }
-
-    @MainActor static func clear() {
-        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [id])
-    }
-
-    /// The owner's words from the notification, into the chat as if typed there.
-    @MainActor static func answer(_ text: String) {
-        guard let chat = AskPoki.chat else { return }
-        AppLog.shared.add("chat", "reply from the notification")
-        // After a turn that ended on a problem the conversation carries on with the new words; a
-        // task still under way takes none (send would drop them without a word).
-        guard !chat.running else {
-            AttentionNotice.post(title: "Poki", body: String(localized: "Poki is still working. Send that again when it is done."))
-            return
-        }
-        chat.send(text)
-    }
-}
-
-/// Thanks for the star, a moment after GitHub opened (Setup › Contribute).
-enum ThanksNotice {
-    static func post() {
-        let content = UNMutableNotificationContent()
-        content.title = String(localized: "Thank You for Supporting Poki")
-        content.body = String(localized: "A star helps other people find Poki. Thank you for being part of it.")
-        content.sound = .default
-        content.interruptionLevel = .timeSensitive
-        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 4, repeats: false)
-        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ["thanks-star"])
-        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "thanks-star", content: content, trigger: trigger))
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
+        [.banner, .sound, .list]
     }
 }
 

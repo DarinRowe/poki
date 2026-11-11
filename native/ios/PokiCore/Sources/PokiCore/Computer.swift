@@ -63,8 +63,6 @@ final class Computer: @unchecked Sendable {
     /// The element the last type went to and its text, so the read after it can say which number the
     /// field has now when the app replaced it (Settings' search field is a new element in search mode).
     var typedInto: (ref: Int, text: String)?
-    /// Why Poki's keyboard did not take the last text (the transport's words), for that type's answer.
-    var keyboardDeclined: String?
     /// How much of the picture changed in the latest read while the elements did not (nil when the
     /// elements changed too, or nothing did): a whole new picture over an unchanged tree is the old
     /// app's tree under the new app's screen (gym: Photos launched from Safari).
@@ -73,8 +71,6 @@ final class Computer: @unchecked Sendable {
     /// The agent's memory, and this task's recorded steps (what routines {save} keeps).
     var memory: RoutineStore?
     var trace: [RecordedStep] = []
-    var intervention: UserIntervention?
-    var traceHasUserGap = false
     /// A routine ran whole in this task (the finish line does not offer to save it again).
     var routineRanWhole = false
 
@@ -99,9 +95,7 @@ final class Computer: @unchecked Sendable {
 
     func screenSize(until: Double) async throws -> ScreenSize {
         if let size { return size }
-        let s = try await withDeadline(max(0, until - now()), "reading the screen size") { [runner] in
-            try await runner.screenSize(timeout: max(0.5, min(3, until - now())))
-        }
+        let s = try await runner.screenSize(timeout: max(0.5, min(3, until - now())))
         size = s
         return s
     }
@@ -117,28 +111,8 @@ final class Computer: @unchecked Sendable {
     /// only what changed since the read before (a `do`); `full` lists every element, as the tree has it.
     func readAndReply(until: Double, full: Bool, changes: Bool = false, did: [String] = [], error: String? = nil, extra: [String] = []) async -> ToolResult {
         let budget = max(0.8, min(config.readTimeout, until - now() - 0.2))
-        // The read is one step of the call and holds to the call's deadline like every other: its
-        // parts are started beside each other, but a queued one waits for the runner, a tree that was
-        // refused is asked again, and the host's own path is started when the runner gives no picture.
-        // Each of those is a new round trip, so the phase as a whole is what is bounded here (the
-        // soak: a read budgeted 1.0 s took 3.4 s and pushed a 4 s call to 6.6 s, past its backstop).
-        let reading: Reading
-        do {
-            reading = try await withDeadline(max(0.2, until - now()), "reading the screen") { [runner, config] in
-                await runner.read(timeout: budget, extra: max(0, min(4, until - now() - budget - 3)), format: config.treeFormat, callEnds: until)
-            }
-        } catch {
-            // The call's own time is up: answer with the read before (the branch below keeps its
-            // numbers and picture) and say why, rather than making the agent guess at a bare failure.
-            var fell: Reading = Reading()
-            fell.notes = ["the read did not finish in the call's time (\(error))"]
-            reading = fell
-        }
-        // The screen size is the read's own extra question, so it gets what the call has left rather
-        // than a fresh 1.5 s of its own: a second round trip started past the call's end is what made
-        // a call answer after its deadline had gone (the soak: 6.6 s against a 4 s deadline). Without
-        // the size the default stands, and a read that is over answers with what it already has.
-        if size == nil, until - now() > 0.4 { _ = try? await screenSize(until: min(now() + 1.5, until)) }
+        let reading = await runner.read(timeout: budget, extra: max(0, min(4, until - now() - budget - 3)), format: config.treeFormat, callEnds: until)
+        if size == nil { _ = try? await screenSize(until: now() + 1.5) }
         let screen = size ?? ScreenSize(width: 10_000, height: 10_000)
         var notes = reading.notes
         if let modal = modalOnly(reading.elements) { notes.append(modal) }
@@ -360,7 +334,6 @@ final class Computer: @unchecked Sendable {
         if jpeg != nil { header.append(size != nil ? "screenshot: \(width) px wide, 1 px = 1 screen point (the same points as the frames and taps)" : "screenshot: \(width) px wide; screen size unknown") }
         header += did.map { "did: \($0)" }
         if let error { header.append("error: \(error)") }
-        if let line = observeUserIntervention() { header.append(line) }
         if let line = handoffLine(clear: true) { header.append(line) }
         if let changedLine { header.append(changedLine) }
         header += extra
@@ -401,9 +374,6 @@ final class Computer: @unchecked Sendable {
         if let done = h.done {
             if clear { handoff.value = nil }
             return "handoff: done at \(f.string(from: done)) (\(h.kind), \(Int(done.timeIntervalSince(h.requested))) s after \"\(h.text.prefix(80))\"); inputs are sent again, go on with the task"
-        }
-        if h.ownerOnly {
-            return "handoff: waiting for the owner to finish editing and tap Done; the agent cannot dismiss this pause. Do not replay unfinished typing. Read the edited field after Done before planning another action."
         }
         return "handoff: waiting (\(h.kind)) since \(f.string(from: h.requested)) (\(Int(Date().timeIntervalSince(h.requested))) s): \"\(h.text.prefix(80))\"; no input is sent until the owner taps Done on the phone or you send {handoff: false}; keep polling with look, or {wait_until: {handoff_done: true, ms: 10000}}"
     }
@@ -493,18 +463,12 @@ final class Computer: @unchecked Sendable {
     /// ended first, up to 6 s on its own) 14 s. A type is a tap, a wait for the focus and the keys (and
     /// a wait for a busy runner): 9 s. A wait_until gets the time it asks for (up to 10 s) plus a read:
     /// 8000 ms asked became 6000 under the action cap (gym, an app relaunch under the wait).
-    /// A call that types through Poki's keyboard gets the time its texts need at a keyboard's pace.
-    func toolBudget(_ actions: [JSON]) -> Double {
-        guard runner.typesThroughKeyboard, actions.contains(where: { $0["type"] != nil }) else { return config.toolDeadline }
-        return max(config.toolDeadline, min(300, actions.reduce(0) { $0 + actionCap($1) }) + config.readTimeout + 2)
-    }
-
     func actionCap(_ action: JSON) -> Double {
         // A routine's steps each have their own time inside it; the run as a whole has the call's.
         if action["run"] != nil { return max(config.actionCap, config.toolDeadline - config.readTimeout - 1) }
         if action["launch"] != nil { return max(config.actionCap, action["launch"]?["fresh"]?.bool == true ? 14 : 9) }
         if action["scroll_to"] != nil { return max(config.actionCap, Self.scrollCap) }
-        if action["type"] != nil { return max(config.actionCap, runner.typesThroughKeyboard ? Self.keyboardTypingBudget(action["type"]?.text ?? "") : 9) }
+        if action["type"] != nil { return max(config.actionCap, 9) }
         if action["wait_until"] != nil { return max(config.actionCap, min(10, max(0.2, (action["wait_until"]?["ms"]?.double ?? 3000) / 1000)) + 1.5) }
         return config.actionCap
     }
@@ -521,17 +485,12 @@ final class Computer: @unchecked Sendable {
     }
 
     func actNow(actions: [JSON], full: Bool, finish: Bool = false, session: String? = nil, answerBy: Double? = nil) async -> ToolResult {
-        if intervention != nil, handoff.value?.done != nil {
-            var result = await readAndReply(until: now() + config.toolDeadline, full: true)
-            result.text += "\nnot_sent: the owner finished editing. Read this fresh state and replan; the queued actions were not sent."
-            return result
-        }
         scrollFound = nil
         typedInto = nil
         var started = now()
         let callStarted = started
         var approvalWaited = 0.0
-        var until = started + toolBudget(actions)
+        var until = started + config.toolDeadline
         if let blocked = await waitForRunner(until: until) { return blocked }
         // The app the owner is in before anything is sent: the read before may be another task's.
         if beginsTask() {
@@ -553,10 +512,7 @@ final class Computer: @unchecked Sendable {
         // While a step is handed to the owner, nothing is sent (they may be typing a password):
         // the model sees the screen, waits, or takes the step back.
         let harmless = actions.allSatisfy { $0["wait"] != nil || $0["wait_until"] != nil || $0["handoff"] != nil }
-        if (!harmless || finish), handoffWaiting, let h = handoff.value {
-            if h.ownerOnly {
-                return await withPicture("not_sent: the owner took over typing. Wait for them to tap Done; agents cannot dismiss this pause. Do not replay the unfinished text.", timeout: until - now() - 0.5, isErrorWithoutPicture: false)
-            }
+        if !harmless, handoffWaiting, let h = handoff.value {
             return await withPicture("not_sent: a step is handed to the owner (\(h.kind): \"\(h.text.prefix(80))\"), so no input is sent until they tap Done on the phone or you send {handoff: false}. Keep polling with look, or {wait_until: {handoff_done: true, ms: 10000}}.", timeout: until - now() - 0.5, isErrorWithoutPicture: false)
         }
         let onlyButtons = actions.allSatisfy { $0["button"] != nil || $0["wait"] != nil }
@@ -671,13 +627,10 @@ final class Computer: @unchecked Sendable {
         did += moreDid
         error = moreError
         lastKind = moreKind ?? lastKind
-        var settled = 0.0
         if let lastKind {
             let pause = min(Self.settle[lastKind] ?? 0.4, max(0, until - now() - config.readTimeout - 0.3))
             if pause > 0.01 {
-                let before = now()
                 await sleep(seconds: pause)
-                settled = now() - before
                 did.append("paused \(Int((pause * 1000).rounded())) ms before reading")
             }
         }
@@ -741,18 +694,17 @@ final class Computer: @unchecked Sendable {
         // whose parts said 5 s answered after 29.8 s).
         let total = now() - callStarted
         let readTook = now() - readStarted
-        let parts = (prepared - callStarted) + actionsTook + settled + readTook + approvalWaited
+        let parts = (prepared - callStarted) + actionsTook + readTook + approvalWaited
         lastCallTook = total
         if total >= 8 || total - parts > 2 {
-            result.text += "\ntook: \(Self.seconds(total)) s in all: \(Self.seconds(prepared - callStarted)) s before the actions (runner start, busy wait, lock check), \(Self.seconds(actionsTook)) s actions, \(Self.seconds(settled)) s waiting for the screen to settle, \(Self.seconds(readTook)) s read\(approvalWaited > 0 ? ", \(Self.seconds(approvalWaited)) s the owner's approval" : "")\(total - parts > 2 ? ", \(Self.seconds(total - parts)) s elsewhere" : "")"
+            result.text += "\ntook: \(Self.seconds(total)) s in all: \(Self.seconds(prepared - callStarted)) s before the actions (runner start, busy wait, lock check), \(Self.seconds(actionsTook)) s actions, \(Self.seconds(readTook)) s read\(approvalWaited > 0 ? ", \(Self.seconds(approvalWaited)) s the owner's approval" : "")\(total - parts > 2 ? ", \(Self.seconds(total - parts)) s elsewhere" : "")"
         }
         // The read above is the work's last screen; the owner then sees their own app again.
         if finish, error == nil {
-            // Poki's keyboard, if it is up, gives way to the owner's own.
             let line = await returnToOrigin() ?? "finish: the app this task began in is not known, so the phone stays here"
             var lines = result.text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
             lines.insert(line, at: min(1, lines.count))
-            if trace.count >= 2, !routineRanWhole, !traceHasUserGap {
+            if trace.count >= 2, !routineRanWhole {
                 lines.append("learn: this task took \(trace.count) recorded steps; if it worked and may be asked for again, routines {action: \"save\", name, description} keeps them so do {run: name} repeats them in one call next time")
             }
             result.text = lines.joined(separator: "\n")
@@ -765,14 +717,9 @@ final class Computer: @unchecked Sendable {
 
     /// Ends the task: the app it began in comes to the front again (the home screen by the Home
     /// button), and nothing is sent when it is in front already. nil when no task was open.
-    /// `fallback` is the app's bundle for a task whose first call could not tell which app was in
-    /// front (the tree was late), so no origin was kept.
-    func returnToOrigin(fallback: String? = nil) async -> String? {
-        let known = origin
+    func returnToOrigin() async -> String? {
+        guard let task = origin else { return nil }
         origin = nil
-        // Whether or not there is an app to go back to.
-        await releaseKeyboard()
-        guard let task = known ?? fallback.map({ (app: Foreground(bundleID: $0, name: nil), session: String?.none, lastCall: now()) }) else { return nil }
         guard let bundle = task.app.bundleID else { return nil }
         let front = try? await runner.call("GET", "/wda/activeAppInfo", timeout: 1.5)
         if front?["bundleId"]?.string == bundle { return "finish: \(task.app.describe), where the task began, is in front" }
@@ -796,12 +743,6 @@ final class Computer: @unchecked Sendable {
         } catch {
             return "finish: \(task.app.describe), where the task began, could not be brought back (\(error))"
         }
-    }
-
-    /// Poki's keyboard, if it is up, gives way to the owner's own.
-    func releaseKeyboard() async {
-        guard runner.typesThroughKeyboard else { return }
-        _ = try? await runner.raw("POST", "/poki/keyboard/release", [:], timeout: 5, countsAsMiss: false)
     }
 
     static func seconds(_ t: Double) -> String { String(format: "%.1f", max(0, t)) }
@@ -856,7 +797,7 @@ final class Computer: @unchecked Sendable {
             let actionsUntil = min(until - config.readTimeout - 0.5, now() + cap)
             let left = actionsUntil - now()
             if left < 0.3 {
-                error = "stopped before action \(index + 1): the call's time ran out (\(Int(toolBudget(actions))) s for all the actions and the read); nothing more was sent"
+                error = "stopped before action \(index + 1): the call's time ran out (\(Int(config.toolDeadline)) s for all the actions and the read); nothing more was sent"
                 break
             }
             let began = now()
@@ -872,14 +813,6 @@ final class Computer: @unchecked Sendable {
                 error = "cancelled at action \(index + 1)"
                 break
             } catch let failure {
-                if let takeover = failure as? RunnerError, takeover.code == Runner.takeoverCode {
-                    let h = Handoff(id: UUID().uuidString, kind: "other",
-                        text: "You took over typing. Edit the text, then tap Done when Poki may continue. The unfinished text will not be replayed.",
-                        requested: Date(), ownerOnly: true)
-                    handoff.value = h
-                    beginUserIntervention(h)
-                    emit(.handoffRequested(id: h.id, kind: h.kind, text: h.text, app: lastForeground?.describe))
-                }
                 let delivery: Delivery
                 var why = "\(failure)"
                 switch failure {
@@ -899,9 +832,7 @@ final class Computer: @unchecked Sendable {
                 // the field holds decides (see recoverType). Every other action that may have been
                 // delivered is never sent again by us.
                 var recoveryNote = "", recoveryLog = ""
-                // Not after Poki's keyboard took the text and stopped part way: that is never typed again.
-                let partial = (failure as? RunnerError)?.code.map(Runner.partialTypingCodes.contains) ?? false
-                if !partial, let text = action["type"]?.text, action["via"]?.string != "paste", !(failure is ActionFailure), failure is RunnerError || failure is DeadlineExceeded {
+                if let text = action["type"]?.text, action["via"]?.string != "paste", !(failure is ActionFailure), failure is RunnerError || failure is DeadlineExceeded {
                     let recovered = await recoverType(action, text: text, why: why, until: until - config.readTimeout - 0.5)
                     if let done = recovered.done {
                         lastKind = "type"

@@ -24,7 +24,6 @@ final class PiLoop {
     var messages: [AgentMessage] { agent.state.messages }
 
     init(provider: ModelProvider, model: Model, tools: [ToolSpec], carrying messages: [AgentMessage] = [],
-         sessionID: String = UUID().uuidString.lowercased(),
          perform: @escaping @MainActor (ToolCall) async -> PokiCore.ToolAnswer) {
         self.provider = provider
         self.model = model
@@ -39,38 +38,9 @@ final class PiLoop {
         // agent/pi-session.mjs: low thinking, one tool call at a time.
         agent = Agent(AgentOptions(
             initialState: AgentState(model: model, thinkingLevel: .low, tools: agentTools, messages: messages),
-            // Stable Go session affinity for all model and tool-continuation requests.
-            sessionId: provider == .opencodeGo ? sessionID : nil,
-            identity: provider == .opencodeGo
-                ? ClientIdentity(userAgent: .custom("poki-ios/0.2.8"),
-                                 attribution: .value(ClientAttribution(name: "Poki", url: "https://github.com/JosssphZhou/poki")))
-                : nil,
             getApiKey: { _ in await ModelCredential.apiKey(for: provider) },
-            // Go's Anthropic and Gemini adapters also require Console Bearer auth.
-            // Resolve the key for EACH request so credential changes never leave stale headers.
-            getModelAuth: { model in
-                guard provider == .opencodeGo else { return nil }
-                guard let key = await ModelCredential.apiKey(for: provider) else {
-                    return AgentModelAuth(error: String(localized: "OpenCode Go API key is missing."))
-                }
-                return Self.openCodeGoAuth(model: model, apiKey: key)
-            },
             toolExecution: .sequential
         ))
-    }
-
-    /// Authentication is resolved on every turn via AgentModelAuth. PiSwift's Anthropic
-    /// adapter uses x-api-key unless a Bearer header is supplied; Console needs Bearer.
-    /// The Google adapter still appends its SDK query parameter, but also needs Bearer.
-    nonisolated static func openCodeGoAuth(model: Model, apiKey: String) -> AgentModelAuth {
-        let headers: ProviderHeaders?
-        switch model.api {
-        case .anthropicMessages, .googleGenerativeAI:
-            headers = ["Authorization": "Bearer \(apiKey)"]
-        default:
-            headers = nil // OpenAI adapters already send Authorization: Bearer.
-        }
-        return AgentModelAuth(apiKey: apiKey, headers: headers)
     }
 
     /// The owner's message under this task's instructions, then pi's loop until the model answers
@@ -140,18 +110,10 @@ final class PiLoop {
     /// The provider's message for the owner. pi never puts the key in it; a sign-in that ran out says so.
     private static func words(_ message: String, provider: ModelProvider) -> String {
         if message.contains("No API key") || message.contains("missingApiKey") || message.isEmpty && !ModelKeys.hasKey(provider) {
-            return provider.signsIn ? String(localized: "Sign in to ChatGPT again. Tap my picture, then Model.")
-                                    : String(localized: "Add your \(provider.name) key. Tap my picture, then Model.")
+            return provider.signsIn ? String(localized: "Sign in to ChatGPT again: tap my picture, then Model.")
+                                    : String(localized: "Add your \(provider.name) key: tap my picture, then Model.")
         }
-        // The provider's stream ended on an error event with nothing in it (the library prints the
-        // missing fields as "undefined"): said plainly, with what is left of it when there is any.
-        if message.contains("Error Code undefined") || message.hasSuffix(": undefined") {
-            let rest = message.replacingOccurrences(of: "Error Code undefined:", with: "").replacingOccurrences(of: "undefined", with: "")
-                .trimmingCharacters(in: CharacterSet(charactersIn: " :"))
-            let said = String(localized: "\(provider.name) ended the answer with an error and gave no reason. This is usually brief on their side. Tap Try Again.")
-            return rest.isEmpty ? said : said + " (" + rest + ")"
-        }
-        return String(localized: "\(provider.name), \(message.isEmpty ? String(localized: "the request failed.") : message)")
+        return String(localized: "\(provider.name): \(message.isEmpty ? String(localized: "the request failed.") : message)")
     }
 }
 

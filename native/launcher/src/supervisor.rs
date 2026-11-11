@@ -6,7 +6,6 @@ use crate::{
     ddi,
     device::{DDI_TIMEOUT_FIX, Device, Failure, LOOPBACK_FIX, NETWORK_FIX, Pairing},
     launch,
-    remote::Stage,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -37,21 +36,6 @@ pub struct Config {
     /// image (the XCTest libraries the app loads) and starts no runner.
     #[serde(default)]
     pub in_process: bool,
-    /// A test option, off unless the app asks: when the developer services cannot be connected to
-    /// at all and the image's XCTest framework is already there, report running so the app opens
-    /// its own session with no loopback (PR #91, issue 35).
-    #[serde(default)]
-    pub local_ddi: bool,
-}
-
-impl Config {
-    pub(crate) fn can_try_local_ddi(&self, failure: &Failure, mounted_locally: impl FnOnce() -> bool) -> bool {
-        self.local_ddi
-            && self.in_process
-            && self.device_address == default_address()
-            && failure.remote_stage == Some(Stage::Connect)
-            && mounted_locally()
-    }
 }
 
 /// The longest a disk image mount may take (Apple's signing server plus the upload).
@@ -218,22 +202,7 @@ impl Launcher {
         let mut pairing = Pairing::read(&config.pairing_file, config.host_name.as_deref())?;
         let kind = pairing.kind().name();
         me.set("pairing", attempt, json!({"pairing": kind}));
-        let mut device = match Device::open(config.device_address, &mut pairing, Duration::from_secs(20)).await {
-            Ok(device) => device,
-            Err(failure) if config.can_try_local_ddi(&failure, ddi::mounted_locally) => {
-                // The framework being there permits a try; the app opens and checks the session.
-                me.set("running", attempt, json!({"runner": "in-process", "code": "local_ddi"}));
-                loop {
-                    if commands.changed().await.is_err() {
-                        return Ok(());
-                    }
-                    if *commands.borrow_and_update() != Command::Run {
-                        return Ok(());
-                    }
-                }
-            }
-            Err(failure) => return Err(failure),
-        };
+        let mut device = Device::open(config.device_address, &mut pairing, Duration::from_secs(20)).await?;
         if !ddi::mounted(&device) {
             me.set("mounting_ddi", attempt, json!({"pairing": kind}));
             // Apple's signing server and a ~20 MB upload: bounded, so a stalled network cannot hold

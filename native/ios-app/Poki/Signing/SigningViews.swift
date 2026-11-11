@@ -53,7 +53,7 @@ struct AccountPage: View {
                     .textContentType(.password)
                 Toggle("Keep Me Signed In", isOn: $keepPassword)
             } footer: {
-                Text("A free Apple Account works. Poki signs itself for 7 days at a time and gets ready to sign again before then. Your Apple ID and password go only to Apple. The anisette server Poki asks for its device headers never sees them.")
+                Text("A free Apple Account works: Poki signs itself for 7 days at a time and gets ready to sign again before then. Your Apple ID and password go only to Apple. The anisette server Poki asks for its device headers never sees them.")
             }
             Section {
                 Button("Sign In") { Task { await signer.signIn(appleID: appleID, password: password, keepPassword: keepPassword); password = "" } }
@@ -94,7 +94,7 @@ struct SigningSection: View {
             LabeledContent {
                 if let expiry = signer.expiry {
                     // One line: the date, and how long is left in the warning colour when it is close.
-                    (Text(expiry, format: .dateTime.month(.abbreviated).day().year()) + Text(verbatim: ", ") + Text(expiry, style: .relative).foregroundStyle(countdownColor))
+                    (Text(expiry, format: .dateTime.month(.abbreviated).day().year()) + Text(verbatim: " · ") + Text(expiry, style: .relative).foregroundStyle(countdownColor))
                         .lineLimit(1).minimumScaleFactor(0.8)
                 } else {
                     Text("No Profile").foregroundStyle(Color(.secondaryLabel))
@@ -120,7 +120,8 @@ struct SigningSection: View {
             // one tap downloads and installs it (or, without an Apple Account, opens the sign-in).
             if signer.updateNotReady {
                 if signer.signedIn {
-                    action("Download and Install Update", systemImage: "arrow.down.circle", id: "download") { await signer.downloadAndInstallUpdate() }
+                    Button("Download and Install Update", systemImage: "arrow.down.circle") { Task { await signer.downloadAndInstallUpdate() } }
+                        .disabled(signer.working != nil)
                 } else {
                     NavigationLink {
                         Form { AccountPage() }
@@ -134,37 +135,20 @@ struct SigningSection: View {
                 // Idle is partly time (a minute since the last agent step), which nothing observes, so
                 // the row looks again every few seconds instead of staying as it was first drawn.
                 TimelineView(.periodic(from: .now, by: 5)) { _ in
-                    action(next.kind == "update" ? "Install Update" : "Install Refresh", systemImage: "arrow.down.app", id: "install") { await signer.install() }
+                    Button(next.kind == "update" ? "Install Update" : "Install Refresh", systemImage: "arrow.down.app") { Task { await signer.install() } }
+                        .disabled(signer.working != nil)
                 }
             }
             if signer.signedIn {
-                action("Prepare Refresh Now", systemImage: "arrow.clockwise", id: "refresh") { await signer.prepare(kind: "refresh") }
+                Button("Prepare Refresh Now", systemImage: "arrow.clockwise") { Task { await signer.prepare(kind: "refresh") } }
+                    .disabled(signer.working != nil)
             }
         } header: {
-            Text("Updates")
+            Text("Signing")
         } footer: {
             Text(footer)
         }
         SignerActivityRows(signer: signer)
-    }
-
-    /// The action last tapped, which shows a spinner while it runs.
-    @State private var pressed: String?
-
-    /// One action row: its symbol and title in the same tint, and the system's
-    /// spinner at the trailing edge from the tap until the work ends.
-    private func action(_ title: LocalizedStringKey, systemImage: String, id: String, _ work: @escaping () async -> Void) -> some View {
-        Button {
-            pressed = id
-            Task { await work(); if pressed == id { pressed = nil } }
-        } label: {
-            HStack {
-                Label(title, systemImage: systemImage)
-                Spacer()
-                if pressed == id, signer.working != nil { ProgressView() }
-            }
-        }
-        .disabled(signer.working != nil)
     }
 
     private var countdownColor: Color {
@@ -235,14 +219,14 @@ struct SigningOptionsPage: View {
         Form {
             Section {
                 Picker("Release Channel", selection: Binding(get: { signer.status?.channel ?? "stable" }, set: { id in Task { await signer.setChannel(id) } })) {
-                    ForEach(channels) { Text(LocalizedStringKey($0.title)).tag($0.id) }
+                    ForEach(channels) { Text($0.title).tag($0.id) }
                 }
                 .pickerStyle(.inline)
                 .labelsHidden()
             } header: {
                 Text("Release Channel")
             } footer: {
-                Text("Poki downloads and signs updates from this channel ahead of time, the same way Poki Setup does. Stable gets full releases only. Beta, Alpha and Pre-alpha get earlier builds.")
+                Text("Poki downloads and signs updates from this channel ahead of time, the same way Poki Setup does. Stable gets full releases only; Beta, Alpha and Pre-alpha get earlier builds.")
             }
             Section {
                 LabeledContent("Installed") { Text(verbatim: "\(signer.installedVersion) (\(signer.installedBuild))") }

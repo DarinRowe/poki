@@ -40,7 +40,6 @@ public struct CoreConfig: Sendable {
     public var humanize: Bool?
     /// The agent's memory (routines and notes); nil uses `RoutineStore.shared`, the app's file.
     public var memory: RoutineStore?
-    public var userRoutineLearning: @Sendable () -> Bool = { false }
 
     public init(runnerURL: URL = URL(string: "http://127.0.0.1:8100")!, sensitive: SensitivityRules = SensitivityRules(), approvalWait: Double = 115, toolDeadline: Double = 25, actionCap: Double = 6, readTimeout: Double = 4, busyWait: Double = 2, runnerWait: Double = 15, treeFormat: String = "xml", ownApps: [String] = ["nz.zheha.poki"], accessibilityDeadline: Double = 2, taskGap: Double = 300, humanize: Bool? = nil) {
         self.accessibilityDeadline = accessibilityDeadline
@@ -232,15 +231,12 @@ public struct Handoff: Sendable, Equatable {
     public var text: String
     public var requested: Date
     public var done: Date?
-    /// A user takeover cannot be dismissed by an agent action.
-    public var ownerOnly: Bool
-    public init(id: String, kind: String, text: String, requested: Date, done: Date? = nil, ownerOnly: Bool = false) {
+    public init(id: String, kind: String, text: String, requested: Date, done: Date? = nil) {
         self.id = id
         self.kind = kind
         self.text = text
         self.requested = requested
         self.done = done
-        self.ownerOnly = ownerOnly
     }
 }
 
@@ -397,28 +393,15 @@ public final class PokiCore: @unchecked Sendable {
     /// The task is over (the app stops an idle runner, or its chat's turn ended): the phone goes back
     /// to the app the task began in. Nothing happens while a tool call runs or when no task is open.
     /// `switching: false` only forgets the task, for a runner the owner stopped: nothing is sent to it.
-    ///
-    /// `returnTo` is the app to go back to when the task's first call could not tell which app was in
-    /// front (the chat inside Poki knows it began in Poki). `stay` leaves the phone where the task
-    /// ended: only Poki's keyboard gives way, and the owner is told another way.
-    public func finishTask(switching: Bool = true, returnTo: String? = nil, stay: Bool = false) async -> String? {
-        await endTask(session: nil, switching: switching, returnTo: returnTo, stay: stay)
-    }
+    public func finishTask(switching: Bool = true) async -> String? { await endTask(session: nil, switching: switching) }
 
     /// Only the session that began the task ends it; nil ends any.
-    func endTask(session: String?, switching: Bool = true, returnTo: String? = nil, stay: Bool = false) async -> String? {
+    func endTask(session: String?, switching: Bool = true) async -> String? {
         guard await gate.enter(waiting: config.busyWait) else { return nil }
         defer { gate.leave() }
         if let session, computer.origin?.session != session { return nil }
         guard switching else { computer.origin = nil; return nil }
-        if stay {
-            let open = computer.origin != nil || returnTo != nil
-            computer.origin = nil
-            guard open else { return nil }
-            await computer.releaseKeyboard()
-            return "finish: the phone stays where the task ended"
-        }
-        return await computer.returnToOrigin(fallback: returnTo)
+        return await computer.returnToOrigin()
     }
 
     // MARK: MCP over HTTP (Streamable HTTP, JSON answers only)
@@ -576,7 +559,7 @@ public final class PokiCore: @unchecked Sendable {
         gate.current = "\(name): \(activity.summary)"
         emit(.toolStarted(activity))
         // The owner's time on an approval, and the runner's start, come on top of the tool's own time.
-        let deadline = (name == "do" ? computer.toolBudget(args["actions"]?.array ?? []) : config.toolDeadline) + (name == "do" ? config.approvalWait : 0) + config.runnerWait + 1
+        let deadline = config.toolDeadline + (name == "do" ? config.approvalWait : 0) + config.runnerWait + 1
         var output: ToolResult
         computer.failureLog.value = nil
         do {

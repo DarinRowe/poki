@@ -62,11 +62,10 @@ private struct StatusRow: View {
     private let theme = ActivityTheme.current
     var body: some View {
         HStack(spacing: 6) {
-            StateGlyph(face: face, surface: surface)
+            StateGlyph(face: face)
             Text(face.status)
                 .font(theme.status)
                 .foregroundStyle(theme.palette(surface).color(face.tone))
-                .transaction { $0.animation = nil }
                 .lineLimit(1)
                 .contentTransition(.interpolate)
             Spacer(minLength: 8)
@@ -137,11 +136,10 @@ struct IslandLeading: View {
     private let theme = ActivityTheme.current
     var body: some View {
         HStack(spacing: 6) {
-            StateGlyph(face: face, surface: .island)
+            StateGlyph(face: face)
             Text(face.shortStatus)
                 .font(theme.status)
                 .foregroundStyle(theme.island.color(face.tone))
-                .transaction { $0.animation = nil }
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
                 .contentTransition(.interpolate)
@@ -190,9 +188,7 @@ struct IslandBottom: View {
 struct CompactLeading: View {
     var face: ActivityFace
     var body: some View {
-        // Kept clear of the camera: the ring is drawn inside its frame, and the space is on the
-        // camera's side (seen on the phone: the ring ran under the camera's edge).
-        RingGlyph(face: face).padding(.trailing, 6).environment(\.colorScheme, .dark)
+        RingGlyph(face: face).padding(.leading, 2).environment(\.colorScheme, .dark)
     }
 }
 
@@ -206,7 +202,6 @@ struct CompactTrailing: View {
             switch face.compact {
             case .text(let text, let tone):
                 Text(text).font(theme.compact).foregroundStyle(palette.color(tone))
-                    .transaction { $0.animation = nil }
                     .lineLimit(1).minimumScaleFactor(0.7)
                     .contentTransition(.numericText())
             case .code(let code):
@@ -245,25 +240,21 @@ struct RingGlyph: View {
             case .none:
                 EmptyView()
             case .fraction(let value):
-                // Inset by half the line, so the stroke stays inside the frame.
-                Circle().inset(by: 1.25).stroke(color.opacity(0.25), lineWidth: 2.5)
-                Circle().inset(by: 1.25).trim(from: 0, to: max(0.04, min(1, value)))
+                Circle().stroke(color.opacity(0.25), lineWidth: 2.5)
+                Circle().trim(from: 0, to: max(0.04, min(1, value)))
                     .stroke(color, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
                     .rotationEffect(.degrees(-90))
             case .timer(let range):
                 ProgressView(timerInterval: range, countsDown: true, label: { EmptyView() }, currentValueLabel: { EmptyView() })
                     .progressViewStyle(.circular)
                     .tint(color)
-                    .frame(width: Self.size, height: Self.size)
             }
             Image(systemName: face.symbol)
-                .symbolRenderingMode(.monochrome)
                 .font(.system(size: face.ring == .none ? ActivityMetrics.glyph : 11, weight: .bold))
                 .foregroundStyle(color)
-                .transaction { $0.animation = nil }
+                .contentTransition(.symbolEffect(.replace))
         }
         .frame(width: Self.size, height: Self.size)
-        .clipped()
         .accessibilityHidden(true)
     }
 }
@@ -302,14 +293,12 @@ private struct StepBar: View {
 /// The state's SF Symbol in its colour: no container, no app icon (HIG).
 struct StateGlyph: View {
     var face: ActivityFace
-    var surface: ActivitySurface = .lockScreen
     private let theme = ActivityTheme.current
     var body: some View {
         Image(systemName: face.symbol)
-            .symbolRenderingMode(.monochrome)
             .font(.system(size: ActivityMetrics.glyph, weight: .semibold))
-            .foregroundStyle(theme.palette(surface).color(face.tone))
-            .transaction { $0.animation = nil }
+            .foregroundStyle(theme.lock.color(face.tone))
+            .contentTransition(.symbolEffect(.replace))
             .accessibilityHidden(true)
     }
 }

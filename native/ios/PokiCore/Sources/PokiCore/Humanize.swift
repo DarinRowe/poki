@@ -221,24 +221,9 @@ struct Humanize: Sendable {
         return (r * cos(angle), r * sin(angle))
     }
 
-    /// Only generated trajectories use this projection. Requested coordinates must be
-    /// validated before shaping; the native transport still rejects malformed raw actions.
-    /// Keep a full centipoint inside the upper edge because actions rounds to two decimals.
-    static func viewportActions(_ fingers: [[Sample]], screen: ScreenSize, idPrefix: String = "finger") throws -> JSON {
-        guard screen.width.isFinite, screen.height.isFinite, screen.width > 1, screen.height > 1,
-              fingers.flatMap({ $0 }).allSatisfy({ $0.x.isFinite && $0.y.isFinite && $0.t.isFinite }) else {
-            throw ActionFailure(message: "Invalid generated touch or viewport; nothing was sent", delivery: .notSent)
-        }
-        let maxX = (screen.width * 100).rounded(.up) / 100 - 0.01
-        let maxY = (screen.height * 100).rounded(.up) / 100 - 0.01
-        return actions(fingers.map { finger in finger.map {
-            (x: min(maxX, max(0, $0.x)), y: min(maxY, max(0, $0.y)), t: $0.t)
-        } }, idPrefix: idPrefix)
-    }
-
     /// Fingers as W3C pointer actions: per finger a move to the contact, a down, then each sample as
     /// a timed move (a pause when the finger did not move), and an up.
-    static func actions(_ fingers: [[Sample]], idPrefix: String = "finger") -> JSON {
+    static func actions(_ fingers: [[Sample]]) -> JSON {
         func round(_ v: Double) -> Double { (v * 100).rounded() / 100 }
         let sources: [JSON] = fingers.enumerated().map { index, finger in
             guard let first = finger.first else { return .null }
@@ -257,7 +242,7 @@ struct Humanize: Sendable {
                 last = s
             }
             steps.append(["type": "pointerUp", "button": 0])
-            return ["type": "pointer", "id": .string("\(idPrefix)\(index + 1)"), "parameters": ["pointerType": "touch"], "actions": .array(steps)]
+            return ["type": "pointer", "id": .string("finger\(index + 1)"), "parameters": ["pointerType": "touch"], "actions": .array(steps)]
         }
         return ["actions": .array(sources)]
     }

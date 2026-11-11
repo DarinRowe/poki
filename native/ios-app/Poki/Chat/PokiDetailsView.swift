@@ -67,6 +67,8 @@ struct PokiDetailsView: View {
                                 .foregroundStyle(model.setupComplete ? Color.secondary : Color.orange)
                         } label: { Label("Setup", systemImage: "checklist") }
                     }
+                    Button { openNotificationSettings() } label: { Label("Notifications", systemImage: "bell.badge") }
+                    NavigationLink(value: SettingsRoute.diagnostics) { Label("Diagnostics", systemImage: "stethoscope") }
                 }
             }
             .listStyle(.insetGrouped)
@@ -97,6 +99,9 @@ struct PokiDetailsView: View {
         return model.currentApp.map { "\($0), \(time)" } ?? time
     }
 
+    private func openNotificationSettings() {
+        if let url = URL(string: UIApplication.openNotificationSettingsURLString) { UIApplication.shared.open(url) }
+    }
 }
 
 enum DetailsRoute: Hashable { case model, history, voice, settings, setup }
@@ -257,7 +262,6 @@ extension ModelProvider {
         case .gemini: "Provider-googlegemini"
         case .deepseek: "Provider-deepseek"
         case .openrouter: "Provider-openrouter"
-        case .opencodeGo: "Provider-opencode"
         case .custom: nil
         }
     }

@@ -31,14 +31,8 @@ extension Computer {
     }
 
     func onScreen(_ p: (x: Double, y: Double)) throws -> (x: Double, y: Double) {
-        guard p.x.isFinite, p.y.isFinite else {
-            throw ActionFailure(message: "not_hittable: requested point must be finite; nothing was sent", delivery: .notSent)
-        }
-        if let size, p.x < 0 || p.y < 0 || p.x >= size.width || p.y >= size.height {
-            func whole(_ value: Double) -> String {
-                Int(exactly: value.rounded(.towardZero)).map(String.init) ?? String(value)
-            }
-            throw ActionFailure(message: "not_hittable: [\(whole(p.x)), \(whole(p.y))] is off the screen (\(whole(size.width))x\(whole(size.height)) points); nothing was sent", delivery: .notSent)
+        if let size, p.x < 0 || p.y < 0 || p.x > size.width || p.y > size.height {
+            throw ActionFailure(message: "not_hittable: [\(Int(p.x)), \(Int(p.y))] is off the screen (\(Int(size.width))x\(Int(size.height)) points); nothing was sent", delivery: .notSent)
         }
         return p
     }
@@ -136,8 +130,6 @@ extension Computer {
     /// slight arc, uneven sampling; a flick still lifts at speed, a resting drag still ends still), sent
     /// as W3C pointer actions; a runner without `/actions` gets the two-point press-drag.
     func gesture(_ path: (Double, Double, Double, Double), seconds: Double, hold: Double = 0, rest: Double = 0, until: Double) async throws {
-        let screen = try await screenSize(until: until)
-        _ = try onScreen((path.0, path.1)); _ = try onScreen((path.2, path.3))
         let distance = max(1, hypot(path.2 - path.0, path.3 - path.1))
         let velocity = distance / max(0.05, seconds)
         let expected = hold + distance / velocity + rest + (humanize.enabled ? 0.04 : 0)
@@ -149,7 +141,7 @@ extension Computer {
             if shaped {
                 let finger = humanize.drag(from: (path.0, path.1), to: (path.2, path.3), seconds: seconds, hold: hold, rest: rest)
                 do {
-                    _ = try await runner.call("POST", "/actions", try Humanize.viewportActions([finger], screen: screen), timeout: timeout, countsAsMiss: false)
+                    _ = try await runner.call("POST", "/actions", Humanize.actions([finger]), timeout: timeout, countsAsMiss: false)
                 } catch let e as RunnerError where e.code == "unknown command" || e.code == "unknown method" {
                     shaped = false
                 }
@@ -177,9 +169,6 @@ extension Computer {
     /// pointer actions, which both WebDriverAgent and the in-process path take; a runner without
     /// them gets the press-drag.
     func scrollDrag(_ path: (Double, Double, Double, Double), seconds: Double, rest: Double, until: Double) async throws {
-        let screen = try await screenSize(until: until)
-        _ = try onScreen((path.0, path.1)); _ = try onScreen((path.2, path.3))
-        let requestedPath = path
         let distance = max(1, hypot(path.2 - path.0, path.3 - path.1))
         // The slow tail with shaped input too: the shaped resting drag moved the gym's list 392-640 pt
         // per swipe where the slow tail moved a steady 442-471 (run 42435103942), and scroll_to's
@@ -196,15 +185,18 @@ extension Computer {
         let near = (x: path.2 - (path.2 - path.0) / distance * tail, y: path.3 - (path.3 - path.1) / distance * tail)
         let expected = seconds + rest
         let timeout = max(expected + 1.5, min(expected + 5, until - now() - 0.2))
-        let finger: [Humanize.Sample] = [
-            (path.0, path.1, 0), (near.x, near.y, seconds),
-            (path.2, path.3, seconds + rest),
-        ]
+        let finger: JSON = ["type": "pointer", "id": "f1", "parameters": ["pointerType": "touch"], "actions": [
+            ["type": "pointerMove", "duration": 0, "x": .number(path.0.rounded()), "y": .number(path.1.rounded())],
+            ["type": "pointerDown", "button": 0],
+            ["type": "pointerMove", "duration": .number((seconds * 1000).rounded()), "x": .number(near.x.rounded()), "y": .number(near.y.rounded())],
+            ["type": "pointerMove", "duration": .number((rest * 1000).rounded()), "x": .number(path.2.rounded()), "y": .number(path.3.rounded())],
+            ["type": "pointerUp", "button": 0],
+        ]]
         do {
-            _ = try await runner.call("POST", "/actions", try Humanize.viewportActions([finger], screen: screen, idPrefix: "f"), timeout: timeout, countsAsMiss: false)
+            _ = try await runner.call("POST", "/actions", ["actions": [finger]], timeout: timeout, countsAsMiss: false)
             swipeUnread = true
         } catch let e as RunnerError where e.code == "unknown command" || e.code == "unknown method" {
-            try await gesture(requestedPath, seconds: seconds, rest: rest, until: until)
+            try await gesture(path, seconds: seconds, rest: rest, until: until)
         } catch let e as RunnerError where e.delivery == .unknown {
             swipeUnread = true
             throw e
@@ -224,8 +216,6 @@ extension Computer {
     /// a point or two of scatter kept inside `frame`'s middle, a drift before the lift); a runner
     /// without `/actions` gets WDA's tap.
     func tap(_ p: (x: Double, y: Double), within frame: Rect? = nil) async throws {
-        _ = try await screenSize(until: now() + 3)
-        _ = try onScreen(p)
         guard humanize.enabled else {
             _ = try await runner.call("POST", "/wda/tap", ["x": .number(p.x), "y": .number(p.y)], timeout: 3)
             return
@@ -237,8 +227,6 @@ extension Computer {
 
     /// A finger held at `p` for `seconds` (shaped as `Humanize.longPress` when on; the hold is exact).
     func longPress(_ p: (x: Double, y: Double), seconds: Double, within frame: Rect? = nil) async throws {
-        _ = try await screenSize(until: now() + 3)
-        _ = try onScreen(p)
         guard humanize.enabled else {
             _ = try await runner.call("POST", "/wda/touchAndHold", ["x": .number(p.x), "y": .number(p.y), "duration": .number(seconds)], timeout: 3 + seconds)
             return
@@ -250,9 +238,8 @@ extension Computer {
 
     /// Fingers as W3C pointer actions; a runner that has no `/actions` gets `legacy` instead.
     func touch(_ fingers: [[Humanize.Sample]], timeout: Double, legacy: () async throws -> Void) async throws {
-        let screen = try await screenSize(until: now() + timeout)
         do {
-            _ = try await runner.call("POST", "/actions", try Humanize.viewportActions(fingers, screen: screen), timeout: timeout)
+            _ = try await runner.call("POST", "/actions", Humanize.actions(fingers), timeout: timeout)
         } catch let e as RunnerError where e.code == "unknown command" || e.code == "unknown method" {
             try await legacy()
         }
@@ -266,12 +253,6 @@ extension Computer {
 
     /// Returns the action's kind (for the settle pause) and what it did.
     func perform(_ action: JSON, until: Double) async throws -> (String, String) {
-        // A partial look can retain element refs without a viewport. Recover it before
-        // resolving any input target so visible refs use Layout instead of stale centres.
-        if ["tap", "long_press", "drag", "pinch"].contains(where: { action[$0] != nil })
-            || (action["type"]?.text != nil && action["ref"] != nil) {
-            _ = try await screenSize(until: until)
-        }
         if let spec = action["run"] {
             return ("run", try await runRoutine(spec, until: until))
         }
@@ -285,16 +266,6 @@ extension Computer {
             if let ref = action["ref"] {
                 try await tap(try point(ref), within: frame(of: ref))
             }
-            let hidden = describe(action).hasSuffix("(hidden)")
-            let via = action["via"]?.string == "paste" ? "pasted" : "typed"
-            let clear = action["clear"]?.bool ?? false
-            // Poki's own keyboard first, where there is one: it waits for the field itself and says
-            // what the field holds afterwards, so the screen is not read for the focus or to read
-            // the text back. Declined (nil), the text goes the usual way below, as it always has.
-            if via == "typed", let typed = try await typeThroughKeyboard(text, clear: clear, hidden: hidden, target: target, tapped: action["ref"] != nil, until: until) {
-                if let ref = action["ref"]?.int { typedInto = (ref, text) }
-                return ("type", "\(describe(action)) (typed)\(typed)\(safariAddressNote(target, text))")
-            }
             // Keys go to the focused field; a tap takes a moment to focus one (seen on the phone:
             // text typed right after the tap went nowhere). Wait for a field to be focused, up to
             // 2 s, then type anyway and say when none was.
@@ -303,6 +274,9 @@ extension Computer {
             // The note stands only when the text did not read back: the keyboard of a search
             // field in a navigation bar came after the wait, and the text had landed (gym, Settings).
             func focusNote(_ landed: Bool) -> String { focused || landed ? "" : "; no field was focused when the text went (no keyboard came up in \(Int((focusWait * 1000).rounded())) ms), so it may have gone nowhere" }
+            let hidden = describe(action).hasSuffix("(hidden)")
+            let via = action["via"]?.string == "paste" ? "pasted" : "typed"
+            let clear = action["clear"]?.bool ?? false
             var note = ""
             if via == "pasted" {
                 note = try await paste(text, clear: clear, until: until, target: target)
@@ -314,18 +288,12 @@ extension Computer {
             let readBack = reads.map { hidden ? "; the field now holds \($0.count) characters" : "; the field now reads \"\($0.count > 200 ? String($0.prefix(190)) + "…" : $0)\"" }
                 ?? "; the field could not be read back (no focused field answered in time), so check the elements or the picture"
             if let ref = action["ref"]?.int { typedInto = (ref, text) }
-            // Why Poki's own keyboard did not type it, so a set-up problem is seen and not guessed at.
-            let declined = keyboardDeclined.map { "; Poki's keyboard was not used: \($0)" } ?? ""
-            keyboardDeclined = nil
-            return ("type", "\(describe(action)) (\(via))\(readBack)\(focusNote(reads.map { $0.contains(text) } ?? false))\(note)\(declined)\(safariAddressNote(target, text))")
+            return ("type", "\(describe(action)) (\(via))\(readBack)\(focusNote(reads.map { $0.contains(text) } ?? false))\(note)\(safariAddressNote(target, text))")
         }
         if action["back"] != nil {
             return ("back", try await back(until: until))
         }
         if let spec = action["handoff"] {
-            if let current = handoff.value, current.done == nil, current.ownerOnly {
-                throw ActionFailure(message: "The owner took over typing. Only their Done button can resume actions; the agent cannot replace or dismiss this pause.", delivery: .notSent)
-            }
             if case .bool(false) = spec {
                 guard let current = handoff.value, current.done == nil else { return ("handoff", "handoff: nothing is handed to the owner") }
                 handoff.value = nil
@@ -386,13 +354,12 @@ extension Computer {
         if let spec = action["pinch"] {
             let p = try point(spec)
             let screen = try await screenSize(until: until)
-            _ = try onScreen(p)
             let scale = min(4, max(0.25, spec["scale"]?.double ?? action["scale"]?.double ?? 2))
             let start = min(screen.width, screen.height) * (scale > 1 ? 0.12 : 0.3)
             let a = start / 2, b = start * scale / 2
             // Two fingers either side of the point, each a drag of its own (shaped as a person's when
             // humanize is on), in 500 ms.
-            _ = try await runner.call("POST", "/actions", try Humanize.viewportActions(humanize.pinch(at: (p.x.rounded(), p.y.rounded()), from: a, to: b, seconds: 0.5), screen: screen), timeout: 4)
+            _ = try await runner.call("POST", "/actions", Humanize.actions(humanize.pinch(at: (p.x.rounded(), p.y.rounded()), from: a, to: b, seconds: 0.5)), timeout: 4)
             return ("pinch", "pinch \(spec.serialized()) x\(scale)")
         }
         if let name = action["button"]?.text {
@@ -455,52 +422,6 @@ extension Computer {
         guard m.count > 220 else { return ActionFailure(message: m, delivery: .notSent) }
         let quoted = m.range(of: #""[^"]{12,160}""#, options: .regularExpression).map { String(m[$0]) }
         return ActionFailure(message: "launch \(bundle) was refused by the runner: \(quoted ?? String(m.prefix(200)) + "…")", delivery: .notSent)
-    }
-
-    /// What a text may take through Poki's keyboard, with the time to bring the keyboard up from
-    /// another one and, if it declines, to type the usual way after all.
-    static func keyboardTypingBudget(_ text: String) -> Double {
-        min(280, 30 + 0.12 * Double(text.count))
-    }
-
-    /// The whole text through Poki's own keyboard, in one request (`HTTPTransport.typesThroughKeyboard`).
-    /// Returns the note for the answer, or nil when the keyboard never had the text: it is not set up,
-    /// did not come up, or the field takes no third-party keyboard (iOS gives password fields its own).
-    /// A text the keyboard took is never typed again another way: a stop part way is thrown.
-    func typeThroughKeyboard(_ text: String, clear: Bool, hidden: Bool, target: Element?, tapped: Bool, until: Double) async throws -> String? {
-        keyboardDeclined = nil
-        // iOS shows its own keyboard in a password field, never a third-party one.
-        guard runner.typesThroughKeyboard, target?.isSecure != true, target?.type != "SecureTextField", !text.isEmpty, text.count <= 2000 else { return nil }
-        // What is left after the keyboard must still do for the usual way.
-        let budget = until - now() - 4
-        guard budget >= 2 else { return nil }
-        // Another keyboard is switched away from when a field can be taken to have the focus, as it
-        // does whenever text is typed (a tap earlier in the same list leaves no keyboard in the last
-        // read, so that is no test). Not when the field is not named and a password field is on
-        // the screen: the focus may be in that one.
-        let focused = tapped || target != nil || !lastElements.contains(where: \.isSecure)
-        // `hidden`: a password field is on the screen, so nothing of the field's text comes back.
-        var body: [String: JSON] = ["value": .array(text.map { .string(String($0)) }), "clear": .bool(clear), "keyboard": true, "focused": .bool(focused), "hidden": .bool(hidden)]
-        if let app = lastForeground?.bundleID { body["app"] = .string(app) }
-        let answer = try await runner.call("POST", "/wda/keys", .object(body), timeout: budget, countsAsMiss: false)
-        guard answer["keyboard"]?.string == "typed" else {
-            keyboardDeclined = answer["why"]?.string
-            return nil
-        }
-        let by = answer["via"]?.string.map { "the \($0) keyboard" } ?? "Poki's keyboard"
-        let tail = answer["tail"]?.string
-        func shown(_ s: String) -> String { "\"\(s.count > 120 ? "…" + String(s.suffix(110)) : s)\"" }
-        if answer["moved"]?.bool == true {
-            return "; by \(by); the focus moved to another field while it typed (the app moved it on, or the owner did), so check where the text went"
-        }
-        switch answer["check"]?.string {
-        case "matched":
-            return "; by \(by), which confirms the text before the cursor ends with it"
-        case "mismatch":
-            return "; by \(by), but the text before the cursor now ends \(hidden || tail == nil ? "differently" : shown(tail ?? "")), which is not what was typed (the app may format or correct it): check the field"
-        default:
-            return "; by \(by); it could not see the field afterwards (after a Return, or in a field that shows a keyboard nothing), so check the result on the screen"
-        }
     }
 
     /// The whole text as key presses in one request. Clearing deletes what the focused field holds
@@ -723,25 +644,11 @@ extension Computer {
     func paste(_ text: String, clear: Bool, until: Double, target: Element? = nil) async throws -> String {
         let saved: JSON
         do { saved = try await runner.call("POST", "/wda/getPasteboard", ["contentType": "plaintext"], timeout: 2, countsAsMiss: false) }
-        catch {
-            // The owner has pasting turned off: say that, not that the read failed.
-            if let said = (error as? RunnerError)?.message, said.contains("Pasting is off") {
-                throw ActionFailure(message: "nothing was pasted. \(said) Type the text without via", delivery: .notSent)
-            }
-            throw ActionFailure(message: "the clipboard could not be read, so it was not used (the owner's clipboard would be lost); type the text instead", delivery: .notSent)
-        }
+        catch { throw ActionFailure(message: "the clipboard could not be read, so it was not used (the owner's clipboard would be lost); type the text instead", delivery: .notSent) }
         guard let field = await fieldOnScreen(target: target, timeout: 1.5).field else {
             throw ActionFailure(message: "no field to paste into is listed (tap the field first, or name it with ref)", delivery: .notSent)
         }
-        let screen = try await screenSize(until: until)
-        func pastePoint(_ element: Element, delivery: Delivery = .notSent) throws -> (x: Double, y: Double) {
-            guard let hit = Layout(all: [element], screen: screen).touchPoint(element) else {
-                throw ActionFailure(message: "not_hittable: the paste target is off the screen", delivery: delivery)
-            }
-            return hit.point
-        }
-        // Resolve the field before clearing it: an off-screen target must not lose its old text.
-        let holdPoint = try pastePoint(field)
+        let (x, y, w, h) = (field.frame.x, field.frame.y, field.frame.width, field.frame.height)
         var restored = false
         func restore() async {
             guard !restored else { return }
@@ -759,7 +666,7 @@ extension Computer {
                 await restore()
                 throw ActionFailure(message: "the clipboard could not be set to the text (the runner's write did not take), so nothing was pasted; type the text instead", delivery: .notSent)
             }
-            try await longPress(holdPoint, seconds: 0.7, within: field.frame)
+            try await longPress((x + w / 2, y + h / 2), seconds: 0.7, within: field.frame)
             var item: Element?
             let menuBy = min(until - 0.3, now() + 2)
             while item == nil, now() < menuBy {
@@ -772,7 +679,7 @@ extension Computer {
                 await restore()
                 throw ActionFailure(message: "the field's menu showed no Paste item; the text was not pasted (a long press was sent)", delivery: .sent)
             }
-            try await tap(try pastePoint(item, delivery: .sent), within: item.frame)
+            try await tap(item.frame.centre, within: item.frame)
             // The paste has landed when the field shows the text; until then the clipboard stays.
             let landedBy = min(until - 0.3, now() + 2.5)
             var landed = false

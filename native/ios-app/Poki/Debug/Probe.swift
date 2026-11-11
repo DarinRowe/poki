@@ -77,34 +77,6 @@ func probe(label: String, host: String, port: UInt16 = 49152, timeout: TimeInter
     return result
 }
 
-/// A TCP connect alone, timed to the moment it is ready (`probe` also waits for the first bytes).
-func connectTime(host: String, port: UInt16, timeout: TimeInterval) async -> (ms: Int?, outcome: String) {
-    let started = Date()
-    let parameters = NWParameters.tcp
-    parameters.prohibitedInterfaceTypes = []
-    let connection = NWConnection(host: NWEndpoint.Host(host), port: NWEndpoint.Port(rawValue: port)!, using: parameters)
-    let queue = DispatchQueue(label: "probe.connect.\(port)")
-    let outcome: String = await withCheckedContinuation { continuation in
-        var done = false
-        let finish = { (state: String) in
-            queue.async { if !done { done = true; continuation.resume(returning: state) } }
-        }
-        connection.stateUpdateHandler = { state in
-            switch state {
-            case .ready: finish("connected")
-            case .failed(let error): finish(isRefused(error) ? "refused" : "failed")
-            // Waiting is not final: the path can come up within the time allowed.
-            case .waiting(let error): if isRefused(error) { finish("refused") }
-            default: break
-            }
-        }
-        connection.start(queue: queue)
-        queue.asyncAfter(deadline: .now() + timeout) { finish("timeout") }
-    }
-    connection.cancel()
-    return (outcome == "connected" ? Int(Date().timeIntervalSince(started) * 1000) : nil, outcome)
-}
-
 private func isRefused(_ error: NWError) -> Bool {
     if case .posix(let code) = error { return code == .ECONNREFUSED }
     return false

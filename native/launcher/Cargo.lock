@@ -1772,7 +1772,6 @@ dependencies = [
  "chacha20poly1305",
  "chrono",
  "ed25519-dalek",
- "flate2",
  "futures",
  "hkdf",
  "hmac",
@@ -1796,7 +1795,6 @@ dependencies = [
  "tokio-rustls",
  "tracing",
  "uuid",
- "web-time",
  "webpki-roots 1.0.11",
  "x25519-dalek",
 ]
@@ -2546,7 +2544,6 @@ name = "poki-launcher"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
- "futures-util",
  "idevice",
  "plist",
  "poki-setup-core",
@@ -2554,7 +2551,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
- "uuid",
 ]
 
 [[package]]

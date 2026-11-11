@@ -62,14 +62,7 @@ struct Issue: Identifiable {
     }
 
     /// Text from PokiCore and the launcher stays as it came; Poki's own sentences are localized.
-    private static func local(_ text: String) -> String {
-        // The one sentence with a live value in it: the phone's own reason stays as it came.
-        let refused = "The phone refused the pairing (", again = "). Pair again in Setup."
-        if text.hasPrefix(refused), text.hasSuffix(again) {
-            return String(localized: "The phone refused the pairing (\(String(text.dropFirst(refused.count).dropLast(again.count)))). Pair again in Setup.")
-        }
-        return Bundle.main.localizedString(forKey: text, value: text, table: nil)
-    }
+    private static func local(_ text: String) -> String { Bundle.main.localizedString(forKey: text, value: text, table: nil) }
 
     @MainActor static func current(_ model: AppModel) -> [Issue] {
         var out: [Issue] = []
@@ -97,13 +90,13 @@ struct Issue: Identifiable {
             }
             if let trouble = model.pairingTrouble {
                 out.append(Issue(id: "pairing", title: String(localized: "Pair this iPhone again"),
-                                 text: String(localized: "The phone no longer accepts Poki’s pairing (\(trouble)). Pair again in Setup, it takes a minute."), fix: .setup))
+                                 text: String(localized: "The phone no longer accepts Poki’s pairing (\(trouble)). Pair again in Setup; it takes a minute."), fix: .setup))
             }
             if model.passcodeHint {
                 out.append(Issue(id: "passcode", title: String(localized: "Enter the passcode if the iPhone asks"),
                                  text: model.automationPath == .inProcess
-                                    ? String(localized: "iOS asks for the passcode to allow UI Automation after Poki restarts, or 8 hours after it was last entered. Enter it once and Poki carries on by itself.")
-                                    : String(localized: "iOS asks for the passcode before UI Automation after Poki Runner was force-closed or the iPhone restarted. Enter it once and Poki carries on by itself."), fix: .none))
+                                    ? String(localized: "iOS asks for the passcode to allow UI Automation after Poki restarts, or 8 hours after it was last entered. Enter it once; Poki carries on by itself.")
+                                    : String(localized: "iOS asks for the passcode before UI Automation after Poki Runner was force-closed or the iPhone restarted. Enter it once; Poki carries on by itself."), fix: .none))
             }
             if let text = model.handoffText {
                 out.append(Issue(id: "handoff", title: String(localized: "Your turn"),
@@ -111,11 +104,11 @@ struct Issue: Identifiable {
             }
             if case .offline = model.relayStatus {
                 out.append(Issue(id: "relay", title: String(localized: "Agents can’t reach this iPhone"),
-                                 text: String(localized: "Poki is offline. Check that the phone has internet. Poki reconnects by itself."), fix: .none))
+                                 text: String(localized: "Poki is offline. Check that the phone has internet; Poki reconnects by itself."), fix: .none))
             }
             if model.background.denied {
                 out.append(Issue(id: "location", title: String(localized: "Poki can’t stay on in the background"),
-                                 text: String(localized: "Allow location access for Poki (Settings › Poki › Location › Always). Poki uses it only to keep running and never records where you are."), fix: .settings))
+                                 text: String(localized: "Allow location access for Poki (Settings › Poki › Location › Always). Poki uses it only to keep running; it never records where you are."), fix: .settings))
             }
         }
         // With Poki off, the old Home said this in its subtitle: a start from cellular alone is refused.

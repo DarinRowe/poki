@@ -472,9 +472,6 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
         return @{@"ok": @NO, @"code": code ?: @"unknown", @"detail": detail, @"seconds": @(seconds)};
     }
     double warm = 0;
-    // Whether the new session's first read of the screen came back: a session reopened after a
-    // close has answered no reads on some builds, and the app then starts over as a new process.
-    BOOL warmRead = NO;
     if (!_sessions.enableWasReused) {
         // The first use of a new session pays for the accessibility client's first snapshot and
         // XCUIScreen's first screenshot, seconds each (the gym: the agent's first look after prepare
@@ -484,13 +481,13 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
         @try {
             id ax = nil;
             id app = [self front:NULL ax:&ax];
-            if (app && ax) warmRead = PKRequestSnapshotWithin(3, ax, app, 3, 30, NULL) != nil;
+            if (app && ax) PKRequestSnapshotWithin(3, ax, app, 3, 30, NULL);
             NSString *code = nil;
             [self screenshot:&code];
         } @catch (__unused NSException *e) {}
         warm = NSProcessInfo.processInfo.systemUptime - warmStarted;
     }
-    return @{@"ok": @YES, @"generation": @(_sessions.generation), @"reused": @(_sessions.enableWasReused), @"seconds": @(seconds), @"warm_seconds": @(warm), @"warm_read": @(warmRead)};
+    return @{@"ok": @YES, @"generation": @(_sessions.generation), @"reused": @(_sessions.enableWasReused), @"seconds": @(seconds), @"warm_seconds": @(warm)};
 }
 
 - (NSDictionary<NSString *, id> *)close {

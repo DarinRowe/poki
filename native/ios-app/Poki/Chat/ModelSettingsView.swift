@@ -132,7 +132,7 @@ private struct AccountDetail: View {
                 Text("Use This Account For")
             } footer: {
                 if !ModelAccounts.canChat(provider) {
-                    Text("Poki keeps this key. Chatting with \(provider.name) comes in an update.")
+                    Text("Poki keeps this key; chatting with \(provider.name) comes in an update.")
                 } else if !ModelAccounts.canTalkLive(provider) {
                     Text("Live voice runs on OpenAI’s Realtime API, which only an OpenAI API key can open. Dictation in the message field works with this account.")
                 }
@@ -236,7 +236,7 @@ private struct LiveVoiceFeature: View {
                     }
                 }
             } footer: {
-                Text("Live voice is a spoken conversation with OpenAI’s Realtime model. It listens, taps and types, and answers out loud.")
+                Text("Live voice is a spoken conversation with OpenAI’s Realtime model: it listens, taps and types, and answers out loud.")
             }
             Section {
                 ForEach(ModelCatalog.voiceAll) { choice in
@@ -295,9 +295,9 @@ private struct AddAccount: View {
 
     private func capabilities(_ provider: ModelProvider) -> String {
         let how = ModelAccounts.method(provider)
-        if ModelAccounts.canTalkLive(provider) { return String(localized: "\(how), text chat and live voice") }
-        if ModelAccounts.canChat(provider) { return String(localized: "\(how), text chat") }
-        return String(localized: "\(how), coming in an update")
+        if ModelAccounts.canTalkLive(provider) { return String(localized: "\(how) · Text chat and live voice") }
+        if ModelAccounts.canChat(provider) { return String(localized: "\(how) · Text chat") }
+        return String(localized: "\(how) · Coming in an update")
     }
 }
 
@@ -326,7 +326,7 @@ private struct KeyEntry: View {
                     Text("\(provider.name) key")
                 } footer: {
                     if !provider.wired {
-                        Text("Poki keeps the key now. Chatting with \(provider.name) comes in an update. Until then, choose Anthropic or OpenAI.")
+                        Text("Poki keeps the key now; chatting with \(provider.name) comes in an update. Until then, choose Anthropic or OpenAI.")
                     } else if ModelKeys.hasKey(provider) {
                         Text("A key is saved. Enter a new one to replace it.")
                     } else {

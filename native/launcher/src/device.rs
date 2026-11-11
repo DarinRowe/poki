@@ -26,13 +26,11 @@ pub struct Failure {
     /// A short code the app acts on instead of the fix's words (for example `ddi_bad`: delete the
     /// image and download it again; `pairing`: the phone refused the pairing).
     pub code: Option<&'static str>,
-    /// The stage RemotePairing itself failed at. A whole-device timeout has no known stage.
-    pub(crate) remote_stage: Option<remote::Stage>,
 }
 
 impl Failure {
     pub fn new(detail: impl Into<String>) -> Self {
-        Self { detail: detail.into(), fix: None, code: None, remote_stage: None }
+        Self { detail: detail.into(), fix: None, code: None }
     }
     pub fn code(mut self, code: &'static str) -> Self {
         self.code = Some(code);
@@ -117,9 +115,7 @@ pub(crate) fn remote_failure(error: remote::RemoteError) -> Failure {
         remote::Stage::PairVerify => (PAIRING_FIX, "pairing"),
         remote::Stage::Listener | remote::Stage::Tunnel | remote::Stage::Rsd => (UNREACHABLE_FIX, "unreachable"),
     };
-    let mut failure = Failure::new(error.to_string()).fix(fix).code(code);
-    failure.remote_stage = Some(error.stage);
-    failure
+    Failure::new(error.to_string()).fix(fix).code(code)
 }
 
 /// An open tunnel. Dropping it closes everything that runs through it, the runner's session included.
@@ -130,23 +126,6 @@ pub struct Device {
 }
 
 impl Device {
-    /// Exercise the on-device native implementation from the physically connected Mac.
-    /// Pairing stays in usbmuxd; no exported pairing record or relay is required.
-    #[cfg(target_os = "macos")]
-    pub async fn open_usb(udid: &str) -> Result<Self> {
-        use idevice::usbmuxd::{Connection, UsbmuxdAddr, UsbmuxdConnection};
-        let mut mux = UsbmuxdConnection::default().await?;
-        let device = mux.get_devices().await?.into_iter()
-            .find(|d| d.udid == udid && d.connection_type == Connection::Usb)
-            .ok_or_else(|| Failure::new("No locally attached USB device matches this identifier"))?;
-        let provider = device.to_provider(UsbmuxdAddr::from_env_var()?, "poki-native-usb");
-        let proxy = CoreDeviceProxy::connect(&provider).await?;
-        let port = proxy.tunnel_info().server_rsd_port;
-        let mut adapter = proxy.create_software_tunnel()?.to_async_handle();
-        let rsd = RsdHandshake::new(adapter.connect(port).await?).await?;
-        Ok(Self { adapter, rsd, _control: None })
-    }
-
     pub async fn open(address: IpAddr, pairing: &mut Pairing, timeout: Duration) -> Result<Self> {
         match tokio::time::timeout(timeout, Self::open_inner(address, pairing)).await {
             Ok(result) => result,

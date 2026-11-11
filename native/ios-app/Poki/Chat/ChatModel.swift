@@ -44,26 +44,6 @@ enum ChatNote: Equatable, Codable {
     case modelChecking
     case modelApproved(String)
     case modelDeclined(String)
-    /// An approval with what was asked and how it was answered, drawn as a card.
-    case approval(ApprovalNote)
-}
-
-/// One approval in the chat: the step, why it needed an answer, who answered and what they said.
-struct ApprovalNote: Equatable, Codable {
-    enum State: String, Codable { case asking, allowed, refused, expired }
-    var id: String
-    var summary: String
-    var app: String
-    /// PokiCore's reason for asking: `sending a message ("send")`.
-    var why: String
-    /// The auto-classifier answers; false when the owner does.
-    var byModel: Bool
-    var state: State
-    /// The model's reason, when it answered.
-    var reason = ""
-    /// A refusal the owner can lift by saying yes in the chat (With Message Reply).
-    var reply = false
-    var answered: Date?
 }
 
 /// The chat: the owner's messages, Poki's answers and the steps it takes, and the model loop that runs
@@ -103,9 +83,6 @@ final class ChatModel {
     private var modelPlan: [String]?
     private var task: Task<Void, Never>?
     private var stopAsked = false
-    /// Counts tasks. Stop moves it on, so what a stopped task still does while its last step ends is
-    /// not written into the chat or over the next task.
-    private var runToken = 0
     /// The plan bubble of the task under way.
     private var planID: UUID?
     private var noteID: UUID?
@@ -119,7 +96,6 @@ final class ChatModel {
         self.kind = kind
         self.requester = requester
         app.addShellObserver { [weak self] event in self?.observe(event) }
-        app.addApprovalObserver { [weak self] id in self?.waitsForOwner(id) }
         if kind == .handoff { return }
         // A live voice conversation is part of this chat: what was said and done stays in its history.
         if requester == nil { app.voice.onConversationEnded = { [weak self] lines, started in self?.appendVoice(lines, started: started) } }
@@ -239,8 +215,8 @@ final class ChatModel {
         if kind == .poki { Haptics.sent() }
         let provider = ModelKeys.selectedProvider
         guard provider.wired, let key = ModelKeys.key(provider) ?? (provider == .custom && ModelKeys.hasUsableKey ? "none" : nil) else {
-            add(.poki(provider.signsIn ? String(localized: "Sign in to ChatGPT first. Tap my picture, then Model.")
-                                       : String(localized: "Add a model key first. Tap my picture, then Model.")))
+            add(.poki(provider.signsIn ? String(localized: "Sign in to ChatGPT first: tap my picture, then Model.")
+                                       : String(localized: "Add a model key first: tap my picture, then Model.")))
             return
         }
         let model = ModelKeys.selectedModel
@@ -260,21 +236,14 @@ final class ChatModel {
             if client?.signature != "\(provider.rawValue)/\(model)" {
                 client = provider == .openai ? OpenAIClient(key: key, model: model) : AnthropicClient(key: key, model: model)
             }
-            guard let client else { running = false; awaitingModel = false; return }
-            runToken += 1
-            let token = runToken
-            let previous = task
+            guard let client else { return }
+            client.say(text)
+            began("direct", provider, model)
             task = Task { [weak self] in
-                // A stopped task may still be ending its last step: this one starts after it.
-                await previous?.value
-                guard let self, self.runToken == token else { return }
-                client.say(text)
-                self.began("direct", provider, model)
-                await self.run(client, instructions: instructions, delivered: you.id, token: token)
-                let current = self.runToken == token
-                if !current { self.app.finishTask() }
-                self.logEnd("direct", outcome: nil, stopped: !current)
-                if current { self.running = false; self.awaitingModel = false }
+                await self?.run(client, instructions: instructions, delivered: you.id)
+                self?.logEnd("direct", outcome: nil)
+                self?.running = false
+                self?.awaitingModel = false
             }
             return
         }
@@ -286,33 +255,24 @@ final class ChatModel {
         // Another model starts a new loop that carries the conversation over.
         if loop?.provider != provider || loop?.model.id != piModel.id {
             loop = PiLoop(provider: provider, model: piModel, tools: Harness.tools,
-                          carrying: loop?.messages ?? [], sessionID: sessionID) { [weak self] call in
+                          carrying: loop?.messages ?? []) { [weak self] call in
                 guard let self else { return PokiCore.ToolAnswer(text: "Task stopped. Action not executed.", jpeg: nil, isError: true) }
                 return await self.perform(call)
             }
         }
-        guard let loop else { running = false; awaitingModel = false; return }
-        runToken += 1
-        let token = runToken
-        let previous = task
+        guard let loop else { return }
+        began("pi", provider, model)
         task = Task { [weak self] in
-            // A stopped task may still be ending its last step: this one starts after it.
-            await previous?.value
-            guard let self, self.runToken == token else { return }
-            self.began("pi", provider, model)
-            let outcome = await loop.run(text, instructions: instructions, maxTurns: Self.maxTurns) { [weak self] text in
-                guard let self, self.runToken == token else { return }
-                self.markDelivered(you.id)
-                self.awaitingModel = false
-                self.add(.poki(text))
+            let outcome = await loop.run(text, instructions: instructions, maxTurns: Self.maxTurns) { text in
+                self?.markDelivered(you.id)
+                self?.awaitingModel = false
+                self?.add(.poki(text))
             }
-            let current = self.runToken == token
-            if current { self.ended(outcome, delivered: you.id) } else { self.app.finishTask() }
-            self.logEnd("pi", outcome: outcome, stopped: !current)
-            guard current else { return }
-            self.running = false
-            self.awaitingModel = false
-            self.lastOutcome = outcome
+            self?.ended(outcome, delivered: you.id)
+            self?.logEnd("pi", outcome: outcome)
+            self?.running = false
+            self?.awaitingModel = false
+            self?.lastOutcome = outcome
         }
     }
 
@@ -322,12 +282,10 @@ final class ChatModel {
 
     private func began(_ engine: String, _ provider: ModelProvider, _ model: String) {
         taskStart = Date(); toolCalls = 0; taskResult = nil
-        app.chatTaskBegan()
         AppLog.shared.add("chat", "task started: \(engine), \(provider.rawValue)/\(model)")
     }
 
-    private func logEnd(_ engine: String, outcome: PiLoop.Outcome?, stopped: Bool = false) {
-        let stopAsked = stopped || self.stopAsked
+    private func logEnd(_ engine: String, outcome: PiLoop.Outcome?) {
         let seconds = String(format: "%.1f", Date().timeIntervalSince(taskStart))
         let verdict = taskResult.map { $0.success ? "success" : "failure" } ?? "not called"
         let ending = outcome.map { if case .failed = $0 { "failed" } else { "\($0)" } } ?? (stopAsked ? "stopped" : "ended")
@@ -368,67 +326,47 @@ final class ChatModel {
     private func ended(_ outcome: PiLoop.Outcome, delivered youID: UUID) {
         finishPlan()
         // The turn is over: the phone goes back to the app the task began in (Poki's chat, where the
-        // reply is), or stays where it is and the reply goes out as a notification that can be answered
-        // there (Advanced › When a Task Ends).
-        var reply: String?
+        // reply is), as a client's finish does (ESP-176). Nothing moves when it is in front already.
+        app.finishTask()
         switch outcome {
-        case .done:
-            markDelivered(youID)
-            reply = entries.reversed().lazy.compactMap { entry -> String? in if case .poki(let text) = entry.kind { return text }; return nil }.first
+        case .done: markDelivered(youID)
         case .stopped: add(.poki(String(localized: "Stopped.")))
-        case .overTurns:
-            reply = String(localized: "I stopped after \(Self.maxTurns) steps. Tell me how to go on.")
-            add(.poki(reply ?? ""))
-        case .failed(let words):
-            reply = words
-            add(.note(.problem(words)))
+        case .overTurns: add(.poki(String(localized: "I stopped after \(Self.maxTurns) steps. Tell me how to go on.")))
+        case .failed(let words): add(.note(.problem(words)))
         }
-        if case .stopped = outcome { app.finishTask() } else { app.chatTaskEnded(reply: reply, session: sessionID, acted: toolCalls > 0) }
     }
 
-    /// Ends the task now, as far as the chat goes: it says Stopped and takes the next message at once.
-    /// Nothing more is sent to the model, and no new step starts; a step already on its way to the phone
-    /// ends on its own, out of sight, and the next task waits for it.
+    /// Ends the task after the step under way: nothing more is sent to the phone or the model.
     func stop() {
         guard running else { return }
         stopAsked = true
         loop?.stop()
         task?.cancel()
-        // A step waiting for an approval would hold the task until the approval ran out.
-        if kind == .poki, ChatModel.delegatedBusy == nil { for approval in app.approvals { app.resolve(approval, approved: false) } }
-        finishPlan()
-        runToken += 1
-        add(.poki(String(localized: "Stopped.")))
-        running = false
-        awaitingModel = false
     }
 
-    private func run(_ client: ModelClient, instructions: String, delivered youID: UUID, token: Int) async {
-        // Stop has moved the token on (and said Stopped): this task writes nothing more.
-        var stopped: Bool { runToken != token || Task.isCancelled }
+    private func run(_ client: ModelClient, instructions: String, delivered youID: UUID) async {
         for _ in 0..<Self.maxTurns {
             let turn: ModelTurn
             do {
                 turn = try await client.next(instructions: instructions, tools: Harness.tools)
             } catch {
                 client.forgetUnansweredQuestion()
-                if stopped { return }
+                if stopAsked || Task.isCancelled { return }
                 add(.note(.problem(error.localizedDescription)))
                 return
             }
-            if stopped { client.forgetUnansweredQuestion(); return }
             markDelivered(youID)
             for text in turn.texts { add(.poki(text)) }
             switch turn.ending {
             case .tools:
                 for call in turn.calls {
-                    if stopped {
+                    if stopAsked || Task.isCancelled {
                         client.answer(call, PokiCore.ToolAnswer(text: "Task stopped. Action not executed.", jpeg: nil, isError: true))
                         continue
                     }
                     client.answer(call, await perform(call))
                 }
-                if stopped { return }
+                if stopAsked || Task.isCancelled { finishPlan(); add(.poki(String(localized: "Stopped."))); return }
             case .again:
                 continue
             case .refused:
@@ -455,7 +393,7 @@ final class ChatModel {
         let started = Date()
         let answer = await performCall(call)
         calls.append(CallRecord(name: call.name, arguments: call.arguments, answer: String(answer.text.prefix(2000)), ms: Int(Date().timeIntervalSince(started) * 1000), ok: !answer.isError))
-        if !stopAsked, running { awaitingModel = true }
+        if !stopAsked { awaitingModel = true }
         persist()
         return answer
     }
@@ -488,7 +426,6 @@ final class ChatModel {
     /// appears when the model reaches it, as the board draws them.
     private func showPlan(_ plan: [String], current: Int) {
         modelPlan = plan
-        app.chatPlan(total: plan.count, current: current)
         updatePlan { steps in
             if steps.count > current { steps.removeLast(steps.count - current) }
             for i in 0..<current {
@@ -526,27 +463,22 @@ final class ChatModel {
                     steps.append(PlanStep(approval.summary, state: .waiting))
                 }
             }
-            let route = ApprovalClassifier.route(approval, voiceOn: app.voice.isOn)
-            // Asking is off: the step goes straight through, with nothing to show.
-            guard route != .allow else { break }
-            // Each approval has its own card: it stays in the conversation with its answer.
-            noteID = nil
-            asked = ApprovalNote(id: approval.id, summary: approval.summary, app: approval.app, why: approval.reason,
-                                 byModel: route != .owner, state: .asking)
-            setNote(.approval(asked!))
-        case .approvalEnded(let id, let approved):
+            setNote(ApprovalClassifier.isOn ? .modelChecking : .waiting)
+        case .approvalEnded(let id, let approved) where ApprovalClassifier.isOn:
+            let why = ApprovalClassifier.verdicts[id]?.reason ?? ""
+            setNote(approved == true ? .modelApproved(why) : .modelDeclined(why))
             updatePlan { steps in
                 for i in steps.indices where steps[i].state == .waiting { steps[i].state = approved == true ? .current : .failed }
             }
-            guard var note = asked, note.id == id else { break }
-            note.state = approved == true ? .allowed : approved == false ? .refused : .expired
-            note.byModel = ApprovalClassifier.modelAnswered(id)
-            note.reason = note.byModel ? (ApprovalClassifier.verdicts[id]?.reason ?? "") : ""
-            note.reply = note.byModel && ApprovalClassifier.mode == .reply
-            note.answered = Date()
-            asked = nil
-            setNote(.approval(note))
-            noteID = nil
+        case .approvalEnded(_, let approved):
+            switch approved {
+            case true?: setNote(.approved(Date()))
+            case false?: setNote(.declined)
+            case nil: setNote(.expired)
+            }
+            updatePlan { steps in
+                for i in steps.indices where steps[i].state == .waiting { steps[i].state = approved == true ? .current : .failed }
+            }
         // The agent handed a screen to the person (a passcode, a payment): the current step waits for
         // them, as for an approval, until they tap Done on the Live Activity.
         case .handoffRequested:
@@ -578,18 +510,6 @@ final class ChatModel {
     /// The task ended: a step still marked current was the last one done.
     private func finishPlan() {
         updatePlan { steps in for i in steps.indices where steps[i].state == .current { steps[i].state = .done } }
-    }
-
-    /// The approval the chat is showing as asked, until its answer comes.
-    private var asked: ApprovalNote?
-
-    /// The model would not allow it and the owner is asked on a card: the chat's card says so.
-    private func waitsForOwner(_ id: String) {
-        guard var note = asked, note.id == id else { return }
-        note.byModel = false
-        note.reason = ApprovalClassifier.verdicts[id]?.reason ?? ""
-        asked = note
-        setNote(.approval(note))
     }
 
     private func setNote(_ note: ChatNote) {

@@ -35,11 +35,6 @@ final class LoopbackMonitor {
     private(set) var wifiUp = false
     private(set) var cellularUp = false
     private var running = false
-    /// Rounds in a row with no answer since it last worked. One round alone does not take
-    /// "Working" away: a busy phone or a tunnel that is reconnecting misses one now and then.
-    private var misses = 0
-    /// What the two ports last said, for the log and Diagnostics ("49152 timeout, 62078 refused").
-    private(set) var lastProbe = ""
 
     init() {
         // The default path's interface types change while a proxy app's tunnel is up, so "only
@@ -111,19 +106,12 @@ final class LoopbackMonitor {
         guard !running else { return }
         running = true
         Task {
-            // Both of the phone's developer ports at once: either one answering is the loopback
-            // working, and the answer comes as fast as the quicker one.
-            var answer = await Self.round(timeout: 1.5)
-            if answer.ms == nil, isWorking, misses == 0 {
-                // It worked a moment ago: once more with more time before saying it stopped.
-                misses = 1
-                try? await Task.sleep(for: .milliseconds(400))
-                answer = await Self.round(timeout: 3)
+            var result = await probe(label: "loopback", host: "10.7.0.1", port: 49152, timeout: 1.5)
+            if result.outcome != "connected" {
+                result = await probe(label: "loopback", host: "10.7.0.1", port: 62078, timeout: 1.5)
             }
             running = false
-            lastProbe = answer.said
-            misses = answer.ms == nil ? misses + 1 : 0
-            let probed: State = answer.ms.map { .working(ms: $0) } ?? (loopbackInterface() == nil ? .off : .noAnswer)
+            let probed: State = result.outcome == "connected" ? .working(ms: result.milliseconds) : loopbackInterface() == nil ? .off : .noAnswer
             let next = Self.forcedCellular || Self.forced == "noanswer" ? State.noAnswer : Self.forced == "working" ? State.working(ms: 5) : probed
             // Only a change is published, so the screens are not redrawn every 3 s (a redraw while
             // the person drags a list makes scrolling stutter).
@@ -132,19 +120,10 @@ final class LoopbackMonitor {
                 state = next; checkedAt = Date()
                 if case .working = old, !isWorking { droppedAt = Date() }
                 if isWorking { droppedAt = nil }
-                AppLog.shared.add("loopback", "developer service: \(next) (\(lastProbe))")
+                AppLog.shared.add("loopback", "developer service: \(next)")
                 onChange?(old, next)
             }
         }
-    }
-
-    /// One round: both ports, the quicker connect's time, and what each said.
-    nonisolated private static func round(timeout: TimeInterval) async -> (ms: Int?, said: String) {
-        async let first = connectTime(host: "10.7.0.1", port: 49152, timeout: timeout)
-        async let second = connectTime(host: "10.7.0.1", port: 62078, timeout: timeout)
-        let (a, b) = await (first, second)
-        let ms = [a.ms, b.ms].compactMap { $0 }.min()
-        return (ms, "49152 \(a.outcome), 62078 \(b.outcome)")
     }
 
     #if DEBUG
@@ -173,7 +152,7 @@ final class LoopbackMonitor {
     var detail: String {
         switch state {
         case .checking: String(localized: "Looking for this iPhone at 10.7.0.1.")
-        case .working(let ms): String(localized: "This iPhone answers at 10.7.0.1 (\(ms) ms).") + (onWiFi || cellularOnly ? "" : " " + String(localized: "Connect to Wi-Fi. The developer services need it."))
+        case .working(let ms): String(localized: "This iPhone answers at 10.7.0.1 (\(ms) ms).") + (onWiFi || cellularOnly ? "" : " " + String(localized: "Connect to Wi-Fi: the developer services need it."))
         case .noAnswer where cellularOnly: Self.cellularHint
         case .noAnswer: String(localized: "The local interface is present, but this iPhone does not answer at 10.7.0.1. Reconnect the local connection and check Wi-Fi. If it still does not answer, pair again in Setup › Pairing, then check Developer Mode.")
         case .off: String(localized: "This iPhone does not answer yet. Enable Poki's local connection, or choose an external connection in Setup.")

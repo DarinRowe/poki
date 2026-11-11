@@ -16,26 +16,25 @@ final class ContinuedRun {
         (Bundle.main.object(forInfoDictionaryKey: "BGTaskSchedulerPermittedIdentifiers") as? [String])?.first { $0.hasSuffix(".run.*") }
     }
 
-    /// Nothing is registered at launch: iOS refused a handler for the wildcard itself (seen on the
-    /// phone: "would not register nz.zheha.poki.<team>.run.*"). A continued processing task's handler
-    /// is registered for its own identifier, one that matches the wildcard, just before the request
-    /// is submitted (`begin`).
-    static func registerAtLaunch() {
-        AppLog.shared.add("background", permitted.map { "continued run permitted for \($0)" } ?? "continued run: no BGTaskSchedulerPermittedIdentifiers in this build")
-    }
+    /// iOS takes a launch handler only before the app finishes launching: called from PokiApp.init.
+    static func registerAtLaunch() { shared.register() }
 
-    /// The handler for one task's own identifier. False when iOS will not take it.
-    private func register(_ id: String) -> Bool {
-        let ok = BGTaskScheduler.shared.register(forTaskWithIdentifier: id, using: .main) { [weak self] task in
+    private func register() {
+        // Once: a second register after launch can raise in BGTaskScheduler.
+        guard !attempted, let wildcard = Self.permitted else { return }
+        attempted = true
+        let ok = BGTaskScheduler.shared.register(forTaskWithIdentifier: wildcard, using: .main) { [weak self] task in
             guard let task = task as? BGContinuedProcessingTask else { task.setTaskCompleted(success: false); return }
             MainActor.assumeIsolated { self?.started(task) }
         }
-        if !ok { AppLog.shared.add("background", "continued run: iOS would not register \(id) (bundle \(Bundle.main.bundleIdentifier ?? "?"))") }
-        return ok
+        if ok { registered.insert(wildcard) }
+        AppLog.shared.add("background", ok ? "continued run registered for \(wildcard)" : "continued run: iOS would not register \(wildcard) (bundle \(Bundle.main.bundleIdentifier ?? "?"))")
     }
     private var task: BGContinuedProcessingTask?
     private var identifier: String?
     private var ticker: Task<Void, Never>?
+    private var registered: Set<String> = []
+    private var attempted = false
     /// iOS ended the task before Poki turned off.
     var onExpired: (() -> Void)?
     private(set) var isRunning = false
@@ -46,8 +45,9 @@ final class ContinuedRun {
         guard let wildcard = Self.permitted else {
             AppLog.shared.add("background", "continued run: no BGTaskSchedulerPermittedIdentifiers in this build"); return false
         }
+        register()
+        guard registered.contains(wildcard) else { return false }
         let id = String(wildcard.dropLast()) + UUID().uuidString.prefix(8).lowercased()
-        guard register(id) else { return false }
         let request = BGContinuedProcessingTaskRequest(identifier: id, title: String(localized: "Poki is on"), subtitle: subtitle)
         request.strategy = .fail
         do {
@@ -74,23 +74,18 @@ final class ContinuedRun {
                 self.onExpired?()
             }
         }
-        // iOS ends a task that shows no progress (on the phone it ended one that ticked every 5 s
-        // after about two minutes): a tick every second, never reaching the end.
-        task.progress.totalUnitCount = 100_000
+        // iOS ends a task that shows no progress: a tick every few seconds, never reaching the end.
         ticker = Task { @MainActor [weak self] in
             while !Task.isCancelled, let self, let task = self.task {
                 let p = task.progress
                 if p.completedUnitCount < p.totalUnitCount - 1 { p.completedUnitCount += 1 } else { p.completedUnitCount = p.totalUnitCount / 2 }
-                try? await Task.sleep(for: .seconds(1))
+                try? await Task.sleep(for: .seconds(5))
             }
         }
         AppLog.shared.add("background", "continued run started: Poki keeps running without silent audio")
     }
 
-    private var shown = ""
     func update(subtitle: String) {
-        guard subtitle != shown else { return }
-        shown = subtitle
         task?.updateTitle(String(localized: "Poki is on"), subtitle: subtitle)
     }
 

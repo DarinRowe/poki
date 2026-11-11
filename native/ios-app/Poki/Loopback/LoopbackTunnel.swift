@@ -104,7 +104,7 @@ final class LoopbackTunnel {
             configuration.disconnectOnSleep = false
             configuration.includeAllNetworks = false
             manager.protocolConfiguration = configuration
-            manager.localizedDescription = String(localized: "Poki local connection")
+            manager.localizedDescription = "Poki local connection"
             manager.isEnabled = true
             // Never on demand: iOS must not bring Poki's tunnel up by itself (it could displace another VPN).
             // Only the owner's connect, or Poki's own retry after its tunnel failed, dials it.

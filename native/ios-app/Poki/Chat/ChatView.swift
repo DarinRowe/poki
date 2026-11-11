@@ -19,13 +19,10 @@ struct ChatView: View {
     @State private var newName = ""
 
     var body: some View {
-        ChatTranscript(entries: chat.entries, typing: chat.awaitingModel, live: chat.running, canRetry: chat.canRetry, retry: chat.retry, session: chat.sessionID) {
+        ChatTranscript(entries: chat.entries, typing: chat.awaitingModel, canRetry: chat.canRetry, retry: chat.retry) {
             if needsSetup { SetupBubble(paired: model.pairingPath != nil, openSetup: openSetup) }
-            if let approval = model.approvals.first {
+            if !ApprovalClassifier.isOn, let approval = model.approvals.first {
                 ApprovalCard(approval: approval) { approved in model.resolve(approval, approved: approved) }
-            }
-            if let ask = model.methodAsk, model.sessionOn, !model.methodAskDismissed {
-                MethodAskCard(ask: ask) { model.answerMethodAsk(useBanner: $0, from: "the owner, on the card") }
             }
             LiveVoiceTranscript(voice: voice)
         }
@@ -59,7 +56,7 @@ struct ChatView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button("New Conversation", systemImage: "square.and.pencil", action: chat.newConversation).disabled(chat.running)
-                    Menu("Chat Model \(ModelKeys.selectedModelName)", systemImage: "bubble.left.and.text.bubble.right") {
+                    Menu("Chat Model: \(ModelKeys.selectedModelName)", systemImage: "bubble.left.and.text.bubble.right") {
                         ForEach(ModelProvider.allCases.filter { ModelAccounts.isSetUp($0) && ModelAccounts.canChat($0) }) { provider in
                             Section(provider.name) {
                                 ForEach(ModelCatalog.available(provider)) { choice in
@@ -75,7 +72,7 @@ struct ChatView: View {
                         }
                     }
                     if VoiceDirect.apiKey != nil {
-                        Menu("Voice Model \(VoiceDirect.model)", systemImage: "waveform") {
+                        Menu("Voice Model: \(VoiceDirect.model)", systemImage: "waveform") {
                             ForEach(ModelCatalog.voiceAvailable) { choice in
                                 Button { ModelCatalog.voiceModel = choice.id } label: {
                                     if VoiceDirect.model == choice.id { Label(choice.name, systemImage: "checkmark") } else { Text(choice.name) }
@@ -102,15 +99,9 @@ struct ChatView: View {
 struct ChatTranscript<Footer: View>: View {
     var entries: [ChatEntry]
     var typing = false
-    /// The task is under way. In a stopped or paused conversation nothing types itself out: the
-    /// step it stopped at stands still.
-    var live = true
     var canRetry = false
     var retry: () -> Void = {}
-    /// The run these entries belong to, for the details of its steps (the Activity Log's session).
-    var session: String? = nil
     @ViewBuilder var footer: () -> Footer
-    @State private var details: ChatRunDetails?
 
     var body: some View {
         ScrollView {
@@ -141,43 +132,6 @@ struct ChatTranscript<Footer: View>: View {
         .defaultScrollAnchor(.bottom, for: .alignment)
         .defaultScrollAnchor(.bottom, for: .sizeChanges)
         .scrollDismissesKeyboard(.interactively)
-        .sheet(item: $details) { run in RunDetailsView(title: run.title, steps: run.steps, actions: run.actions) }
-    }
-
-    /// The task entry `i` is part of: its steps, and the actions the Activity Log has between the
-    /// message that asked for it and the next one.
-    private func run(at i: Int) -> ChatRunDetails {
-        func asks(_ entry: ChatEntry) -> Bool {
-            switch entry.kind { case .you, .request: true; default: false }
-        }
-        let start = entries[...i].lastIndex(where: asks)
-        let end = entries[(i + 1)...].firstIndex(where: asks)
-        let from = start.map { entries[$0].at.addingTimeInterval(-1) } ?? entries[i].at.addingTimeInterval(-600)
-        let to = end.map { entries[$0].at } ?? Date.distantFuture
-        var steps: [PlanStep] = []
-        var title = String(localized: "Task Details")
-        for entry in entries[(start ?? i)..<(end ?? entries.count)] {
-            switch entry.kind {
-            case .plan(let plan): steps += plan
-            case .step(let text, let ok): steps.append(PlanStep(text, state: ok == true ? .done : ok == false ? .failed : .current))
-            case .you(let text, _): title = String(text.prefix(40))
-            case .request(let text, _): title = String(text.prefix(40))
-            default: break
-            }
-        }
-        return ChatRunDetails(title: title, steps: steps, actions: ActionLog.shared.entries(session: session, from: from, to: to))
-    }
-
-    /// Touch and hold on a task's steps, a step line or an approval.
-    @ViewBuilder private func menu(at i: Int) -> some View {
-        Button("View Details", systemImage: "info.circle") { details = run(at: i) }
-        Button("Copy Steps", systemImage: "doc.on.doc") {
-            let run = run(at: i)
-            UIPasteboard.general.string = RunDetailsView.text(title: run.title, steps: run.steps, actions: [])
-        }
-        Button("Copy Details", systemImage: "list.bullet.clipboard") { UIPasteboard.general.string = run(at: i).text }
-        Button("Copy Diagnostic Log", systemImage: "doc.text") { UIPasteboard.general.string = AppLog.shared.text }
-        ShareLink(item: run(at: i).text) { Label("Share", systemImage: "square.and.arrow.up") }
     }
 
     @ViewBuilder private func row(_ entry: ChatEntry, at i: Int) -> some View {
@@ -214,28 +168,15 @@ struct ChatTranscript<Footer: View>: View {
                 .transition(PlanMotion.stepTransition)
         case .plan(let steps):
             HStack {
-                PlanBubble(steps: steps, tail: isLast(i, poki: true), live: live && i == entries.indices.last(where: { if case .plan = entries[$0].kind { true } else { false } }))
-                    // The lifted bubble keeps the bubble's own outline, small corner included.
-                    .contentShape(.contextMenuPreview, UnevenRoundedRectangle(topLeadingRadius: .cornerRadius, bottomLeadingRadius: isLast(i, poki: true) ? .tailRadius : .cornerRadius,
-                                                                              bottomTrailingRadius: .cornerRadius, topTrailingRadius: .cornerRadius, style: .continuous))
-                    .contextMenu { menu(at: i) }
+                PlanBubble(steps: steps, tail: isLast(i, poki: true))
                 Spacer(minLength: .messageInsetPadding)
             }
             .padding(.top, startsRun(i) ? 10 : 0)
             .transition(PlanMotion.stepTransition)
-        case .note(.approval(let approval)):
-            HStack {
-                ApprovalNoteCard(note: approval)
-                    .contentShape(.contextMenuPreview, .rect(cornerRadius: 16, style: .continuous))
-                    .contextMenu { menu(at: i) }
-                Spacer(minLength: .messageInsetPadding)
-            }
-            .padding(.vertical, 4)
-            .transition(PlanMotion.stepTransition)
         case .note(let note):
             NoteLine(note: note)
         case .step(let text, let ok):
-            StepLine(text: text, ok: ok).contextMenu { menu(at: i) }
+            StepLine(text: text, ok: ok)
         }
     }
 
@@ -326,54 +267,24 @@ struct TypingBubble: View {
     }
 }
 
-/// The mark in front of a status line. Steps, approvals and the plan all draw the same tick and cross.
-enum StatusGlyph: Equatable {
-    case ok, failed, working, warning, island, none
-
-    @ViewBuilder var view: some View {
-        switch self {
-        case .ok: Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundStyle(ChatColor.green)
-        case .failed: Image(systemName: "xmark").font(.system(size: 11, weight: .bold)).foregroundStyle(Color(.systemRed))
-        case .working: ProgressView().controlSize(.mini)
-        case .warning: Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 11)).foregroundStyle(Color(.systemOrange))
-        // The Dynamic Island, small.
-        case .island: Capsule().fill(Color(hex: 0x1C1C1E)).frame(width: 22, height: 8)
-        case .none: EmptyView()
-        }
-    }
-}
-
-/// One status line of the conversation: a mark and grey words that wrap, on the bubbles' leading edge.
-/// A notice (an approval or a problem) sits on a grey card; a step is bare, so a run of them reads as a list.
-struct StatusLine: View {
-    var glyph: StatusGlyph
-    var text: String
-    var card = false
-
-    var body: some View {
-        HStack(spacing: 0) {
-            HStack(alignment: .center, spacing: 6) {
-                if glyph != .none { glyph.view.frame(minWidth: 14) }
-                Text(text).fixedSize(horizontal: false, vertical: true)
-            }
-            .font(.system(size: 13)).foregroundStyle(ChatColor.pending)
-            .multilineTextAlignment(.leading)
-            .padding(.vertical, card ? 8 : 2).padding(.horizontal, card ? 12 : 14)
-            .background { if card { RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(.secondarySystemBackground)) } }
-            Spacer(minLength: card ? .messageInsetPadding : 16)
-        }
-        .padding(.vertical, card ? 4 : 0)
-        .accessibilityElement(children: .combine)
-        .transition(.opacity)
-    }
-}
-
-/// An outside agent's own step: one grey line, ticked when it went through.
+/// An outside agent's own step: one grey line, centred, ticked when it went through.
 private struct StepLine: View {
     var text: String
     var ok: Bool?
     var body: some View {
-        StatusLine(glyph: ok == true ? .ok : ok == false ? .failed : .working, text: text)
+        HStack(spacing: 5) {
+            switch ok {
+            case true?: Image(systemName: "checkmark").font(.system(size: 10, weight: .bold)).foregroundStyle(ChatColor.green)
+            case false?: Image(systemName: "xmark").font(.system(size: 10, weight: .bold)).foregroundStyle(Color(.systemRed))
+            case nil: ProgressView().controlSize(.mini)
+            }
+            Text(text).lineLimit(2)
+        }
+        .font(.system(size: 12)).foregroundStyle(ChatColor.secondary)
+        .multilineTextAlignment(.center)
+        .padding(.vertical, 3)
+        .frame(maxWidth: .infinity)
+        .transition(.opacity)
     }
 }
 
@@ -400,12 +311,11 @@ struct PokiAvatar: View {
 struct PlanBubble: View {
     var steps: [PlanStep]
     var tail: Bool
-    var live = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             ForEach(steps) { step in
-                PlanRow(step: step, live: live).transition(PlanMotion.stepTransition)
+                PlanRow(step: step).transition(PlanMotion.stepTransition)
             }
         }
         .animation(PlanMotion.enter, value: steps)
@@ -419,7 +329,6 @@ struct PlanBubble: View {
 
 private struct PlanRow: View {
     var step: PlanStep
-    var live = true
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 4) {
@@ -437,9 +346,6 @@ private struct PlanRow: View {
             .animation(PlanMotion.swap, value: step.state)
             Group {
                 switch step.state {
-                case .current where !live, .waiting where !live:
-                    // Stopped or paused here: the words stand, with no typing and no cursor.
-                    Text(step.text).font(.system(size: 15)).foregroundStyle(ChatColor.pending)
                 case .current, .waiting:
                     TypewriterText(text: step.state == .waiting ? String(localized: "\(step.text), waiting for you") : step.text,
                                    font: .system(size: 15), color: ChatColor.pending)
@@ -456,121 +362,43 @@ private struct PlanRow: View {
 
 // MARK: Notes
 
-/// A notice about an approval or a problem, on a grey card under the steps.
+/// One grey line about an approval, centred under the steps.
 private struct NoteLine: View {
     var note: ChatNote
     var body: some View {
-        StatusLine(glyph: glyph, text: text, card: true)
-    }
-
-    private var glyph: StatusGlyph {
-        switch note {
-        case .waiting: .island
-        case .approved, .modelApproved: .ok
-        case .approval(let note): note.state == .allowed ? StatusGlyph.ok : note.state == .asking ? StatusGlyph.working : StatusGlyph.failed
-        case .declined, .modelDeclined: .failed
-        case .expired, .problem: .warning
-        case .modelChecking: .working
-        }
-    }
-
-    private var text: String {
-        switch note {
-        case .waiting: String(localized: "Waiting for your approval")
-        case .approved(let at): String(localized: "Approved, \(at.formatted(date: .omitted, time: .shortened))")
-        case .declined: String(localized: "Not approved, so Poki skipped that step")
-        case .expired: String(localized: "The approval ran out, so Poki skipped that step")
-        case .problem(let text): text
-        case .approval(let note): ActivityWords.label(note.summary)
-        case .modelChecking: String(localized: "The model is checking this step")
-        case .modelApproved(let why): why.isEmpty ? String(localized: "Approved by model") : String(localized: "Approved by model, \(why)")
-        case .modelDeclined(let why):
-            why.isEmpty ? String(localized: "Not approved by model. Say yes in the chat to let it through.")
-                : String(localized: "Not approved by model, \(why). Say yes in the chat to let it through.")
-        }
-    }
-}
-
-/// What View Details shows for one task of a chat.
-struct ChatRunDetails: Identifiable {
-    let id = UUID()
-    var title: String
-    var steps: [PlanStep]
-    var actions: [ActionLog.Entry]
-    var text: String { RunDetailsView.text(title: title, steps: steps, actions: actions) }
-}
-
-/// An approval in the conversation: what was asked, why it needed an answer, and who answered what.
-struct ApprovalNoteCard: View {
-    var note: ApprovalNote
-
-    private var title: String {
-        switch (note.state, note.byModel) {
-        case (.asking, true): String(localized: "Checking This Step")
-        case (.asking, false): String(localized: "Waiting for Your Approval")
-        case (.allowed, true): String(localized: "Approved Automatically")
-        case (.allowed, false): String(localized: "You Approved")
-        case (.refused, true): String(localized: "Not Approved")
-        case (.refused, false): String(localized: "You Did Not Approve")
-        case (.expired, _): String(localized: "Approval Ran Out")
-        }
-    }
-
-    private var symbol: String {
-        switch note.state {
-        case .asking: "shield.lefthalf.filled"
-        case .allowed: "checkmark.shield.fill"
-        case .refused: "xmark.shield.fill"
-        case .expired: "exclamationmark.shield.fill"
-        }
-    }
-
-    private var tint: Color {
-        switch note.state {
-        case .asking: Site.blue
-        case .allowed: ChatColor.green
-        case .refused: Color(.systemRed)
-        case .expired: Color(.systemOrange)
-        }
-    }
-
-    /// "Messages · sending a message": the app and PokiCore's reason, without its quoted word.
-    private var context: String {
-        let why = ActivityWords.reason(note.why)
-        let app = note.app.isEmpty || note.app == "unknown" || note.app.contains("(") ? nil : note.app
-        return [app, why.isEmpty ? nil : why].compactMap { $0 }.joined(separator: ", ")
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Image(systemName: symbol).font(.system(size: 14, weight: .semibold)).foregroundStyle(tint)
-                Text(verbatim: title).font(.system(size: 13, weight: .semibold)).foregroundStyle(tint)
-                Spacer(minLength: 4)
-                if note.state == .asking, note.byModel {
-                    ProgressView().controlSize(.mini)
-                } else if let at = note.answered {
-                    Text(at.formatted(date: .omitted, time: .shortened)).font(.system(size: 11)).foregroundStyle(ChatColor.secondary)
-                }
-            }
-            Text(verbatim: ActivityWords.label(note.summary)).font(.system(size: 15)).foregroundStyle(Color(.label))
-                .fixedSize(horizontal: false, vertical: true)
-            if !context.isEmpty {
-                Text(verbatim: context).font(.system(size: 12)).foregroundStyle(ChatColor.secondary)
-            }
-            if !note.reason.isEmpty {
-                Text(verbatim: Bundle.main.localizedString(forKey: note.reason, value: note.reason, table: nil)).font(.system(size: 13)).foregroundStyle(ChatColor.pending)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            if note.state == .refused, note.reply {
-                Text("Say yes in the chat to let it through.").font(.system(size: 12)).foregroundStyle(ChatColor.secondary)
+        HStack(spacing: 6) {
+            switch note {
+            case .waiting:
+                // The Dynamic Island, small.
+                Capsule().fill(Color(hex: 0x1C1C1E)).frame(width: 22, height: 8)
+                Text("Waiting for your approval")
+            case .approved(let at):
+                Text(verbatim: "✓").fontWeight(.semibold).foregroundStyle(ChatColor.green)
+                Text("Approved, \(at.formatted(date: .omitted, time: .shortened))")
+            case .declined:
+                Text(verbatim: "✕").fontWeight(.semibold).foregroundStyle(Color(.systemRed))
+                Text("Not approved, so Poki skipped that step")
+            case .expired:
+                Text("The approval ran out, so Poki skipped that step")
+            case .problem(let text):
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Color(.systemOrange))
+                Text(text)
+            case .modelChecking:
+                ProgressView().controlSize(.mini)
+                Text("The model is checking this step")
+            case .modelApproved(let why):
+                Text(verbatim: "✓").fontWeight(.semibold).foregroundStyle(ChatColor.green)
+                Text(why.isEmpty ? String(localized: "Approved by model") : String(localized: "Approved by model: \(why)"))
+            case .modelDeclined(let why):
+                Text(verbatim: "✕").fontWeight(.semibold).foregroundStyle(Color(.systemRed))
+                Text(why.isEmpty ? String(localized: "Not approved by model. Say yes in the chat to let it through.") : String(localized: "Not approved by model: \(why). Say yes in the chat to let it through."))
             }
         }
-        .padding(.vertical, 10).padding(.horizontal, 12)
-        .frame(width: 250, alignment: .leading)
-        .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 16, style: .continuous))
-        .overlay { RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(tint.opacity(0.25), lineWidth: 1) }
-        .accessibilityElement(children: .combine)
+        .font(.system(size: 12)).foregroundStyle(ChatColor.secondary)
+        .multilineTextAlignment(.center)
+        .padding(.top, note == .waiting ? 12 : 10).padding(.bottom, note == .waiting ? 2 : 10)
+        .frame(maxWidth: .infinity)
+        .transition(.opacity)
     }
 }
 
@@ -618,18 +446,25 @@ struct ComposerInputView: View {
     @State private var dictation = FieldDictation()
     @FocusState private var focused: Bool
     @State private var liveNote: String?
-    @State private var sent: (text: String, at: Date)?
 
     private var voice: VoiceModel { model.voice }
     private var hasText: Bool { !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     var body: some View {
         VStack(spacing: 4) {
-            if let liveNote, !dictation.on {
+            if dictation.on {
+                HStack(spacing: 6) {
+                    Circle().fill(Color(.systemRed)).frame(width: 7, height: 7)
+                    Text("Dictating. Your words go into the message; tap Send when it reads right.")
+                }
+                .font(.system(size: 12)).foregroundStyle(ChatColor.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20)
+                .transition(.opacity)
+            } else if let liveNote {
                 Text(liveNote).font(.system(size: 12)).foregroundStyle(ChatColor.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20)
                     .onTapGesture { self.liveNote = nil; openModel() }
-            } else if let problem = dictation.problem, !dictation.on {
+            } else if let problem = dictation.problem {
                 Text(problem).font(.system(size: 12)).foregroundStyle(Color(.systemRed))
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20)
             }
@@ -653,11 +488,6 @@ struct ComposerInputView: View {
         }
         .animation(.snappy, value: dictation.on)
         .onChange(of: dictation.text) { _, text in if dictation.on { input = dictation.base + text } }
-        // A keyboard that was still composing (autocorrect, Pinyin) can commit its text after Send has
-        // emptied the field, which put the sent message back: for a moment after Send, that is undone.
-        .onChange(of: input) { _, text in
-            if let sent, text == sent.text, Date().timeIntervalSince(sent.at) < 1 { input = "" }
-        }
         .onDisappear { dictation.stop(model) }
     }
 
@@ -666,7 +496,6 @@ struct ComposerInputView: View {
             if running {
                 Button(action: stop) {
                     Image(systemName: "stop.circle.fill").resizable().scaledToFit().frame(width: 30, height: 30).foregroundStyle(.white, Site.blue)
-                        .frame(width: 44, height: 40).contentShape(.rect)
                 }
                 .accessibilityLabel(Text("Stop"))
             } else {
@@ -708,16 +537,9 @@ struct ComposerInputView: View {
 
     private func submit() {
         guard !running, hasText else { return }
-        dictation.cancel(model)
-        let text = input
-        send(text)
-        sent = (text, Date())
+        dictation.stop(model)
+        send(input)
         input = ""
-        // Once more after the keyboard has settled, for a commit that arrives in pieces.
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(120))
-            if input == text { input = "" }
-        }
     }
 }
 
@@ -731,31 +553,20 @@ final class FieldDictation {
     private(set) var base = ""
     private(set) var problem: String?
     private var engine: Dictation?
-    /// Between the tap and the microphone being on (the permission question can sit in between).
-    private var starting = false
 
     func start(_ model: AppModel, after current: String) {
-        guard !on, !starting else { return }
-        starting = true
+        guard !on else { return }
         problem = nil
         let trimmed = current.trimmingCharacters(in: .whitespacesAndNewlines)
         base = trimmed.isEmpty ? "" : trimmed + " "
         text = ""
         Task {
             guard await Dictation.allowed() else {
-                starting = false
-                problem = String(localized: "Poki needs the microphone and speech recognition. Allow them in Settings › Poki.")
+                problem = String(localized: "Poki needs the microphone and speech recognition: allow them in Settings › Poki.")
                 return
             }
-            guard starting else { return }
-            starting = false
             let engine = Dictation()
             engine.onHeard = { [weak self] heard in self?.text = heard }
-            engine.onFailed = { [weak self, weak model] why in
-                guard let self else { return }
-                if let model { self.stop(model) }
-                self.problem = why
-            }
             model.background.pauseAudio()
             do {
                 try engine.listen()
@@ -766,12 +577,6 @@ final class FieldDictation {
                 problem = error.localizedDescription
             }
         }
-    }
-
-    /// Send was tapped: dictation ends, also one that was still asking for the microphone.
-    func cancel(_ model: AppModel) {
-        starting = false
-        stop(model)
     }
 
     func stop(_ model: AppModel) {
@@ -838,7 +643,7 @@ struct LiveVoiceBar: View {
     private var detail: String {
         switch voice.phase {
         case .connecting: String(localized: "Connecting…")
-        case .listening: voice.isLive ? String(localized: "Listening. Just talk and Poki answers when you pause.") : String(localized: "Ready")
+        case .listening: voice.isLive ? String(localized: "Listening. Just talk; Poki answers when you pause.") : String(localized: "Ready")
         case .hearing: String(localized: "Hearing you…")
         case .thinking: String(localized: "Working on it…")
         case .speaking: String(localized: "Speaking")
@@ -870,7 +675,8 @@ struct LiveVoiceTranscript: View {
                     case .poki:
                         MessageBubble(direction: .incoming, text: line.text, tail: true)
                     case .tool, .note:
-                        StatusLine(glyph: .none, text: line.text)
+                        Text(line.text).font(.system(size: 12)).foregroundStyle(ChatColor.secondary)
+                            .multilineTextAlignment(.center).lineLimit(2).padding(.vertical, 3).frame(maxWidth: .infinity)
                     }
                 }
                 if voice.phase == .hearing, lines.last?.role != .you {

@@ -9,38 +9,8 @@ import UIKit
 enum AutomationPath: String, CaseIterable, Identifiable {
     case runner
     case inProcess = "in-process"
-    /// Diagnostics-only: the paired developer services used by the Mac/Linux bridge, from the phone.
-    case nativeServices = "native-services"
     var id: String { rawValue }
-    var mountsOnly: Bool { self != .runner }
-    static let current = chosen(savedMethod, iOS: ProcessInfo.processInfo.operatingSystemVersion)
-
-    /// Set once Automatic has been made the default: SettingsVault does not put an older choice back before then.
-    static let automaticDefaultKey = "automationPath.automaticDefault.v1"
-    /// The method chosen on the local connection page, if any. Automatic is the default: a choice saved by an
-    /// earlier build is cleared once, so every phone starts from Automatic.
-    static let savedMethod: String? = {
-        let defaults = UserDefaults.standard
-        if !defaults.bool(forKey: automaticDefaultKey) {
-            defaults.removeObject(forKey: "automationPath")
-            defaults.set(true, forKey: automaticDefaultKey)
-        }
-        return defaults.string(forKey: "automationPath")
-    }()
-
-    /// The owner's choice in Testing Options (`automationPath`) when it names a path, otherwise the default.
-    static func chosen(_ saved: String?, iOS: OperatingSystemVersion) -> AutomationPath {
-        saved.flatMap(AutomationPath.init(rawValue:)) ?? defaultPath(iOS: iOS)
-    }
-
-    /// The paired services stream the screen and take touches only from iOS 27: on iOS 18.6.2 (#1) and
-    /// 26.6 (#18) native services could not tap, so earlier versions keep the XCTest session. The
-    /// iOS 27 line is the one DIYgod/pinky draws in internal/driver/ios/version.go (Apache-2.0).
-    static func defaultPath(iOS: OperatingSystemVersion) -> AutomationPath {
-        iOS.majorVersion >= 27 ? .nativeServices : .inProcess
-    }
-
-    static let thisPhoneDefault = defaultPath(iOS: ProcessInfo.processInfo.operatingSystemVersion)
+    static let current: AutomationPath = UserDefaults.standard.string(forKey: "automationPath").flatMap(AutomationPath.init(rawValue:)) ?? .inProcess
 }
 
 /// Poki's own automation session as AppModel drives it: `PKInProcess`, or a fake in tests.
@@ -61,8 +31,6 @@ extension PKInProcess: InProcessAutomation, @unchecked Sendable {}
 enum InProcessSession: Equatable {
     case opening
     case open
-    /// An open failed and Poki is trying again by itself (attempt 1 to `repairs`).
-    case repairing(attempt: Int)
     /// prepare answered no: its code and detail.
     case failed(code: String, detail: String)
     /// iOS is asking the owner for the passcode before it allows automation.
@@ -70,46 +38,19 @@ enum InProcessSession: Equatable {
     /// iOS asked for the passcode and nobody entered it before it gave up (about a minute).
     case passcodeMissed
 
-    /// How often Poki tries a failed open again by itself before it says so.
-    static let repairs = 3
-
-    /// What a failure code means and the one thing that fixes it, in words the owner can act on.
-    static func cause(_ code: String) -> (what: String, fix: String) {
-        switch code {
-        case "developer_framework_unavailable":
-            return ("the developer disk image is not mounted, so iOS's automation framework is missing",
-                    "Open Poki, go to Setup and check Set Up the Local Connection and Pair This iPhone; Poki mounts the developer disk image again once both have a tick")
-        case "enable_failed":
-            return ("iOS refused to turn on Automation Mode",
-                    "Open Settings › Developer and turn on Enable UI Automation, then open Poki; if iOS asks for the passcode, enter it")
-        case "session_timeout", "session_failed":
-            return ("iOS's test service (testmanagerd) did not answer",
-                    "Restart this iPhone, open Poki and tap Start; enter the passcode when iOS asks")
-        case "session_api_unavailable":
-            return ("this iOS version does not offer the automation session Poki uses",
-                    "Update Poki to the latest build; this iOS version needs a build that supports it")
-        default:
-            return ("the reason is in Poki's log",
-                    "Open Poki › Setup › Advanced › Log, copy the log and report it; turning Poki off and on starts a new session")
-        }
-    }
-
     /// What PokiCore reads while the launcher runs. A failure is answered at once, with its fix.
     var agentState: RunnerState {
         switch self {
         case .open: return .running
         case .opening: return .starting("opening the in-process session; it takes a few seconds the first time")
-        case .repairing(let attempt):
-            return .starting("the automation session did not open, and Poki is opening it again by itself (attempt \(attempt) of \(Self.repairs)). Nothing was sent and nothing is needed from you or the owner: call again in about 5 s")
         case .waitingForPasscode:
             return .starting("waiting for the owner to enter the iPhone passcode on the phone: iOS asks for it before it allows automation, after Poki restarts and 8 hours after the last time. Only the owner can do this; the Live Activity asks them. Call again in about 10 s")
         case .passcodeMissed:
             return .failed("the owner did not enter the iPhone passcode when iOS asked for it to allow automation (cancelled, or a minute passed). Nothing was sent, and Poki does not ask again by itself: the owner turns Poki off and on to be asked again",
                            fix: "Turn Poki off and on, then enter the iPhone passcode when iOS asks for it to allow automation")
         case .failed(let code, let detail):
-            let cause = Self.cause(code)
-            return .failed("the automation session could not be opened after \(Self.repairs) tries by Poki itself (\(code)\(detail.isEmpty ? "" : ": \(detail)")): \(cause.what). Nothing was sent. Tell the owner exactly this: \(cause.fix). Poki tries again on your next call",
-                           fix: cause.fix)
+            return .failed("the in-process session could not be opened (\(code)\(detail.isEmpty ? "" : ": \(detail)")); Poki tries again on the next call",
+                           fix: "Open Poki and, if iOS asks, enter the passcode to allow automation")
         }
     }
 }
@@ -319,15 +260,6 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
         let path = parts.isEmpty ? "/session" : "/" + parts.joined(separator: "/")
         let key = "\(method) \(path)"
         let parsed = body.flatMap { try? JSON.parse($0) }
-        // Poki's keyboard types here as it does with native services: the text is not sent as
-        // XCTest key events when the keyboard takes it.
-        if key == "POST /wda/keys", parsed?["keyboard"]?.bool == true {
-            return await typeThroughKeyboard(parsed, timeout: timeout)
-        }
-        if key == "POST /poki/keyboard/release" {
-            PokiKeyboardTyping.release()
-            return (200, (["value": .null] as JSON).data())
-        }
         let route = routes[key]
         // A request that never comes back (the gym's dense screen: an accessibility snapshot of 1,500
         // elements held the queue past PokiCore's 15 s wedge watchdog) would hold every request after
@@ -393,116 +325,6 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
         case .unknown: throw TransportError.other("sent, no confirmation: \(outcome.code ?? "unknown")")
         @unknown default: throw TransportError.other("unknown outcome")
         }
-    }
-
-    // MARK: Poki's keyboard
-
-    /// PokiCore asks Poki's keyboard first (`keyboard: true` on /wda/keys) unless the owner chose
-    /// Paste under Setup › Advanced › Typing; XCTest's own typing is left for when the keyboard declines
-    /// (a password field, or the keyboard is not set up).
-    var typesThroughKeyboard: Bool { !NativeServicesWDA.pasteAllowed }
-
-    /// Work on the request queue, one at a time with every other action and read.
-    private func onQueue<T>(_ work: @escaping () throws -> T) async throws -> T {
-        let lane = state.withLock { queue }
-        return try await withCheckedThrowingContinuation { continuation in
-            lane.async { continuation.resume(with: Result { try work() }) }
-        }
-    }
-
-    private func typeThroughKeyboard(_ body: JSON?, timeout: Double) async -> (status: Int, body: Data) {
-        func refused(_ message: String) -> (Int, Data) {
-            (500, (["value": ["error": "unknown error", "message": .string(message)]] as JSON).data())
-        }
-        let text = (body?["value"]?.array ?? []).compactMap(\.string).joined()
-        guard !text.isEmpty else { return refused("no keys given") }
-        let keyboard = PokiKeyboardTyping { [weak self] _ in
-            guard let self else { return ("Poki was turned off", false) }
-            return (try await self.choosePokiFromGlobe(), false)
-        }
-        var options = PokiKeyboardTyping.Options()
-        options.clear = body?["clear"]?.bool ?? false
-        options.hidden = body?["hidden"]?.bool ?? false
-        options.maySwitch = body?["focused"]?.bool ?? false
-        options.app = body?["app"]?.string
-        options.budget = timeout
-        do {
-            let value: JSON
-            switch try await keyboard.type(text, options) {
-            case .typed(let status):
-                UserDefaults.standard.removeObject(forKey: PokiKeyboardTyping.lastDeclineKey)
-                value = ["keyboard": "typed", "check": .string((status.check ?? .unknown).rawValue), "moved": .bool(status.moved), "tail": status.tail.map(JSON.string) ?? .null]
-            case .declined(let why):
-                UserDefaults.standard.set(why, forKey: PokiKeyboardTyping.lastDeclineKey)
-                value = ["keyboard": "declined", "why": .string(why)]
-            }
-            return (200, (["value": value] as JSON).data())
-        } catch {
-            return refused((error as NSError).localizedDescription)
-        }
-    }
-
-    /// Every labelled element of a source tree, with its frame.
-    static func labelled(_ xml: String) -> [(label: String, frame: CGRect)] {
-        guard let tag = try? NSRegularExpression(pattern: "<[A-Za-z]+ ([^>]*)>"),
-              let attribute = try? NSRegularExpression(pattern: "([A-Za-z]+)=\"([^\"]*)\"") else { return [] }
-        let whole = xml as NSString
-        var found: [(label: String, frame: CGRect)] = []
-        for match in tag.matches(in: xml, range: NSRange(location: 0, length: whole.length)) {
-            let inside = whole.substring(with: match.range(at: 1)) as NSString
-            var values: [String: String] = [:]
-            for a in attribute.matches(in: inside as String, range: NSRange(location: 0, length: inside.length)) {
-                values[inside.substring(with: a.range(at: 1))] = inside.substring(with: a.range(at: 2))
-            }
-            guard let raw = values["label"], !raw.isEmpty,
-                  let x = values["x"].flatMap(Double.init), let y = values["y"].flatMap(Double.init),
-                  let width = values["width"].flatMap(Double.init), let height = values["height"].flatMap(Double.init),
-                  width > 4, height > 4 else { continue }
-            let label = raw.replacingOccurrences(of: "&quot;", with: "\"").replacingOccurrences(of: "&apos;", with: "'")
-                .replacingOccurrences(of: "&lt;", with: "<").replacingOccurrences(of: "&gt;", with: ">").replacingOccurrences(of: "&amp;", with: "&")
-            found.append((label, CGRect(x: x, y: y, width: width, height: height)))
-        }
-        return found
-    }
-
-    /// Chooses Poki from the globe key's list of the keyboard on screen, as a person does: the globe
-    /// key is held, the list is read, and Poki is tapped. Returns why it could not, or nil.
-    private func choosePokiFromGlobe() async throws -> String? {
-        func read() async throws -> [(label: String, frame: CGRect)] {
-            let xml: String = try await onQueue { [self] in
-                var code: NSString?
-                guard let xml = native.sourceXML(nil, maxDepth: maxDepth, maxChildren: maxChildren, code: &code) else { throw Refusal("unknown error", "no element tree: \(code ?? "unknown")") }
-                return xml
-            }
-            return Self.labelled(xml)
-        }
-        func press(_ point: CGPoint, for seconds: Double) async throws {
-            _ = try await onQueue { [self] in try touch([[(point, 0), (point, seconds)]]) }
-        }
-        func centre(_ frame: CGRect) -> CGPoint { CGPoint(x: frame.midX, y: frame.midY) }
-        // Nothing near the top is a row of the list: Poki's own Live Activity sits there.
-        let floor = max(140, screen.height * 0.3)
-        let name = PokiKeyboardTyping.displayName
-        let before = try await read()
-        guard let globe = before.first(where: { NativeServicesWDA.globeLabels.contains($0.label) }) else {
-            return "no keyboard with a globe key is on screen (no text field has the focus, or the field takes only its own keyboard)"
-        }
-        let known = Set(before.map(\.label))
-        try await press(centre(globe.frame), for: 0.56)
-        var item: (label: String, frame: CGRect)?
-        for wait in [60, 200, 450] {
-            try await Task.sleep(nanoseconds: UInt64(wait) * 1_000_000)
-            let listed = try await read().filter { !known.contains($0.label) && $0.frame.midY > floor }
-            item = listed.first { $0.label == name } ?? listed.first { $0.label.hasPrefix(name) }
-            if item != nil { break }
-        }
-        guard let item else {
-            // Close the list where it opened, so the next touch is not spent on it.
-            try? await press(centre(globe.frame), for: 0.05)
-            return "the globe key's list did not show \(name) (is the Poki keyboard turned on under Settings › Poki › Keyboards?)"
-        }
-        try await press(centre(item.frame), for: 0.05)
-        return nil
     }
 
     private func done(_ failure: String?) throws -> JSON {

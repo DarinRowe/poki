@@ -4,9 +4,7 @@ import PiSwiftAI
 /// The model providers the chat can use with the owner's own key or account (ESP-171 board "M Model").
 /// The wired ones run through pi (PiLoop); the others store their key and address for a later step.
 enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
-    case anthropic, openai, chatgpt, deepseek, gemini, openrouter
-    case opencodeGo = "opencode-go"
-    case custom
+    case anthropic, openai, chatgpt, deepseek, gemini, openrouter, custom
     var id: String { rawValue }
 
     var name: String {
@@ -17,7 +15,6 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
         case .deepseek: "DeepSeek"
         case .gemini: "Gemini"
         case .openrouter: "OpenRouter"
-        case .opencodeGo: "OpenCode Go"
         case .custom: String(localized: "Custom Endpoint")
         }
     }
@@ -31,7 +28,6 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
         case .deepseek: "D"
         case .gemini: "G"
         case .openrouter: "R"
-        case .opencodeGo: "G"
         case .custom: "{ }"
         }
     }
@@ -44,7 +40,6 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
         case .deepseek: 0x4D6BFE
         case .gemini: 0x4285F4
         case .openrouter: 0x6566F1
-        case .opencodeGo: 0x242B3D
         case .custom: 0x8E8E93
         }
     }
@@ -59,7 +54,6 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
         case .deepseek: "deepseek"
         case .gemini: "google"
         case .openrouter: "openrouter"
-        case .opencodeGo: "opencode-go"
         case .custom: "poki-custom"
         }
     }
@@ -78,7 +72,6 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
         case .chatgpt: ""
         case .gemini: "AIza…"
         case .openrouter: "sk-or-…"
-        case .opencodeGo: "OpenCode Go API key"
         case .custom: String(localized: "API key, if it needs one")
         }
     }
@@ -119,13 +112,6 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
             ChatModelChoice(id: "openai/gpt-6.1-sol", name: "GPT-6.1 Sol (OpenRouter)"),
             ChatModelChoice(id: "google/gemini-3.8-flash", name: "Gemini 3.8 Flash (OpenRouter)"),
         ]
-        // Go uses its own key and model catalog; model-specific transports come from PiSwiftAI.
-        case .opencodeGo: [
-            ChatModelChoice(id: "deepseek-v4.1-flash", name: "DeepSeek V4.1 Flash (Go)"),
-            ChatModelChoice(id: "kimi-k3", name: "Kimi K3 (Go)"),
-            ChatModelChoice(id: "gpt-5.6-luna", name: "GPT 5.6 Luna (Go)"),
-            ChatModelChoice(id: "glm-5.2", name: "GLM-5.2 (Go)"),
-        ]
         // Whatever model the owner's endpoint serves (a local server, a company gateway).
         case .custom:
             ModelKeys.customModel.isEmpty ? [] : [ChatModelChoice(id: ModelKeys.customModel, name: ModelKeys.customModel)]
@@ -141,7 +127,6 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
         case .deepseek: String(localized: "Create a key at platform.deepseek.com, then paste it here.")
         case .gemini: String(localized: "Create a key at aistudio.google.com, then paste it here.")
         case .openrouter: String(localized: "Create a key at openrouter.ai/keys, then paste it here.")
-        case .opencodeGo: String(localized: "Subscribe to OpenCode Go at opencode.ai, then copy its API key from the OpenCode Console. Models and available regions depend on your Go plan and privacy settings.")
         case .custom: String(localized: "Any server that speaks the OpenAI chat completions API. Poki sends the key, if any, only to this address.")
         default: ""
         }
@@ -156,24 +141,6 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
             return Model(id: id, name: id, api: .openAICompletions, provider: piProvider, baseUrl: base, reasoning: false,
                          input: [.text, .image], cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
                          contextWindow: 128_000, maxTokens: 8_192)
-        }
-        if self == .opencodeGo {
-            // Preserve each Go model's native API and its PiSwiftAI metadata.
-            // Console uses /inference/go/ rather than the older /zen/go/ route.
-            guard let model = getModel(provider: piProvider, modelId: id) else { return nil }
-            let baseURL: String
-            switch model.api {
-            case .openAICompletions, .openAIResponses:
-                baseURL = "https://opencode.ai/inference/go/openai/v1"
-            case .anthropicMessages:
-                // PiSwift f8696524 appends "/v1/messages" on Anthropic streams.
-                baseURL = "https://opencode.ai/inference/go/anthropic"
-            case .googleGenerativeAI:
-                baseURL = "https://opencode.ai/inference/go/google/v1beta"
-            default:
-                return nil
-            }
-            return model.with(baseUrl: baseURL)
         }
         if let model = getModel(provider: piProvider, modelId: id) { return model }
         // PiSwift's catalog (pi-mono, October 2026) lacks gpt-6.1-terra, which pi-ai 1.5.0 lists with the

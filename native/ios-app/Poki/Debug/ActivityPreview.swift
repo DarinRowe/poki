@@ -30,14 +30,11 @@ struct ActivityPreview: View {
                     .foregroundStyle(Color(.label))
                 }
             } footer: {
-                Text("Starts that Live Activity on this iPhone. Lock the phone or go to the Home Screen to see it. The next one replaces it.")
+                Text("Starts that Live Activity on this iPhone. Lock the phone or go to the Home Screen to see it; the next one replaces it.")
             }
             Section {
-                Button(role: .destructive) {
+                Button("End Live Activity", systemImage: "stop.circle", role: .destructive) {
                     Task.detached { for old in Activity<PokiActivityAttributes>.activities { await old.end(nil, dismissalPolicy: .immediate) } }
-                } label: {
-                    // The symbol in red with its title, not the list's tint.
-                    Label("End Live Activity", systemImage: "stop.circle").foregroundStyle(.red)
                 }
             }
         }

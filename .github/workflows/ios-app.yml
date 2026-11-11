@@ -208,6 +208,7 @@ jobs:
         run: swift test --package-path native/ios/PokiCore
 
       - name: Poki keyboard tests
+        if: ${{ hashFiles('native/ios-app/KeyboardShared/Package.swift') != '' }}
         timeout-minutes: 5
         run: swift test --package-path native/ios-app/KeyboardShared
 

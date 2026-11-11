@@ -20,28 +20,6 @@ const SMS_START: &str = "https://gsa.apple.com/auth/verify/phone/";
 const SMS_CODE: &str = "https://gsa.apple.com/auth/verify/phone/securitycode";
 const GSA_AGENT: &str = "akd/1.0 CFNetwork/978.0.7 Darwin/18.7.0";
 
-/// Apple's GSA edge rejects Xcode client descriptions with HTTP 503 before SRP.
-/// Keep the provider's device/OS identity, but identify the authentication client
-/// as akd. Apply this only to GSA; the developer portal still needs Xcode.
-fn gsa_client_info(info: &str) -> String {
-    const XCODE: &str = "com.apple.dt.Xcode/";
-    let Some(start) = info.find(XCODE) else { return info.to_string() };
-    let end = info[start..].find(|c: char| c == ')' || c == '>' || c.is_whitespace())
-        .map(|n| start + n).unwrap_or(info.len());
-    format!("{}com.apple.akd/1.0{}", &info[..start], &info[end..])
-}
-
-fn gsa_http_request(http: &reqwest::Client, headers: &Anisette, body: Vec<u8>) -> reqwest::RequestBuilder {
-    let info = headers.map.iter().find(|(k, _)| k.eq_ignore_ascii_case("X-MMe-Client-Info"))
-        .map(|(_, v)| v.as_str()).unwrap_or("");
-    http.post(GS_SERVICE)
-        .header("Content-Type", "text/x-xml-plist")
-        .header("Accept", "*/*")
-        .header("User-Agent", headers.get("User-Agent").unwrap_or(GSA_AGENT))
-        .header("X-MMe-Client-Info", gsa_client_info(info))
-        .body(body)
-}
-
 /// What a sign-in leaves behind. `gs_idms_token` + `adsid` identify the session to Apple;
 /// `sk`/`c` let us ask for app tokens again without the password.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -164,8 +142,15 @@ impl Client {
         root.insert("Request".into(), plist::Value::Dictionary(request));
         let mut body = Vec::new();
         plist::to_writer_xml(&mut body, &plist::Value::Dictionary(root))?;
-        // Request bodies contain account identifiers and session tokens; never log them.
-        let res = gsa_http_request(&self.http, headers, body)
+        tracing::trace!("GSA request: {}", String::from_utf8_lossy(&body));
+        let res = self
+            .http
+            .post(GS_SERVICE)
+            .header("Content-Type", "text/x-xml-plist")
+            .header("Accept", "*/*")
+            .header("User-Agent", headers.get("User-Agent").unwrap_or(GSA_AGENT))
+            .header("X-MMe-Client-Info", headers.get("X-Mme-Client-Info").unwrap_or(""))
+            .body(body)
             .send()
             .await?
             .error_for_status()?
@@ -494,31 +479,6 @@ fn decrypt_gcm(sk: &[u8], et: &[u8]) -> Result<plist::Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn gsa_request_replaces_xcode_identity_without_changing_provider() {
-        let original = "<Mac14,2> <macOS;15.7.5;24G624> <com.apple.AuthKit/1 (com.apple.dt.Xcode/3594.4.19)>";
-        let expected = "<Mac14,2> <macOS;15.7.5;24G624> <com.apple.AuthKit/1 (com.apple.akd/1.0)>";
-        for name in ["X-Mme-Client-Info", "X-MMe-Client-Info", "x-mme-client-info"] {
-            let headers = Anisette {
-                map: [(name.to_string(), original.to_string())].into_iter().collect(),
-                made_at: std::time::Instant::now(),
-            };
-            let request = gsa_http_request(&reqwest::Client::new(), &headers, b"test".to_vec()).build().unwrap();
-            assert_eq!(request.headers()["X-MMe-Client-Info"], expected);
-            assert_eq!(request.url().as_str(), GS_SERVICE);
-            assert_eq!(request.body().unwrap().as_bytes(), Some(b"test".as_slice()));
-            assert_eq!(headers.map[name], original);
-        }
-    }
-
-    #[test]
-    fn gsa_preserves_non_xcode_client_identities() {
-        for info in ["", "<Mac14,2> <macOS;15.7.5;24G624> <com.apple.AuthKit/1 (com.apple.akd/1.0)>",
-            "<PC> <Windows;6.2(0,0);9200> <com.apple.AuthKit/1 (com.apple.iTunes/12.12.4.1)>"] {
-            assert_eq!(gsa_client_info(info), info);
-        }
-    }
 
     #[test]
     fn spd_round_trip() {

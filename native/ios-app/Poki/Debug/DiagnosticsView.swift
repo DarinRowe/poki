@@ -1,20 +1,44 @@
 import SwiftUI
 
-/// Diagnostics, under Setup › Advanced: the proxy's loopback interface, the connection checks and
-/// the phone's addresses. The log has its own page, and switches being tried are in Testing Options.
+/// Diagnostics, under Settings (ESP-139 board 04, C): the log, the proxy's loopback interface, the
+/// connection checks, the background hold experiment and the phone's addresses.
 struct DiagnosticsView: View {
     @Binding var path: [SettingsRoute]
     @State private var results: [ProbeResult] = []
     @State private var running = false
     @State private var addresses: [LocalAddress] = localAddresses()
+    @StateObject private var hold = Hold()
+    @State private var log = AppLog.shared
+    @State private var copied = false
     @Environment(AppModel.self) private var model
 
     var body: some View {
         Form {
             Section {
+                Button(copied ? "Copied" : "Copy Log", systemImage: copied ? "checkmark" : "doc.on.doc") {
+                    UIPasteboard.general.string = log.text
+                    copied = true
+                    Task { try? await Task.sleep(for: .seconds(2)); copied = false }
+                }
+                ShareLink(item: log.text, subject: Text("Poki log")) { Label("Share Log", systemImage: "square.and.arrow.up") }
+                Button { path.append(.log) } label: {
+                    LabeledContent("Log") { Text("\(log.lines.count) lines") }
+                }
+                .foregroundStyle(Color(.label))
+                Button { path.append(.activityPreview) } label: { LabeledContent("Live Activity Preview") { EmptyView() } }
+                    .foregroundStyle(Color(.label))
+            } header: {
+                Text("Log")
+            } footer: {
+                Text("Runner starts and stops, agent steps, approvals, and connection changes. Password field entries are never logged.")
+            }
+            ApprovalTestingSection()
+            // The in-process path's switch and probes (ESP-173, ESP-175).
+            InProcessSection()
+            Section {
                 if let loop = loopbackInterface(addresses) {
                     Text(verbatim: "\(loop.interface)  \(loop.address)").font(.body.monospaced().weight(.semibold))
-                    Text(loop.ipv6.isEmpty ? "No IPv6 on this interface" : "IPv6 present, \(loop.ipv6.joined(separator: ", "))")
+                    Text(loop.ipv6.isEmpty ? "No IPv6 on this interface" : "IPv6 present: \(loop.ipv6.joined(separator: ", "))")
                         .font(.footnote.monospaced()).foregroundStyle(loop.ipv6.isEmpty ? Color.secondary : Color.red)
                 } else {
                     Text("No interface has a 10.7.0.x address. Check that your proxy app is on and its loopback module is enabled.")
@@ -38,6 +62,28 @@ struct DiagnosticsView: View {
                 }
                 Button(running ? "Running…" : "Run Checks") { Task { await run() } }.disabled(running)
             }
+            Section {
+                LabeledContent("Port on 10.7.0.1") {
+                    TextField(text: $hold.port, prompt: Text(verbatim: "49152")) { Text("Port on 10.7.0.1") }
+                        .keyboardType(.numberPad).multilineTextAlignment(.trailing).monospacedDigit()
+                }
+                Picker("Experiment", selection: $hold.experiment) {
+                    ForEach(Hold.Experiment.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
+                }
+                .disabled(hold.holding)
+                Button("Start Hold") { hold.start() }.disabled(hold.holding)
+                Button("Stop", role: .destructive) { hold.stop() }.disabled(!hold.holding)
+                if !hold.log.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(hold.log.indices, id: \.self) { i in Text(verbatim: hold.log[i]).font(.caption2.monospaced()) }
+                    }
+                    .textSelection(.enabled)
+                }
+            } header: {
+                Text("Background Hold")
+            } footer: {
+                Text("Tap Start, leave the app for a while, then return. The log records suspension gaps and connection closures.")
+            }
             Section("Addresses") {
                 ForEach(addresses.indices, id: \.self) { i in
                     Text(verbatim: "\(addresses[i].interface)  \(addresses[i].address)").font(.caption.monospaced())
@@ -55,7 +101,7 @@ struct DiagnosticsView: View {
         let label = r.label.replacingOccurrences(of: " (10.7.0.1)", with: "")
         let outcome = r.outcome.prefix(1).uppercased() + r.outcome.dropFirst()
         func local(_ s: String) -> String { Bundle.main.localizedString(forKey: s, value: s, table: nil) }
-        return String(localized: "\(local(label)), \(local(outcome))")
+        return String(localized: "\(local(label)): \(local(outcome))")
     }
 
     private func run() async {
@@ -82,45 +128,29 @@ struct LogView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Button("Copy Log", systemImage: "doc.on.doc") { UIPasteboard.general.string = log.text }
-                    ShareLink(item: log.text, subject: Text("Poki log")) { Label("Share Log", systemImage: "square.and.arrow.up") }
-                    Button("Clear", systemImage: "trash", role: .destructive) { log.clear() }
-                } label: {
-                    Image(systemName: "ellipsis.circle").accessibilityLabel(Text("More"))
-                }
+                Button("Clear", role: .destructive) { log.clear() }
             }
         }
     }
 }
 
-/// Setup › Advanced › Testing Options: switches being tried, all in one place. Ask Before Sensitive
-/// Steps and the Auto-Classifier are in Agents › Approvals.
-struct TestingOptionsView: View {
+/// Switches being tried, all off by default. Ask Before Sensitive Steps is in Agents › Approvals.
+private struct ApprovalTestingSection: View {
     @Environment(AppModel.self) private var model
-    @AppStorage(NativeServicesWDA.inputWithoutScreenSharingKey) private var bareInput = true
     var body: some View {
         @Bindable var model = model
-        Form {
-            Section {
-                Toggle("ask_poki Tool", isOn: $model.askPokiTool)
-            } header: {
-                Text("Agents")
-            } footer: {
-                Text("Off by default. ask_poki lets outside agents hand a repetitive task to Poki's own agent. Changes take effect the next time Poki opens. The Auto-Classifier is in Agents › Approvals.")
+        Section {
+            Toggle("ask_poki Tool", isOn: $model.askPokiTool)
+            Toggle("Auto-Classifier", isOn: $model.approvalClassifier)
+            if model.approvalClassifier {
+                Picker("Permissiveness", selection: $model.classifierLevel) {
+                    ForEach(ApprovalClassifier.Level.allCases) { Text($0.title).tag($0) }
+                }
             }
-            Section {
-                Toggle("Input Without Screen Sharing", isOn: $bareInput)
-            } header: {
-                Text("Touches and Keys")
-            } footer: {
-                Text("Poki sends touches and keys over a screen-sharing session, and iOS turns the camera off in every app while one is open, so Poki opens it only for an action and closes it 5 seconds after the last one. With this on (the default), Poki opens no session at all, so the camera is never affected. If taps and typing stop working, turn it off. Takes effect the next time Poki turns on.")
-            }
-            Section {
-                NavigationLink("Live Activity Preview") { ActivityPreview() }
-            }
+        } header: {
+            Text("Testing")
+        } footer: {
+            Text("Both off by default. ask_poki lets outside agents hand a repetitive task to Poki's own agent. The auto-classifier answers approvals in your place: it asks your chat model, out of sight, whether what you said asks for the step, and allows or refuses it with nothing for you to tap; a yes from you in the chat or a live call lets a refused step through next time. With no chat model set up it refuses every sensitive step. Changes take effect the next time Poki opens.")
         }
-        .navigationTitle("Testing Options")
-        .navigationBarTitleDisplayMode(.inline)
     }
 }

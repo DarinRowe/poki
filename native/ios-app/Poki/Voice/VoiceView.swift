@@ -11,6 +11,7 @@ struct VoiceView: View {
     @State private var bridgeText = ""
     @State private var editingBridge = false
     @State private var bridgeRejected = false
+    @State private var micDenied = false
 
     private var voice: VoiceModel { app.voice }
 
@@ -31,8 +32,9 @@ struct VoiceView: View {
                     LabeledContent("Dictation", value: String(localized: "On this iPhone"))
                     Toggle("Mute Poki’s Voice", isOn: $voice.muted)
                 } footer: {
-                    if voice.canTalkLive {
-                        Text("In the chat, the waveform button starts a live conversation. Poki listens, acts and answers out loud. It ends by itself 8 seconds after an answer if nobody speaks, and when Poki goes to the background (once a running step is done). Tap End to stop sooner. The microphone in the message field only dictates.")
+                    if micDenied { Text("Poki can't use the microphone. Allow it in Settings, Privacy, Microphone.").foregroundStyle(.orange) }
+                    else if voice.canTalkLive {
+                        Text("In the chat, the waveform button starts a live conversation: Poki listens, acts and answers out loud. It ends by itself 8 seconds after an answer if nobody speaks, and when Poki goes to the background (once a running step is done). Tap End to stop sooner. The microphone in the message field only dictates.")
                     } else {
                         Text("A live conversation uses OpenAI’s Realtime voice, which needs an OpenAI API key in Poki › Model. Dictation in the message field works with every model.")
                     }
@@ -60,7 +62,7 @@ struct VoiceView: View {
                 .font(.body.monospaced())
                 .onSubmit(saveBridge)
             Button("Save Address", action: saveBridge).disabled(bridgeText.trimmingCharacters(in: .whitespaces).isEmpty)
-            Text(bridgeRejected ? "That is not a voice bridge address. It looks like http://192.168.1.10:47830/voice/ followed by a long code." : "Optional, for live voice without an OpenAI key on this iPhone. Run bin/voice-bridge.mjs on your Mac and enter the address it gives.")
+            Text(bridgeRejected ? "That is not a voice bridge address. It looks like http://192.168.1.10:47830/voice/ followed by a long code." : "Optional, for live voice without an OpenAI key on this iPhone: run bin/voice-bridge.mjs on your Mac and enter the address it gives.")
                 .font(.footnote).foregroundStyle(bridgeRejected ? Color.orange : Color.secondary)
         }
     }

@@ -16,12 +16,11 @@ final class LiveCore: CoreSession {
     init(host: AppCoreHost, transport: HTTPTransport) {
         self.host = host
         var config = CoreConfig()
-        config.userRoutineLearning = { UserDefaults.standard.bool(forKey: "poki.experimental.userRoutines") }
         // Signing tools may rename the app; its own id is Poki too.
         if let own = Bundle.main.bundleIdentifier { config.ownApps.append(own) }
         // Sensitive steps wait for the owner unless they turned asking off in Agents › Approvals; the
-        // way they are asked, and the auto-approval in Poki's own chat, are ApprovalClassifier's.
-        config.sensitive.enabled = ApprovalClassifier.mode != .off
+        // auto-classifier (Diagnostics › Testing) answers in their place when it is on.
+        config.sensitive.enabled = Self.asksBeforeSensitiveSteps || ApprovalClassifier.isOn
         core = PokiCore(config: config, host: host, transport: transport)
         (events, continuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(64))
         let continuation = self.continuation
@@ -54,9 +53,7 @@ final class LiveCore: CoreSession {
     func callTool(_ name: String, arguments: String) async -> PokiCore.ToolAnswer { await core.callTool(name, arguments: arguments) }
     /// Ends the task: the phone goes back to the app it began in (or, `switching: false`, stays). The
     /// line says what happened.
-    func finishTask(switching: Bool = true, returnTo: String? = nil, stay: Bool = false) async -> String? {
-        await core.finishTask(switching: switching, returnTo: returnTo, stay: stay)
-    }
+    func finishTask(switching: Bool = true) async -> String? { await core.finishTask(switching: switching) }
 
     private static func map(_ event: CoreEvent) -> ShellEvent {
         switch event {

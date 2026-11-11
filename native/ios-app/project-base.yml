@@ -37,9 +37,6 @@ targets:
     sources:
       - path: Poki
       - path: Shared
-      # The mailbox the app and the Poki keyboard share (tested on its own: KeyboardShared/Package.swift).
-      - path: KeyboardShared/Sources/KeyboardShared
-        group: KeyboardShared
       # The gym scorecard (native/ios-gym/check), run in-process by the Debug probe's `gym` mode.
       - path: ../ios-gym/check/GymScorecard.swift
         group: Poki/Debug
@@ -50,7 +47,7 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         PokiAppGroup: $(POKI_APP_GROUP)
-        # English, Simplified and Traditional Chinese (Shared/Localizable.xcstrings, Poki/InfoPlist.xcstrings); Poki
+        # English, Simplified Chinese and Traditional Chinese (Shared/Localizable.xcstrings, Poki/InfoPlist.xcstrings); Poki
         # follows the iPhone's language.
         CFBundleDevelopmentRegion: en
         CFBundleLocalizations: [en, zh-Hans, zh-Hant]
@@ -110,7 +107,6 @@ targets:
         com.apple.security.application-groups: [$(POKI_APP_GROUP)]
     dependencies:
       - target: PokiWidgets
-      - target: PokiKeyboard
       - package: PokiCore
       - package: WebRTC
       - package: PiSwift
@@ -133,37 +129,6 @@ targets:
         OTHER_LDFLAGS: [-lpoki_launcher, -lc++, -framework, Security, -framework, SystemConfiguration]
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
-  PokiKeyboard:
-    type: app-extension
-    platform: iOS
-    sources:
-      - path: PokiKeyboard
-      - path: KeyboardShared/Sources/KeyboardShared
-        group: KeyboardShared
-    info:
-      path: PokiKeyboard/Info.plist
-      properties:
-        CFBundleDisplayName: Poki
-        CFBundleShortVersionString: $(MARKETING_VERSION)
-        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
-        PokiAppGroup: $(POKI_APP_GROUP)
-        NSExtension:
-          NSExtensionPointIdentifier: com.apple.keyboard-service
-          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).KeyboardViewController
-          NSExtensionAttributes:
-            IsASCIICapable: true
-            PrefersRightToLeft: false
-            # "mul": no language of its own, so iOS does not list it as an English keyboard.
-            PrimaryLanguage: mul
-            RequestsOpenAccess: true
-    entitlements:
-      path: PokiKeyboard/PokiKeyboard.entitlements
-      properties:
-        com.apple.security.application-groups: [$(POKI_APP_GROUP)]
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: $(POKI_BUNDLE_ID).keyboard
-        APPLICATION_EXTENSION_API_ONLY: YES
   PokiTests:
     type: bundle.unit-test
     platform: iOS
@@ -171,8 +136,6 @@ targets:
     dependencies:
       - target: Poki
       - package: PokiCore
-      - package: PiSwift
-        product: PiSwiftAI
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(POKI_BUNDLE_ID).tests

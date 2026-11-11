@@ -60,17 +60,6 @@ final class ActivityController {
 
     var enabled: Bool { ActivityAuthorizationInfo().areActivitiesEnabled }
 
-    /// True where something else already says Poki is on while nothing happens (iOS 26's continued
-    /// processing task has its own Lock Screen and island UI): then there is no idle Live Activity.
-    /// It starts when work begins or Poki needs the person, and goes when the run has folded.
-    var hidesWhenIdle: () -> Bool = { false }
-    /// Poki is in front: iOS starts a Live Activity only then.
-    var canStart: () -> Bool = { true }
-    /// The device name `start` was last asked with: the activity is wanted, shown or not.
-    private var wanted: String?
-    /// Wanted but not shown because nothing is happening: not a fault.
-    var waitsForWork: Bool { activity == nil && wanted != nil && state.phase == .idle && hidesWhenIdle() }
-
     var isRunning: Bool { activity != nil }
 
     /// Ends every Live Activity of Poki's: at launch, the ones a crashed or closed earlier run left
@@ -87,9 +76,7 @@ final class ActivityController {
     /// it is called when the person taps something (Start, Start pairing, a setup step), never later
     /// from the background.
     func start(deviceName: String) {
-        wanted = deviceName
         guard activity == nil else { return }
-        if state.phase == .idle, hidesWhenIdle() { lastError = nil; return }
         guard enabled else { lastError = "Live Activities are off for Poki (Settings > Poki > Live Activities)."; return }
         // A Live Activity left from an earlier run of the app is replaced.
         for old in Activity<PokiActivityAttributes>.activities { Task { await old.end(nil, dismissalPolicy: .immediate) } }
@@ -104,7 +91,7 @@ final class ActivityController {
                     await MainActor.run { if self?.activity?.id == started.id { self?.activity = nil } }
                 }
             }
-        } catch { lastError = String(localized: "The Live Activity did not start. \(error.localizedDescription)") }
+        } catch { lastError = String(localized: "The Live Activity did not start: \(error.localizedDescription)") }
     }
 
     /// Counts a finished step for the step line and the run's summary.
@@ -121,7 +108,6 @@ final class ActivityController {
     /// Ends the Live Activity at once, after the updates already on their way, so nothing is left on
     /// the Lock Screen or in the island.
     func end() {
-        wanted = nil
         finishTimer?.cancel(); foldTimer?.cancel(); eventTimer?.cancel()
         worker?.cancel(); worker = nil; plainWaiting = false
         guard let activity else { return }
@@ -132,18 +118,9 @@ final class ActivityController {
             ? ActivityContent(state: state, staleDate: nil, relevanceScore: 0) : nil
         let policy: ActivityUIDismissalPolicy = final == nil ? .immediate : .after(.now.addingTimeInterval(15 * 60))
         state.outcomes = []; state.guide = nil; state.pin = nil; state.since = nil; state.event = nil
-        state.stepCount = 0; state.failedCount = 0; state.endedAt = nil; state.decision = nil; state.plan = nil
+        state.stepCount = 0; state.failedCount = 0; state.endedAt = nil; state.decision = nil
         let previous = tail
         tail = Task { await previous?.value; await activity.end(final, dismissalPolicy: policy) }
-    }
-
-    /// Takes the activity off the screen but keeps it wanted: the next work brings it back.
-    private func hide() {
-        worker?.cancel(); worker = nil; plainWaiting = false
-        guard let activity else { return }
-        self.activity = nil
-        let previous = tail
-        tail = Task { await previous?.value; await activity.end(nil, dismissalPolicy: .immediate) }
     }
 
     func update(_ change: (inout PokiState) -> Void) {
@@ -151,12 +128,6 @@ final class ActivityController {
         change(&state)
         ActivityUpdatePolicy.settle(&state, over: old)
         let alert = transition(from: old)
-        // No idle activity where iOS's background task stands in: it comes with the work and goes with it.
-        if activity == nil, let wanted, state.phase != .idle, canStart() {
-            start(deviceName: wanted)
-        } else if activity != nil, state.phase == .idle, hidesWhenIdle() {
-            hide()
-        }
         // Something needs the person and there is no Live Activity to pop up: a banner instead (an
         // approval and a pairing code have their own).
         if let banner = attention, activity == nil {
@@ -190,7 +161,6 @@ final class ActivityController {
         let runPhases: Set<PokiState.Phase> = [.working, .approval, .deciding, .handoff]
         if state.phase == .working, !runPhases.contains(old.phase) {
             state.stepCount = 0; state.failedCount = 0; state.endedAt = nil; state.outcomes = []
-            if old.phase == .done || old.phase == .idle { state.plan = nil }
             if state.since == nil { state.since = now }
             // The runner's start and the agent's first step are one start.
             if !runAnnounced {
@@ -266,28 +236,15 @@ final class ActivityController {
         }
     }
 
-    /// The chat's task ended: the run is finished now, not after the quiet wait. `alert` false when
-    /// the chat tells the owner itself (its reply notification).
-    func finishNow(alert: Bool) {
-        finishTimer?.cancel()
-        guard state.phase == .working, state.approval == nil, state.handoff == nil else { return }
-        inStep = false
-        finish(alert: alert)
-    }
-
     private func finishRun(ifCount count: Int) {
         guard state.phase == .working, state.approval == nil, !inStep, state.stepCount == count, count > 0 else { return }
-        finish(alert: true)
-    }
-
-    private func finish(alert: Bool) {
         state.phase = .done
         runAnnounced = false
         state.endedAt = Date()
         state.headline = "Finished"
         setEvent(.finished, "Finished")
         let summary = state.runSummary
-        send(alert: alert ? ordinary(String(activity: "Agent finished"), summary) : nil, critical: true)
+        send(alert: ordinary(String(activity: "Agent finished"), summary), critical: true)
         armFold()
     }
 
@@ -302,7 +259,7 @@ final class ActivityController {
                 state.phase = .idle
                 state.headline = "Waiting for agent"
                 state.outcomes = []; state.stepCount = 0; state.failedCount = 0
-                state.since = nil; state.endedAt = nil; state.event = nil; state.plan = nil
+                state.since = nil; state.endedAt = nil; state.event = nil
             }
         }
     }
