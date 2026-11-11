@@ -13,7 +13,12 @@ enum AutomationPath: String, CaseIterable, Identifiable {
     case nativeServices = "native-services"
     var id: String { rawValue }
     var mountsOnly: Bool { self != .runner }
-    static let current: AutomationPath = UserDefaults.standard.string(forKey: "automationPath").flatMap(AutomationPath.init(rawValue:)) ?? .nativeServices
+    static let current = chosen(UserDefaults.standard.string(forKey: "automationPath"), iOS: ProcessInfo.processInfo.operatingSystemVersion)
+
+    /// The owner's choice in Testing Options (`automationPath`) when it names a path, otherwise the default.
+    static func chosen(_ saved: String?, iOS: OperatingSystemVersion) -> AutomationPath {
+        saved.flatMap(AutomationPath.init(rawValue:)) ?? .nativeServices
+    }
 }
 
 /// Poki's own automation session as AppModel drives it: `PKInProcess`, or a fake in tests.
