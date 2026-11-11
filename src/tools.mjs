@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import { version } from './build-info.mjs';
+import { taskGateDefinitions } from './task-gate.mjs';
 
 const catalog = JSON.parse(readFileSync(new URL('./data/tools.json', import.meta.url), 'utf8'));
 const defaultTools = new Set([
@@ -77,18 +78,28 @@ for (const [name, description, schema, readOnlyHint] of cua.definitions) definit
 const profile = (env = process.env) => env.POKI_TOOL_PROFILE ?? 'default';
 const listedFor = name => (name === 'cua' ? cua.tools : defaultTools);
 
-export function createServer(call) {
-  const computerUse = profile() === 'cua', listed = listedFor(profile());
-  const server = new McpServer({ name: 'poki-mcp', version }, { instructions: computerUse ? cua.instructions : instructions });
-  for (const [name, description, inputSchema, readOnlyHint] of definitions) {
+// `gate` (task-gate.mjs) is optional: when present it adds begin_task/end_task and decides, before the
+// device sees anything, whether each call may run.
+export function createServer(call, { gate } = {}) {
+  const computerUse = profile() === 'cua';
+  const listed = gate ? new Set([...listedFor(profile()), ...taskGateDefinitions.map(([name]) => name)]) : listedFor(profile());
+  const server = new McpServer({ name: 'poki-mcp', version }, { instructions: (computerUse ? cua.instructions : instructions) + (gate ? ' This connection requires per-task approval: call begin_task with a description of the whole task first, and end_task when it is done.' : '') });
+  const all = gate ? [...taskGateDefinitions, ...definitions] : definitions;
+  for (const [name, description, inputSchema, readOnlyHint] of all) {
     server.registerTool(name, { description, inputSchema, annotations: { readOnlyHint } }, async (args, extra) => {
-      try { return await call(name, args, { signal: extra.mcpReq?.signal ?? extra.signal, requestId: extra.mcpReq?._meta?.['poki/request_id'] }); }
+      const signal = extra.mcpReq?.signal ?? extra.signal;
+      try {
+        const verdict = gate && await gate.check(name, args, signal);
+        if (verdict) return verdict;
+        return await call(name, args, { signal, requestId: extra.mcpReq?._meta?.['poki/request_id'] });
+      }
       catch (error) { return { isError: true, content: [{ type: 'text', text: error.message }] }; }
     });
   }
+  gate?.attach(server);
   if (process.env.POKI_MCP_TOOLS !== 'all') {
     server.server.setRequestHandler('tools/list', () => ({
-      tools: definitions.filter(([name]) => listed.has(name)).map(([name, description, inputSchema, readOnlyHint]) => ({
+      tools: all.filter(([name]) => listed.has(name)).map(([name, description, inputSchema, readOnlyHint]) => ({
         name, description, inputSchema: z.toJSONSchema(inputSchema, { io: 'input', target: 'draft-2020-12' }),
         annotations: { readOnlyHint },
       })),
