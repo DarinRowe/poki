@@ -51,7 +51,7 @@ final class PiLoop {
             getModelAuth: { model in
                 guard provider == .opencodeGo else { return nil }
                 guard let key = await ModelCredential.apiKey(for: provider) else {
-                    return AgentModelAuth(error: "OpenCode Go API key is missing.")
+                    return AgentModelAuth(error: String(localized: "OpenCode Go API key is missing."))
                 }
                 return Self.openCodeGoAuth(model: model, apiKey: key)
             },

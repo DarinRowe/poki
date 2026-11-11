@@ -488,7 +488,7 @@ struct ApprovalCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Allow this step?").font(.system(size: 15, weight: .semibold))
-            Text(verbatim: approval.summary).font(.system(size: 15)).foregroundStyle(Color(.label))
+            Text(verbatim: ActivityWords.label(approval.summary)).font(.system(size: 15)).foregroundStyle(Color(.label))
             HStack {
                 Button("Don’t Allow") { answer(false) }.buttonStyle(.bordered)
                 Button("Allow") { answer(true) }.buttonStyle(.borderedProminent)

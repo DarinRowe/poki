@@ -43,8 +43,11 @@ struct PokiKeyboardPage: View {
     var body: some View {
         Form {
             Section {
-                LabeledContent("Keyboard") {
-                    Text(state.word).foregroundStyle(state.ready ? Color.secondary : Color.orange)
+                // The same top row as Setup's other steps: the step's icon and name, then Done or what is missing.
+                LabeledContent {
+                    Text(state.ready ? "Done" : state.word).foregroundStyle(state.ready ? Color.green : Color.orange)
+                } label: {
+                    Label("Add the Poki Keyboard", systemImage: "keyboard")
                 }
                 if let last = state.lastDecline {
                     LabeledContent("Not Used Last Time") { Text(verbatim: last).foregroundStyle(.secondary) }

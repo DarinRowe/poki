@@ -40,10 +40,14 @@ final class DiskImageStore {
 
     func download() async {
         if case .downloading = state { return }
-        state = .downloading("Starting…")
+        state = .downloading(String(localized: "Starting…"))
         do {
             let build = try await DeveloperDiskImage.ensure(in: AppFiles.ddiDirectory) { step in
-                Task { @MainActor [weak self] in if case .downloading = self?.state { self?.state = .downloading(step) } }
+                // PokiCore says "Downloading <file>…"; the row is already labelled Downloading, so it shows the file.
+                Task { @MainActor [weak self] in
+                    let file = step.hasPrefix("Downloading ") ? String(step.dropFirst("Downloading ".count)) : step
+                    if case .downloading = self?.state { self?.state = .downloading(file) }
+                }
             }
             state = .ready(build)
         } catch {

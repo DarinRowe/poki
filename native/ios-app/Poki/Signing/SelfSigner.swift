@@ -284,7 +284,7 @@ final class SelfSigner {
         request["kind"] = kind
         request["app_path"] = Bundle.main.bundlePath
         request["device_name"] = UIDevice.current.name
-        await run(kind == "update" ? "Preparing the update" : "Preparing a refresh") {
+        await run(kind == "update" ? String(localized: "Preparing the update") : String(localized: "Preparing a refresh")) {
             let p = try await SignerBridge.decode(Prepared.self, request) { [weak self] progress in
                 Task { @MainActor in self?.show(progress) }
             }
@@ -338,7 +338,7 @@ final class SelfSigner {
                 }
             }
         }
-        await run("Installing") {
+        await run(String(localized: "Installing")) {
             _ = try await SignerBridge.call(request) { [weak self] progress in
                 Task { @MainActor in self?.show(progress) }
             }
@@ -445,10 +445,17 @@ final class SelfSigner {
         }
     }
 
+    /// A step title from the signer ("Checking this iPhone", "Signing Poki for Jane") in the system's language.
+    private static func stepWords(_ title: String) -> String {
+        let prefix = "Signing Poki for "
+        if title.hasPrefix(prefix) { return String(localized: "Signing Poki for \(String(title.dropFirst(prefix.count)))") }
+        return Bundle.main.localizedString(forKey: title, value: title, table: nil)
+    }
+
     private func show(_ progress: [String: Any]) {
         switch progress["kind"] as? String {
         case "step":
-            working = progress["title"] as? String ?? working; fraction = nil
+            working = (progress["title"] as? String).map(Self.stepWords) ?? working; fraction = nil
             // The install itself has begun (the build is on the phone): the last step, where Poki
             // must exit for iOS to finish. The owner is told now rather than at a percentage that a
             // fast or stalled install may never report.

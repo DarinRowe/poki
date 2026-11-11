@@ -275,6 +275,24 @@
     },
     "%lld steps" : {
       "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld step"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld steps"
+                }
+              }
+            }
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -16775,6 +16793,3220 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "AI 代理無法在此螢幕上操作，請你完成這一步"
+          }
+        }
+      }
+    },
+    "Download and Install Update" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下载并安装更新"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下載並安裝更新"
+          }
+        }
+      }
+    },
+    "Install Update" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安装更新"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安裝更新"
+          }
+        }
+      }
+    },
+    "Install Refresh" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安装续签"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安裝續簽"
+          }
+        }
+      }
+    },
+    "Prepare Refresh Now" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "立即准备续签"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "立即準備續簽"
+          }
+        }
+      }
+    },
+    "Update Ready" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新已就绪"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新已就緒"
+          }
+        }
+      }
+    },
+    "Refresh Ready" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "续签已就绪"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "續簽已就緒"
+          }
+        }
+      }
+    },
+    "Until %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有效期至 %@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有效期至 %@"
+          }
+        }
+      }
+    },
+    "Preparing the update" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在准备更新"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在準備更新"
+          }
+        }
+      }
+    },
+    "Preparing a refresh" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在准备续签"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在準備續簽"
+          }
+        }
+      }
+    },
+    "Installing" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在安装"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在安裝"
+          }
+        }
+      }
+    },
+    "Checking this iPhone" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在检查此 iPhone"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在檢查此 iPhone"
+          }
+        }
+      }
+    },
+    "Packing the installed Poki" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在打包已安装的 Poki"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在打包已安裝的 Poki"
+          }
+        }
+      }
+    },
+    "Getting the newest Poki" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在获取最新的 Poki"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在獲取最新的 Poki"
+          }
+        }
+      }
+    },
+    "Installing the provisioning profiles" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在安装描述文件"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在安裝描述檔案"
+          }
+        }
+      }
+    },
+    "Updating Poki" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在更新 Poki"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在更新 Poki"
+          }
+        }
+      }
+    },
+    "Signing Poki for %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在为 %@ 签名 Poki"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在為 %@ 簽名 Poki"
+          }
+        }
+      }
+    },
+    "Stable" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正式版"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正式版"
+          }
+        }
+      }
+    },
+    "Beta" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beta 版"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beta 版"
+          }
+        }
+      }
+    },
+    "Alpha" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alpha 版"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alpha 版"
+          }
+        }
+      }
+    },
+    "Pre-alpha" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pre-alpha 版"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pre-alpha 版"
+          }
+        }
+      }
+    },
+    "Dictate" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "听写"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "聽寫"
+          }
+        }
+      }
+    },
+    "Poki comes back to the front with its reply when a task ends." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "任务结束时，Poki 会带着回复回到前台。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "任務結束時，Poki 會帶著回覆回到前臺。"
+          }
+        }
+      }
+    },
+    "No Actions Yet" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚无操作"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚無操作"
+          }
+        }
+      }
+    },
+    "Nothing Matches" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有匹配项"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "沒有匹配項"
+          }
+        }
+      }
+    },
+    "No Log Yet" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚无日志"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚無日誌"
+          }
+        }
+      }
+    },
+    "Handoff" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "交接"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "交接"
+          }
+        }
+      }
+    },
+    "Nothing" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無"
+          }
+        }
+      }
+    },
+    "OpenCode Go API key is missing." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "缺少 OpenCode Go API 密钥。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "缺少 OpenCode Go API 金鑰。"
+          }
+        }
+      }
+    },
+    "Starting…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在开始…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在開始…"
+          }
+        }
+      }
+    },
+    "Connector %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "连接器 %lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "聯結器 %lld"
+          }
+        }
+      }
+    },
+    "Poki local connection" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 本地连接"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 本地連線"
+          }
+        }
+      }
+    },
+    "WebRTC could not start" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WebRTC 无法启动"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WebRTC 無法啟動"
+          }
+        }
+      }
+    },
+    "The phone refused the pairing (%@). Pair again in Setup." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "手机拒绝了配对（%@）。请在配置中重新配对。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "手機拒絕了配對（%@）。請在配置中重新配對。"
+          }
+        }
+      }
+    },
+    "no chat model to ask" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No chat model to ask"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有可询问的聊天模型"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "沒有可詢問的聊天模型"
+          }
+        }
+      }
+    },
+    "the model did not answer in time" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The model did not answer in time"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型未及时回答"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型未及時回答"
+          }
+        }
+      }
+    },
+    "allowed" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allowed"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已允许"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已允許"
+          }
+        }
+      }
+    },
+    "refused" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refused"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已拒绝"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已拒絕"
+          }
+        }
+      }
+    },
+    "%lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld"
+          }
+        }
+      }
+    },
+    "%@ %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ %lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ %lld"
+          }
+        }
+      }
+    },
+    "%lld %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld %@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld %@"
+          }
+        }
+      }
+    },
+    "%lld %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld %lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld %lld"
+          }
+        }
+      }
+    },
+    "%@ in %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在“%2$lld”中%1$@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在「%2$lld」中%1$@"
+          }
+        }
+      }
+    },
+    "%lld in %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在“%2$@”中%1$lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在「%2$@」中%1$lld"
+          }
+        }
+      }
+    },
+    "%lld in %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在“%2$lld”中%1$lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在「%2$lld」中%1$lld"
+          }
+        }
+      }
+    },
+    "%@ in %lld. Open Poki to allow or deny." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在“%2$lld”中%1$@。打开 Poki 允许或拒绝。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在「%2$lld」中%1$@。開啟 Poki 允許或拒絕。"
+          }
+        }
+      }
+    },
+    "%lld in %@. Open Poki to allow or deny." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在“%2$@”中%1$lld。打开 Poki 允许或拒绝。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在「%2$@」中%1$lld。開啟 Poki 允許或拒絕。"
+          }
+        }
+      }
+    },
+    "%lld in %lld. Open Poki to allow or deny." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在“%2$lld”中%1$lld。打开 Poki 允许或拒绝。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在「%2$lld」中%1$lld。開啟 Poki 允許或拒絕。"
+          }
+        }
+      }
+    },
+    "%lld key" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 密钥"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 金鑰"
+          }
+        }
+      }
+    },
+    "%lld or later" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 或更高版本"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 或更高版本"
+          }
+        }
+      }
+    },
+    "%@%lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@%lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@%lld"
+          }
+        }
+      }
+    },
+    "%lld%@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld%@"
+          }
+        }
+      }
+    },
+    "%lld%lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld%lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld%lld"
+          }
+        }
+      }
+    },
+    "%@, %@ missed" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@，%2$@ 步失败"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@，%2$@ 步失敗"
+          }
+        }
+      }
+    },
+    "%lld, %@ missed" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld，%2$@ 步失败"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld，%2$@ 步失敗"
+          }
+        }
+      }
+    },
+    "%lld, %lld missed" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld，%2$lld 步失败"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld，%2$lld 步失敗"
+          }
+        }
+      }
+    },
+    "%@, Step %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@，第 %@ 步"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@，第 %@ 步"
+          }
+        }
+      }
+    },
+    "%lld, Step %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld，第 %@ 步"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld，第 %@ 步"
+          }
+        }
+      }
+    },
+    "%lld, Step %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld，第 %lld 步"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld，第 %lld 步"
+          }
+        }
+      }
+    },
+    "%lld, waiting for you" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld，正在等待你"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld，正在等待你"
+          }
+        }
+      }
+    },
+    "%@, your %lld key" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@（使用 %lld 密钥）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@（使用 %lld 金鑰）"
+          }
+        }
+      }
+    },
+    "%lld, your %@ key" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld（使用 %@ 密钥）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld（使用 %@ 金鑰）"
+          }
+        }
+      }
+    },
+    "%lld, your %lld key" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld（使用 %lld 密钥）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld（使用 %lld 金鑰）"
+          }
+        }
+      }
+    },
+    "%@. Started at %lld." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@。始于%2$lld。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@。始於%2$lld。"
+          }
+        }
+      }
+    },
+    "%lld. Started at %@." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld。始于%2$@。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld。始於%2$@。"
+          }
+        }
+      }
+    },
+    "%lld. Started at %lld." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld。始于%2$lld。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld。始於%2$lld。"
+          }
+        }
+      }
+    },
+    "%@, %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@，%2$lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@，%2$lld"
+          }
+        }
+      }
+    },
+    "%lld, %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld，%2$@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld，%2$@"
+          }
+        }
+      }
+    },
+    "%lld, %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld，%2$lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld，%2$lld"
+          }
+        }
+      }
+    },
+    "%@ lines" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 行"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 行"
+          }
+        }
+      }
+    },
+    "%@ of %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@/%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@/%@"
+          }
+        }
+      }
+    },
+    "%@ of %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@/%lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@/%lld"
+          }
+        }
+      }
+    },
+    "%lld of %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld/%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld/%@"
+          }
+        }
+      }
+    },
+    "%@ pt" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 点"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 點"
+          }
+        }
+      }
+    },
+    "%@ s" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 秒"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 秒"
+          }
+        }
+      }
+    },
+    "%@ steps" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 步"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 步"
+          }
+        }
+      }
+    },
+    "%@ steps in %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 步，用时 %2$@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 步，用時 %2$@"
+          }
+        }
+      }
+    },
+    "%@ steps in %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 步，用时 %2$lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 步，用時 %2$lld"
+          }
+        }
+      }
+    },
+    "%lld steps in %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld 步，用时 %2$lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld 步，用時 %2$lld"
+          }
+        }
+      }
+    },
+    "Add your %lld key. Tap my picture, then Model." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请添加 %lld 密钥。轻点头像，再选择“模型”。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請新增 %lld 金鑰。輕點頭像，再選擇「模型」。"
+          }
+        }
+      }
+    },
+    "Anthropic answered %@, %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anthropic 返回错误（%@），%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anthropic 返回錯誤（%@），%@"
+          }
+        }
+      }
+    },
+    "Anthropic answered %@, %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anthropic 返回错误（%@），%lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anthropic 返回錯誤（%@），%lld"
+          }
+        }
+      }
+    },
+    "Anthropic answered %lld, %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anthropic 返回错误（%lld），%lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anthropic 返回錯誤（%lld），%lld"
+          }
+        }
+      }
+    },
+    "Approved, %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已批准，%lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已批准，%lld"
+          }
+        }
+      }
+    },
+    "Downloading Developer Disk Image, %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在下载开发者磁盘映像，%lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在下載開發者磁碟映像，%lld"
+          }
+        }
+      }
+    },
+    "Finished in %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已在“%lld”中完成"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已在「%lld」中完成"
+          }
+        }
+      }
+    },
+    "I stopped after %@ steps. Tell me how to go on." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已执行 %@ 步并暂停。请指示下一步操作。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已執行 %@ 步並暫停。請指示下一步操作。"
+          }
+        }
+      }
+    },
+    "IPv6 present, %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有 IPv6，%lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有 IPv6，%lld"
+          }
+        }
+      }
+    },
+    "Invalid Pairing File. %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "配对文件无效。%lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "配對檔案無效。%lld"
+          }
+        }
+      }
+    },
+    "Last answer %@ ms after you stopped" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上次响应耗时 %@ 毫秒"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上次響應耗時 %@ 毫秒"
+          }
+        }
+      }
+    },
+    "Open %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开 %lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開啟 %lld"
+          }
+        }
+      }
+    },
+    "OpenAI answered %@, %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI 返回错误（%@），%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI 返回錯誤（%@），%@"
+          }
+        }
+      }
+    },
+    "OpenAI answered %@, %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI 返回错误（%@），%lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI 返回錯誤（%@），%lld"
+          }
+        }
+      }
+    },
+    "OpenAI answered %lld, %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI 返回错误（%lld），%lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI 返回錯誤（%lld），%lld"
+          }
+        }
+      }
+    },
+    "OpenAI did not give a sign-in code (%@)." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法从 OpenAI 获取登录码（%@）。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法從 OpenAI 獲取登入碼（%@）。"
+          }
+        }
+      }
+    },
+    "OpenAI refused the sign-in code (%@)." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI 拒绝了此登录码（%@）。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI 拒絕了此登入碼（%@）。"
+          }
+        }
+      }
+    },
+    "Paired. The phone accepted it at %lld." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已配对。iPhone 于 %lld 接受了配对。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已配對。iPhone 於 %lld 接受了配對。"
+          }
+        }
+      }
+    },
+    "Pairing code %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "配对码 %lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "配對碼 %lld"
+          }
+        }
+      }
+    },
+    "Poki could not reach %@. %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法连接 %@。%lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法連線 %@。%lld"
+          }
+        }
+      }
+    },
+    "Poki could not reach %lld. %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法连接 %lld。%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法連線 %lld。%@"
+          }
+        }
+      }
+    },
+    "Poki could not reach %lld. %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法连接 %lld。%lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法連線 %lld。%lld"
+          }
+        }
+      }
+    },
+    "Poki couldn’t read its relay key from the keychain (%lld)." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 无法从钥匙串读取中转密钥（%lld）。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 無法從鑰匙串讀取中轉金鑰（%lld）。"
+          }
+        }
+      }
+    },
+    "Poki keeps the key now. Chatting with %lld comes in an update. Until then, choose Anthropic or OpenAI." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "密钥已保存。%lld 对话功能将在后续更新中推出，目前请选择 Anthropic 或 OpenAI。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "金鑰已儲存。%lld 對話功能將在後續更新中推出，目前請選擇 Anthropic 或 OpenAI。"
+          }
+        }
+      }
+    },
+    "Poki stops opening after %lld. Connect this iPhone to your Mac and ask your agent to renew it." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 之后 Poki 将无法打开。请把这台 iPhone 连上 Mac，让 agent 为它续签。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 之後 Poki 將無法開啟。請把這臺 iPhone 連上 Mac，讓 agent 為它續簽。"
+          }
+        }
+      }
+    },
+    "Sign-in code %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登录码 %lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登入碼 %lld"
+          }
+        }
+      }
+    },
+    "Step %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "第 %@ 步"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "第 %@ 步"
+          }
+        }
+      }
+    },
+    "Step %@, in %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "第 %@ 步（“%@”）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "第 %@ 步（「%@」）"
+          }
+        }
+      }
+    },
+    "Step %@, in %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "第 %@ 步（“%lld”）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "第 %@ 步（「%lld」）"
+          }
+        }
+      }
+    },
+    "Step %lld, in %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "第 %lld 步（“%lld”）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "第 %lld 步（「%lld」）"
+          }
+        }
+      }
+    },
+    "The Live Activity did not start. %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "实时活动未能启动。%lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "實時活動未能啟動。%lld"
+          }
+        }
+      }
+    },
+    "The phone no longer accepts Poki’s pairing (%lld). Pair again in Setup, it takes a minute." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此 iPhone 不再接受 Poki 的配对（%lld）。请在配置中重新配对，只需一分钟。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此 iPhone 不再接受 Poki 的配對（%lld）。請在配置中重新配對，只需一分鐘。"
+          }
+        }
+      }
+    },
+    "The phone no longer accepts this pairing. %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此 iPhone 不再接受当前配对。%lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此 iPhone 不再接受當前配對。%lld"
+          }
+        }
+      }
+    },
+    "This Anthropic key can’t use %lld." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此 Anthropic 密钥不支持调用 %lld。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此 Anthropic 金鑰不支援呼叫 %lld。"
+          }
+        }
+      }
+    },
+    "This OpenAI key can’t use %lld." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此 OpenAI 密钥无权调用 %lld。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此 OpenAI 金鑰無權呼叫 %lld。"
+          }
+        }
+      }
+    },
+    "This iPhone answers at 10.7.0.1 (%@ ms)." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此 iPhone 在 10.7.0.1 应答（%@ 毫秒）。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此 iPhone 在 10.7.0.1 應答（%@ 毫秒）。"
+          }
+        }
+      }
+    },
+    "pi has no model %@ for %lld." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "pi 中未找到 %2$lld 的模型 %1$@。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "pi 中未找到 %2$lld 的模型 %1$@。"
+          }
+        }
+      }
+    },
+    "pi has no model %lld for %@." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "pi 中未找到 %2$@ 的模型 %1$lld。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "pi 中未找到 %2$@ 的模型 %1$lld。"
+          }
+        }
+      }
+    },
+    "pi has no model %lld for %lld." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "pi 中未找到 %2$lld 的模型 %1$lld。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "pi 中未找到 %2$lld 的模型 %1$lld。"
+          }
+        }
+      }
+    },
+    "%lld ms" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 毫秒"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 毫秒"
+          }
+        }
+      }
+    },
+    "Voice bridge at %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "语音桥接 %lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "語音橋接 %lld"
+          }
+        }
+      }
+    },
+    "Dictation to %lld, Poki reads the answer aloud" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "听写发送给 %lld，Poki 会朗读回答"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "聽寫傳送給 %lld，Poki 會朗讀回答"
+          }
+        }
+      }
+    },
+    "%lld needs your OK" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 需要你的确认"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 需要你的確認"
+          }
+        }
+      }
+    },
+    "%@ in %lld. Touch and hold to allow or deny." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在“%2$lld”中%1$@。按住通知即可允许或拒绝。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在「%2$lld」中%1$@。按住通知即可允許或拒絕。"
+          }
+        }
+      }
+    },
+    "%lld in %@. Touch and hold to allow or deny." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在“%2$@”中%1$lld。按住通知即可允许或拒绝。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在「%2$@」中%1$lld。按住通知即可允許或拒絕。"
+          }
+        }
+      }
+    },
+    "%lld in %lld. Touch and hold to allow or deny." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在“%2$lld”中%1$lld。按住通知即可允许或拒绝。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在「%2$lld」中%1$lld。按住通知即可允許或拒絕。"
+          }
+        }
+      }
+    },
+    "Allow %lld to connect?" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "允许 %lld 连接吗？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "允許 %lld 連線嗎？"
+          }
+        }
+      }
+    },
+    "A client Poki doesn’t know (%@) is signing in with %lld. Open Poki to allow or deny it." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一个 Poki 不认识的客户端（%@）正在通过 %lld 登录。请打开 Poki 允许或拒绝。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一個 Poki 不認識的客戶端（%@）正在透過 %lld 登入。請開啟 Poki 允許或拒絕。"
+          }
+        }
+      }
+    },
+    "A client Poki doesn’t know (%lld) is signing in with %@. Open Poki to allow or deny it." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一个 Poki 不认识的客户端（%lld）正在通过 %@ 登录。请打开 Poki 允许或拒绝。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一個 Poki 不認識的客戶端（%lld）正在透過 %@ 登入。請開啟 Poki 允許或拒絕。"
+          }
+        }
+      }
+    },
+    "A client Poki doesn’t know (%lld) is signing in with %lld. Open Poki to allow or deny it." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一个 Poki 不认识的客户端（%lld）正在通过 %lld 登录。请打开 Poki 允许或拒绝。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一個 Poki 不認識的客戶端（%lld）正在透過 %lld 登入。請開啟 Poki 允許或拒絕。"
+          }
+        }
+      }
+    },
+    "A refreshed Poki is ready. Open Setup and tap Install before %lld." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "续签后的 Poki 已就绪。请在 %lld 前打开配置并轻点“安装”。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "續簽後的 Poki 已就緒。請在 %lld 前開啟配置並輕點「安裝」。"
+          }
+        }
+      }
+    },
+    "Open Setup to refresh Poki before %lld." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请在 %lld 前打开配置为 Poki 续签。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請在 %lld 前開啟配置為 Poki 續簽。"
+          }
+        }
+      }
+    },
+    "%lld (Free, 7-day signing)" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld（免费，7 天签名）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld（免費，7 天簽名）"
+          }
+        }
+      }
+    },
+    "Poki gets the next build ready by itself, %lld days before it expires or when your channel has an update. It installs only when you tap Install." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 会在过期前 %lld 天，或你的通道有更新时，自行准备好下一个版本。只有在你轻点“安装”后才会安装。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 會在過期前 %lld 天，或你的通道有更新時，自行準備好下一個版本。只有在你輕點「安裝」後才會安裝。"
+          }
+        }
+      }
+    },
+    "Poki keeps this key. Chatting with %lld comes in an update." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 会保存此密钥。与 %lld 聊天的功能将在后续更新中提供。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 會儲存此金鑰。與 %lld 聊天的功能將在後續更新中提供。"
+          }
+        }
+      }
+    },
+    "Fast models without long thinking answer quickest on the phone. Models from %lld’s list start switched off." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不进行长时间思考的快速模型在手机上回答最快。来自 %lld 列表的模型默认关闭。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不進行長時間思考的快速模型在手機上回答最快。來自 %lld 列表的模型預設關閉。"
+          }
+        }
+      }
+    },
+    "%lld didn’t return its model list. The built-in models still work." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 未返回模型列表。内置模型仍可使用。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 未返回模型列表。內建模型仍可使用。"
+          }
+        }
+      }
+    },
+    "%lld, text chat and live voice" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld，文字聊天和实时语音"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld，文字聊天和實時語音"
+          }
+        }
+      }
+    },
+    "%lld, text chat" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld，文字聊天"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld，文字聊天"
+          }
+        }
+      }
+    },
+    "%lld, coming in an update" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld，将在后续更新中提供"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld，將在後續更新中提供"
+          }
+        }
+      }
+    },
+    "%lld ended the answer with an error and gave no reason. This is usually brief on their side. Tap Try Again." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 在回答结束时返回了错误，且未说明原因。这通常是对方的短暂问题。请轻点“重试”。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 在回答結束時返回了錯誤，且未說明原因。這通常是對方的短暫問題。請輕點「重試」。"
+          }
+        }
+      }
+    },
+    "Chat Model %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "聊天模型 %lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "聊天模型 %lld"
+          }
+        }
+      }
+    },
+    "Voice Model %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "语音模型 %lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "語音模型 %lld"
+          }
+        }
+      }
+    },
+    "Approved by model, %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型已批准，%lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型已批准，%lld"
+          }
+        }
+      }
+    },
+    "Not approved by model, %lld. Say yes in the chat to let it through." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型未批准，%lld。在聊天中回答“是”即可放行。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型未批准，%lld。在聊天中回答「是」即可放行。"
+          }
+        }
+      }
+    },
+    "Poki is working on a task for %lld. Try again when it’s done." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 正在为 %lld 执行任务。请在完成后重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 正在為 %lld 執行任務。請在完成後重試。"
+          }
+        }
+      }
+    },
+    "%lld Needed" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需要%lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需要%lld"
+          }
+        }
+      }
+    },
+    "%lld routines" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld routine"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld routines"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 个例程"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 個例程"
+          }
+        }
+      }
+    },
+    "The agent is doing a step, %lld." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "智能体正在执行一个步骤，%lld。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 代理正在執行一個步驟，%lld。"
+          }
+        }
+      }
+    },
+    "The agent acted %lld s ago. Install opens a minute after its last step." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "智能体在 %lld 秒前执行过操作。最后一步完成一分钟后即可安装。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 代理在 %lld 秒前執行過操作。最後一步完成一分鐘後即可安裝。"
+          }
+        }
+      }
+    },
+    "Could not get the pairing file. %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法获取配对文件。%lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法獲取配對檔案。%lld"
+          }
+        }
+      }
+    },
+    "%@ is signing in through %@ and returns to %lld, which isn’t on Poki’s list of known agents. Allow it only if you are connecting it yourself right now. It could then see your screen and act on this iPhone." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 正在通过 %@ 登录并返回 %lld，后者不在 Poki 的已知智能体列表中。只有在你此刻正亲自连接它时才允许。允许后它可以看到你的屏幕并在此 iPhone 上操作。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 正在透過 %@ 登入並返回 %lld，後者不在 Poki 的已知AI 代理列表中。只有在你此刻正親自連線它時才允許。允許後它可以看到你的螢幕並在此 iPhone 上操作。"
+          }
+        }
+      }
+    },
+    "%@ is signing in through %lld and returns to %@, which isn’t on Poki’s list of known agents. Allow it only if you are connecting it yourself right now. It could then see your screen and act on this iPhone." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 正在通过 %lld 登录并返回 %@，后者不在 Poki 的已知智能体列表中。只有在你此刻正亲自连接它时才允许。允许后它可以看到你的屏幕并在此 iPhone 上操作。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 正在透過 %lld 登入並返回 %@，後者不在 Poki 的已知AI 代理列表中。只有在你此刻正親自連線它時才允許。允許後它可以看到你的螢幕並在此 iPhone 上操作。"
+          }
+        }
+      }
+    },
+    "%@ is signing in through %lld and returns to %lld, which isn’t on Poki’s list of known agents. Allow it only if you are connecting it yourself right now. It could then see your screen and act on this iPhone." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 正在通过 %lld 登录并返回 %lld，后者不在 Poki 的已知智能体列表中。只有在你此刻正亲自连接它时才允许。允许后它可以看到你的屏幕并在此 iPhone 上操作。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 正在透過 %lld 登入並返回 %lld，後者不在 Poki 的已知AI 代理列表中。只有在你此刻正親自連線它時才允許。允許後它可以看到你的螢幕並在此 iPhone 上操作。"
+          }
+        }
+      }
+    },
+    "%lld is signing in through %@ and returns to %@, which isn’t on Poki’s list of known agents. Allow it only if you are connecting it yourself right now. It could then see your screen and act on this iPhone." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 正在通过 %@ 登录并返回 %@，后者不在 Poki 的已知智能体列表中。只有在你此刻正亲自连接它时才允许。允许后它可以看到你的屏幕并在此 iPhone 上操作。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 正在透過 %@ 登入並返回 %@，後者不在 Poki 的已知AI 代理列表中。只有在你此刻正親自連線它時才允許。允許後它可以看到你的螢幕並在此 iPhone 上操作。"
+          }
+        }
+      }
+    },
+    "%lld is signing in through %@ and returns to %lld, which isn’t on Poki’s list of known agents. Allow it only if you are connecting it yourself right now. It could then see your screen and act on this iPhone." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 正在通过 %@ 登录并返回 %lld，后者不在 Poki 的已知智能体列表中。只有在你此刻正亲自连接它时才允许。允许后它可以看到你的屏幕并在此 iPhone 上操作。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 正在透過 %@ 登入並返回 %lld，後者不在 Poki 的已知AI 代理列表中。只有在你此刻正親自連線它時才允許。允許後它可以看到你的螢幕並在此 iPhone 上操作。"
+          }
+        }
+      }
+    },
+    "%lld is signing in through %lld and returns to %@, which isn’t on Poki’s list of known agents. Allow it only if you are connecting it yourself right now. It could then see your screen and act on this iPhone." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 正在通过 %lld 登录并返回 %@，后者不在 Poki 的已知智能体列表中。只有在你此刻正亲自连接它时才允许。允许后它可以看到你的屏幕并在此 iPhone 上操作。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 正在透過 %lld 登入並返回 %@，後者不在 Poki 的已知AI 代理列表中。只有在你此刻正親自連線它時才允許。允許後它可以看到你的螢幕並在此 iPhone 上操作。"
+          }
+        }
+      }
+    },
+    "%lld is signing in through %lld and returns to %lld, which isn’t on Poki’s list of known agents. Allow it only if you are connecting it yourself right now. It could then see your screen and act on this iPhone." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 正在通过 %lld 登录并返回 %lld，后者不在 Poki 的已知智能体列表中。只有在你此刻正亲自连接它时才允许。允许后它可以看到你的屏幕并在此 iPhone 上操作。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 正在透過 %lld 登入並返回 %lld，後者不在 Poki 的已知AI 代理列表中。只有在你此刻正親自連線它時才允許。允許後它可以看到你的螢幕並在此 iPhone 上操作。"
+          }
+        }
+      }
+    },
+    "%lld. The agent waits and sends nothing until you tap Done on the Live Activity." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld。智能体会等待，在你轻点实时活动上的“完成”之前不会发送任何内容。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld。AI 代理會等待，在你輕點實時活動上的「完成」之前不會傳送任何內容。"
+          }
+        }
+      }
+    },
+    "That file could not be imported. %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法导入该文件。%lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法匯入該檔案。%lld"
+          }
+        }
+      }
+    },
+    "worked %@ of %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$lld 次中成功 %1$@ 次"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$lld 次中成功 %1$@ 次"
+          }
+        }
+      }
+    },
+    "worked %lld of %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$@ 次中成功 %1$lld 次"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$@ 次中成功 %1$lld 次"
+          }
+        }
+      }
+    },
+    "worked %lld of %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$lld 次中成功 %1$lld 次"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$lld 次中成功 %1$lld 次"
+          }
+        }
+      }
+    },
+    "%lld, failed" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld，失败"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld，失敗"
+          }
+        }
+      }
+    },
+    "Asked you to allow %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请求你允许 %lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請求你允許 %lld"
+          }
+        }
+      }
+    },
+    "%lld items" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 项"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 項"
+          }
+        }
+      }
+    },
+    "Working in %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在“%lld”中工作"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在「%lld」中工作"
+          }
+        }
+      }
+    },
+    "Online, %@ live" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在线，%@ 个进行中"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "線上，%@ 個進行中"
+          }
+        }
+      }
+    },
+    "Over MCP, %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通过 MCP，%lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "透過 MCP，%lld"
+          }
+        }
+      }
+    },
+    "Handed to Poki, %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已交给 Poki，%lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已交給 Poki，%lld"
+          }
+        }
+      }
+    },
+    "Voice, %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "语音，%lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "語音，%lld"
+          }
+        }
+      }
+    },
+    "Poki keeps its latest %lld entries on this iPhone. Entries can’t be deleted by hand." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 在此 iPhone 上保留最近 %lld 条记录。记录无法手动删除。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 在此 iPhone 上保留最近 %lld 條記錄。記錄無法手動刪除。"
+          }
+        }
+      }
+    },
+    "%lld entries" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld entry"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld entries"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 条记录"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 條記錄"
+          }
+        }
+      }
+    },
+    "%lld failed" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 条失败"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 條失敗"
+          }
+        }
+      }
+    },
+    "%lld approvals" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld approval"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld approvals"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 项批准"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 項批准"
+          }
+        }
+      }
+    },
+    "%@ is chosen, but nothing answers at 10.7.0.1 right now. Open %lld, make sure it is connected with the loopback on, then come back. This page updates by itself." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已选择 %@，但目前 10.7.0.1 没有响应。打开 %lld，确认它已连接且回环已开启，然后回到这里。此页面会自行更新。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已選擇 %@，但目前 10.7.0.1 沒有響應。開啟 %lld，確認它已連線且迴環已開啟，然後回到這裡。此頁面會自行更新。"
+          }
+        }
+      }
+    },
+    "%lld is chosen, but nothing answers at 10.7.0.1 right now. Open %@, make sure it is connected with the loopback on, then come back. This page updates by itself." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已选择 %lld，但目前 10.7.0.1 没有响应。打开 %@，确认它已连接且回环已开启，然后回到这里。此页面会自行更新。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已選擇 %lld，但目前 10.7.0.1 沒有響應。開啟 %@，確認它已連線且迴環已開啟，然後回到這裡。此頁面會自行更新。"
+          }
+        }
+      }
+    },
+    "%lld is chosen, but nothing answers at 10.7.0.1 right now. Open %lld, make sure it is connected with the loopback on, then come back. This page updates by itself." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已选择 %lld，但目前 10.7.0.1 没有响应。打开 %lld，确认它已连接且回环已开启，然后回到这里。此页面会自行更新。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已選擇 %lld，但目前 10.7.0.1 沒有響應。開啟 %lld，確認它已連線且迴環已開啟，然後回到這裡。此頁面會自行更新。"
+          }
+        }
+      }
+    },
+    "As reported by users of %lld and not checked against its documentation. The status on the Loopback page tells whether it works." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "来自 %lld 用户的反馈，未与其文档核对。“回环”页面上的状态会显示它是否可用。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "來自 %lld 使用者的反饋，未與其文件核對。「迴環」頁面上的狀態會顯示它是否可用。"
+          }
+        }
+      }
+    },
+    "%@ %lld or later." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ %lld 或更高版本。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ %lld 或更高版本。"
+          }
+        }
+      }
+    },
+    "%lld %@ or later." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld %@ 或更高版本。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld %@ 或更高版本。"
+          }
+        }
+      }
+    },
+    "%lld %lld or later." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld %lld 或更高版本。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld %lld 或更高版本。"
+          }
+        }
+      }
+    },
+    "Gathered from what users of %lld and other loopback tools report. Try them in order. The status above checks again every few seconds." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "整理自 %lld 和其他回环工具用户的反馈。请按顺序尝试。上方状态每隔几秒会重新检查。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "整理自 %lld 和其他迴環工具使用者的反饋。請按順序嘗試。上方狀態每隔幾秒會重新檢查。"
+          }
+        }
+      }
+    },
+    "10.7.0.1 takes the connection, but the pairing service behind it did not answer (%lld). Reconnect your proxy app or LocalDevVPN and check Wi-Fi, then tap Check Again. The pairing itself is kept." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "10.7.0.1 接受了连接，但其后的配对服务没有响应（%lld）。请重新连接你的代理 App 或 LocalDevVPN 并检查 Wi-Fi，然后轻点“再次检查”。配对本身会保留。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "10.7.0.1 接受了連線，但其後的配對服務沒有響應（%lld）。請重新連線你的代理 App 或 LocalDevVPN 並檢查 Wi-Fi，然後輕點「再次檢查」。配對本身會保留。"
+          }
+        }
+      }
+    },
+    "Pairing on the phone itself needs iOS 27, and this iPhone runs iOS %lld. Pair it from a computer instead." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在手机上直接配对需要 iOS 27，此 iPhone 运行的是 iOS %lld。请改为通过电脑配对。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在手機上直接配對需要 iOS 27，此 iPhone 執行的是 iOS %lld。請改為透過電腦配對。"
+          }
+        }
+      }
+    },
+    "Last check %@. %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上次检查 %@。%lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上次檢查 %@。%lld"
+          }
+        }
+      }
+    },
+    "Last check %lld. %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上次检查 %lld。%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上次檢查 %lld。%@"
+          }
+        }
+      }
+    },
+    "Last check %lld. %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上次检查 %lld。%lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上次檢查 %lld。%lld"
+          }
+        }
+      }
+    },
+    "Your turn, %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "轮到你了，%lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "輪到你了，%lld"
+          }
+        }
+      }
+    },
+    "The voice bridge answered %@, %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "语音桥接返回错误（%@），%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "語音橋接返回錯誤（%@），%@"
+          }
+        }
+      }
+    },
+    "The voice bridge answered %@, %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "语音桥接返回错误（%@），%lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "語音橋接返回錯誤（%@），%lld"
+          }
+        }
+      }
+    },
+    "The voice bridge answered %lld, %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "语音桥接返回错误（%lld），%lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "語音橋接返回錯誤（%lld），%lld"
+          }
+        }
+      }
+    },
+    "%lld took too long." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld耗时过长。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld耗時過長。"
+          }
+        }
+      }
+    },
+    "Connection lost (%lld). Nothing is sent again. Reconnect to hear how running steps ended." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "连接已断开（%lld）。不会重新发送任何内容。重新连接即可听到进行中的步骤如何结束。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "連線已斷開（%lld）。不會重新傳送任何內容。重新連線即可聽到進行中的步驟如何結束。"
+          }
+        }
+      }
+    },
+    "Until %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有效期至 %lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有效期至 %lld"
+          }
+        }
+      }
+    },
+    "Signing Poki for %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在为 %lld 签名 Poki"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在為 %lld 簽名 Poki"
+          }
+        }
+      }
+    },
+    "Connector %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "连接器 %@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "聯結器 %@"
+          }
+        }
+      }
+    },
+    "The phone refused the pairing (%lld). Pair again in Setup." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "手机拒绝了配对（%lld）。请在配置中重新配对。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "手機拒絕了配對（%lld）。請在配置中重新配對。"
           }
         }
       }
