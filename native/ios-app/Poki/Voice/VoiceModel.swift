@@ -324,8 +324,8 @@ final class VoiceModel {
     /// Without one, voice is dictation into the message field, turn by turn.
     var canTalkLive: Bool { VoiceDirect.apiKey != nil || bridge != nil }
 
-    /// A live Realtime conversation is on (not the hold-to-dictate fallback).
-    var isLive: Bool { link != nil }
+    /// A live Realtime conversation is on or connecting (not the hold-to-dictate fallback).
+    var isLive: Bool { isOn && dictation == nil }
 
     /// How voice runs now, for the settings screen.
     var route: String {
