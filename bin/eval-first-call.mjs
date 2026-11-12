@@ -14,7 +14,7 @@
 // In --udids, A+B makes one lane of two simulators, which the tasks that need two devices require.
 import { spawn, execFile } from 'node:child_process';
 import { once } from 'node:events';
-import { randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { appendFile, chmod, cp, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { homedir, loadavg } from 'node:os';
 import { basename, join, resolve } from 'node:path';
@@ -140,7 +140,7 @@ const discovery = new Set(['ToolSearch', 'tool_search', 'list_mcp_resources', 'l
 const setup = new Set(['list_devices', 'select_device', 'start_simulator', 'get_device_info', 'poki_mcp_status', 'launch_app', 'terminate_app', 'list_apps', 'list_elements', 'observe_device', 'take_screenshot', 'get_foreground_app', 'acquire_device', 'renew_device', 'release_device', 'cancel_device', 'wait', 'wait_for']);
 const looks = new Set(['list_elements', 'observe_device', 'take_screenshot', 'get_foreground_app', 'wait_for']);
 const shortName = name => name.replace(/^mcp__poki-mcp__/, '');
-const overlapRounds = calls => {
+export const overlapRounds = calls => {
   let rounds = 0, previousEnd = -Infinity;
   for (const call of [...calls].sort((a, b) => a.startedAt - b.startedAt)) {
     if (call.startedAt >= previousEnd) rounds++;
@@ -307,6 +307,38 @@ async function oracle(lane, statePaths, reply, task, context) {
   return { pass: tasks[task].oracle({ ...main, ...inspected, ...context, reply: answer, others }), ...brief(main), ...inspected, others: others.map(brief) };
 }
 
+export function pairedText({ task, client, round }) {
+  const seed = JSON.stringify([task, client, round]);
+  return `Cedar ${createHash('sha256').update(seed).digest('hex').slice(0, 8).toUpperCase()}`;
+}
+
+export function tokenUsage(client, usage) {
+  if (!usage || !Number.isFinite(usage.input_tokens) || !Number.isFinite(usage.output_tokens)) return null;
+  const read = client === 'claude' ? usage.cache_read_input_tokens : usage.cached_input_tokens;
+  const write = client === 'claude' ? usage.cache_creation_input_tokens : 0;
+  const cacheRead = Number.isFinite(read) ? read : null;
+  const cacheWrite = Number.isFinite(write) ? write : null;
+  const input = client === 'claude'
+    ? cacheRead === null || cacheWrite === null ? null : usage.input_tokens + cacheRead + cacheWrite
+    : usage.input_tokens;
+  const uncached = client === 'claude'
+    ? cacheWrite === null ? null : usage.input_tokens + cacheWrite
+    : cacheRead === null ? null : usage.input_tokens - cacheRead;
+  return { input, cached_input: cacheRead, uncached_input: uncached,
+    output: usage.output_tokens, total: input === null ? null : input + usage.output_tokens };
+}
+
+export function toolWallTime(calls) {
+  const intervals = calls.filter(call => Number.isFinite(call.startedAt) && Number.isFinite(call.endedAt))
+    .map(call => [call.startedAt, call.endedAt]).sort((a, b) => a[0] - b[0]);
+  let elapsed = 0, end = -Infinity;
+  for (const [start, finish] of intervals) {
+    elapsed += Math.max(0, finish - Math.max(start, end));
+    end = Math.max(end, finish);
+  }
+  return Math.round(elapsed);
+}
+
 export function summarize(job, parsed, total_ms, timedOut, verdict) {
   const device = parsed.calls.filter(call => !discovery.has(call.name));
   const firstCall = device[0], first = device.find(call => !setup.has(call.name)), firstFast = device.find(call => fastEntries.has(call.name) || call.name === job.fastEntry);
@@ -333,7 +365,8 @@ export function summarize(job, parsed, total_ms, timedOut, verdict) {
     next_call_after_first_error: afterError ? { tool: afterError.name, ok: !afterError.isError } : null,
     next_action_after_first_error: nextAction ? { tool: nextAction.name, ok: !nextAction.isError, calls_between: afterFirstError.indexOf(nextAction) } : null,
     tool_ms: Math.round(device.reduce((sum, call) => sum + (call.endedAt ?? call.startedAt) - call.startedAt, 0)),
-    usage: parsed.usage ?? null, cost_usd: parsed.cost ?? null, api_ms: parsed.apiMs ?? null, reply: parsed.reply,
+    tool_wall_ms: toolWallTime(device),
+    usage: parsed.usage ?? null, tokens: tokenUsage(job.client, parsed.usage), cost_usd: parsed.cost ?? null, api_ms: parsed.apiMs ?? null, reply: parsed.reply,
   };
 }
 
@@ -342,12 +375,13 @@ async function runJob(job, lane, options) {
   await mkdir(dir, { recursive: true });
   const statePaths = await Promise.all(lane.devices.map(udid => resetLane(udid, options.keyboard, tasks[job.task])));
   const { prompt } = tasks[job.task];
-  const word = `Cedar ${randomUUID().slice(0, 8).toUpperCase()}`;
+  const word = pairedText(job);
   const window = await windows[job.client](typeof prompt === 'function' ? prompt(lane.names, word) : prompt, lane.daemons[job.group], dir, { skill: options.skills[job.group], skillRun: Object.keys(options.skills).length > 0 });
   job = { ...job, lane: lane.udid, load1_at_start: loadavg()[0] };
   const started = performance.now(), lines = [];
   const raw = join(dir, 'stream.jsonl');
   const child = spawn(window.file, window.args, { cwd: window.cwd, env: window.env, stdio: ['ignore', 'pipe', 'pipe'] });
+  const closed = once(child, 'close');
   let stderr = '';
   child.stderr.on('data', chunk => { stderr += chunk; });
   let timedOut = false;
@@ -357,7 +391,7 @@ async function runJob(job, lane, options) {
     await appendFile(raw, line + '\n');
     try { lines.push({ at: performance.now(), event: JSON.parse(line) }); } catch { /* A CLI banner line is kept in the raw file only. */ }
   }
-  await once(child, 'close').catch(() => {});
+  await closed.catch(() => {});
   clearTimeout(timer);
   const total = Math.round(performance.now() - started);
   await writeFile(join(dir, 'stderr.txt'), stderr);
@@ -407,6 +441,27 @@ export async function report(out) {
     const subset = rows.filter(row => row.client === client && row.task === task && row.group === group);
     if (subset.length) lines.push(line(client, task, group, subset));
   }
+  lines.push('', '### Token 消耗', '',
+    '| 客户端 | 任务 | 组 | 有 usage / 次数 | 输入中位 | 缓存输入中位 | 未缓存输入中位 | 输出中位 | 总 token / 成功任务 |',
+    '|---|---|---|---|---|---|---|---|---|');
+  const tokenLine = (client, task, group, subset) => {
+    const tokens = subset.map(row => row.tokens ?? tokenUsage(client, row.usage)).filter(Boolean);
+    const metric = key => median(tokens.map(item => item[key]).filter(Number.isFinite)) ?? '—';
+    const successes = subset.filter(row => row.oracle_pass).length;
+    const totals = tokens.map(item => item.total).filter(Number.isFinite);
+    const perSuccess = successes && totals.length === subset.length
+      ? Math.round(totals.reduce((sum, count) => sum + count, 0) / successes) : '—';
+    return `| ${client} | ${task} | ${group} | ${tokens.length}/${subset.length} | ${metric('input')} | ${metric('cached_input')} | ${metric('uncached_input')} | ${metric('output')} | ${perSuccess} |`;
+  };
+  for (const client of distinct('client')) for (const group of distinct('group')) {
+    const subset = rows.filter(row => row.client === client && row.group === group);
+    if (subset.length) lines.push(tokenLine(client, '全部', group, subset));
+    for (const task of distinct('task')) {
+      const selected = subset.filter(row => row.task === task);
+      if (selected.length) lines.push(tokenLine(client, task, group, selected));
+    }
+  }
+  lines.push('', '总 token / 成功任务计入有 usage 的失败和超时。任一会话的总 token 缺失时，该值留空。');
   const loads = rows.map(row => row.load1_at_start).filter(Number.isFinite).map(Math.round);
   lines.push('', `共 ${rows.length} 次有效会话；客户端没连上模型、不计入的 ${unreachable} 次。开始时一分钟负载 ${range(loads)}，中位 ${median(loads)}。`);
   const text = lines.join('\n') + '\n';
