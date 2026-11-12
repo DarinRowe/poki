@@ -159,53 +159,28 @@ function refsIn(action) {
 async function send(ctx, request) {
   const answer = await ctx.input(request);
   if (!answer?.isError && answer?.sent !== false && answer?.outcome !== 'not_sent') return answer;
-  const why = answer?.error ?? answer?.message ?? answer?.outcome ?? 'the device refused the input';
+  const why = answer?.error ?? answer?.instruction ?? answer?.reason ?? answer?.message ?? answer?.outcome ?? 'the device refused the input';
   const failure = new Error(why);
-  failure.delivery = answer?.outcome === 'unknown' ? 'unknown' : 'not_sent';
+  const notSent = answer?.outcome !== 'unknown' && answer?.sent !== true && (answer?.sent === false || answer?.outcome === 'not_sent');
+  failure.delivery = notSent ? 'not_sent' : 'unknown';
   throw failure;
 }
 
-// The pasteboard as it is, when it can be put back exactly: empty, or one plain text item.
-async function savedClipboard(ctx) {
-  try {
-    const { items } = await ctx.bridge({ op: 'pasteboard', action: 'items' });
-    if (!Array.isArray(items)) return undefined;
-    if (!items.length) return { empty: true };
-    if (items.length !== 1 || items[0].state !== 'inline' || !/text|string/i.test(items[0].uti ?? '')) return undefined;
-    const { text } = await ctx.bridge({ op: 'pasteboard', action: 'get' });
-    return typeof text === 'string' ? { text } : undefined;
-  } catch (error) { if (stopped(error)) throw error; return undefined; }
-}
-async function restoreClipboard(ctx, saved) {
-  if (saved.empty) return 'was empty';
-  try {
-    const { text } = await ctx.bridge({ op: 'pasteboard', action: 'get' });
-    if (text !== saved.text) await ctx.bridge({ op: 'pasteboard', action: 'set', text: saved.text });
-    return 'restored';
-  } catch (error) { if (stopped(error)) throw error; return 'restore failed'; }
-}
-
-// Text into the field being edited: the whole string as hardware key presses in one request; the
-// pasteboard only when the keyboard cannot type it, with the user's clipboard saved first and put
-// back afterwards. A clipboard that cannot be read back exactly is never pasted over.
-// A simulator types with its own type_text instead: key presses, and a paste through the
-// simulator's pasteboard for text the keyboard has no key for.
+// Literal input is one native transaction: snapshot before changing anything, paste, read back,
+// then restore only if the clipboard still belongs to that transaction. JS must not restore a
+// pending paste or overwrite a concurrent user copy. Hardware reports cannot prove exact text.
 async function typeText(ctx, text, clear = false) {
   const simulator = (await ctx.target()).kind === 'simulator';
-  const typed = await ctx.input(simulator ? { op: 'type_text', text, clear, submit: false } : { op: 'type_keys', text, clear });
-  if (!typed?.isError && typed?.sent !== false) return typed?.clipboard_changed ? "pasted; the simulator's clipboard keeps the text" : 'keys';
-  // A backend that types every character in one request (WebDriverAgent, a simulator) has no paste to fall back on.
-  if (ctx.typesEverything || simulator) { const e = new Error(`typing failed: ${typed?.error ?? typed?.instruction ?? 'no answer'}`); e.delivery = typed?.outcome === 'not_sent' ? 'not_sent' : 'unknown'; throw e; }
-  // Only a request the bridge refused before sending (a character with no key, an older bridge) may
-  // be pasted instead: after a failure part way, some keys may have reached the field, and what
-  // they did (a return that submitted, a field that moved on) a paste cannot undo, clear or not.
-  if (!/cannot type|unknown variant|at most 2000/i.test(String(typed?.error ?? ''))) { const e = new Error(`typing failed part way (${typed?.error ?? 'no answer'}); not pasted, so the text is not entered twice`); e.delivery = 'unknown'; throw e; }
-  const saved = await savedClipboard(ctx);
-  if (!saved) { const e = new Error('the keyboard cannot type this text, and the clipboard cannot be saved and put back, so it was not pasted over'); e.delivery = 'not_sent'; throw e; }
-  let restored;
-  try { await send(ctx, { op: 'type_text', text, clear, submit: false }); }
-  finally { restored = await restoreClipboard(ctx, saved); }
-  return `pasted, clipboard ${restored}`;
+  if (simulator || ctx.typesEverything) {
+    const typed = await send(ctx, { op: 'type_text', text, clear, submit: false });
+    return typed?.clipboard_changed ? "pasted; the simulator's clipboard keeps the text" : 'keys';
+  }
+  const typed = await send(ctx, { op: 'type_text', text, clear, submit: false, require_clipboard_restore: true });
+  if (typed.text_verified !== true) {
+    const error = new Error('the input text was not verified in its field; inspect before continuing');
+    error.delivery = 'unknown'; throw error;
+  }
+  return `literal text verified; clipboard ${typed.clipboard_restore_status ?? (typed.clipboard_restored ? 'restored' : 'unchanged')}`;
 }
 
 // Gestures are named verbs with defaults: the model names a direction or a target, never a path.
@@ -346,12 +321,13 @@ export async function act(ctx, args = {}) {
   const stale = actions.flatMap(refsIn).filter(ref => !memory.refs.has(ref));
   if (stale.length) return { isError: true, ...await readAndReply(ctx, { full: true, error: `element ${[...new Set(stale)].join(', ')} is not in the latest read; nothing was sent. The current elements are below.` }) };
   let error, last;
-  const started = performance.now(), until = started + actionCapMs;
+  const cap = actions.some(action => 'type' in action) ? Math.max(actionCapMs, 20000) : actionCapMs;
+  const started = performance.now(), until = started + cap;
   const size = ctx.size ?? await ctx.screenSize();
   for (const [index, action] of actions.entries()) {
     const held = holdReason(memory);
     if (held) { error = `stopped before action ${index + 1}: ${held}; nothing more was sent`; break; }
-    if (until - performance.now() < 300) { error = `stopped before action ${index + 1}: the ${actionCapMs} ms action time ran out; nothing more was sent`; break; }
+    if (until - performance.now() < 300) { error = `stopped before action ${index + 1}: the ${cap} ms action time ran out; nothing more was sent`; break; }
     const began = performance.now();
     try {
       const [kind, text] = await perform(ctx, action, size, until);
@@ -372,7 +348,7 @@ export async function act(ctx, args = {}) {
 
 export const definitions = [
   ['look', 'Read the screen now: the app in front, the numbered elements (role, label = value, [x,y,w,h] in screen points; + marks elements new since the last read), and a screenshot. full=true lists every element. Numbers refer to this read only.', { type: 'object', properties: { full: { type: 'boolean' } }, additionalProperties: false }, true],
-  ['do', 'Run actions in order, then read the screen once and return the same facts as look, with a screenshot. Actions: {tap: n} or {tap: [x, y]}; {type: "text", ref?: n, clear?} (taps n first, then types the text as key presses; text the keyboard cannot type is pasted with your clipboard saved and put back); {key: "return"|"delete"|...}; {swipe: "up"|"down"|"left"|"right"} or {swipe: {direction, in?: n, distance?: "short"|"long"}} (direction is where the finger moves); {scroll_to: "text"} or {scroll_to: {text or ref, in?: n, direction?: "down", max_swipes?: 6}} (swipes until it is fully on screen); {long_press: n or [x, y] or {ref, ms?}}; {drag: {from: n or [x, y], to: n or [x, y], ms?}}; {pinch: {ref or x, y, scale}}; {button: "home"|"lock"}; {launch: "bundle id"} or {launch: {bundle, fresh: true}} (fresh ends the app first); {wait: ms}. Points are in the same screen points as the element frames. Each action is reported as sent, not_sent or unknown; it stops at the first action that fails and never re-sends one that may have been delivered. Several known steps can go in one call; you judge the result from the elements and the screenshot.', { type: 'object', properties: { actions: { type: 'array', items: { type: 'object' }, minItems: 0, maxItems: 20 }, full: { type: 'boolean' } }, required: ['actions'], additionalProperties: false }, false],
+  ['do', 'Run actions in order, then read the screen once and return the same facts as look, with a screenshot. Actions: {tap: n} or {tap: [x, y]}; {type: "text", ref?: n, clear?} (taps n first, then enters exact text and verifies it; on a physical phone it pastes with your clipboard saved and put back); {key: "return"|"delete"|...}; {swipe: "up"|"down"|"left"|"right"} or {swipe: {direction, in?: n, distance?: "short"|"long"}} (direction is where the finger moves); {scroll_to: "text"} or {scroll_to: {text or ref, in?: n, direction?: "down", max_swipes?: 6}} (swipes until it is fully on screen); {long_press: n or [x, y] or {ref, ms?}}; {drag: {from: n or [x, y], to: n or [x, y], ms?}}; {pinch: {ref or x, y, scale}}; {button: "home"|"lock"}; {launch: "bundle id"} or {launch: {bundle, fresh: true}} (fresh ends the app first); {wait: ms}. Points are in the same screen points as the element frames. Each action is reported as sent, not_sent or unknown; it stops at the first action that fails and never re-sends one that may have been delivered. Several known steps can go in one call; you judge the result from the elements and the screenshot.', { type: 'object', properties: { actions: { type: 'array', items: { type: 'object' }, minItems: 0, maxItems: 20 }, full: { type: 'boolean' } }, required: ['actions'], additionalProperties: false }, false],
 ];
 export const tools = new Set(['look', 'do', 'list_apps', 'list_devices', 'select_device', 'poki_mcp_status']);
 export const instructions = 'look reads the screen; do runs actions and then reads it. Both return the numbered elements and a screenshot. Use the numbers from the latest answer. Decide what happened from the elements and the picture.';

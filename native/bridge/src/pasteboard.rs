@@ -26,6 +26,7 @@ pub async fn paste_text(
     clear: bool,
     submit: bool,
     target: Option<&Target>,
+    require_clipboard_restore: bool,
 ) -> Result<serde_json::Value> {
     super::trace("paste AX initial");
     let Ok(mut initial) = observe(adapter, rsd).await else {
@@ -120,6 +121,14 @@ pub async fn paste_text(
     } else {
         "unavailable"
     };
+    // CUA requires a restorable snapshot before clearing a field or replacing the clipboard.
+    // Existing type_text/fill callers retain their explicit best-effort restoration policy.
+    if require_clipboard_restore && previous_items.is_none() {
+        let mut result = unconfirmed("clipboard_snapshot_unavailable", false, false);
+        result["outcome"] = "not_sent".into();
+        result["instruction"] = "The clipboard cannot be restored exactly. Nothing was cleared, typed or pasted; Return was not sent.".into();
+        return Ok(clipboard_result(result, snapshot_status, "not_modified"));
+    }
     if clear_first {
         super::trace("paste clear");
         clear_text(keyboard).await?;

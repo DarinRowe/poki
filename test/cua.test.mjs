@@ -54,7 +54,7 @@ class JotPhone extends Devices {
       if (!this.app.focused) return { sent: true };
       this.app.title = (request.clear ? '' : this.app.title) + request.text; return { sent: true };
     }
-    if (request.op === 'type_text') { this.clipboard = { items: [{ uti: 'public.utf8-plain-text', state: 'inline' }], text: request.text }; this.app.title = request.clear ? request.text : this.app.title + request.text; return { sent: true, clipboard_restore_status: 'unavailable' }; }
+    if (request.op === 'type_text') { if (this.textBreak) throw new Error('connection reset'); if (request.require_clipboard_restore && this.clipboard.items.some(x => x.state !== 'inline')) return { isError: true, sent: false, outcome: 'not_sent', reason: 'clipboard_snapshot_unavailable', instruction: 'The clipboard cannot be saved and restored' }; this.app.title = request.clear ? request.text : this.app.title + request.text; return { sent: true, text_verified: true, clipboard_restore_status: 'restored' }; }
     if (request.op === 'drag') { const dy = (request.y2 - request.y1) / 65535 * (H - 1); this.app.offset = Math.max(-30 * 40 + 260, Math.min(0, this.app.offset + Math.round(dy))); return { sent: true }; }
     return { sent: true };
   }
@@ -80,43 +80,35 @@ test('do reports each action as sent, waits, and reads once with a screenshot', 
   assert.equal(phone.app.page, 'note');
 });
 
-test('type sends the whole text as key presses in one request, and pastes only with the clipboard saved and put back', { timeout: 20000 }, async () => {
-  const phone = new JotPhone();
-  await phone.call('look', {});
+test('literal typing is verified, restores the clipboard, and refuses an unrestorable clipboard', { timeout: 20000 }, async () => {
+  const phone = new JotPhone(); await phone.call('look', {});
   const note = await phone.call('do', { actions: [{ tap: [45, 105] }] });
   const typed = await phone.call('do', { actions: [{ type: 'Milk & eggs!', ref: numberOf(note, 'Title') }] });
-  assert.match(text(typed), /type "Milk & eggs!" \(keys\) \(sent/);
-  assert.equal(phone.app.title, 'Milk & eggs!');
-  assert.equal(phone.sent.filter(op => op === 'type_keys').length, 1);
-  assert.equal(phone.sent.includes('type_text'), false);
-  // A bridge without type_keys: the paste runs and the user's clipboard comes back.
-  phone.keysFail = true;
-  const pasted = await phone.call('do', { actions: [{ type: 'Bread', ref: numberOf(typed, 'Title'), clear: true }] });
-  assert.match(text(pasted), /\(pasted, clipboard restored\) \(sent/);
-  assert.equal(phone.clipboard.text, 'mine!');
-  assert.equal(phone.app.title, 'Bread');
-  // A clipboard that cannot be put back exactly is never pasted over.
+  assert.notEqual(typed.isError, true, text(typed)); assert.equal(phone.app.title, 'Milk & eggs!');
+  assert.equal(phone.clipboard.text, 'mine!'); assert.equal(phone.sent.includes('type_keys'), false);
+  assert.match(text(typed), /text verified/);
   phone.clipboard = { items: [{ uti: 'public.png', state: 'promised' }] };
-  const kept = await phone.call('do', { actions: [{ type: 'Jam', ref: numberOf(pasted, 'Title'), clear: true }, { tap: [170, 105] }] });
-  assert.equal(kept.isError, true);
-  assert.match(text(kept), /\(not_sent, \d+ ms\)/);
-  assert.match(text(kept), /clipboard cannot be saved/);
-  assert.match(text(kept), /the actions after it were not sent/);
-  assert.equal(phone.sent.filter(op => op === 'type_text').length, 1);
-  assert.match(text(kept), /^app: local.jot/m, 'a failed action still ends with the read');
+  const kept = await phone.call('do', { actions: [{ type: 'Jam', ref: numberOf(typed, 'Title'), clear: true }, { key: 'return' }] });
+  assert.equal(kept.isError, true); assert.match(text(kept), /not_sent/); assert.match(text(kept), /clipboard cannot be saved/);
+  assert.equal(phone.app.title, 'Milk & eggs!'); assert.equal(phone.sent.includes('key'), false);
 });
 
-test('typing that fails part way is unknown, is not pasted on top, and stops the call, with or without clear', { timeout: 30000 }, async () => {
+test('uncertain literal input is not replayed and stops actions after it', { timeout: 30000 }, async () => {
   for (const clear of [false, true]) {
-    const phone = new JotPhone();
-    await phone.call('look', {});
-    const note = await phone.call('do', { actions: [{ tap: [45, 105] }] });
-    phone.keysBreak = true;
-    const broken = await phone.call('do', { actions: [{ type: 'Tea', ref: numberOf(note, 'Title'), clear }, { tap: [170, 105] }] });
-    assert.match(text(broken), /\(unknown, \d+ ms\)/, `clear: ${clear}`);
-    assert.match(text(broken), /may have been delivered/, `clear: ${clear}`);
-    assert.deepEqual(phone.sent, ['tap', 'tap', 'type_keys'], `clear: ${clear}: no paste on top, the keys never sent again, and nothing after them`);
+    const phone = new JotPhone(); await phone.call('look', {});
+    const note = await phone.call('do', { actions: [{ tap: [45, 105] }] }); phone.textBreak = true;
+    const broken = await phone.call('do', { actions: [{ type: 'Tea', ref: numberOf(note, 'Title'), clear }, { key: 'return' }] });
+    assert.equal(broken.isError, true); assert.match(text(broken), /unknown/);
+    assert.deepEqual(phone.sent, ['tap', 'tap', 'type_text']);
   }
+});
+
+test('an unverified literal write cannot be followed by Return', { timeout: 20000 }, async () => {
+  const phone = new JotPhone(); const original = phone.bridge.bind(phone);
+  phone.bridge = async request => { const result = await original(request); return request.op === 'type_text' ? { ...result, text_verified: false } : result; };
+  await phone.call('look', {}); const note = await phone.call('do', { actions: [{ tap: [45, 105] }] });
+  const answer = await phone.call('do', { actions: [{ type: 'from:AnthropicAI since:2026-11-01', ref: numberOf(note, 'Title'), clear: true }, { key: 'return' }] });
+  assert.equal(answer.isError, true); assert.match(text(answer), /not verified/); assert.equal(phone.sent.includes('key'), false);
 });
 
 test('an element number that is not in the latest read is refused with the current list, and nothing is sent', { timeout: 20000 }, async () => {
@@ -189,4 +181,56 @@ test('on a simulator, do types with the simulator keyboard', { timeout: 30000 },
   assert.notEqual(typed.isError, true, text(typed));
   assert.match(text(typed), /type "hello" \(keys\) \(sent/);
   assert.match(text(typed), /TextField "hello"/);
+});
+
+// Regression: hardware reports may say sent while the active input method rewrites punctuation.
+test('CUA preserves an exact search expression despite a rewriting hardware input method', { timeout: 20000 }, async () => {
+  const phone = new JotPhone();
+  const original = phone.bridge.bind(phone);
+  phone.bridge = request => original(request.op === 'type_keys' ? { ...request, text: request.text.replaceAll(':', '：').replaceAll(' ', '').replaceAll('-', '') } : request);
+  await phone.call('look', {});
+  const opened = await phone.call('do', { actions: [{ tap: [45, 105] }] });
+  const expected = 'from:AnthropicAI since:2026-11-01';
+  const answer = await phone.call('do', { actions: [{ type: expected, ref: numberOf(opened, 'Title'), clear: true }] });
+  assert.notEqual(answer.isError, true, text(answer));
+  assert.equal(phone.app.title, expected);
+});
+
+test('literal typing does not overwrite a clipboard changed concurrently', { timeout: 20000 }, async () => {
+  const phone = new JotPhone(); const original = phone.bridge.bind(phone);
+  phone.bridge = async request => { const result = await original(request); if (request.op === 'type_text') { phone.clipboard.text = 'new user copy'; return { ...result, clipboard_restore_status: 'clipboard_changed' }; } return result; };
+  await phone.call('look', {}); const note = await phone.call('do', { actions: [{ tap: [45, 105] }] });
+  const answer = await phone.call('do', { actions: [{ type: 'Claude 最新消息', ref: numberOf(note, 'Title'), clear: true }] });
+  assert.notEqual(answer.isError, true, text(answer)); assert.equal(phone.clipboard.text, 'new user copy');
+  assert.match(text(answer), /clipboard_changed/);
+});
+
+test('verified literal input has enough bounded budget to allow Return after a slow paste', { timeout: 15000 }, async () => {
+  const phone = new JotPhone(); const original = phone.bridge.bind(phone);
+  phone.bridge = async request => { if (request.op === 'type_text') await new Promise(resolve => setTimeout(resolve, 4100)); return original(request); };
+  await phone.call('look', {}); const note = await phone.call('do', { actions: [{ tap: [45, 105] }] });
+  const answer = await phone.call('do', { actions: [{ type: 'Claude latest', ref: numberOf(note, 'Title'), clear: true }, { key: 'return' }] });
+  assert.notEqual(answer.isError, true, text(answer)); assert.equal(phone.sent.includes('key'), true);
+});
+
+test('a pending native paste is unknown and its clipboard is retained without Return', { timeout: 20000 }, async () => {
+  const phone = new JotPhone(); const original = phone.bridge.bind(phone);
+  phone.bridge = async request => {
+    if (request.op !== 'type_text') return original(request);
+    phone.sent.push('type_text'); phone.clipboard.text = request.text;
+    return { isError: true, sent: true, text_verified: false, reason: 'value_mismatch', clipboard_restore_status: 'retained_pending_paste', instruction: 'Read back before continuing; Return was not sent.' };
+  };
+  await phone.call('look', {}); const note = await phone.call('do', { actions: [{ tap: [45, 105] }] });
+  const answer = await phone.call('do', { actions: [{ type: 'pending input', ref: numberOf(note, 'Title'), clear: true }, { key: 'return' }] });
+  assert.equal(answer.isError, true); assert.match(text(answer), /unknown/);
+  assert.equal(phone.clipboard.text, 'pending input'); assert.equal(phone.sent.includes('key'), false);
+});
+
+test('a rich clipboard change with the same text is never overwritten by the JS wrapper', { timeout: 20000 }, async () => {
+  const phone = new JotPhone(); const original = phone.bridge.bind(phone);
+  phone.bridge = async request => { const result = await original(request); if (request.op === 'type_text') { phone.clipboard = { items: [{ uti: 'public.rtf', state: 'inline' }], text: request.text }; return { ...result, clipboard_restore_status: 'clipboard_changed' }; } return result; };
+  await phone.call('look', {}); const note = await phone.call('do', { actions: [{ tap: [45, 105] }] });
+  const answer = await phone.call('do', { actions: [{ type: 'same text', ref: numberOf(note, 'Title'), clear: true }] });
+  assert.notEqual(answer.isError, true, text(answer)); assert.equal(phone.clipboard.text, 'same text');
+  assert.equal(phone.clipboard.items[0].uti, 'public.rtf');
 });

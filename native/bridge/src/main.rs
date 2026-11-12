@@ -227,6 +227,8 @@ enum Request {
         submit: bool,
         #[serde(default)]
         target: Option<pasteboard::Target>,
+        #[serde(default)]
+        require_clipboard_restore: bool,
     },
     /// Types text as hardware key presses into whatever is being edited, without the pasteboard.
     TypeKeys {
@@ -690,6 +692,7 @@ async fn execute_connected(
                 clear,
                 submit,
                 target,
+                require_clipboard_restore,
             } => {
                 let mut keyboard = Keyboard::connect(adapter, rsd).await?;
                 let outcome = pasteboard::paste_text(
@@ -700,6 +703,7 @@ async fn execute_connected(
                     clear,
                     submit,
                     target.as_ref(),
+                    require_clipboard_restore,
                 )
                 .await;
                 let cleanup = keyboard.close().await;
@@ -937,4 +941,19 @@ async fn chord(keyboard: &mut Keyboard, key: u64, modifiers: &[u64]) -> Result<(
     }
     tokio::time::sleep(Duration::from_millis(50)).await;
     Ok(())
+}
+
+#[cfg(test)]
+mod literal_input_contract_tests {
+    use super::Request;
+    #[test]
+    fn legacy_type_text_keeps_snapshot_optional() {
+        let request: Request = serde_json::from_str(r#"{"op":"type_text","text":"hello"}"#).unwrap();
+        assert!(matches!(request, Request::TypeText { require_clipboard_restore: false, .. }));
+    }
+    #[test]
+    fn cua_can_require_a_complete_snapshot_before_mutation() {
+        let request: Request = serde_json::from_str(r#"{"op":"type_text","text":"from:AnthropicAI since:2026-11-01","require_clipboard_restore":true}"#).unwrap();
+        assert!(matches!(request, Request::TypeText { require_clipboard_restore: true, .. }));
+    }
 }
