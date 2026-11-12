@@ -110,6 +110,7 @@ poki "Search esp32 in Chrome and summarize the top result"
 | 安装、其他 MCP 客户端与故障排查 | [安装指南](docs/install.md) |
 | Poki Agent、模型、iMessage 与 Telegram | [运行 Poki Agent](agent/README.md) |
 | MCP 工具说明 | [工具说明](docs/tools.md) |
+| Poki MCP 架构和耗时 | [运行架构图与耗时图](docs/architecture/README.md) |
 | 环境变量与会话管理 | [配置说明](docs/configuration.md) |
 | USB 配对、开发者模式与 Wi-Fi 连接 | [真机配置指南](docs/physical-iphone.md) |
 | 测试结果、已知限制与免责声明 | [验证与限制](docs/verification.md) |

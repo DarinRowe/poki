@@ -128,6 +128,7 @@ Physical iPhone support has been verified only on iPhones using the Chinese inte
 | Installation, other MCP clients, and troubleshooting | [Install guide](docs/install.md) |
 | Poki Agent, models, iMessage, and Telegram | [Run Poki Agent](agent/README.md) |
 | MCP tool reference | [Tool behavior](docs/tools.md) |
+| Poki MCP architecture and timings | [Runtime diagrams (简体中文)](docs/architecture/README.md) |
 | Environment variables and sessions | [Configuration](docs/configuration.md) |
 | USB pairing, Developer Mode, and Wi-Fi | [Physical iPhone setup](docs/physical-iphone.md) |
 | Test results, known limits, and disclaimers | [Verification](docs/verification.md) |
