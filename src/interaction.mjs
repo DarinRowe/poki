@@ -128,6 +128,8 @@ async function locate(ctx, find, describe, mustHold, verify = true) {
         checkWork();
         seen = await deadline(Math.max(1, remaining()), () => readStructure(ctx, verify && attempt === 0 ? justReadMs : 0));
         checkWork();
+        const guard = describe.guard?.(seen);
+        if (guard) return { blockedOverlay: guard };
         let found = find(seen.elements);
         const elapsed = performance.now() - started, quiet = performance.now() - ctx.lastInputAt > quietMs;
         if (!found.length && elapsed < patienceMs && (elapsed >= nextOcr || !seen.elements.length && quiet)) {
@@ -136,6 +138,8 @@ async function locate(ctx, find, describe, mustHold, verify = true) {
           // it does not end it.
           try {
             seen = { ...seen, ...await ctx.recognize({ source: 'ocr', max_elements: Number.MAX_SAFE_INTEGER }) };
+            const guard = describe.guard?.(seen);
+            if (guard) return { blockedOverlay: guard };
             found = find(seen.elements);
             if (found.length) nextOcr = elapsed;
           } catch (error) { if (stopped(error)) throw error; ocrMissing = true; }
@@ -352,10 +356,22 @@ const opensApp = (element, seen) => {
   return /^(?:AX|XCUIElementType)?Icon$/i.test(role) || seen?.foreground?.bundle_id === 'com.apple.springboard' && /^(?:AX|XCUIElementType)?Button$/i.test(role);
 };
 
-export function actionBlocked(seen) {
-  const visibleElements = seen.elements.filter(visible);
-  return Boolean(promptWarning(visibleElements)) ||
-    visibleElements.some(e => /^(?:AX|XCUIElementType)?(?:Alert|Sheet|Dialog|Popover)$/i.test(e.role ?? e.type ?? ''));
+export function blockingOverlay(seen) {
+  const elements = seen?.elements?.filter(visible) ?? [];
+  const prompt = promptWarning(elements);
+  const modal = elements.find(e => /^(?:AX|XCUIElementType)?(?:Alert|Sheet|Dialog|Popover)$/i.test(e.role ?? e.type ?? ''));
+  if (!prompt && !modal) return null;
+  return { ...(prompt ? { prompt } : {}), ...(modal ? { role: modal.role ?? modal.type, label: modal.label ?? modal.text } : {}),
+    visible_buttons: [...new Set(elements.filter(e => /^(?:AX|XCUIElementType)?Button$/i.test(e.role ?? e.type ?? '') &&
+      flagOn(e.enabled)).map(e => e.label ?? e.text).filter(Boolean))].slice(0, 8) };
+}
+
+export const actionBlocked = seen => Boolean(blockingOverlay(seen));
+
+export function overlayRefusal(overlay) {
+  return { isError: true, stop_reason: 'blocked_by_overlay', sent: false, outcome: 'not_sent',
+    reason: 'blocking_overlay', blocker: overlay, recovery: { tool: 'handle_alert',
+      instruction: 'Resolve the visible overlay first. Use handle_alert with the exact label of an authorized overlay button, or ask the user if its choice requires them. Refresh the target after the overlay closes.' } };
 }
 
 export function actionExpectation(seen, { text, state = 'visible' }) {
@@ -413,7 +429,12 @@ export async function interaction(ctx, name, args, directElement, maySend) {
   switch (name) {
     case 'tap': case 'double_tap': case 'long_press': return tap(args, name);
     case 'tap_text': {
-      const element = await locate(ctx, elements => matching(elements, args.text, args.exact), { missing: seen => missingText(args.text, seen), many: found => tooMany(args.text, found) }, undefined, args.verify !== false);
+      const guarded = maySend || process.env.POKI_DIRECT_REF === '1';
+      const element = await locate(ctx, elements => matching(elements, args.text, args.exact), {
+        missing: seen => missingText(args.text, seen), many: found => tooMany(args.text, found),
+        ...(guarded ? { guard: seen => blockingOverlay(seen) } : {}),
+      }, undefined, args.verify !== false);
+      if (element.blockedOverlay) return overlayRefusal(element.blockedOverlay);
       if (maySend && !maySend(ctx.seen)) return { isError: true, stop_reason: 'error', sent: false,
         outcome: 'not_sent', reason: 'expectation_needs_unmatched_current_ax' };
       ctx.expectsForeground = opensApp(element, ctx.seen);

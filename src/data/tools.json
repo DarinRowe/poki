@@ -227,6 +227,10 @@
           "text": {
             "type": "string"
           },
+          "exact": {
+            "type": "boolean",
+            "description": "Require a full normalized label or text match. Use true when the complete target is known. If AX lacks it, lookup can try OCR. No substring substitute is tapped."
+          },
           "verify": {
             "type": "boolean",
             "description": "Set false to skip action verification. Returns verified:false. Text targeting and coordinate sizing still read current device data."

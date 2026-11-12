@@ -74,3 +74,47 @@ test('already satisfied and timed-out expectations cannot masquerade as action s
   assert.equal(await taps(f), 1);
   assert.equal((await f.events()).filter(e => e.op === 'key').length, 0);
 });
+
+test('an overlay refusal explains recovery and invalidates the blocked reference', async t => {
+  const f = await fixture(t, enabled);
+  const target = control('Open details', 'item', 90);
+  const sheet = { ...control('Session notice', 'sheet', 20), role: 'Sheet' };
+  const later = control('Continue browsing', 'dismiss', 55);
+  await f.set(page([target]));
+  const stale = await ref(f, target.label);
+  await f.set(page([sheet, later, target]));
+  const blocked = await f.call('tap', { ref: stale });
+  const refusal = value(blocked);
+  assert.equal(refusal.reason, 'blocking_overlay');
+  assert.equal(refusal.outcome, 'not_sent');
+  assert.equal(refusal.recovery.tool, 'handle_alert');
+  assert.ok(refusal.blocker.visible_buttons.includes(later.label));
+  assert.equal(await taps(f), 0);
+
+  const repeated = await f.call('tap', { ref: stale });
+  assert.equal(value(repeated).reason, 'reference_requires_fresh_observation');
+  assert.ok(!repeated._meta.timing.stages.some(stage => stage.phase === 'accessibility'));
+
+  const observed = value(await f.call('observe_device', { fallback: 'hybrid' }));
+  assert.equal(observed.recovery.tool, 'handle_alert');
+  const blockedBatch = await f.call('batch_commands', { stop_on_error: false, commands: [
+    { tool: 'tap_text', arguments: { text: target.label, exact: true } },
+    { tool: 'press_key', arguments: { key: 'return' } },
+  ] });
+  assert.equal(blockedBatch.isError, true);
+  assert.equal(JSON.parse(blockedBatch.content.at(-1).text).stop_reason, 'blocked_by_overlay');
+  assert.equal(await taps(f), 0);
+});
+
+test('exact tap text uses OCR rather than an AX substring', async t => {
+  const f = await fixture(t, enabled);
+  await f.set({
+    ...page([control('Delivery options nearby', 'decoy', 130)]),
+    ocrElements: [{ text: 'Delivery options', x: 20, y: 60, width: 40, height: 20 }],
+  });
+  const result = await f.call('tap_text', { text: 'Delivery options', exact: true, verify: false });
+  assert.ok(!result.isError, JSON.stringify(result));
+  const actions = (await f.events()).filter(e => e.op === 'tap');
+  assert.equal(actions.length, 1);
+  assert.equal(actions[0].request.y, Math.round(70 / 199 * 65535));
+});

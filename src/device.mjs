@@ -13,7 +13,7 @@ import { ocrPageDescriptor, parseTesseractTSV, tesseractLanguages } from './ocr.
 import { root, stateDir, idevice, noUsbDevice } from './config.mjs';
 import { definitions } from './tools.mjs';
 import { platformTool, inventorySimulators, simulatorModels, readSettings, closePlatform } from './platform.mjs';
-import { interaction, actionBlocked, actionExpectation, promptWarning, readScreen, describeScreen, screenChanged, whatMoved, justReadMs, confirmAfterMs, launchWithinMs, launchPollMs } from './interaction.mjs';
+import { interaction, actionBlocked, blockingOverlay, overlayRefusal, actionExpectation, promptWarning, readScreen, describeScreen, screenChanged, whatMoved, justReadMs, confirmAfterMs, launchWithinMs, launchPollMs } from './interaction.mjs';
 import { askHuman } from './human.mjs';
 import { simulatorRequest } from './simulator.mjs';
 import { prepareRecordingInput, resumeRecordings } from './recording.mjs';
@@ -84,7 +84,7 @@ function referenceTarget(binding, reference, seen, size) {
   if (!binding?.rootVerified || !reference?.object_id || !seen?.rootVerified ||
       seen.device !== binding.device || seen.revision !== binding.revision || size?.device !== seen.device ||
       size.width !== binding.width || size.height !== binding.height ||
-      !sameForeground(binding.foreground, seen.foreground) || actionBlocked(seen)) return null;
+      !sameForeground(binding.foreground, seen.foreground)) return null;
   const matches = seen.elements.filter(e => e.object_id === reference.object_id);
   if (matches.length !== 1) return null;
   const [element] = matches;
@@ -608,7 +608,9 @@ export class Devices {
       // Match AX-only post-action reference binding when its root spans the viewport.
       this.structureViewport = { device: observation.device, revision: observation.revision,
         width: observation.width, height: observation.height, rootVerified: seen.rootVerified, foreground: seen.foreground };
+      const overlay = hybrid && process.env.POKI_DIRECT_REF === '1' && blockingOverlay({ elements: nodes });
       return text({ observation, source: 'accessibility', foreground: seen.foreground,
+        ...(overlay ? { blocker: overlay, recovery: overlayRefusal(overlay).recovery } : {}),
         width: observation.width, height: observation.height, units: 'points',
         elements: this.elements, total: nodes.length, truncated: nodes.length > max,
         prompt: { status: 'checked', source: 'accessibility', warning } });
@@ -853,12 +855,16 @@ export class Devices {
           // performed a fresh root-verified AX read. Unverified or first-step
           // batch gestures fall back to image capture for coordinate sizing.
           const expect = args.expect;
-          const refused = reason => ({ isError: true, ...text({ sent: false, outcome: 'not_sent', reason }),
-            _meta: { stop_reason: 'error' } });
+          const refusalResult = data => ({ isError: true, ...text(data), _meta: { stop_reason: data.stop_reason ?? 'error' } });
+          const refused = (reason, recovery) => refusalResult({ sent: false, outcome: 'not_sent', reason, ...(recovery ? { recovery } : {}) });
+          const stale = () => refused('reference_requires_fresh_observation', {
+            tool: 'observe_device', arguments: { fallback: 'hybrid' }, instruction: 'Refresh the observation and use a current target. Retrying this reference will not send a tap.',
+          });
           if (expect && (process.env.POKI_CONDITIONAL_WAIT !== '1' || !verify || args.post_action_ocr)) {
             return refused('expect_requires_conditional_wait_and_ax_verification');
           }
           if (expect && !expect.text.trim()) return refused('empty_expectation');
+          if (reference && !previousElement) return stale();
           const before = looks || touches || reference || expect
             ? await phase('pre_action_ax', () => this.readBefore(reference || expect || previousViewport ? 0 : this.inBatch ? this.reuseMs() : 0))
             : undefined;
@@ -870,8 +876,13 @@ export class Devices {
               this.elements.length && Date.now() - this.elementsAt <= 30000) {
             this.structureViewport = { ...previousViewport, revision: before.revision };
           }
+          const overlay = (reference || expect || name === 'tap_text' && process.env.POKI_DIRECT_REF === '1') && blockingOverlay(before);
+          if (overlay) {
+            this.elements = []; this.structureViewport = undefined;
+            return refusalResult(overlayRefusal(overlay));
+          }
           const directElement = reference && referenceTarget(previousViewport, previousElement, before, this.size);
-          if (reference && !directElement) return refused('reference_requires_fresh_observation');
+          if (reference && !directElement) return stale();
           const maySend = expect && (seen => Boolean(seen?.elements.length && sameForeground(before?.foreground, seen.foreground) &&
             !actionBlocked(seen) && !actionExpectation(seen, expect)));
           if (maySend && !maySend(before)) return refused('expectation_needs_unmatched_current_ax');
