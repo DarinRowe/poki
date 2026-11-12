@@ -55,9 +55,19 @@ const strokeChecks = {
 // behavior and the upstream stroke timing refinements are preserved.
 const actionObservationTools = new Set(['tap', 'double_tap', 'long_press', 'tap_text', 'swipe',
   'drag', 'scroll', 'pinch', 'type_text', 'fill', 'press_key', 'press_button', 'go_back', 'handle_alert']);
+const tapExpectation = {
+  type: 'object', additionalProperties: false, required: ['text'],
+  properties: {
+    text: { type: 'string', minLength: 1, maxLength: 200 },
+    state: { type: 'string', enum: ['visible', 'enabled', 'focused'] },
+    timeout_seconds: { type: 'number', minimum: 0.1, maximum: 30 },
+  },
+  description: 'Wait for one exact accessibility match to newly reach this state after the tap (POKI_CONDITIONAL_WAIT=1). The default state is visible.',
+};
 const schemaOf = tool => {
   const schemaWithObservations = actionObservationTools.has(tool.name)
     ? { ...tool.inputSchema, properties: { ...tool.inputSchema.properties,
+      ...(['tap', 'tap_text'].includes(tool.name) ? { expect: tapExpectation } : {}),
       return_observation: { type: 'boolean', description: 'Request a ref-bearing post-input observation when available.' },
       post_action_ocr: { type: 'boolean', description: 'Capture after stable AX and check image OCR prompts (default false).' } } }
     : tool.name === 'observe_device'

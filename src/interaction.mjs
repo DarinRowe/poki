@@ -301,7 +301,7 @@ export async function readScreen(ctx, { once = false, before, confirmation, stru
           width: observation.width, height: observation.height,
           // If AX did not identify an unambiguous full-screen root,
           // the next coordinate/ref action must capture to verify size.
-          rootVerified: seen.rootVerified === true,
+          rootVerified: seen.rootVerified === true, foreground: seen.foreground,
         };
         structuredObservation = { observation, source: 'accessibility', foreground: seen.foreground,
           elements: ctx.elements, total: ctx.elements.length, truncated: false, prompt };
@@ -352,9 +352,29 @@ const opensApp = (element, seen) => {
   return /^(?:AX|XCUIElementType)?Icon$/i.test(role) || seen?.foreground?.bundle_id === 'com.apple.springboard' && /^(?:AX|XCUIElementType)?Button$/i.test(role);
 };
 
-export async function interaction(ctx, name, args) {
+export function actionBlocked(seen) {
+  const visibleElements = seen.elements.filter(visible);
+  return Boolean(promptWarning(visibleElements)) ||
+    visibleElements.some(e => /^(?:AX|XCUIElementType)?(?:Alert|Sheet|Dialog|Popover)$/i.test(e.role ?? e.type ?? ''));
+}
+
+export function actionExpectation(seen, { text, state = 'visible' }) {
+  const matches = matching(seen.elements, text, true).filter(element =>
+    strings(element).some(value => normalize(value) === normalize(text)));
+  if (matches.length !== 1) return false;
+  const [element] = matches;
+  if (state === 'enabled') return element.enabled === true || element.enabled === 1;
+  if (state === 'focused') return element.focused === true || element.focused === 1;
+  return true;
+}
+
+export async function interaction(ctx, name, args, directElement, maySend) {
   const frame = () => ctx.screenSize();
   const point = async a => {
+    if (directElement) {
+      ctx.expectsForeground = opensApp(directElement, ctx.seen);
+      return center(directElement);
+    }
     if (a.ref) {
       await ctx.viewport();
       const e = ctx.elements.find(e => e.ref === a.ref.toLowerCase());
@@ -394,6 +414,8 @@ export async function interaction(ctx, name, args) {
     case 'tap': case 'double_tap': case 'long_press': return tap(args, name);
     case 'tap_text': {
       const element = await locate(ctx, elements => matching(elements, args.text, args.exact), { missing: seen => missingText(args.text, seen), many: found => tooMany(args.text, found) }, undefined, args.verify !== false);
+      if (maySend && !maySend(ctx.seen)) return { isError: true, stop_reason: 'error', sent: false,
+        outcome: 'not_sent', reason: 'expectation_needs_unmatched_current_ax' };
       ctx.expectsForeground = opensApp(element, ctx.seen);
       return ctx.input({ op: 'tap', ...center(element), duration_ms: 50 });
     }

@@ -13,7 +13,7 @@ import { ocrPageDescriptor, parseTesseractTSV, tesseractLanguages } from './ocr.
 import { root, stateDir, idevice, noUsbDevice } from './config.mjs';
 import { definitions } from './tools.mjs';
 import { platformTool, inventorySimulators, simulatorModels, readSettings, closePlatform } from './platform.mjs';
-import { interaction, promptWarning, readScreen, describeScreen, screenChanged, whatMoved, justReadMs, confirmAfterMs, launchWithinMs, launchPollMs } from './interaction.mjs';
+import { interaction, actionBlocked, actionExpectation, promptWarning, readScreen, describeScreen, screenChanged, whatMoved, justReadMs, confirmAfterMs, launchWithinMs, launchPollMs } from './interaction.mjs';
 import { askHuman } from './human.mjs';
 import { simulatorRequest } from './simulator.mjs';
 import { prepareRecordingInput, resumeRecordings } from './recording.mjs';
@@ -71,6 +71,42 @@ function axRootOrientation(elements, viewport) {
     if (swapped && !match) rotated = true;
   }
   return same === rotated ? null : rotated ? 'rotated' : 'same';
+}
+
+function sameForeground(a, b) {
+  if (!a || !b) return false;
+  if (a.bundle_id && b.bundle_id && a.bundle_id !== b.bundle_id) return false;
+  if (Number.isSafeInteger(a.pid) && a.pid > 0 && Number.isSafeInteger(b.pid) && b.pid > 0) return a.pid === b.pid;
+  return Boolean(a.bundle_id && a.bundle_id === b.bundle_id);
+}
+
+function referenceTarget(binding, reference, seen, size) {
+  if (!binding?.rootVerified || !reference?.object_id || !seen?.rootVerified ||
+      seen.device !== binding.device || seen.revision !== binding.revision || size?.device !== seen.device ||
+      size.width !== binding.width || size.height !== binding.height ||
+      !sameForeground(binding.foreground, seen.foreground) || actionBlocked(seen)) return null;
+  const matches = seen.elements.filter(e => e.object_id === reference.object_id);
+  if (matches.length !== 1) return null;
+  const [element] = matches;
+  if (!flagOn(element.visible) || !flagOn(element.enabled) ||
+      (element.type ?? element.role) !== (reference.type ?? reference.role) ||
+      element.label !== reference.label || element.identifier !== reference.identifier ||
+      element.placeholder !== reference.placeholder) return null;
+  const previous = reference.frame ?? reference, current = element.frame ?? element;
+  if (!['x', 'y', 'width', 'height'].every(key => Number.isFinite(current[key]) && current[key] === previous[key]) ||
+      current.width <= 0 || current.height <= 0 || current.x < 0 || current.y < 0 ||
+      current.x + current.width > size.width || current.y + current.height > size.height) return null;
+  const x = current.x + current.width / 2, y = current.y + current.height / 2;
+  // Reject a separate actionable peer at the same point. Larger enclosing AX
+  // containers are common, so only peers no larger than the target count.
+  const blocked = seen.elements.some(e => {
+    if (e === element || !flagOn(e.visible) || !flagOn(e.enabled) ||
+        !/(?:button|link|textfield|searchfield|switch|cell)$/i.test(e.role ?? e.type ?? '')) return false;
+    const box = e.frame ?? e;
+    return box.width > 0 && box.height > 0 && box.width * box.height <= current.width * current.height &&
+      x >= box.x && x < box.x + box.width && y >= box.y && y < box.y + box.height;
+  });
+  return blocked ? null : element;
 }
 
 export function hidPoint(x, y, width, height) {
@@ -465,6 +501,42 @@ export class Devices {
       return { ...screenChange(before, before !== undefined && seen.signature !== before ? seen.signature : undefined), screen: { ...describeScreen(seen), ...(seen.startedAt < this.lastInputAt ? { stale: true } : {}), partial: true, reason: `${error.message}: the screen may still have been changing; this is the last complete read.` } };
     }
   }
+  async readExpectation(expect, before, structured) {
+    let seen;
+    try {
+      seen = await phase('postcondition_wait', () => deadline((expect.timeout_seconds ?? 8) * 1000, async () => {
+        for (;;) {
+          const current = await this.structure();
+          checkWork();
+          if (current.device !== before.device || !sameForeground(current.foreground, before.foreground) || actionBlocked(current)) return;
+          if (current.startedAt >= this.lastInputAt && actionExpectation(current, expect)) return current;
+          await pause(100);
+        }
+      }));
+    } catch {
+      // Keep the tap receipt even if its verification is interrupted.
+    }
+    if (!seen) {
+      let stopReason = 'postcondition_unverified';
+      try { checkWork(); } catch (error) { stopReason = stoppingReason(error); }
+      return { isError: true, stop_reason: stopReason, expectation: { matched: false },
+        instruction: 'The tap was sent. Verify the resulting screen before deciding whether to try again.' };
+    }
+    const result = { screen: describeScreen(seen), expectation: { matched: true, state: expect.state ?? 'visible' },
+      ...screenChange(before.signature, seen.signature) };
+    const observation = structured && seen.elements.length <= 400 && this.observationFromStructure(seen);
+    if (observation) {
+      const receiptId = randomUUID();
+      this.elements = seen.elements.map(element => ({ ...element, ref: `e${++this.nextRef}` }));
+      this.elementsAt = Date.now();
+      this.structureViewport = { device: seen.device, revision: seen.revision, width: observation.width, height: observation.height,
+        rootVerified: seen.rootVerified, foreground: seen.foreground };
+      Object.assign(result, { receipt_id: receiptId, input_completed_at: this.lastInputCompletedAt,
+        post_action_observation: { version: 1, action_receipt_id: receiptId, observation, source: 'accessibility', foreground: seen.foreground,
+          elements: this.elements, total: this.elements.length, truncated: false, prompt: { status: 'checked', source: 'accessibility', warning: null } } });
+    }
+    return result;
+  }
   // The action does not depend on this read, so a slow read only costs the comparison.
   async readBefore(maxAge) {
     try { return await deadline(readbackMs, () => this.structure(maxAge)); } catch { checkWork(); }
@@ -535,7 +607,7 @@ export class Devices {
       this.elementsAt = Date.now();
       // Match AX-only post-action reference binding when its root spans the viewport.
       this.structureViewport = { device: observation.device, revision: observation.revision,
-        width: observation.width, height: observation.height, rootVerified: seen.rootVerified };
+        width: observation.width, height: observation.height, rootVerified: seen.rootVerified, foreground: seen.foreground };
       return text({ observation, source: 'accessibility', foreground: seen.foreground,
         width: observation.width, height: observation.height, units: 'points',
         elements: this.elements, total: nodes.length, truncated: nodes.length > max,
@@ -633,6 +705,8 @@ export class Devices {
     // input branch; without this they could reuse portrait size after rotation.
     // The default input branch may renew it only after its own fresh AX read.
     const previousViewport = this.structureViewport;
+    const reference = name === 'tap' && args.ref && process.env.POKI_DIRECT_REF === '1';
+    const previousElement = reference && Date.now() - this.elementsAt <= 30000 && this.elements.find(element => element.ref === args.ref.toLowerCase());
     this.structureViewport = undefined;
     const previous = this.requested, previousResolved = this.resolved;
     // Steps of one batch share a lookup, which runs a Python process and simctl each time.
@@ -760,6 +834,9 @@ export class Devices {
         }
         // Without await, the finally below restores the device state while the first step is still looking up its device.
         case 'batch_commands': {
+          // The first command independently revalidates a reference. Retain its
+          // incoming binding for that check when guarded references are enabled.
+          if (process.env.POKI_DIRECT_REF === '1') this.structureViewport = previousViewport;
           this.batchViewportVerified = false;
           try { return await runBatch(this, args); }
           finally { this.batchViewportVerified = false; }
@@ -775,8 +852,15 @@ export class Devices {
           // The AX-only binding is valid only when this same call has just
           // performed a fresh root-verified AX read. Unverified or first-step
           // batch gestures fall back to image capture for coordinate sizing.
-          const before = looks || touches
-            ? await this.readBefore(previousViewport ? 0 : this.inBatch ? this.reuseMs() : 0)
+          const expect = args.expect;
+          const refused = reason => ({ isError: true, ...text({ sent: false, outcome: 'not_sent', reason }),
+            _meta: { stop_reason: 'error' } });
+          if (expect && (process.env.POKI_CONDITIONAL_WAIT !== '1' || !verify || args.post_action_ocr)) {
+            return refused('expect_requires_conditional_wait_and_ax_verification');
+          }
+          if (expect && !expect.text.trim()) return refused('empty_expectation');
+          const before = looks || touches || reference || expect
+            ? await phase('pre_action_ax', () => this.readBefore(reference || expect || previousViewport ? 0 : this.inBatch ? this.reuseMs() : 0))
             : undefined;
           if (previousViewport && before?.rootVerified === true &&
               before.device === previousViewport.device &&
@@ -786,19 +870,27 @@ export class Devices {
               this.elements.length && Date.now() - this.elementsAt <= 30000) {
             this.structureViewport = { ...previousViewport, revision: before.revision };
           }
-          let result = await interaction(this,name,args);
+          const directElement = reference && referenceTarget(previousViewport, previousElement, before, this.size);
+          if (reference && !directElement) return refused('reference_requires_fresh_observation');
+          const maySend = expect && (seen => Boolean(seen?.elements.length && sameForeground(before?.foreground, seen.foreground) &&
+            !actionBlocked(seen) && !actionExpectation(seen, expect)));
+          if (maySend && !maySend(before)) return refused('expectation_needs_unmatched_current_ax');
+          let result = await phase('resolve_and_dispatch', () => interaction(this,name,args,directElement,maySend));
+          if (directElement && result.sent === true) result.target_source = 'validated_reference';
           if(result===undefined) throw new Error(`No implementation for ${name}`);
           const delivered = result.sent === true && !result.isError && !result.stopped;
           // A target that had to be waited for is compared with the screen it was found on, not the one before the wait.
           const sentTo = this.beforeInput ?? before, signature = sentTo?.elements.length ? sentTo.signature : undefined;
-          if (looks && delivered) result = { ...result, ...await this.readback(signature, { structured: args.return_observation === true, structuredVisual: args.post_action_ocr === true }) };
+          if (expect && delivered) result = { ...result, ...await this.readExpectation(expect, before,
+            args.return_observation === true || this.batchStep?.returnObservation === true) };
+          else if (looks && delivered) result = { ...result, ...await this.readback(signature, { structured: args.return_observation === true, structuredVisual: args.post_action_ocr === true }) };
           else if (touches && delivered && signature !== undefined) result = { ...result, ...await this.changedSince(signature) };
           // Which list the scroll moved, from the reads on either side of it.
           if (name === 'scroll' && looks && delivered && sentTo?.elements.length && this.seen?.elements.length && this.seen.startedAt > this.lastInputAt) result = { ...result, moved: whatMoved(sentTo.elements, this.seen.elements) };
           // The input layers answer screen_change_verified false before anything is read, which means not looked at, not unchanged.
           if (result.screen_change === undefined && result.screen_change_verified === false && !this.inBatch) result = { ...result, screen_change: 'unknown' };
           if (!verify) result = { ...result, verified: false };
-          const unchanged = touches && result.screen_change === 'unchanged' && !result.stopped;
+          const unchanged = touches && result.screen_change === 'unchanged' && !result.stopped && !result.expectation?.matched;
           if (unchanged) result = { ...result, instruction: unchangedAdvice };
           // The input layers always answer false here. Only a touch is compared inside a batch; the batch ends with the screen.
           if (this.inBatch && result.screen_change_verified === false) { const { screen_change_verified, ...rest } = result; result = rest; }
