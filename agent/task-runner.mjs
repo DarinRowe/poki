@@ -239,7 +239,7 @@ export class PhoneTask extends EventEmitter {
     dynamicTools.push(
       { type: 'function', name: 'unlock_device', description: 'Use the locally configured iPhone passcode after observing a matching empty six-digit 402x874 portrait keypad. Never include a password in arguments. Returns a fresh screenshot for verification.', inputSchema: object({ keypadConfirmed: { type: 'boolean' } }, ['keypadConfirmed']) },
       { type: 'function', name: 'report_plan', description: 'Publish a plan before phone actions. Update currentStep (1-based) on each step. title names the task.', inputSchema: object({ steps: { type: 'array', items: string, minItems: 1, maxItems: 8 }, currentStep: { type: 'integer', minimum: 1, maximum: 8 }, title: string }, ['steps', 'currentStep']) },
-      { type: 'function', name: 'finish_task', description: 'Finish after the last observation verifies the requested result. If unable to complete, set success=false and explain what was completed, what blocked completion and what was tried. details must contain the requested facts, not only a page title; every value must match a whole current label or value. Declare answer.kind: action for a performed change, field for fixed values, list for requested entries. Read tasks must never use action. For field, items select current refs and label/value; when a field is combined into a label such as "Capacity,90%", use prefix "Capacity," and suffix "%" to preserve the field identity while reading a new value. For list, items select all requested current rows in order with their names/times; start_ref and end_ref identify unique section labels immediately before and after those rows. Omit section refs if no reliable boundaries exist. Never invent refs or use a heading as a requested value.', inputSchema: object({ success: { type: 'boolean' }, summary: string, details: { type: 'array', items: object({ label: string, value: string }, ['label', 'value']) }, answer: object({ kind: { type: 'string', enum: ['action', 'field', 'list'] }, items: { type: 'array', items: object({ ref: string, field: { type: 'string', enum: ['label', 'value'] }, prefix: string, suffix: string }, ['ref', 'field']) }, start_ref: string, end_ref: string }, ['kind']) }, ['success', 'summary', 'details', 'answer']) },
+      { type: 'function', name: 'finish_task', description: 'Finish after the last observation verifies the requested result. If unable to complete, set success=false and explain what was completed, what blocked completion and what was tried. details must contain the requested facts, not only a page title; every value must match current screen evidence. Declare answer.kind: action for a performed change, field for fixed values, list for requested entries, visual for a read supported by the latest screenshot. Read tasks must never use action. For field, items select current refs and label/value; when a field is combined into a label such as "Capacity,90%", use prefix "Capacity," and suffix "%" to preserve the field identity while reading a new value. For list, items select all requested current rows in order with their names/times; start_ref and end_ref identify unique section labels immediately before and after those rows. Omit section refs if no reliable boundaries exist. Never invent refs or use a heading as a requested value.', inputSchema: object({ success: { type: 'boolean' }, summary: string, details: { type: 'array', items: object({ label: string, value: string }, ['label', 'value']) }, answer: object({ kind: { type: 'string', enum: ['action', 'field', 'list', 'visual'] }, items: { type: 'array', items: object({ ref: string, field: { type: 'string', enum: ['label', 'value'] }, prefix: string, suffix: string }, ['ref', 'field']) }, start_ref: string, end_ref: string }, ['kind']) }, ['success', 'summary', 'details', 'answer']) },
     );
     const { thread } = await this.codex.request('thread/start', {
       model: this.modelConfig.model, ephemeral: true, cwd: process.cwd(), approvalPolicy: 'never',
@@ -348,7 +348,7 @@ export class PhoneTask extends EventEmitter {
       const path = join(this.stateDirectory, 'trajectories', `${this.snapshot.id}.json`);
       await writeFile(path, JSON.stringify({ prompt: this.snapshot.prompt, bundle_id: this.bundleId, trace: this.trace }, null, 2), { mode: 0o600 });
       this.snapshot.execution.trajectory = path;
-      if (!this.snapshot.conversation.some(entry => entry.role === 'user' && entry !== this.snapshot.conversation[0])) {
+      if (this.finishClaim.answer?.kind !== 'visual' && !this.snapshot.conversation.some(entry => entry.role === 'user' && entry !== this.snapshot.conversation[0])) {
         this.snapshot.execution.learned = await this.routes.learn({ id: this.snapshot.id, prompt: this.snapshot.prompt, context: this.snapshot.context,
           bundleId: this.bundleId, device: this.device, trace: this.trace, details: this.snapshot.details, answer: this.finishClaim.answer, planTitle: this.snapshot.planTitle, opening: this.snapshot.opening, verify: async () => this.snapshot.execution.verification?.status === 'verified' });
       }
@@ -377,6 +377,7 @@ export class PhoneTask extends EventEmitter {
     if (name === 'finish_task') {
       if (typeof args.summary !== 'string' || typeof args.success !== 'boolean') throw new Error('Invalid task result');
       if (args.success && !this.observedAfterAction) throw new Error('Observe the result after the last action before reporting success');
+      if (args.success && args.answer?.kind === 'visual' && !this.completionEvidence?.some(item => item.type === 'image')) throw new Error('Observe the current screenshot before reporting a visual result');
       this.#submitResult(args);
       this.snapshot.execution.answerPlan = args.answer;
       this.snapshot.details = Array.isArray(args.details) ? args.details : [];
@@ -419,18 +420,18 @@ export class PhoneTask extends EventEmitter {
     }
     else if (name === 'get_foreground_app') { this.#noteTarget(result); }
     else if (['take_screenshot', 'observe_device', 'list_elements'].includes(name)) {
-      this.observedAfterAction = true;
-      const observed = resultData(result);
+      this.observedAfterAction = !result.isError;
+      if (result.isError) this.completionEvidence = undefined;
     }
     if (name === 'batch_commands' && !result.isError && structuredObservations.has(this.trace.at(-1)?.tool)) this.observedAfterAction = true;
     if (this.observedAfterAction && ['batch_commands', 'take_screenshot', 'observe_device', 'list_elements'].includes(name)) this.completionEvidence = result.content;
     this.#record(name, args, result);
-    if (!observing && !result.isError) {
     let reusedObservation = false;
+    if (!observing && !result.isError) {
       const observed = await this.#completeObservation(result, name);
       if (observed) {
-        result = { ...result, content: [...result.content, ...observed.content] };
         reusedObservation = observed.reused === true;
+        result = { ...result, content: [...result.content, ...observed.content] };
         if (!observed.isError) { this.observedAfterAction = true; this.completionEvidence = observed.content; }
       }
     }
@@ -564,11 +565,11 @@ export class PhoneTask extends EventEmitter {
     if (name) { this.snapshot.targetApp = name; this.targetName = name; }
     const bundle = found.bundle_id ?? args.bundle_id;
     if (bundle) { this.targetBundle = bundle; this.bundleId ??= bundle; }
-  }
     if (found.launched === true && found.foreground_verified === true && found.bundle_id &&
         Number.isSafeInteger(found.pid) && found.pid > 0) {
       this.verifiedLaunch = { bundleId: found.bundle_id, pid: found.pid };
     }
+  }
 
   steer(text) {
     if (this.finished) throw new Error('Task has ended');

@@ -10,10 +10,11 @@ For remote access, see [Remote iPhone over LAN or Tailscale](remote-iphone.md). 
 - **Rust / Cargo** with Rust 2024 edition support, from [rustup.rs](https://rustup.rs). Setup always uses it to build the iPhone bridge, even if you use only the Simulator.
 - **Python 3**
 - **`ffmpeg` and `ffprobe`**, from `brew install ffmpeg` (required for recording; checked during `./bin/setup`)
+- **Tesseract**, from `brew install tesseract`, for the default screenshot text recognizer. See [local OCR](tools.md#local-ocr) for language packs and Vision modes.
 - **iOS Simulator runtime** installed in Xcode (for simulator targets)
 - **Apple developer support files** already installed on the Mac (for physical-device developer services)
 
-`./bin/setup` checks for these requirements and stops with an installation hint if any are missing. You do not need to set any environment variables. All settings in [Configuration and sessions](configuration.md) are optional.
+`./bin/setup` checks the build tools and stops with an installation hint if they are missing. Install Tesseract separately to enable the default OCR backend. You do not need to set any environment variables. All settings in [Configuration and sessions](configuration.md) are optional.
 
 > **Reference environment**: Prepared on an Apple silicon Mac with macOS 27.3, Xcode 27.0 (`27A5209h`), Node 26.10.0, npm 11.19.1, Rust/Cargo 1.99.0, Python 3.13.0, and `ffmpeg`/`ffprobe` 9.0.2. These versions record the build environment rather than claiming that every tool and parameter works across all platform versions.
 

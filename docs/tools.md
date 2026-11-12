@@ -11,12 +11,12 @@ Tool names and input validation schemas live in [`src/data/tools.json`](../src/d
 
 ## MCP tool profiles
 
-The default `tools/list` response contains the tools for phone tasks. Tool names, arguments, and execution behavior are unchanged.
+The default `tools/list` response contains the tools for phone tasks.
 
 | Use | Default tools |
 | --- | --- |
 | Service and devices | `poki_mcp_status`, `list_devices`, `select_device` |
-| Read the screen | `list_elements`, `take_screenshot`, `get_foreground_app` |
+| Read the screen | `observe_device`, `list_elements`, `take_screenshot`, `get_foreground_app` |
 | Apps and URLs | `list_apps`, `launch_app`, `terminate_app`, `open_url` |
 | Touch and input | `tap`, `tap_text`, `long_press`, `double_tap`, `drag`, `pinch`, `fill`, `type_text`, `scroll`, `scroll_to`, `swipe`, `press_key`, `go_back`, `hide_keyboard`, `press_button`, `get_clipboard` |
 | Wait, prompts, and batches | `wait_for`, `handle_alert`, `batch_commands` |
@@ -215,6 +215,11 @@ This arbitration exists only in **one shared Poki daemon**. Different daemon ins
 
 `observe_device` returns structured elements and a prompt check, plus a PNG by default. `include_image:false` omits the PNG attachment but still captures a frame and checks OCR. For selected single actions, `return_observation:true` reuses the stable **post-input** AX tree with short-lived element refs and an AX-based prompt check; it does **not** add a screenshot or image OCR by default. Fast routes additionally request `post_action_ocr:true`, which captures an image **after** AX stabilization and performs OCR prompt checking. The sources remain non-atomic and their original timestamps are preserved. Each action-bound observation must pass receipt, device/revision, time, foreground, completeness and prompt checks; otherwise Agent and routes fall back to a new `list_elements`/`observe_device` call. AX-only refs are bound to the most recently measured viewport and expire after known input, explicit later capture, session/display changes or 30 seconds. The Agent sends the model **one trimmed element list**, not both the full nested receipt and a duplicate list; full evidence remains in the verification trace. No observed state or `sent:true` alone proves task success or permits retrying uncertain input. Existing tools and callers retain their default behavior.
 
+Use `observe_device({fallback:"image"})` for model-driven reading. Poki tries visible accessibility text first and returns the AX elements without an image when they suffice. Pass `ax_hint` with a known label or text substring when you need a specific item. If AX is unavailable, its 2.5-second read deadline expires, or the hint is missing, Poki returns a PNG and screen-point dimensions for the caller's multimodal model to inspect. Poki skips local OCR in this mode. On the first read it may capture a frame locally to establish the viewport. Inspect the screenshot for prompts before acting if the response marks the prompt check unavailable. The calling client supplies the model. This mode requires visible auto observation and image attachments.
+
+Use `observe_device({fallback:"hybrid"})` for task-driven observations. Visible AX can satisfy a text request without sending a PNG or running OCR. When the supplied `ax_hint` substring is missing from AX, or AX has no usable visible text, Poki runs the configured local OCR backend with a 1.5-second deadline. It accepts lines with a backend confidence score of at least 0.8 and prioritizes lines matching the hint. The score is a routing heuristic. With no hint, text in the top and bottom 5% of the screen cannot by itself satisfy OCR. If OCR cannot supply the requested evidence, Poki returns one PNG for the caller's multimodal model. Use `skip_ax:true` if you already saw that AX lacks the needed unknown text. Use `require_visual:true` to capture directly when the goal needs colors, icons, layout, or another look at uncertain text. Inspect the image for prompts when the response marks the prompt check unavailable. Hybrid returns up to 80 elements by default. All three paths use logical screen points. Without a hint, visible AX text alone can be sufficient, so the caller should request visual inspection if the returned text cannot answer the task.
+
+
 `wait_for` uses a monotonic deadline covering capture, AX, OCR and polling. It starts no new read after that deadline, aborts in-flight external work and waits for owned processes to close. Consequently response delivery can include bounded process termination time after the deadline; the deadline is not a claim that the HTTP response arrives at the exact requested millisecond.
 
 Input receipts retain `sent`, `text_verified`, `submit_sent` and other confirmed facts when recording recovery fails. The separate `recording` object reports recovery failure. Unconfirmed delivery remains `outcome: "unknown"`; it is never automatically replayed. Automatic recovery is suspended while native input intentionally interrupts the media stream. Normal reconnection after an explicit input is counted as `input_reconnects` and does not consume the automatic retry budget, so healthy multi-step recording is not limited to three inputs. Only background recovery from unexpected stream disconnects consumes `automatic_retries`, at most three per recording lifetime. Each reconnect still has a five-second first-frame deadline. `reconnects` is the total of these two counters. A failed reconnect leaves an explicit error; stop/start a recording to begin a new automatic budget. Stop, release, cancellation and session cleanup disable retries and await owned recording processes, and cleanup reports finalization errors separately.
@@ -241,3 +246,18 @@ Tool responses include `_meta.timing.stages` with queue, capture, AX, OCR, input
   - The snapshot is held only in memory for the duration of that single operation and cannot be restored by a subsequent tool call after a human handoff.
   - If a paste prompt is pending or the target field cannot be verified, automatic submission stops and leaves the intended text on the clipboard.
   - Poki MCP **never** auto-accepts an iOS **Allow Paste** prompt. Note that a true first-time **Allow Paste** human-handoff flow remains unverified on hardware (prior successful paste checks did not trigger the system prompt).
+
+## Local OCR
+
+Tesseract is the default. Install it with `brew install tesseract` for the macOS daemon. For Chinese text, install the additional language packs with `brew install tesseract-lang`. `POKI_TESSERACT_BIN` optionally specifies its executable. By default, Poki uses English and adds installed Simplified and Traditional Chinese language data. Set `POKI_OCR_LANGUAGES` to override this with a `+`-separated list of installed languages. `POKI_TESSDATA_DIR` selects a custom trained-data directory.
+
+For sustained OCR on macOS, set `POKI_OCR_BACKEND=continuous` in the daemon environment before starting it. The first actual OCR request starts a shared Vision worker and sends a real screenshot to it in the background. Tesseract serves the foreground until Vision has processed two similar screenshots in at most 100 ms each. Similarity uses a reduced grayscale view of the screen with the status and home-indicator bands removed. No extra device read is required.
+
+Poki gives a qualified screen a 120 ms foreground budget. A slow foreground reply sends that screen back to Tesseract and pauses its background probes for ten seconds. Busy Vision workers leave new requests on Tesseract. Background trials have a three-minute deadline. An initial trial also stops after 90 seconds without OCR demand. A ready worker exits after 15 minutes without OCR use, earlier under memory pressure, and when the daemon stops.
+
+Set `POKI_OCR_BACKEND=vision` to use the standalone Apple Vision recognizer on each image. The standalone Vision deadline is 45 seconds. The direct Tesseract deadline is five seconds. An existing Linux Tesseract wrapper keeps its upscaling and language settings when no OCR options are set. All modes process images locally and return the same coordinate format. Recognition and segmentation can differ across engines, especially for large isolated digits and icons.
+
+`take_screenshot` uses OCR to check for system prompts and returns the screenshot with the check status. Use `list_elements` with `source="ocr"` to get recognized text and coordinates.
+
+
+For one visible numeric token, pass `numeric_region` to `list_elements` with `x`, `y`, `width` and `height` in screen points. Keep neighboring controls outside the rectangle. Poki reads that crop as one token using Tesseract, preserving screen coordinates in the response. This mode recognizes ASCII digits and common numeric punctuation such as a decimal point, colon, sign or percent sign.

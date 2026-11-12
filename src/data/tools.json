@@ -148,7 +148,7 @@
     },
     {
       "name": "list_elements",
-      "description": "Read accessibility elements, or OCR when auto mode cannot use accessibility. When accessibility names nothing across a third of the screen, auto mode adds the screenshot text it did not name, each marked source ocr. Return logical-point frames and short-lived element refs. Refresh refs after input or screen changes. max_elements defaults to 400. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "description": "Read accessibility elements, or OCR when auto mode cannot use accessibility. When accessibility names nothing across a third of the screen, auto mode adds the screenshot text it did not name, each marked source ocr. Return logical-point frames and short-lived element refs. Refresh refs after input or screen changes. Use numeric_region for one visible numeric token in a rectangle measured in screen points. max_elements defaults to 400. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -162,6 +162,17 @@
               "accessibility",
               "ocr"
             ]
+          },
+          "numeric_region": {
+            "type": "object",
+            "description": "OCR only. Tight screen-point rectangle containing one numeric token, including optional decimal, time, sign or percent punctuation.",
+            "properties": {
+              "x": { "type": "number", "minimum": 0 },
+              "y": { "type": "number", "minimum": 0 },
+              "width": { "type": "number", "exclusiveMinimum": 0 },
+              "height": { "type": "number", "exclusiveMinimum": 0 }
+            },
+            "required": ["x", "y", "width", "height"]
           },
           "include_offscreen": {
             "type": "boolean"
@@ -1386,6 +1397,10 @@
           "stop_on_error": {
             "type": "boolean"
           },
+          "return_observation": {
+            "type": "boolean",
+            "description": "Include the final input's stable structured observation when available. Reuse this evidence before requesting another screen read."
+          },
           "verify": {
             "type": "boolean",
             "description": "Set false to skip verification on supported steps unless a step overrides it. Read the final screen once; its snapshot does not verify each action."
@@ -1397,10 +1412,6 @@
       }
     },
     {
-          "return_observation": {
-            "type": "boolean",
-            "description": "Include the final input's stable structured observation when available. Reuse this evidence before requesting another screen read."
-          },
       "name": "run_code",
       "description": "Run JavaScript on an independent worker to do a multi-step device task in one call, deciding each next step from the results instead of returning to the model between steps. code is an async function body, or an async arrow function, that may read input (your JSON) and must return a JSON-serializable value. Call device tools with await tools.<tool_name>(arguments); each returns the same structured result the tool would, so the code can inspect it, loop, filter, count and choose what to do next. Prefer one run_code for predictable multi-step work, such as scrolling until something appears and then reading it; use a single device tool directly for a one-step action, and return an image and the progress so far to the model when the next decision needs visual judgement rather than forcing a long fixed script. The sandbox exposes only tools, input and console: there is no require, file system, network, process or timer. A tool error throws and the code can catch it and adapt. An action receipt with sent=false or an unknown outcome stops the script and returns the steps already run, the same stop rule batch_commands uses; cancellation and timeout also stop it and cancel the device call in progress. The result reports every tool call with its name, elapsed time and receipt. Default limits are 120 seconds in total and 60 tool calls.",
       "inputSchema": {
@@ -1501,7 +1512,7 @@
     },
     {
       "name": "observe_device",
-      "description": "Capture one image with its structured observation, non-reused element references and prompt check. AX and image are sequential, not atomic. Use before input and after unknown delivery.",
+      "description": "Read the screen with short-lived element references and a prompt check. Use fallback=hybrid for task-driven AX, OCR and image escalation. AX and image are sequential, not atomic. Use before input and after unknown delivery.",
       "inputSchema": {
         "type": "object",
         "properties": {

@@ -69,7 +69,7 @@ test('stdio reaches the authenticated local MCP service and rejects an absent de
         const { tools } = await transportClient.listTools();
         t.diagnostic(`default tools/list: ${tools.length} tools, ${JSON.stringify({ tools }).length} characters`);
         assert.deepEqual(tools.map(tool => tool.name).sort(), [
-          'poki_mcp_status', 'list_devices', 'select_device', 'list_elements', 'take_screenshot',
+          'poki_mcp_status', 'list_devices', 'select_device', 'list_elements', 'take_screenshot', 'observe_device',
           'get_foreground_app', 'launch_app', 'open_url', 'tap', 'tap_text', 'fill', 'type_text',
           'scroll', 'swipe', 'press_key', 'go_back', 'wait_for', 'handle_alert', 'batch_commands',
           'long_press', 'double_tap', 'drag', 'hide_keyboard', 'press_button',
@@ -147,7 +147,7 @@ test('an all-profile HTTP service still lets each stdio client choose its own li
   assert.equal(full.tools.length, 63);
   assert.deepEqual(await f.a.listTools(), full);
   const defaultClient = await f.connect('');
-  assert.equal((await defaultClient.listTools()).tools.length, 29);
+  assert.equal((await defaultClient.listTools()).tools.length, 30);
   assert.deepEqual(await httpClient.listTools(), full);
   assert.equal(value(await defaultClient.callTool({ name: 'wait', arguments: { seconds: 0 } })).waited, 0);
 });

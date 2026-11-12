@@ -6,13 +6,13 @@ import { version } from './build-info.mjs';
 
 const catalog = JSON.parse(readFileSync(new URL('./data/tools.json', import.meta.url), 'utf8'));
 const defaultTools = new Set([
-  'poki_mcp_status', 'list_devices', 'select_device', 'list_elements', 'take_screenshot',
+  'poki_mcp_status', 'list_devices', 'select_device', 'list_elements', 'take_screenshot', 'observe_device',
   'get_foreground_app', 'launch_app', 'open_url', 'tap', 'tap_text', 'fill', 'type_text',
   'scroll', 'swipe', 'press_key', 'go_back', 'wait_for', 'handle_alert', 'batch_commands',
   'long_press', 'double_tap', 'drag', 'hide_keyboard', 'press_button',
   'scroll_to', 'terminate_app', 'pinch', 'list_apps', 'get_clipboard',
 ]);
-const instructions = 'When the request already says what to do on the device, use batch_commands for launch_app and steps whose targets are already known; use fill without field for a single visible input, and use exact observed labels when a selector is needed; it is usually the only device call needed. Tapping steps wait for their target, and the reply ends with the visible text. With one device available, skip list_devices and select_device; use them when a call reports several devices. Consecutive calls do not require an explicit device lease. Single-step tools remain for exploring an unknown screen.';
+const instructions = 'When the request already says what to do on the device, use batch_commands for launch_app and steps whose targets are already known; use fill without field for a single visible input, and use exact observed labels when a selector is needed; it is usually the only device call needed. Tapping steps wait for their target, and the reply ends with the visible text. With one device available, skip list_devices and select_device; use them when a call reports several devices. Consecutive calls do not require an explicit device lease. For new screen evidence, prefer observe_device with fallback=hybrid. Use ax_hint for known missing text or require_visual for visual tasks.';
 const readOnly = new Set(['observe_device','list_devices', 'get_device_info', 'take_screenshot', 'get_foreground_app', 'list_elements', 'list_apps', 'get_clipboard', 'list_crashes', 'get_crash', 'wait_for', 'wait']);
 const guidance = {
   acquire_device: 'Only needed to keep other sessions off a device across several calls. One batch_commands call already runs without interruption, so a single-call task needs no lease. If you take one, keep the returned lease_id, renew before expiry, then release.',
@@ -62,7 +62,11 @@ const schemaOf = tool => {
       post_action_ocr: { type: 'boolean', description: 'Capture after stable AX and check image OCR prompts (default false).' } } }
     : tool.name === 'observe_device'
       ? { ...tool.inputSchema, properties: { ...tool.inputSchema.properties,
-        include_image: { type: 'boolean', description: 'Attach PNG (default true); false retains capture and prompt checks.' } } }
+        include_image: { type: 'boolean', description: 'Attach PNG (default true). Fallback modes only attach an image when needed and require attachments to be allowed.' },
+        fallback: { type: 'string', enum: ['image', 'hybrid'], description: 'Hybrid reads AX, then local OCR, then supplies an image if text is insufficient. Image mode skips OCR.' },
+        ax_hint: { type: 'string', minLength: 1, maxLength: 200, description: 'Known visible text or label substring for a fallback mode. Use to find missing text in a partially accessible screen. Omit when the text is unknown.' },
+        require_visual: { type: 'boolean', description: 'With fallback=hybrid, request the screenshot directly for color, icons, layout, or ambiguous text.' },
+        skip_ax: { type: 'boolean', description: 'With fallback=hybrid, start with local OCR when the current AX observation already lacks the needed unknown text.' } } }
       : tool.inputSchema;
   const schema = z.fromJSONSchema(schemaWithObservations);
   return strokeChecks[tool.name] ? schema.superRefine(strokeChecks[tool.name]) : schema;

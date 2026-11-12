@@ -61,7 +61,7 @@ cd poki
 npm start
 ```
 
-Requires macOS 15 or later, full Xcode, Rust, Node.js 24+, and ffmpeg. `./bin/setup` checks for missing dependencies. The initial build takes a few minutes.
+Requires macOS 15 or later, full Xcode, Rust, Node.js 24+, and ffmpeg. `./bin/setup` checks the build dependencies. Install Tesseract separately for [default screen text recognition](docs/tools.md#local-ocr). The initial build takes a few minutes.
 
 Poki targets macOS. For Linux, see the community port [poki-for-linux](https://github.com/carrotciallo/poki-for-linux) ([#16](https://github.com/JosssphZhou/poki/issues/16)), maintained outside this repo.
 

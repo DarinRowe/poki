@@ -54,7 +54,13 @@ else if(tool==='idevice') {
  if(args.includes('screenshot')) {if(state.screenshotUnavailable){console.error('Screenshot service unavailable');process.exit(1);}copyFileSync(process.env.FIXTURE_IMAGE,args.at(-1));console.log('Screenshot saved to: fixture');}
  else if(args.includes('screencapture')) {if(state.failRecording)process.exit(1);if(!state.recordingBlock)process.stdout.write('frame');process.stdin.resume();setInterval(()=>{},10000);}
  else console.log(JSON.stringify(args.at(-1)==='ScreenScaleFactor'?1:args.at(-1)==='DeviceName'?'Fixture Phone':'fixture'));
-} else if(tool==='ocr') {if(state.ocrUnavailable){console.error('Text recognition unavailable');process.exit(1);}if(state.ocrDelayMs)await new Promise(done=>setTimeout(done,state.ocrDelayMs));if(state.ocrXs?.length>1)writeFileSync(process.env.FIXTURE_STATE,JSON.stringify({...state,ocrXs:state.ocrXs.slice(1)}));console.log(JSON.stringify(state.ocrElements??[{text:state.appearsAfterReads?'Loading':state.ocrLabel??state.label??'First',x:state.ocrXs?.[0]??10,y:10,width:40,height:20}]));}
+} else if(tool==='ocr') {if(state.ocrUnavailable){console.error('Text recognition unavailable');process.exit(1);}if(state.ocrDelayMs)await new Promise(done=>setTimeout(done,state.ocrDelayMs));if(state.ocrXs?.length>1)writeFileSync(process.env.FIXTURE_STATE,JSON.stringify({...state,ocrXs:state.ocrXs.slice(1)}));const text=state.appearsAfterReads?'Loading':state.ocrLabel??state.label??'First',x=state.ocrXs?.[0]??10;
+ if(args.at(-1)==='tsv'){
+  console.log(['level','page_num','block_num','par_num','line_num','word_num','left','top','width','height','conf','text'].join('\\t'));
+  const rows=state.ocrElements??[{text,x,y:10,width:40,height:20}];
+  rows.forEach((r,i)=>console.log([5,1,1,1,i+1,1,r.x,r.y,r.width,r.height,(r.confidence??(state.ocrConfidence??99)/100)*100,r.text].join('\\t')));
+ }else console.log(JSON.stringify(state.ocrElements??[{text,x,y:10,width:40,height:20}]));
+}
 else if(tool==='simulator') {
  const connectionKeyboard=state.keyboard;
  const applyInput=req=>{
@@ -87,18 +93,18 @@ else if(tool==='poki-native') {
   if(state.afterInput){Object.assign(state,state.afterInput,{afterInput:undefined});writeFileSync(process.env.FIXTURE_STATE,JSON.stringify(state));}
   if(state.phone&&req.op==='tap'){phoneTap(state,req.y);writeFileSync(process.env.FIXTURE_STATE,JSON.stringify(state));}
   else if(req.op==='tap'&&state.field!==undefined){state.focused=true;writeFileSync(process.env.FIXTURE_STATE,JSON.stringify(state));}
-  if(state.phone&&req.op==='type_text'&&!state.typeReply){
-   // Registering the hardware keyboard drops the soft keyboard, and the fields move before anything else in this request.
-   state.phone.keyboard=false;
-   if('x' in req)phoneTap(state,req.y);
-   const editing=state.phone.rows.filter(r=>r.editing),into=editing[0];
-   const wrong=req.target&&(editing.length!==1||into.id!==req.target.object_id||(into.value||into.placeholder||'')!==req.target.value);
   if(req.op==='type_text'&&state.refuseOnce){
    const {refuseOnce,...next}=state;
    if(refuseOnce.newValue!==undefined)next.phone.rows.find(r=>r.editing).value=refuseOnce.newValue;
    writeFileSync(process.env.FIXTURE_STATE,JSON.stringify(next));
    console.log(JSON.stringify({isError:true,outcome:'not_sent',stop_reason:'error',reason:'target_changed',sent:false,submit_sent:false}));process.exit(0);
   }
+  if(state.phone&&req.op==='type_text'&&!state.typeReply){
+   // Registering the hardware keyboard drops the soft keyboard, and the fields move before anything else in this request.
+   state.phone.keyboard=false;
+   if('x' in req)phoneTap(state,req.y);
+   const editing=state.phone.rows.filter(r=>r.editing),into=editing[0];
+   const wrong=req.target&&(editing.length!==1||into.id!==req.target.object_id||(into.value||into.placeholder||'')!==req.target.value);
    state.phone.keyboard=true;
    if(wrong){writeFileSync(process.env.FIXTURE_STATE,JSON.stringify(state));console.log(JSON.stringify({isError:true,outcome:'not_sent',stop_reason:'error',reason:'other_field_editing',sent:false,text_verified:false,submit_sent:false,instruction:'Nothing was typed.'}));process.exit(0);}
    if(into)into.value=req.clear?req.text:into.value+req.text;
@@ -125,7 +131,7 @@ export async function fixture(t, { approvalMode = 'ask', staleNative = false, to
  for(const tool of ['python3','xcrun','idevice','ffmpeg','ffprobe','osascript'])await writeFile(join(dir,'bin',tool),fixtureProgram,{mode:0o755});
  for(const tool of ['poki-native','ocr','simulator'])await writeFile(join(dir,'build',tool),fixtureProgram,{mode:0o755});
  if(staleNative){await mkdir(join(dir,'native/bridge/src'),{recursive:true});await writeFile(join(dir,'native/bridge/src/main.rs'),'fn main() {}');await utimes(join(dir,'build/poki-native'),1,1);}
- const env={...process.env,POKI_NO_UPDATE_CHECK:'1',POKI_MCP_TOOLS:toolsProfile,POKI_MCP_APPROVAL_MODE:approvalMode,HOME:dir,PATH:join(dir,'bin')+':'+process.env.PATH,POKI_MCP_STATE_DIR:join(dir,'state'),IDEVICE_TOOLS:join(dir,'bin/idevice'),FIXTURE_STATE:state,FIXTURE_LOG:log,FIXTURE_IMAGE:image,...extraEnv?.(dir)};
+ const env={...process.env,POKI_NO_UPDATE_CHECK:'1',POKI_MCP_TOOLS:toolsProfile,POKI_MCP_APPROVAL_MODE:approvalMode,HOME:dir,PATH:join(dir,'bin')+':'+process.env.PATH,POKI_MCP_STATE_DIR:join(dir,'state'),IDEVICE_TOOLS:join(dir,'bin/idevice'),POKI_OCR_BACKEND:undefined,POKI_OCR_LANGUAGES:'eng',POKI_TESSERACT_BIN:join(dir,'build/ocr'),FIXTURE_STATE:state,FIXTURE_LOG:log,FIXTURE_IMAGE:image,...extraEnv?.(dir)};
  let stderr='';
  const daemons=[];
  const startDaemon=async(port=0)=>{const child=spawn(process.execPath,[join(dir,'src/daemon.mjs'),'--port',String(port)],{env,stdio:['ignore','pipe',staleNative?'pipe':'inherit']});child.stderr?.on('data',chunk=>{stderr+=chunk;});const exited=once(child,'exit'),lines=createInterface({input:child.stdout});await once(lines,'line');const running={stop:async(signal='SIGTERM')=>{child.kill(signal);await exited;lines.close();}};daemons.push(running);return running;};

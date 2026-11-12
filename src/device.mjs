@@ -1,14 +1,15 @@
 import { remoteDevices, nativeRequest } from './remote.mjs';
-import { execute, checkWork, deadline, pause, phase, stopped, stoppingReason, timingCount, timingsSince } from './work.mjs';
+import { execute, checkWork, deadline, pause, phase, stopped, stoppingReason, timingCount, timingsSince, remaining, signal } from './work.mjs';
 import { Coordination, managementTools } from './coordination.mjs';
 import { runBatch } from './batch.mjs';
 import { runCode } from './run-code.mjs';
 import { flagOn } from './element-flags.mjs';
-import { mkdir, readFile, writeFile, unlink, stat } from 'node:fs/promises';
+import { access, mkdir, readFile, writeFile, unlink, stat } from 'node:fs/promises';
 import { join, extname, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import sharp from 'sharp';
+import { ocrPageDescriptor, parseTesseractTSV, tesseractLanguages } from './ocr.mjs';
 import { root, stateDir, idevice, noUsbDevice } from './config.mjs';
 import { definitions } from './tools.mjs';
 import { platformTool, inventorySimulators, simulatorModels, readSettings, closePlatform } from './platform.mjs';
@@ -31,6 +32,7 @@ const platformTools = new Set(['start_simulator', 'shut_down_simulator', 'start_
 // the reads it has just measured, up to a cap.
 const springBoardId = 'com.apple.springboard', springBoardExecutable = /(?:^|\/)SpringBoard(?:\.app\/SpringBoard)?$/;
 const settleMs = 600, readbackMs = 5000, maxReadbackMs = 12000;
+const hybridOCRDeadlineMs = 1500, hybridOCRConfidence = 0.8;
 const reportsScreen = new Set(['tap', 'double_tap', 'long_press', 'tap_text', 'swipe', 'drag', 'scroll', 'pinch', 'touch_path', 'draw_strokes', 'type_text', 'fill', 'press_key', 'press_button', 'go_back', 'handle_alert', 'system_gesture']);
 // These exist to act on a control, so the reply says when nothing was seen to change after one.
 const touchesControl = new Set(['tap', 'double_tap', 'long_press', 'tap_text', 'go_back', 'handle_alert']);
@@ -81,7 +83,10 @@ const names = (device, query) => device.id === query || device.name.toLocaleLowe
 export class Devices {
   selected; requested; frame; size; seen; structureViewport; batchViewportVerified = false; elements = []; elementsAt = 0; lastInputAt = -Infinity; lastInputCompletedAt; inBatch = false;
   scales = new Map(); readCosts = new Map(); physicalNames = new Map(); backgroundDevices = new Map(); nextRef = 0;
-  constructor(coordinator = new Coordination()) { this.coordinator = coordinator; }
+  constructor(coordinator = new Coordination(), visionOCR) {
+    this.coordinator = coordinator;
+    this.visionOCR = visionOCR;
+  }
   async run(file, args, timeout = 45000, input) {
     const result = await execute(file, args, { timeout, input });
     return { stdout: result.stdout.trimEnd(), stderr: result.stderr.trimEnd() };
@@ -261,32 +266,92 @@ export class Devices {
     return frame.ocr ??= phase('ocr', () => this.readOCR(frame));
   }
   async readOCR(frame) {
-    if (this.ocrUnavailable) throw new Error(this.ocrUnavailable);
-    const file = join(stateDir, 'frames', `${randomUUID()}-ocr.png`);
-    const binary = join(root, 'build/ocr');
+    const mode = process.env.POKI_OCR_BACKEND ?? 'tesseract';
+    if (!['vision', 'tesseract', 'continuous'].includes(mode)) {
+      throw new Error('POKI_OCR_BACKEND must be tesseract, continuous or vision');
+    }
+    let rows;
+    if (mode === 'continuous' && this.visionOCR) {
+      rows = await phase('ocr_vision_worker', async () => {
+        const descriptor = await ocrPageDescriptor(frame);
+        checkWork();
+        return this.visionOCR.recognize(frame.data, { descriptor, signal: signal(), budget: remaining() });
+      });
+      checkWork();
+    }
+    if (rows === undefined) {
+      const backend = mode === 'vision' ? 'vision' : await this.tesseractBackend(mode);
+      rows = await phase(backend === 'vision' ? 'ocr_vision' : 'ocr_tesseract',
+        () => this.runOCR(frame.data, backend));
+    }
+    return rows.map(e => ({ ...e, label: e.text, type: 'StaticText', frame: { x: e.x, y: e.y, width: e.width, height: e.height } }));
+  }
+  async tesseractBackend(mode) {
+    // Existing Linux installations can use the Tesseract wrapper with upscaling and their language settings.
+    if (process.platform === 'linux' && mode === 'tesseract' && process.env.POKI_OCR_BACKEND === undefined &&
+        !process.env.POKI_TESSERACT_BIN && !process.env.POKI_OCR_LANGUAGES && !process.env.POKI_TESSDATA_DIR) {
+      const installed = await access(join(root, 'build/ocr')).then(() => true, () => false);
+      if (installed) return 'linux-tesseract';
+    }
+    return 'tesseract';
+  }
+  async runOCR(data, backend, { numeric = false } = {}) {
+    if (this.ocrUnavailable?.backend === backend) throw new Error(this.ocrUnavailable.message);
+    const tesseract = backend === 'tesseract';
+    const file = tesseract ? undefined : join(stateDir, 'frames', `${randomUUID()}-ocr.png`);
+    const binary = tesseract ? process.env.POKI_TESSERACT_BIN || 'tesseract' : join(root, 'build/ocr');
     try {
-      await writeFile(file, frame.data, { mode: 0o600 });
-      const { stdout } = await this.run(binary, [file]);
-      return JSON.parse(stdout).map(e => ({ ...e, label: e.text, type: 'StaticText', frame: { x:e.x,y:e.y,width:e.width,height:e.height } }));
+      if (file) await writeFile(file, data, { mode: 0o600 });
+      let args = [file];
+      if (tesseract) {
+        const dataDir = process.env.POKI_TESSDATA_DIR;
+        const languages = numeric ? 'eng' : await tesseractLanguages(binary, dataDir, process.env.POKI_OCR_LANGUAGES);
+        // Pass the captured PNG directly. Leptonica can reject paths through /tmp on macOS.
+        args = ['stdin', 'stdout', '-l', languages, '--psm', numeric ? '8' : '11',
+          ...(dataDir ? ['--tessdata-dir', dataDir] : []),
+          ...(numeric ? ['-c', 'tessedit_char_whitelist=0123456789.,:+-−%'] : []), 'tsv'];
+      }
+      const { stdout } = await this.run(binary, args, tesseract ? 5000 : 45000, tesseract ? data : undefined);
+      return tesseract ? parseTesseractTSV(stdout) : JSON.parse(stdout);
     } catch (error) {
-      // A caller's deadline is not a broken recognizer; it must not be remembered as one.
-      if (stopped(error)) throw error;
+      // A recognizer's deadline leaves the screenshot usable. Only the enclosing
+      // call's cancellation or deadline stops the observation itself.
+      checkWork();
       // The recognizer is a host binary (Vision on macOS, tesseract on Linux). Only the binary being
       // absent is permanent: a run that failed once - a frame it could not decode, a crashed Vision
       // process - must not switch recognition off for the rest of the daemon's life.
       const absent = error.code === 'ENOENT' || error.code === 'EACCES' || /\b(ENOENT|EACCES)\b/.test(error.message ?? '');
       const message = absent
-        ? `Screen text recognition is unavailable on this host: ${binary} is missing or not executable. Only the accessibility tree can be read here.`
+        ? `Screen text recognition is unavailable: ${binary} is missing or not executable.${backend === 'tesseract' ? ' Install Tesseract or set POKI_TESSERACT_BIN in the daemon environment.' : ''}`
         : `Screen text recognition failed on this frame: ${error.message}`;
-      if (absent) this.ocrUnavailable = message;
+      if (absent) this.ocrUnavailable = { backend, message };
       throw new Error(message);
-    } finally { await unlink(file).catch(() => {}); }
+    } finally { if (file) await unlink(file).catch(() => {}); }
+  }
+  async recognizeNumber(frame, region) {
+    const { x, y, width, height } = region;
+    if (x < 0 || y < 0 || width <= 0 || height <= 0 || x + width > frame.width || y + height > frame.height) {
+      throw new Error('numeric_region must be a positive rectangle inside the captured screen.');
+    }
+    const left = Math.floor(x), top = Math.floor(y);
+    const crop = await sharp(frame.data).extract({
+      left, top, width: Math.ceil(x + width) - left, height: Math.ceil(y + height) - top,
+    }).png().toBuffer();
+    const rows = await phase('ocr_tesseract_numeric', () => this.runOCR(crop, 'tesseract', { numeric: true }));
+    return rows.filter(row => /[0-9]/.test(row.text)).map(row => {
+      const x = row.x + left, y = row.y + top;
+      return { ...row, x, y, label: row.text, type: 'StaticText', frame: { x, y, width: row.width, height: row.height } };
+    });
   }
   async recognize(args = {}, existingFrame) {
     checkWork();
     const frame = existingFrame ?? await this.capture();
     let elements, source, foreground, nativeError;
-    if (args.source !== 'ocr') {
+    if (args.numeric_region) {
+      if (args.source && args.source !== 'ocr') throw new Error('numeric_region requires source=ocr or no source.');
+      elements = await this.recognizeNumber(frame, args.numeric_region);
+      source = 'ocr';
+    } else if (args.source !== 'ocr') {
       try {
         const tree = await phase('accessibility', () => this.bridge({ op: 'ax', include_offscreen: args.include_offscreen ?? false }));
         if (!Array.isArray(tree.elements) || !tree.elements.length) throw new Error('No accessibility elements returned');
@@ -438,6 +503,92 @@ export class Devices {
         capture_completed_at: frame.capture_completed_at } : {}),
     };
   }
+  async observeWithFallback(args) {
+    const hybrid = args.fallback === 'hybrid';
+    if (args.include_image === false || args.include_offscreen || (args.source && args.source !== 'auto')) {
+      throw new Error('Observation fallback requires visible auto observation and allows image attachments.');
+    }
+    const hint = args.ax_hint?.normalize('NFKC').trim().toLowerCase();
+    if (args.ax_hint !== undefined && !hint) throw new Error('ax_hint must contain visible text.');
+    const previousFrame = this.frame;
+    let seen, reason;
+    try { if (!args.require_visual && !args.skip_ax) seen = await deadline(2500, () => this.structure()); }
+    catch (error) {
+      checkWork();
+      reason = error.name === 'TimeoutError' ? 'accessibility_timeout' : 'accessibility_unavailable';
+    }
+
+    const nodes = (seen?.elements ?? []).filter(element => flagOn(element.visible));
+    const max = args.max_elements ?? (hybrid ? 80 : 400);
+    const visibleText = element => [element.label, element.text, element.value].some(value =>
+      typeof value === 'string' && value.trim() &&
+      (!hint || value.normalize('NFKC').toLowerCase().includes(hint)));
+    const usableAXText = element => !/^(?:XCUIElementType)?(?:Application|Window|StatusBar)$/i.test(element.type ?? element.role ?? '') &&
+      visibleText(element);
+    const orderedAX = hybrid && hint ? [...nodes.filter(usableAXText), ...nodes.filter(element => !usableAXText(element))] : nodes;
+    const hasText = orderedAX.slice(0, max).some(usableAXText);
+    const warning = promptWarning(nodes);
+    const observation = hasText && this.observationFromStructure(seen);
+
+    if (observation) {
+      this.elements = orderedAX.slice(0, max).map(element => ({ ...element, ref: `e${++this.nextRef}` }));
+      this.elementsAt = Date.now();
+      // Match AX-only post-action reference binding when its root spans the viewport.
+      this.structureViewport = { device: observation.device, revision: observation.revision,
+        width: observation.width, height: observation.height, rootVerified: seen.rootVerified };
+      return text({ observation, source: 'accessibility', foreground: seen.foreground,
+        width: observation.width, height: observation.height, units: 'points',
+        elements: this.elements, total: nodes.length, truncated: nodes.length > max,
+        prompt: { status: 'checked', source: 'accessibility', warning } });
+    }
+
+    // structure() may already have captured a fresh viewport on this call.
+    const frame = this.frame && this.frame !== previousFrame ? this.frame : await this.capture();
+    const axReason = args.skip_ax ? 'ocr_requested' : reason ?? (hasText ? 'accessibility_viewport_changed' : hint ? 'ax_hint_missing' : 'accessibility_empty');
+    let fallbackReason = args.require_visual ? 'visual_requested' : axReason;
+    let prompt = warning ? { status: 'checked', source: 'accessibility', warning }
+      : { status: 'unavailable', instruction: 'Inspect the image for system prompts before continuing.' };
+
+    if (hybrid && !args.require_visual) {
+      let rows;
+      try { rows = await deadline(hybridOCRDeadlineMs, () => this.ocr(frame)); }
+      catch (error) {
+        checkWork();
+        fallbackReason = error.name === 'TimeoutError' ? 'ocr_timeout' : 'ocr_unavailable';
+      }
+      if (rows) {
+        const ocrWarning = promptWarning(rows);
+        prompt = warning ? prompt : { status: 'checked', source: 'ocr', warning: ocrWarning };
+        const readable = rows.filter(row => row.confidence >= hybridOCRConfidence && onScreen(frame)(row));
+        // A clock or carrier label alone cannot establish that the page was read.
+        const inset = frame.height * 0.05;
+        const candidates = readable.filter(row => visibleText(row) &&
+          (hint || (row.frame.y + row.frame.height / 2 > inset && row.frame.y + row.frame.height / 2 < frame.height - inset)));
+        if (candidates.length) {
+          // Put the requested evidence inside the caller's element budget.
+          const ordered = hint ? [...candidates, ...readable.filter(row => !visibleText(row))] : readable;
+          this.elements = ordered.slice(0, max).map(row => ({ ...row, ref: `e${++this.nextRef}` }));
+          this.elementsAt = Date.now();
+          frame.source = 'ocr';
+          frame.structure_completed_at = new Date().toISOString();
+          return text({ observation: this.observation(frame), source: 'ocr', foreground: seen?.foreground,
+            width: frame.width, height: frame.height, units: 'points', elements: this.elements,
+            total: readable.length, truncated: readable.length > max, fallback_reason: axReason, prompt });
+        }
+        fallbackReason = hint && !rows.some(visibleText) ? 'ocr_hint_missing' : 'ocr_uncertain';
+      }
+    }
+    this.elements = [];
+    this.elementsAt = 0;
+    this.structureViewport = undefined;
+    return {
+      content: [...text({ observation: this.observation(frame), source: 'image', foreground: seen?.foreground,
+        width: frame.width, height: frame.height, units: 'points', elements: [], total: 0,
+        fallback_reason: fallbackReason,
+        prompt }).content,
+        { type: 'image', data: frame.data.toString('base64'), mimeType: 'image/png' }],
+    };
+  }
   async input(request) {
     const target = await this.target();
     const frame = 'x' in request || 'x1' in request || request.op === 'pinch' || request.op === 'draw_strokes' ? await this.screenSize() : undefined;
@@ -560,6 +711,11 @@ export class Devices {
         }
         case 'list_elements': return text(await this.recognize(args));
         case 'observe_device': {
+          if ((args.require_visual !== undefined || args.skip_ax !== undefined) && args.fallback !== 'hybrid') {
+            throw new Error('require_visual and skip_ax require fallback=hybrid.');
+          }
+          if (args.fallback) return this.observeWithFallback(args);
+          if (args.ax_hint !== undefined) throw new Error('ax_hint requires fallback=image or fallback=hybrid.');
           const result = await this.recognize(args), frame = this.frame;
           let prompt;
           try { prompt = { status: 'checked', source: 'ocr', warning: promptWarning(await this.ocr(frame)) }; }

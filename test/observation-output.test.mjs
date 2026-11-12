@@ -55,3 +55,120 @@ test('a tree that names only the top of the screen gets the screenshot text it l
   assert.match(looked, /, accessibility \+ ocr\)/);
   assert.deepEqual(looked.split('\n').filter(line => /^[ +]\d+ /.test(line)).map(line => line.match(/"(.*)"/)[1]), [...header.map(e => e[1]), ...products.map(e => e[0])]);
 });
+
+test('a Tesseract process timeout leaves the screenshot and reports prompt OCR unavailable', async t => {
+  const f = await fixture(t);
+  await f.set({ ocrDelayMs: 7000 });
+  const result = await f.call('take_screenshot');
+  assert.ok(!result.isError);
+  assert.ok(result.content.some(item => item.type === 'image' && item.mimeType === 'image/jpeg'));
+  assert.ok(result.content.some(item => item.text?.includes('Prompt check: {"status":"unavailable"')));
+});
+
+test('numeric_region returns OCR boxes in the original screen coordinates', async t => {
+  const f = await fixture(t);
+  await f.set({ ocrLabel: '12:34' });
+  const region = { x: 8, y: 20, width: 70, height: 55 };
+  const result = value(await f.call('list_elements', { numeric_region: region }));
+  assert.equal(result.source, 'ocr');
+  assert.equal(result.elements[0].text, '12:34');
+  assert.deepEqual(result.elements[0].frame, { x: 18, y: 30, width: 40, height: 20 });
+  const outside = await f.call('list_elements', { numeric_region: { ...region, width: 101 } });
+  assert.equal(outside.isError, true);
+  assert.match(outside.content[0].text, /inside the captured screen/);
+});
+
+test('image fallback serves visible AX without attaching an image or invoking OCR', async t => {
+  const f = await fixture(t);
+  const first = await f.call('observe_device', { fallback: 'image', ax_hint: 'first' });
+  assert.equal(value(first).source, 'accessibility');
+  assert.equal(value(first).elements[0].label, 'First');
+  assert.equal(value(first).prompt.source, 'accessibility');
+  assert.ok(!first.content.some(item => item.type === 'image'));
+  const captures = (await f.events()).filter(event => event.args?.includes('screenshot')).length;
+  const second = await f.call('observe_device', { fallback: 'image' });
+  assert.equal(value(second).source, 'accessibility');
+  const events = await f.events();
+  assert.equal(events.filter(event => event.args?.includes('screenshot')).length, captures);
+  assert.equal(events.filter(event => event.tool === 'ocr').length, 0);
+});
+
+test('image fallback supplies a screenshot when AX misses the target or fails', async t => {
+  const f = await fixture(t);
+  for (const [state, reason] of [[{}, 'ax_hint_missing'], [{ axUnavailable: true }, 'accessibility_unavailable']]) {
+    await f.set(state);
+    const result = await f.call('observe_device', { fallback: 'image', ax_hint: 'canvas text' });
+    const observation = value(result);
+    assert.equal(observation.source, 'image');
+    assert.equal(observation.fallback_reason, reason);
+    assert.equal(observation.prompt.status, 'unavailable');
+    assert.deepEqual(observation.elements, []);
+    assert.ok(result.content.some(item => item.type === 'image' && item.mimeType === 'image/png'));
+  }
+  const events = await f.events();
+  assert.equal(events.filter(event => event.args?.includes('screenshot')).length, 2);
+  assert.equal(events.filter(event => event.tool === 'ocr').length, 0);
+});
+
+test('an AX read deadline still yields the screenshot in image fallback mode', async t => {
+  const f = await fixture(t);
+  await f.set({ axDelayMs: 6000 });
+  const result = await f.call('observe_device', { fallback: 'image' });
+  assert.equal(value(result).fallback_reason, 'accessibility_timeout');
+  assert.ok(result.content.some(item => item.type === 'image'));
+  assert.equal((await f.events()).filter(event => event.tool === 'ocr').length, 0);
+});
+
+test('hybrid routes known visible text through AX, OCR, then a single image', async t => {
+  const f = await fixture(t);
+  await f.set({ ocrLabel: 'Canvas text' });
+  const read = ax_hint => f.call('observe_device', { fallback: 'hybrid', ax_hint });
+  const ax = await read('first');
+  assert.equal(value(ax).source, 'accessibility');
+  assert.equal((await f.events()).filter(event => event.tool === 'ocr').length, 0);
+  const ocr = await read('canvas text');
+  assert.equal(value(ocr).source, 'ocr');
+  assert.equal(value(ocr).fallback_reason, 'ax_hint_missing');
+  assert.equal(value(ocr).observation.structure_source, 'ocr');
+  assert.equal(value(ocr).elements[0].label, 'Canvas text');
+  assert.ok(value(ocr).elements[0].ref);
+  assert.equal(ocr.content.some(item => item.type === 'image'), false);
+  await f.set({ ocrLabel: 'Canvas text', ocrConfidence: 40 });
+  const image = await read('canvas text');
+  assert.equal(value(image).fallback_reason, 'ocr_uncertain');
+  assert.deepEqual(value(image).elements, []);
+  assert.equal(image.content.filter(item => item.type === 'image').length, 1);
+  assert.equal(value(await read('another target')).fallback_reason, 'ocr_hint_missing');
+});
+
+test('hybrid returns one image after the OCR deadline and can read the next frame', async t => {
+  const f = await fixture(t);
+  await f.set({ axUnavailable: true, ocrDelayMs: 7000, ocrLabel: 'Canvas text' });
+  const read = () => f.call('observe_device', { fallback: 'hybrid', ax_hint: 'canvas text' });
+  const result = await read();
+  assert.equal(value(result).fallback_reason, 'ocr_timeout');
+  assert.equal(result.content.filter(item => item.type === 'image').length, 1);
+  assert.equal((await f.events()).filter(event => event.args?.includes('screenshot')).length, 1);
+  await f.set({ axUnavailable: true, ocrLabel: 'Canvas text' });
+  assert.equal(value(await read()).source, 'ocr');
+});
+
+test('explicit hybrid visual request goes straight to the screenshot', async t => {
+  const f = await fixture(t);
+  const result = await f.call('observe_device', { fallback: 'hybrid', require_visual: true });
+  assert.equal(value(result).fallback_reason, 'visual_requested');
+  assert.equal(value(result).prompt.status, 'unavailable');
+  assert.equal(result.content.filter(item => item.type === 'image').length, 1);
+  assert.ok(!(await f.events()).some(event => event.tool === 'ocr' || ['ax', 'ax_tree'].includes(event.op)));
+  const invalid = await f.call('observe_device', { fallback: 'image', require_visual: true });
+  assert.equal(invalid.isError, true);
+});
+
+test('hybrid can try local OCR without repeating an insufficient AX read', async t => {
+  const f = await fixture(t);
+  await f.set({ ocrLabel: 'Unknown page text' });
+  const result = await f.call('observe_device', { fallback: 'hybrid', skip_ax: true });
+  assert.equal(value(result).source, 'ocr');
+  assert.equal(value(result).fallback_reason, 'ocr_requested');
+  assert.ok(!(await f.events()).some(event => ['ax', 'ax_tree'].includes(event.op)));
+});

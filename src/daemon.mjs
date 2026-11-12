@@ -8,6 +8,7 @@ import { createServer, definitions } from './tools.mjs';
 import { withCallLog } from './call-log.mjs';
 import { Coordination } from './coordination.mjs';
 import { Devices } from './device.mjs';
+import { VisionOCR } from './vision-ocr.mjs';
 import { stateDir, endpointFile } from './config.mjs';
 import { startUpdateChecks } from './update-check.mjs';
 import { warnIfNativeStale } from './build-info.mjs';
@@ -18,6 +19,8 @@ if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('Invali
 await warnIfNativeStale();
 const sessions = new Map();
 const coordinator = new Coordination();
+const visionOCR = process.platform === 'darwin' && process.env.POKI_OCR_BACKEND === 'continuous'
+  ? new VisionOCR() : undefined;
 const token = process.env.POKI_MCP_TOKEN?.trim() || randomBytes(32).toString('hex');
 // A short token is the only thing standing between the network and the device, and it is cheap
 // to type in a shell by mistake.
@@ -61,7 +64,7 @@ async function handle(req, res) {
   if (!['/mcp', '/session/close', '/request/cancel'].includes(req.url)) { res.writeHead(404); res.end(); return; }
   const session = req.headers['x-poki-mcp-session'];
   if (typeof session !== 'string' || !/^[a-zA-Z0-9_-]{1,80}$/.test(session)) { res.writeHead(400); res.end('Invalid session'); return; }
-  if (!sessions.has(session)) sessions.set(session, new Devices(coordinator));
+  if (!sessions.has(session)) sessions.set(session, new Devices(coordinator, visionOCR));
   const devices = sessions.get(session);
   devices.peers = () => sessions.values();
   devices.label ??= session;
@@ -116,11 +119,13 @@ async function stop() {
   if (stopping) return;
   stopping = true;
   stopUpdateChecks();
+  const closingOCR = visionOCR?.close();
   const closed = Promise.all(servers.map(server => new Promise(resolve => server.close(resolve))));
   for (const server of servers) server.closeAllConnections();
   await Promise.allSettled([...sessions.values()].map(devices => devices.close()));
   await Promise.allSettled([...active].map(server => server.close()));
   await closeLocalHelpers();
+  await closingOCR;
   await closed;
   const entry = await readFile(endpointFile, 'utf8').then(JSON.parse).catch(() => null);
   if (entry?.pid === process.pid) await unlink(endpointFile);

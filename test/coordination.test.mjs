@@ -792,7 +792,7 @@ for(const [tool,args] of Object.entries(locating)){
  });
 }
 test('a recognition that began inside the five seconds still finishes and is used',async t=>{
- const f=await fixture(t);await f.set({axEmpty:true,ocrDelayMs:8000});
+ const f=await fixture(t,{extraEnv:()=>({POKI_OCR_BACKEND:'vision'})});await f.set({axEmpty:true,ocrDelayMs:8000});
  const started=Date.now();
  const result=await f.call('tap_text',{text:'First'});
  const elapsed=Date.now()-started;

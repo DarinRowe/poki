@@ -138,6 +138,10 @@ export async function taskServices(directory, { route = false, appSearch = false
               ] } };
         }
       }
+      else if (name === 'observe_device' && args.require_visual === true) return { content: [
+        { type: 'text', text: JSON.stringify({ source: 'image', elements: [] }) },
+        { type: 'image', mimeType: 'image/png', data: 'iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAD0lEQVR4nGP4jwQYiOMAANuQL9FuRbCyAAAAAElFTkSuQmCC' },
+      ] };
       else if (route && ['list_elements', 'observe_device'].includes(name)) result = {
         source: 'accessibility', truncated: false, foreground: fixture.foreground,
         observation: { id: `observation-${++fixture.observations}`, revision: fixture.observations, device: 'synthetic-device', capture_started_at: new Date().toISOString(), capture_completed_at: new Date().toISOString() },
