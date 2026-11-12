@@ -17,7 +17,7 @@ test('fill asks for a daemon restart after native or JavaScript updates and reco
     const f = await fixture(t, { beforeStart: async dir => {
       const file = join(dir, 'src/interaction.mjs');
       currentInteraction = await readFile(file, 'utf8');
-      const legacy = currentInteraction.replace('target: { object_id, role: here.role ?? here.type, label, placeholder, value }', 'x: 30, y: 50');
+      const legacy = currentInteraction.replace('target: { object_id, role: role ?? type, label, placeholder, value }', 'x: 30, y: 50');
       assert.notEqual(legacy, currentInteraction, 'The fixture must reproduce the old fill request.');
       await writeFile(file, legacy);
     } });

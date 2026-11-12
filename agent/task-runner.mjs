@@ -426,16 +426,18 @@ export class PhoneTask extends EventEmitter {
     if (this.observedAfterAction && ['batch_commands', 'take_screenshot', 'observe_device', 'list_elements'].includes(name)) this.completionEvidence = result.content;
     this.#record(name, args, result);
     if (!observing && !result.isError) {
-      const observed = await this.#completeObservation(result);
+    let reusedObservation = false;
+      const observed = await this.#completeObservation(result, name);
       if (observed) {
         result = { ...result, content: [...result.content, ...observed.content] };
+        reusedObservation = observed.reused === true;
         if (!observed.isError) { this.observedAfterAction = true; this.completionEvidence = observed.content; }
       }
     }
     // Record the unabridged action evidence before changing model-facing text.
     // An eligible reuse adds one top-level trimmed observation; the action's
     // nested copy must not be sent to the model again.
-    if (!observing) result = { ...result, content: receiptForModel(result.content) };
+    if (!observing) result = { ...result, content: receiptForModel(result.content, { reusedObservation }) };
     this.publish();
     return {
       success: !result.isError,
@@ -443,17 +445,18 @@ export class PhoneTask extends EventEmitter {
     };
   }
 
-  async #completeObservation(actionResult) {
+  async #completeObservation(actionResult, tool) {
     const last = this.trace.findLast(entry => !tracePassive.has(entry.tool));
     if (!last || structuredObservations.has(last.tool)) return;
-    const receipt = actionResult && resultData(actionResult);
-    const reused = reusableActionObservation(receipt, this.device, this.targetBundle ?? null);
+    const receipt = actionResult && resultData(tool === 'batch_commands' ? { content: actionResult.content.slice(-1) } : actionResult);
+    const expectedPid = this.verifiedLaunch?.bundleId === this.targetBundle ? this.verifiedLaunch?.pid : undefined;
+    const reused = reusableActionObservation(receipt, this.device, this.targetBundle ?? null, { expectedPid });
     if (reused) {
       // Reused receipt evidence is not a new MCP call.
       this.trace.push({ tool: 'post_action_observation', args: { source: 'action_receipt', receipt_id: receipt.receipt_id },
         result: reused, error: false, reused: true, elapsedMilliseconds: 0, at: new Date().toISOString() });
       this.#mark({ kind: 'observation_reused', source: 'action_receipt', observationId: reused.observation.id });
-      return { content: [{ type: 'text', text: JSON.stringify(reused) }] };
+      return { content: [{ type: 'text', text: JSON.stringify(reused) }], reused: true };
     }
     const args = { device: this.device };
     const result = await this.#call('list_elements', args);
@@ -562,6 +565,10 @@ export class PhoneTask extends EventEmitter {
     const bundle = found.bundle_id ?? args.bundle_id;
     if (bundle) { this.targetBundle = bundle; this.bundleId ??= bundle; }
   }
+    if (found.launched === true && found.foreground_verified === true && found.bundle_id &&
+        Number.isSafeInteger(found.pid) && found.pid > 0) {
+      this.verifiedLaunch = { bundleId: found.bundle_id, pid: found.pid };
+    }
 
   steer(text) {
     if (this.finished) throw new Error('Task has ended');

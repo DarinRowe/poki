@@ -93,6 +93,12 @@ else if(tool==='poki-native') {
    if('x' in req)phoneTap(state,req.y);
    const editing=state.phone.rows.filter(r=>r.editing),into=editing[0];
    const wrong=req.target&&(editing.length!==1||into.id!==req.target.object_id||(into.value||into.placeholder||'')!==req.target.value);
+  if(req.op==='type_text'&&state.refuseOnce){
+   const {refuseOnce,...next}=state;
+   if(refuseOnce.newValue!==undefined)next.phone.rows.find(r=>r.editing).value=refuseOnce.newValue;
+   writeFileSync(process.env.FIXTURE_STATE,JSON.stringify(next));
+   console.log(JSON.stringify({isError:true,outcome:'not_sent',stop_reason:'error',reason:'target_changed',sent:false,submit_sent:false}));process.exit(0);
+  }
    state.phone.keyboard=true;
    if(wrong){writeFileSync(process.env.FIXTURE_STATE,JSON.stringify(state));console.log(JSON.stringify({isError:true,outcome:'not_sent',stop_reason:'error',reason:'other_field_editing',sent:false,text_verified:false,submit_sent:false,instruction:'Nothing was typed.'}));process.exit(0);}
    if(into)into.value=req.clear?req.text:into.value+req.text;

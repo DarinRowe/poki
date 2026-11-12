@@ -531,10 +531,29 @@ export async function interaction(ctx, name, args) {
       }
       if (physical) {
         // Clearing, pasting, reading back and Return stay in one native request: each separate request costs seconds, and only native can check the field right before the first key press.
-        const { object_id, label, placeholder, value = '' } = here;
-        const typed = await ctx.input({ op: 'type_text', text: args.text, clear: true, submit: args.submit ?? false, target: { object_id, role: here.role ?? here.type, label, placeholder, value } });
+        const typeInto = ({ object_id, role, type, label, placeholder, value = '' }) => ctx.input({
+          op: 'type_text', text: args.text, clear: true, submit: args.submit ?? false,
+          target: { object_id, role: role ?? type, label, placeholder, value },
+        });
+        const foreground = ctx.seen?.foreground;
+        let typed = await typeInto(here);
+        if (typed.reason === 'target_changed' && typed.outcome === 'not_sent' && typed.sent === false &&
+            typed.submit_sent === false && here.object_id && !/secure/i.test(here.role ?? here.type ?? '') &&
+            Number.isSafeInteger(foreground?.pid)) {
+          // Retry only after a fresh tree confirms the same focused field and its original content.
+          // A new field or a changed value may be the user's input and must be kept.
+          const current = await readStructure(ctx, 0);
+          const focused = current.elements.filter(e => e.focused);
+          const [field] = focused;
+          if (current.foreground?.pid === foreground.pid && current.foreground.bundle_id === foreground.bundle_id &&
+              focused.length === 1 && isTextInput(field) && field.object_id === here.object_id &&
+              (field.role ?? field.type) === (here.role ?? here.type) && field.label === here.label &&
+              field.placeholder === here.placeholder && field.value === here.value) {
+            typed = { ...await typeInto(field), target_revalidated: true };
+          }
+        }
         if (!typed.isError || !typed.sent) return typed;
-        const aimed = (await readStructure(ctx, 0)).elements.find(e => isTextInput(e) && e.object_id === object_id);
+        const aimed = (await readStructure(ctx, 0)).elements.find(e => isTextInput(e) && e.object_id === here.object_id);
         const held = aimed && !/secure/i.test(aimed.type ?? '') ? heldText(aimed) : undefined;
         return held === undefined ? typed : { ...typed, instruction: `The field holds ${JSON.stringify(held)} instead of the requested text. ${typed.instruction}` };
       }
@@ -557,7 +576,13 @@ export async function interaction(ctx, name, args) {
       // A field that still looks like the target did not take the text, whatever is being edited now.
       if (known && holder && (fieldKey(holder) !== fieldKey(known) || seen.some(e => e !== holder && isTextInput(e) && sameField(e, known)))) return failed(`The text went into ${quoted(names([holder]))}, not the requested field. Nothing was submitted. Look at it before continuing.`);
       if (!args.submit) return typed;
-      await ctx.input({ op: 'key', key: 'return', modifiers: [], count: 1 });
+      const submit = await ctx.input({ op: 'key', key: 'return', modifiers: [], count: 1 });
+      if (submit.sent !== true || submit.isError) return {
+        ...typed, isError: true, stop_reason: submit.stop_reason ?? 'unknown',
+        outcome: 'unknown', submit_sent: submit.sent === false ? false : undefined,
+        ...(submit.error ? { error: submit.error } : {}),
+        instruction: 'The field was filled. Verify the current field and submission result before deciding whether to press Return.',
+      };
       return { ...typed, submit_sent: true };
     }
     case 'press_key': return ctx.input({ op: 'key', key: args.key, modifiers: args.modifiers ?? [], count: args.count ?? 1 });

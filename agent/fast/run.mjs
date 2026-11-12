@@ -112,7 +112,7 @@ export async function runFast({ task, alternatives = [], onSelect = () => {}, ca
       const receipt = await session.call(action.op, args);
       if (receipt.sent !== true) throw new Error('unknown_outcome');
       pending = false; history.push(action.id);
-      nextObservation = reusableActionObservation(receipt, task.device, task.bundle_id);
+      nextObservation = reusableActionObservation(receipt, task.device, task.bundle_id, { expectedPid: scopePid });
     }
   } catch (error) {
     reason = signal.aborted ? 'cancelled'

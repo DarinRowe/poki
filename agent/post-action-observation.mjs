@@ -1,6 +1,6 @@
 // Check action-bound observations before reusing them instead of a fresh MCP read.
 // "sent: true" alone must not be treated as task success or verified UI state.
-export function reusableActionObservation(receipt, device, expectedBundleId = null, now = Date.now()) {
+export function reusableActionObservation(receipt, device, expectedBundleId = null, { now = Date.now(), expectedPid } = {}) {
   if (!receipt || receipt.sent !== true || receipt.isError || receipt.stopped || receipt.outcome === 'unknown') return null;
   const data = receipt.post_action_observation;
   if (data?.version !== 1 || typeof receipt.receipt_id !== 'string' ||
@@ -26,7 +26,8 @@ export function reusableActionObservation(receipt, device, expectedBundleId = nu
   if (data.source !== 'accessibility' || data.truncated !== false ||
       !Array.isArray(data.elements) || data.elements.length === 0 || data.elements.length > 400 ||
       data.total !== data.elements.length || data.prompt?.status !== 'checked' || data.prompt.warning) return null;
-  if (expectedBundleId && data.foreground?.bundle_id !== expectedBundleId) return null;
+  if (expectedBundleId && data.foreground?.bundle_id !== expectedBundleId &&
+      (data.foreground?.bundle_id || !Number.isSafeInteger(expectedPid) || expectedPid <= 0 || data.foreground?.pid !== expectedPid)) return null;
   if (!data.elements.every(element => element && typeof element.ref === 'string' && /^e\d+$/.test(element.ref)) ||
       new Set(data.elements.map(element => element.ref)).size !== data.elements.length) return null;
   return {
@@ -36,14 +37,18 @@ export function reusableActionObservation(receipt, device, expectedBundleId = nu
 }
 
 // Keep the original full receipt in the verification trace, but remove
- // its nested AX list before sending the separate trimmed list to the model.
-export function receiptForModel(content) {
+// its nested AX list before sending the separate trimmed list to the model.
+export function receiptForModel(content, { reusedObservation = false } = {}) {
   return content.map(item => {
     if (item.type !== 'text') return item;
     try {
       const value = JSON.parse(item.text);
       if (value && typeof value === 'object' && 'post_action_observation' in value) {
         const { post_action_observation: _observation, ...receipt } = value;
+        if (reusedObservation && Array.isArray(receipt.screen?.text)) {
+          const { text: _text, more: _more, ...screen } = receipt.screen;
+          receipt.screen = screen;
+        }
         return { ...item, text: JSON.stringify(receipt) };
       }
     } catch { /* Preserve non-JSON diagnostics. */ }

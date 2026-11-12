@@ -27,7 +27,7 @@ function respond(res, tool, index, opening, finalText = 'Finished the local fixt
   res.end();
 }
 
-export async function taskServices(directory, { route = false, appSearch = false, pendingModel = false, beforeVerification, beforeFinalResponse, execution, scrollResults = [], beforeDeviceCall, devices = [], postActionObservation = false } = {}) {
+export async function taskServices(directory, { route = false, appSearch = false, pendingModel = false, beforeVerification, beforeFinalResponse, execution, scrollResults = [], beforeDeviceCall, devices = [], postActionObservation = false, pidOnlyReceipt = false } = {}) {
   const fixture = { modelRequests: [], deviceCalls: [], events: [], foreground: { bundle_id: 'org.example.channel-fixture', name: 'Channel fixture' }, value: '', observations: 0 };
   let executionIndex = 0, scrollIndex = 0;
   const model = http.createServer(async (req, res) => {
@@ -84,7 +84,24 @@ export async function taskServices(directory, { route = false, appSearch = false
     if (req.url === '/session/close' || req.url === '/request/cancel') { fixture.events.push({ type: req.url, foreground: fixture.foreground }); res.end('{}'); return; }
     if (req.url !== '/mcp') { res.writeHead(404).end(); return; }
     const dispatch = async (name, args) => {
-      if (name === 'batch_commands') return runBatch({ dispatch, readback: async () => ({ screen: JSON.parse((await dispatch('list_elements', {})).content[0].text) }) }, args);
+      if (name === 'batch_commands') {
+        let terminalReceipt;
+        const batch = { lastInputAt: 0,
+          dispatch: async (tool, arguments_) => {
+            const result = await dispatch(tool, arguments_);
+            const first = result.content[0]?.text;
+            terminalReceipt = first && first.startsWith('{') ? JSON.parse(first) : undefined;
+            if (terminalReceipt?.sent === true) batch.lastInputAt++;
+            return result;
+          },
+          readback: async (_before, options) => {
+            const screen = JSON.parse((await dispatch('list_elements', {})).content[0].text);
+            const { receipt_id, input_completed_at, post_action_observation } = terminalReceipt ?? {};
+            return { screen, ...(options?.structured ? { receipt_id, input_completed_at, post_action_observation } : {}) };
+          },
+        };
+        return runBatch(batch, args);
+      }
       fixture.deviceCalls.push({ name, args });
       fixture.events.push({ type: name, foreground: fixture.foreground });
       await beforeDeviceCall?.(name, args);
@@ -113,7 +130,7 @@ export async function taskServices(directory, { route = false, appSearch = false
             post_action_observation: { version: 1, action_receipt_id: 'fixture-fill-receipt',
               observation: { id: 'fixture-after-fill', device: 'synthetic-device', revision: 2, atomic: false,
                 structure_started_at: at(-300), structure_completed_at: at(-200) },
-              source: 'accessibility', foreground: fixture.foreground, truncated: false,
+              source: 'accessibility', foreground: pidOnlyReceipt ? { pid: fixture.foreground.pid } : fixture.foreground, truncated: false,
               prompt: { status: 'checked', source: 'accessibility', warning: null }, total: 2,
               elements: [
                 { ref: 'e3', identifier: 'fixture-value', label: 'Value', value: fixture.value, role: 'TextField', visible: true },
