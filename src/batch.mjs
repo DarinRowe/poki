@@ -57,7 +57,7 @@ export async function runBatch(ctx, args) {
     return { isError: true, content: [json({ step: invalid + 1, tool: commands[invalid].tool, isError: true, elapsed_ms: 0 }), { type: 'text', text: error }, receipt({ completed_steps: 0, stop_reason: 'error', failed_step: { step: invalid + 1, ...commands[invalid], error }, remaining_steps: commands, recovery: { outcome: 'not_started', step: invalid + 1, unattempted_steps: commands }, next: 'Nothing ran. Fix the failed step and send the whole batch again.' })] };
   }
   const blocks = [];
-  let stopReason, failed = false, ran = 0, failure, failureOutcome, unchanged, finalInput, finalExpectation;
+  let stopReason, failed = false, ran = 0, failure, failureOutcome, selectorRefused, unchanged, finalInput, finalObservation, failureScreen;
   // The Agent pins every step to one device ID. Keep mixed routing and batches
   // that can change the available devices on the regular per-step path.
   const selector = commands[0].arguments?.device;
@@ -69,7 +69,7 @@ export async function runBatch(ctx, args) {
   try {
     for (const [index, command] of commands.entries()) {
       const started = performance.now();
-      ctx.batchStep = { next: commands[index + 1], stopOnError, returnObservation: args.return_observation === true && index === commands.length - 1 };
+      ctx.batchStep = { previous: commands[index - 1], next: commands[index + 1], stopOnError, returnObservation: args.return_observation === true && index === commands.length - 1 };
       let result, dispatchStarted = false;
       const previousInput = ctx.lastInputAt;
       try {
@@ -91,8 +91,9 @@ export async function runBatch(ctx, args) {
       const inputOccurred = ctx.lastInputAt !== previousInput;
       finalInput = !result.isError && inputOccurred && data.sent === true && data.outcome !== 'unknown' &&
         (args.return_observation === true || command.arguments?.return_observation === true);
-      finalExpectation = !result.isError && inputOccurred && data.expectation?.matched === true ? data : undefined;
-      const moveReceipt = finalExpectation && ran === commands.length && !failed && !stopReason && data.post_action_observation;
+      const quickScroll = ['scroll', 'swipe'].includes(command.tool) && command.arguments?.observe === 'quick';
+      finalObservation = !result.isError && inputOccurred && (data.expectation?.matched === true || quickScroll && data.screen) ? data : undefined;
+      const moveReceipt = finalObservation && ran === commands.length && !failed && !stopReason && data.post_action_observation;
       let content = result.content;
       if (moveReceipt) {
         const { post_action_observation: _observation, receipt_id: _id, input_completed_at: _time, ...action } = data;
@@ -104,11 +105,13 @@ export async function runBatch(ctx, args) {
       else if (stopsRun(reason)) stopReason = reason;
       if (result.isError) {
         failed = true;
-        const selectorRefused = !inputOccurred && ['fill', 'tap_text'].includes(command.tool) &&
-          /No visible element matches|Requested field is not visible/.test(result.content[0]?.text ?? '');
+        selectorRefused = !inputOccurred && ['fill', 'tap_text'].includes(command.tool) &&
+          (data.reason === 'target_not_found' || /No visible element matches|Requested field is not visible/.test(result.content[0]?.text ?? ''));
+        failureScreen = (reason === 'postcondition_unverified' || data.reason === 'target_not_found' || quickScroll) && data.screen
+          ? { screen: data.screen } : undefined;
         failureOutcome = data.outcome === 'unknown' || reason === 'unknown' ? 'verify' :
           !dispatchStarted || data.outcome === 'not_sent' || data.sent === false || selectorRefused ? 'not_sent' : 'verify';
-        failure = { step: ran, ...command, error: result.content.find(block => block.type === 'text')?.text };
+        failure = { step: ran, ...command, error: data.reason === 'target_not_found' ? data.error : result.content.find(block => block.type === 'text')?.text };
         if (!stopReason && stopOnError) stopReason = 'error';
       } else failure = undefined;
       if (stopReason) break;
@@ -122,8 +125,9 @@ export async function runBatch(ctx, args) {
     // dispatch restores both when this batch ends.
     if (last.arguments?.device) { ctx.requested = last.arguments.device; ctx.resolved = pinned?.simulator; }
     const structured = finalInput && !stopReason && !failed && last === commands[ran - 1];
-    const terminal = !failed && !stopReason && last === commands[ran - 1] && finalExpectation;
-    const { screen, stop_reason, receipt_id, input_completed_at, post_action_observation } = terminal ||
+    const terminal = !failed && !stopReason && last === commands[ran - 1] && finalObservation;
+    const stoppedScreen = stopReason && failure && last === commands[ran - 1] && failureScreen;
+    const { screen, stop_reason, receipt_id, input_completed_at, post_action_observation } = terminal || stoppedScreen ||
       await phase('batch_readback', () => ctx.readback(undefined, { once: unverified && !structured, structured }));
     stopReason ??= stop_reason;
     summary.screen = screen;
@@ -138,6 +142,9 @@ export async function runBatch(ctx, args) {
         remaining_steps: stopReason === 'unknown' ? unattempted : commands.slice(failure.step - 1),
         recovery: { outcome: failureOutcome, step: failure.step, unattempted_steps: unattempted },
         next: advice(stopReason, failure.step, failureOutcome) });
+      if (selectorRefused && stopReason === 'error' && failure.tool === 'tap_text' && !summary.screen?.prompt) {
+        summary.next += ' If the current screen is the expected list and the target is offscreen, use scroll_to in that list before retrying the tap.';
+      }
       if (failureOutcome === 'not_sent' && stopReason === 'error' && failure.tool === 'fill' &&
           summary.screen?.source === 'accessibility' && !summary.screen.stale && !summary.screen.partial && !summary.screen.prompt &&
           /No visible element matches|Requested field is not visible/.test(failure.error ?? '')) {

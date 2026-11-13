@@ -465,7 +465,8 @@ export class Devices {
   // One accessibility read and no screenshot, so polling costs one native request per attempt.
   async structure(maxAge = 0) {
     const target = await this.target();
-    if (this.seen?.device === target.id && performance.now() - this.seen.at <= maxAge) return this.seen;
+    if (this.seen?.device === target.id && this.seen.revision === this.coordinator.revision(target.id) &&
+        performance.now() - this.seen.at <= maxAge) return this.seen;
     const started = performance.now(), observedAt = new Date().toISOString(), timings = timingCount();
     const tree = await phase('accessibility', () => this.bridge({ op: 'ax', include_offscreen: false }));
     this.readCosts.set(target.id, performance.now() - started);
@@ -491,6 +492,9 @@ export class Devices {
     }
     const viewport = this.size ?? await this.capture();
     const rootVerified = axRootOrientation(rawElements, viewport) === 'same';
+    const portraitTouchViewport = target.kind === 'physical' && !target.remote && target.connection === 'USB' &&
+      tree.orientation === 1 && viewport.width < viewport.height && matchesScreenRoot(rawElements, viewport)
+      ? { width: viewport.width, height: viewport.height } : undefined;
     if (!rootVerified) this.structureViewport = undefined;
     const elements = rawElements.filter(onScreen(viewport));
     // Preserve upstream foreground-based identity, including PID-only roots.
@@ -501,15 +505,23 @@ export class Devices {
     })]);
     return this.seen = {
       device: target.id, revision: this.coordinator.revision(target.id), foreground: tree.foreground,
-      elements, signature, rootVerified, at: performance.now(), startedAt: started, observedAt,
+      elements, signature, rootVerified, portraitTouchViewport, at: performance.now(), startedAt: started, observedAt,
       structure_started_at: observedAt, structure_completed_at: new Date().toISOString(),
       ...(served ? { served } : {}),
     };
   }
   // A simulator's size only changes when it rotates. A physical device maps touches through its
   // current orientation, so it keeps taking a fresh frame.
-  async screenSize() {
+  touchViewport(target, targetRead) {
+    if (targetRead && targetRead === this.seen && targetRead.device === target.id &&
+        targetRead.revision === this.coordinator.revision(target.id) && performance.now() - targetRead.at <= justReadMs) {
+      return targetRead.portraitTouchViewport;
+    }
+  }
+  async screenSize(targetRead) {
     const target = await this.target();
+    const viewport = this.touchViewport(target, targetRead);
+    if (viewport) return viewport;
     if (target.kind === 'simulator' && this.size?.device === target.id) return this.size;
     // A batch may retain only a viewport that was captured or validated
     // during THIS batch, not one inherited from a previous AX-only action.
@@ -560,15 +572,53 @@ export class Devices {
       return { ...screenChange(before, before !== undefined && seen.signature !== before ? seen.signature : undefined), screen: { ...describeScreen(seen), ...(seen.startedAt < this.lastInputAt ? { stale: true } : {}), partial: true, reason: `${error.message}: the screen may still have been changing; this is the last complete read.` } };
     }
   }
+  async quickScrollObservation(baseline) {
+    const target = await this.target();
+    const unavailable = { source: 'unavailable', screen_stable: false, elements: [],
+      instruction: 'Inspect the current screen with observe_device before continuing.' };
+    try {
+      const seen = await deadline(this.observationBudget(target), async () => {
+        await this.settle();
+        return this.structure();
+      });
+      const observation = seen.startedAt >= this.lastInputAt && this.observationFromStructure(seen);
+      const visible = seen.elements.filter(e => flagOn(e.visible));
+      const elements = visible.filter(e => {
+        const role = e.role ?? e.type ?? '';
+        return !/^(?:AX|XCUIElementType)?(?:Application|Window|StatusBar)$/i.test(role) &&
+          [e.label, e.text, e.value, e.placeholder].some(value => typeof value === 'string' && value.trim());
+      });
+      if (!observation || !elements.length) return { screen: unavailable, ...screenChange() };
+      const limit = 80;
+      const blocker = blockingOverlay(seen);
+      const moved = !blocker && baseline === this.beforeInput && baseline?.device === seen.device &&
+        baseline.revision + 1 === seen.revision &&
+        sameForeground(baseline.foreground, seen.foreground) && whatMoved(baseline.elements, seen.elements);
+      return { ...screenChange(), ...(moved ? { moved } : {}),
+        ...(blocker && this.inBatch ? { isError: true, stop_reason: 'blocked_by_overlay' } : {}), screen: {
+        observation, source: 'accessibility', foreground: seen.foreground, screen_stable: false,
+        elements: elements.slice(0, limit).map(e => {
+          const { x, y, width, height } = e.frame ?? e;
+          return { role: e.role ?? e.type, label: e.label ?? e.text, value: e.value, placeholder: e.placeholder,
+            frame: [x, y, width, height] };
+        }), total: elements.length, truncated: elements.length > limit, ...(blocker ? { blocker } : {}),
+      } };
+    } catch {
+      try { checkWork(); } catch (stop) { return { stopped: true, stop_reason: stoppingReason(stop) }; }
+      return { screen: unavailable, ...screenChange() };
+    }
+  }
   async readExpectation(expect, before, structured) {
-    let seen;
+    let seen, lastRead;
     try {
       seen = await phase('postcondition_wait', () => deadline((expect.timeout_seconds ?? 8) * 1000, async () => {
         for (;;) {
           const current = await this.structure();
           checkWork();
-          if (current.device !== before.device || !sameForeground(current.foreground, before.foreground) || actionBlocked(current)) return;
-          if (current.startedAt >= this.lastInputAt && actionExpectation(current, expect)) return current;
+          if (current.device !== before.device) return;
+          if (current.startedAt >= this.lastInputAt && current.elements.length) lastRead = current;
+          if (!sameForeground(current.foreground, before.foreground) || actionBlocked(current)) return;
+          if (lastRead === current && actionExpectation(current, expect)) return current;
           await pause(100);
         }
       }));
@@ -578,7 +628,9 @@ export class Devices {
     if (!seen) {
       let stopReason = 'postcondition_unverified';
       try { checkWork(); } catch (error) { stopReason = stoppingReason(error); }
-      return { isError: true, stop_reason: stopReason, expectation: { matched: false },
+      const screen = lastRead && lastRead.revision === this.coordinator.revision(lastRead.device)
+        ? { ...describeScreen(lastRead), screen_stable: false } : undefined;
+      return { isError: true, stop_reason: stopReason, expectation: { matched: false }, ...(screen ? { screen } : {}),
         instruction: 'The tap was sent. Verify the resulting screen before deciding whether to try again.' };
     }
     const result = { screen: describeScreen(seen), expectation: { matched: true, state: expect.state ?? 'visible' },
@@ -634,10 +686,21 @@ export class Devices {
         capture_completed_at: frame.capture_completed_at } : {}),
     };
   }
+  bindStructure(seen, observation, elements) {
+    this.elements = elements.map(element => ({ ...element, ref: `e${++this.nextRef}` }));
+    this.elementsAt = Date.now();
+    this.structureViewport = { device: observation.device, revision: observation.revision,
+      width: observation.width, height: observation.height, rootVerified: seen.rootVerified, foreground: seen.foreground };
+    return this.elements;
+  }
   async observeWithFallback(args) {
     const hybrid = args.fallback === 'hybrid';
-    if (args.include_image === false || args.include_offscreen || (args.source && args.source !== 'auto')) {
-      throw new Error('Observation fallback requires visible auto observation and allows image attachments.');
+    const attachImage = args.include_image !== false;
+    if (args.include_offscreen || (args.source && args.source !== 'auto')) {
+      throw new Error('Observation fallback requires source=auto and visible elements.');
+    }
+    if (args.require_visual && !attachImage) {
+      throw new Error('require_visual=true needs image attachments. Omit include_image or set it to true.');
     }
     const hint = args.ax_hint?.normalize('NFKC').trim().toLowerCase();
     if (args.ax_hint !== undefined && !hint) throw new Error('ax_hint must contain visible text.');
@@ -662,11 +725,7 @@ export class Devices {
     const observation = hasText && this.observationFromStructure(seen);
 
     if (observation) {
-      this.elements = orderedAX.slice(0, max).map(element => ({ ...element, ref: `e${++this.nextRef}` }));
-      this.elementsAt = Date.now();
-      // Match AX-only post-action reference binding when its root spans the viewport.
-      this.structureViewport = { device: observation.device, revision: observation.revision,
-        width: observation.width, height: observation.height, rootVerified: seen.rootVerified, foreground: seen.foreground };
+      this.bindStructure(seen, observation, orderedAX.slice(0, max));
       const overlay = hybrid && process.env.POKI_DIRECT_REF === '1' && blockingOverlay({ elements: nodes });
       return text({ observation, source: 'accessibility', foreground: seen.foreground,
         ...(overlay ? { blocker: overlay, recovery: overlayRefusal(overlay).recovery } : {}),
@@ -675,14 +734,23 @@ export class Devices {
         prompt: { status: 'checked', source: 'accessibility', warning } });
     }
 
-    // structure() may already have captured a fresh viewport on this call.
-    const frame = this.frame && this.frame !== previousFrame ? this.frame : await this.capture();
     const axReason = args.skip_ax ? 'ocr_requested' : reason ?? (hasText ? 'accessibility_viewport_changed' : hint ? 'ax_hint_missing' : 'accessibility_empty');
     let fallbackReason = args.require_visual ? 'visual_requested' : axReason;
     let prompt = warning ? { status: 'checked', source: 'accessibility', warning }
-      : { status: 'unavailable', instruction: 'Inspect the image for system prompts before continuing.' };
+      : { status: 'unavailable', instruction: attachImage ? 'Inspect the image for system prompts before continuing.'
+        : 'Check for system prompts before continuing. Allow image attachments to inspect the screen visually.' };
+    // OCR needs local pixels even when the caller declines image attachments.
+    // The image-only route has no use for a second capture without an attachment.
+    let frame;
+    if (hybrid || attachImage) {
+      try { frame = this.frame && this.frame !== previousFrame ? this.frame : await this.capture(); }
+      catch (error) {
+        if (attachImage || stopped(error)) throw error;
+        fallbackReason = 'capture_unavailable';
+      }
+    }
 
-    if (hybrid && !args.require_visual) {
+    if (hybrid && frame && !args.require_visual) {
       let rows;
       try { rows = await deadline(hybridOCRDeadlineMs, () => this.ocr(frame)); }
       catch (error) {
@@ -714,6 +782,11 @@ export class Devices {
     this.elements = [];
     this.elementsAt = 0;
     this.structureViewport = undefined;
+    if (!attachImage) {
+      return text({ source: 'unavailable', foreground: seen?.foreground, elements: [], total: 0,
+        fallback_reason: fallbackReason, prompt,
+        instruction: 'The requested screen evidence could not be read as text. Retry with image attachments for visual inspection.' });
+    }
     return {
       content: [...text({ observation: this.observation(frame), source: 'image', foreground: seen?.foreground,
         width: frame.width, height: frame.height, units: 'points', elements: [], total: 0,
@@ -726,9 +799,12 @@ export class Devices {
     const { stdout } = await this.native(['springboard', 'get_interface_orientation'], undefined, 5000);
     return stdout.trim();
   }
-  async input(request) {
+  async input(request, targetRead) {
     const target = await this.target();
-    const frame = 'x' in request || 'x1' in request || request.op === 'pinch' || request.op === 'draw_strokes' ? await this.screenSize() : undefined;
+    // A semantic tap can use geometry from the same AX read that located its target.
+    const verifiedViewport = this.touchViewport(target, targetRead);
+    const needsViewport = 'x' in request || 'x1' in request || request.op === 'pinch' || request.op === 'draw_strokes';
+    const frame = needsViewport ? verifiedViewport ?? await this.screenSize() : undefined;
     const command = { ...request };
     if (frame && target.kind === 'simulator') command.viewport = { width: frame.width, height: frame.height };
     let orientation;
@@ -929,8 +1005,9 @@ export class Devices {
         case 'run_code': return await runCode(this, args);
         default: {
           const verify = args.verify !== false;
+          const quick = args.observe === 'quick' && (name === 'scroll' || name === 'swipe');
           // A batch step that asks for verification (verify: true) is compared even when checksStep would skip it.
-          const looks = verify && reportsScreen.has(name) && !this.inBatch, touches = verify && touchesControl.has(name) && (args.verify === true || this.checksStep());
+          const looks = !quick && verify && reportsScreen.has(name) && !this.inBatch, touches = verify && touchesControl.has(name) && (args.verify === true || this.checksStep());
           this.beforeInput = undefined; this.expectsForeground = false;
           // The AX-only binding is valid only when this same call has just
           // performed a fresh root-verified AX read. Unverified or first-step
@@ -938,6 +1015,9 @@ export class Devices {
           const expect = args.expect;
           const refusalResult = data => ({ isError: true, ...text(data), _meta: { stop_reason: data.stop_reason ?? 'error' } });
           const refused = (reason, recovery) => refusalResult({ sent: false, outcome: 'not_sent', reason, ...(recovery ? { recovery } : {}) });
+          if (quick && args.post_action_ocr) return refused('quick_observation_requires_separate_visual_inspection');
+          const baseline = quick && this.seen && this.seen.revision === this.coordinator.revision(this.seen.device) &&
+            performance.now() - this.seen.at <= justReadMs ? this.seen : undefined;
           const stale = () => refused('reference_requires_fresh_observation', {
             tool: 'observe_device', arguments: { fallback: 'hybrid' }, instruction: 'Refresh the observation and use a current target. Retrying this reference will not send a tap.',
           });
@@ -946,8 +1026,12 @@ export class Devices {
           }
           if (expect && !expect.text.trim()) return refused('empty_expectation');
           if (reference && !previousElement) return stale();
+          const actionStartedAt = performance.now();
+          // The immediately preceding scroll search already read this viewport.
+          // locate still checks that the target has stopped moving before tapping.
+          const afterScrollSearch = this.inBatch && this.batchStep?.previous?.tool === 'scroll_to' && name === 'tap_text';
           const before = looks || touches || reference || expect
-            ? await phase('pre_action_ax', () => this.readBefore(reference || expect || previousViewport ? 0 : this.inBatch ? this.reuseMs() : 0))
+            ? await phase('pre_action_ax', () => this.readBefore(afterScrollSearch ? justReadMs : reference || expect || previousViewport ? 0 : this.inBatch ? this.reuseMs() : 0))
             : undefined;
           if (previousViewport && before?.rootVerified === true &&
               before.device === previousViewport.device &&
@@ -967,7 +1051,7 @@ export class Devices {
           const maySend = expect && (seen => Boolean(seen?.elements.length && sameForeground(before?.foreground, seen.foreground) &&
             !actionBlocked(seen) && !actionExpectation(seen, expect)));
           if (maySend && !maySend(before)) return refused('expectation_needs_unmatched_current_ax');
-          let result = await phase('resolve_and_dispatch', () => interaction(this,name,args,directElement,maySend));
+          let result = await phase('resolve_and_dispatch', () => interaction(this,name,args,directElement,maySend,actionStartedAt));
           if (directElement && result.sent === true) result.target_source = 'validated_reference';
           if(result===undefined) throw new Error(`No implementation for ${name}`);
           const delivered = result.sent === true && !result.isError && !result.stopped;
@@ -975,6 +1059,7 @@ export class Devices {
           const sentTo = this.beforeInput ?? before, signature = sentTo?.elements.length ? sentTo.signature : undefined;
           if (expect && delivered) result = { ...result, ...await this.readExpectation(expect, before,
             args.return_observation === true || this.batchStep?.returnObservation === true) };
+          else if (quick && delivered) result = { ...result, ...await phase('quick_scroll_observation', () => this.quickScrollObservation(baseline)) };
           else if (looks && delivered) result = { ...result, ...await this.readback(signature, { structured: args.return_observation === true, structuredVisual: args.post_action_ocr === true }) };
           else if (touches && delivered && signature !== undefined) result = { ...result, ...await this.changedSince(signature) };
           // Which list the scroll moved, from the reads on either side of it.

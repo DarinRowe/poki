@@ -17,7 +17,7 @@ const readOnly = new Set(['observe_device','list_devices', 'get_device_info', 't
 const guidance = {
   acquire_device: 'Only needed to keep other sessions off a device across several calls. One batch_commands call already runs without interruption, so a single-call task needs no lease. If you take one, keep the returned lease_id, renew before expiry, then release.',
   wait_for: 'The timeout covers device capture, AX, OCR and polling. Success includes the matching observation and its image, so a second screenshot is not needed to inspect the matched state.',
-  batch_commands: `Batch known operations. A single visible input can be filled without field. Field and button labels come from observed screen text, in its original language; guesses such as a translated Search label or an unobserved New Tab button require an observation first.
+  batch_commands: `Batch known operations. For a known native control on a loaded page, tap_text with source=accessibility returns promptly if it is missing. If it may be offscreen in a known list, put scroll_to before tap_text in the same batch. For a known destination, use expect on the final tap when supported so the matching observation also supplies the batch's final screen. Use the stop receipt's screen and recovery.unattempted_steps to continue a failed batch. Verify uncertain input before retrying it. A single visible input can be filled without field. Use exact labels in the screen's language.
 
 Example:
 {"commands":[
@@ -59,7 +59,8 @@ const tapExpectation = {
   type: 'object', additionalProperties: false, required: ['text'],
   properties: {
     text: { type: 'string', minLength: 1, maxLength: 200 },
-    state: { type: 'string', enum: ['visible', 'enabled', 'focused'] },
+    role: { type: 'string', minLength: 1, maxLength: 80, description: 'Accessibility role from the observed element, for example Button or StaticText.' },
+    state: { type: 'string', enum: ['visible', 'enabled', 'focused', 'selected'] },
     timeout_seconds: { type: 'number', minimum: 0.1, maximum: 30 },
   },
   description: 'Wait for one exact accessibility match to newly reach this state after the tap (POKI_CONDITIONAL_WAIT=1). The default state is visible.',
@@ -68,11 +69,13 @@ const schemaOf = tool => {
   const schemaWithObservations = actionObservationTools.has(tool.name)
     ? { ...tool.inputSchema, properties: { ...tool.inputSchema.properties,
       ...(['tap', 'tap_text'].includes(tool.name) ? { expect: tapExpectation } : {}),
+      ...(['scroll', 'swipe'].includes(tool.name) ? { observe: { type: 'string', enum: ['quick'],
+        description: 'For browsing or counting: return one fresh post-gesture AX sample with visible items in tree order, including duplicate labels. Use another observation if the sample lacks the evidence you need.' } } : {}),
       return_observation: { type: 'boolean', description: 'Request a ref-bearing post-input observation when available.' },
       post_action_ocr: { type: 'boolean', description: 'Capture after stable AX and check image OCR prompts (default false).' } } }
     : tool.name === 'observe_device'
       ? { ...tool.inputSchema, properties: { ...tool.inputSchema.properties,
-        include_image: { type: 'boolean', description: 'Attach PNG (default true). Fallback modes only attach an image when needed and require attachments to be allowed.' },
+        include_image: { type: 'boolean', description: 'Allow PNG attachments (default true). Set false for text-only results. Hybrid may still capture locally for OCR. If no usable text is found, source=unavailable. require_visual=true needs attachments.' },
         fallback: { type: 'string', enum: ['image', 'hybrid'], description: 'Hybrid reads AX, then local OCR, then supplies an image if text is insufficient. Image mode skips OCR.' },
         ax_hint: { type: 'string', minLength: 1, maxLength: 200, description: 'Known visible text or label substring for a fallback mode. Use to find missing text in a partially accessible screen. Omit when the text is unknown.' },
         require_visual: { type: 'boolean', description: 'With fallback=hybrid, request the screenshot directly for color, icons, layout, or ambiguous text.' },

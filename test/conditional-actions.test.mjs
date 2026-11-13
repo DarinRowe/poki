@@ -69,6 +69,10 @@ test('already satisfied and timed-out expectations cannot masquerade as action s
   const summary = JSON.parse(stopped.content.at(-1).text);
   assert.equal(action.sent, true);
   assert.equal(action.expectation.matched, false);
+  assert.equal(action.screen.screen_stable, false);
+  assert.ok(action.screen.text.includes('Button: Start'));
+  assert.deepEqual(summary.screen, action.screen);
+  assert.ok(!stopped._meta.timing.stages.some(stage => stage.phase === 'batch_readback'));
   assert.equal(summary.recovery.outcome, 'verify');
   assert.equal(summary.recovery.unattempted_steps[0].tool, 'press_key');
   assert.equal(await taps(f), 1);
@@ -117,4 +121,30 @@ test('exact tap text uses OCR rather than an AX substring', async t => {
   const actions = (await f.events()).filter(e => e.op === 'tap');
   assert.equal(actions.length, 1);
   assert.equal(actions[0].request.y, Math.round(70 / 199 * 65535));
+});
+
+test('an expectation distinguishes a destination label from a same-named button', async t => {
+  const f = await fixture(t, enabled);
+  const open = control('History', 'open');
+  const heading = { ...control('History', 'heading'), role: 'StaticText' };
+  await f.set({ ...page([open]), afterInput: page([open, heading]) });
+  const result = await f.call('tap_text', { text: 'History', exact: true,
+    expect: { text: 'History', role: 'XCUIElementTypeStaticText' }, return_observation: true });
+  assert.equal(result.isError, undefined);
+  assert.equal(value(result).expectation.matched, true);
+  assert.ok(value(result).post_action_observation.elements.some(e => e.object_id === 'heading'));
+  assert.equal(await taps(f), 1);
+});
+
+test('an expectation can verify selection while the same tab is visible throughout', async t => {
+  const f = await fixture(t, enabled);
+  const tab = { ...control('Favorites', 'tab'), selected: false };
+  const title = { ...control('Favorites', 'heading'), role: 'StaticText' };
+  const args = { text: 'Favorites', exact: true, expect: { text: 'Favorites', state: 'selected' } };
+  await f.set({ ...page([tab]), afterInput: page([{ ...tab, selected: true }, title]) });
+  const result = await f.call('tap_text', args);
+  assert.equal(value(result).expectation.matched, true);
+  const repeated = await f.call('tap_text', args);
+  assert.equal(value(repeated).outcome, 'not_sent');
+  assert.equal(await taps(f), 1);
 });

@@ -153,6 +153,46 @@ test('hybrid returns one image after the OCR deadline and can read the next fram
   assert.equal(value(await read()).source, 'ocr');
 });
 
+test('hybrid text-only requests use AX or OCR without attaching a PNG', async t => {
+  const f = await fixture(t);
+  await f.set({ ocrLabel: 'Canvas text' });
+  const read = ax_hint => f.call('observe_device', { fallback: 'hybrid', include_image: false, ax_hint });
+  const ax = await read('first');
+  assert.equal(value(ax).source, 'accessibility');
+  assert.ok(value(ax).elements[0].ref);
+  assert.equal((await f.events()).filter(event => event.tool === 'ocr').length, 0);
+  const ocr = await read('canvas text');
+  assert.equal(value(ocr).source, 'ocr');
+  assert.equal(value(ocr).elements[0].label, 'Canvas text');
+  assert.ok([ax, ocr].every(result => result.content.every(block => block.type === 'text')));
+});
+
+test('text-only fallback reports missing evidence and keeps explicit visual requests distinct', async t => {
+  const f = await fixture(t);
+  const read = (fallback, args = {}) => f.call('observe_device', { fallback, include_image: false, ...args });
+  const conflict = await read('hybrid', { require_visual: true });
+  assert.equal(conflict.isError, true);
+  assert.match(conflict.content[0].text, /needs image attachments/);
+  assert.deepEqual(await f.events(), []);
+
+  await f.set({ axUnavailable: true, screenshotUnavailable: true });
+  const axOnly = await read('image');
+  assert.equal(value(axOnly).fallback_reason, 'accessibility_unavailable');
+  assert.ok(!(await f.events()).some(event => event.args?.includes('screenshot')));
+  const captureFailed = await read('hybrid');
+  assert.equal(value(captureFailed).fallback_reason, 'capture_unavailable');
+
+  await f.set({ axUnavailable: true, ocrConfidence: 40 });
+  const uncertain = await read('hybrid');
+  assert.equal(value(uncertain).fallback_reason, 'ocr_uncertain');
+  for (const result of [axOnly, captureFailed, uncertain]) {
+    assert.equal(result.isError, undefined);
+    assert.equal(value(result).source, 'unavailable');
+    assert.deepEqual(value(result).elements, []);
+    assert.ok(result.content.every(block => block.type === 'text'));
+  }
+});
+
 test('explicit hybrid visual request goes straight to the screenshot', async t => {
   const f = await fixture(t);
   const result = await f.call('observe_device', { fallback: 'hybrid', require_visual: true });

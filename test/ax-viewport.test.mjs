@@ -59,3 +59,27 @@ test('rotation after a geometry-only observation invalidates the old reference',
   const current = value(await f.call('observe_device', { fallback: 'hybrid' }));
   assert.deepEqual([current.width, current.height], [200, 100]);
 });
+
+test('a fresh AX text target can use verified USB geometry without the screenshot service', async t => {
+  const f = await fixture(t);
+  await f.set({ orientation: 1, screenWidth: 100, screenHeight: 200, screenshotUnavailable: true,
+    launched: true, elements: screen(100, 200, 'Open'), afterInput: { elements: screen(100, 200, 'Opened') } });
+  const result = await f.call('tap_text', { text: 'Open', exact: true });
+  assert.equal(result.isError, undefined);
+  assert.ok(value(result).screen.text.includes('Button: Opened'));
+  assert.equal(captures(result), 0);
+  const taps = (await f.events()).filter(event => event.op === 'tap');
+  assert.deepEqual(taps.map(({ request }) => [request.x, request.y]), [
+    [Math.round(40 / 99 * 65535), Math.round(50 / 199 * 65535)],
+  ]);
+});
+
+test('a partial AX root still uses screenshot geometry for a text tap', async t => {
+  const f = await fixture(t);
+  await f.set({ orientation: 1, screenWidth: 100, screenHeight: 200,
+    launched: true, elements: screen(90, 180, 'Open'), afterInput: { elements: screen(90, 180, 'Opened') } });
+  const result = await f.call('tap_text', { text: 'Open', exact: true });
+  assert.equal(result.isError, undefined);
+  assert.equal(captures(result), 1);
+  assert.equal((await f.events()).filter(event => event.op === 'tap').length, 1);
+});
