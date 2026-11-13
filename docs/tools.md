@@ -96,7 +96,9 @@ Installing apps, opening URLs, and reading the clipboard trigger a macOS approva
 
 ## Optional action verification
 
-Use `observe: "quick"` on `scroll` or `swipe` to browse a list or count items. After the gesture, Poki takes one fresh AX sample and returns up to 80 visible named elements in tree order, preserving duplicate labels. The sample includes frames in points, a timestamp, a revision, and a truncation flag. It has `screen_stable: false` and no tap references. Movement is a hint when a recent comparable screen is available. If the sample lacks the evidence you need, use `observe_device` for a targeted read or screenshot. Use normal targeting and `expect` when verifying a tap or final state.
+Use `observe: "quick"` on `scroll` or `swipe` to browse a list or count items. After the gesture, Poki takes one fresh AX sample and returns up to 80 visible named elements in tree order, preserving duplicate labels. The sample includes frames in points, a timestamp, a revision, and a truncation flag. It has `screen_stable: false`, `screen_change: "unknown"` on the gesture result, and no tap references. A visible overlay stops a batch. If the sample lacks the evidence you need, use `observe_device` for a targeted read or screenshot. Use normal targeting and `expect` when verifying a tap or final state.
+
+A batch normally places the final quick sample in its summary once. Set `return_observation: true` on the batch itself to request a separate stable final read. In that case the quick sample stays with the gesture step. A `return_observation` flag on the quick gesture alone still returns only the quick sample.
 
 `tap`, `tap_text`, `swipe`, `scroll`, and `go_back` accept `verify: false`. These calls omit the reads that compare the screen before and after an action. Their results include `verified: false` and do not confirm that the app accepted the input. Omitting `verify`, or setting it to `true`, keeps the default verification.
 

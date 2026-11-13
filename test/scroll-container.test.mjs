@@ -54,12 +54,55 @@ test('quick scrolling returns a single unverified AX window with duplicates and 
   const summary = JSON.parse(result.content.at(-1).text);
   assert.equal(action.sent, true);
   assert.equal(action.screen_change, 'unknown');
-  assert.deepEqual(summary.screen, action.screen);
-  assert.equal(action.screen.screen_stable, false);
-  assert.deepEqual(action.screen.elements.map(e => [e.label, e.frame[1], e.ref]), [['Entry', 80, undefined], ['Entry', 120, undefined]]);
+  assert.equal(action.screen, undefined);
+  assert.equal(action.moved, undefined);
+  assert.equal(summary.screen.screen_stable, false);
+  assert.deepEqual(summary.screen.elements.map(e => [e.label, e.frame[1], e.ref]), [['Entry', 80, undefined], ['Entry', 120, undefined]]);
   assert.equal(action.post_action_observation, undefined);
+  assert.equal(summary.post_action_observation, undefined);
   assert.equal(phone.axReads, 1);
   assert.equal(phone.drags.length, 1);
+});
+
+test('a batch can explicitly request stable evidence after a final quick scroll', async () => {
+  const phone = new RowPhone();
+  const result = await phone.call('batch_commands', { return_observation: true, commands: [
+    { tool: 'scroll', arguments: { direction: 'down', observe: 'quick' } },
+  ] });
+  assert.equal(result.isError, undefined);
+  const action = JSON.parse(result.content[1].text);
+  const summary = JSON.parse(result.content.at(-1).text);
+  assert.equal(action.screen.screen_stable, false);
+  assert.equal(action.post_action_observation, undefined);
+  assert.ok(summary.post_action_observation.elements.every(e => e.ref));
+  assert.equal(summary.post_action_observation.action_receipt_id, summary.receipt_id);
+  assert.equal(phone.axReads, 2);
+  assert.equal(phone.drags.length, 1);
+});
+
+test('an unnamed overlay stops a quick scroll batch before the next step', async () => {
+  class ModalPhone extends RowPhone {
+    screen() {
+      if (!this.drags.length) return super.screen();
+      return { foreground: app, elements: [el('Alert', '', 10, 80, 180, 100)] };
+    }
+  }
+  const phone = new ModalPhone();
+  const next = { tool: 'tap', arguments: { x: 20, y: 100 } };
+  const result = await phone.call('batch_commands', { return_observation: true, commands: [
+    { tool: 'scroll', arguments: { direction: 'down', observe: 'quick' } }, next,
+  ] });
+  const action = JSON.parse(result.content[1].text);
+  const summary = JSON.parse(result.content.at(-1).text);
+  assert.equal(result.isError, true);
+  assert.equal(action.sent, true);
+  assert.equal(action.screen, undefined);
+  assert.equal(summary.stop_reason, 'blocked_by_overlay');
+  assert.equal(summary.screen.blocker.role, 'Alert');
+  assert.deepEqual(summary.screen.elements, []);
+  assert.deepEqual(summary.recovery, { outcome: 'verify', step: 1, unattempted_steps: [next] });
+  assert.equal(phone.axReads, 1);
+  assert.equal(phone.taps, 0);
 });
 
 test('an uncertain quick swipe is neither observed nor replayed', async () => {

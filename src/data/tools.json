@@ -1417,7 +1417,7 @@
           },
           "return_observation": {
             "type": "boolean",
-            "description": "Include the final input's stable structured observation when available. Reuse this evidence before requesting another screen read."
+            "description": "Include the final input's stable structured observation when available. If the final step uses quick observation, the batch also performs a stable read."
           },
           "verify": {
             "type": "boolean",

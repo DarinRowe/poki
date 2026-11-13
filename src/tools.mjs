@@ -70,7 +70,7 @@ const schemaOf = tool => {
     ? { ...tool.inputSchema, properties: { ...tool.inputSchema.properties,
       ...(['tap', 'tap_text'].includes(tool.name) ? { expect: tapExpectation } : {}),
       ...(['scroll', 'swipe'].includes(tool.name) ? { observe: { type: 'string', enum: ['quick'],
-        description: 'For browsing or counting: return one fresh post-gesture AX sample with visible items in tree order, including duplicate labels. Use another observation if the sample lacks the evidence you need.' } } : {}),
+        description: 'For browsing or counting: return one fresh, unverified post-gesture AX sample in tree order, preserving duplicate labels. No element refs. Use observe_device if more evidence is needed.' } } : {}),
       return_observation: { type: 'boolean', description: 'Request a ref-bearing post-input observation when available.' },
       post_action_ocr: { type: 'boolean', description: 'Capture after stable AX and check image OCR prompts (default false).' } } }
     : tool.name === 'observe_device'

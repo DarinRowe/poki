@@ -572,7 +572,7 @@ export class Devices {
       return { ...screenChange(before, before !== undefined && seen.signature !== before ? seen.signature : undefined), screen: { ...describeScreen(seen), ...(seen.startedAt < this.lastInputAt ? { stale: true } : {}), partial: true, reason: `${error.message}: the screen may still have been changing; this is the last complete read.` } };
     }
   }
-  async quickScrollObservation(baseline) {
+  async quickScrollObservation() {
     const target = await this.target();
     const unavailable = { source: 'unavailable', screen_stable: false, elements: [],
       instruction: 'Inspect the current screen with observe_device before continuing.' };
@@ -582,20 +582,17 @@ export class Devices {
         return this.structure();
       });
       const observation = seen.startedAt >= this.lastInputAt && this.observationFromStructure(seen);
-      const visible = seen.elements.filter(e => flagOn(e.visible));
-      const elements = visible.filter(e => {
+      if (!observation) return { screen: unavailable, ...screenChange() };
+      const blocker = blockingOverlay(seen);
+      const elements = seen.elements.filter(e => {
         const role = e.role ?? e.type ?? '';
-        return !/^(?:AX|XCUIElementType)?(?:Application|Window|StatusBar)$/i.test(role) &&
+        return flagOn(e.visible) && !/^(?:AX|XCUIElementType)?(?:Application|Window|StatusBar)$/i.test(role) &&
           [e.label, e.text, e.value, e.placeholder].some(value => typeof value === 'string' && value.trim());
       });
-      if (!observation || !elements.length) return { screen: unavailable, ...screenChange() };
+      if (!blocker && !elements.length) return { screen: unavailable, ...screenChange() };
       const limit = 80;
-      const blocker = blockingOverlay(seen);
-      const moved = !blocker && baseline === this.beforeInput && baseline?.device === seen.device &&
-        baseline.revision + 1 === seen.revision &&
-        sameForeground(baseline.foreground, seen.foreground) && whatMoved(baseline.elements, seen.elements);
-      return { ...screenChange(), ...(moved ? { moved } : {}),
-        ...(blocker && this.inBatch ? { isError: true, stop_reason: 'blocked_by_overlay' } : {}), screen: {
+      return { ...screenChange(),
+        ...(blocker && this.inBatch ? { isError: true, stop_reason: 'blocked_by_overlay', error: 'A visible overlay blocked further steps.' } : {}), screen: {
         observation, source: 'accessibility', foreground: seen.foreground, screen_stable: false,
         elements: elements.slice(0, limit).map(e => {
           const { x, y, width, height } = e.frame ?? e;
@@ -1016,8 +1013,6 @@ export class Devices {
           const refusalResult = data => ({ isError: true, ...text(data), _meta: { stop_reason: data.stop_reason ?? 'error' } });
           const refused = (reason, recovery) => refusalResult({ sent: false, outcome: 'not_sent', reason, ...(recovery ? { recovery } : {}) });
           if (quick && args.post_action_ocr) return refused('quick_observation_requires_separate_visual_inspection');
-          const baseline = quick && this.seen && this.seen.revision === this.coordinator.revision(this.seen.device) &&
-            performance.now() - this.seen.at <= justReadMs ? this.seen : undefined;
           const stale = () => refused('reference_requires_fresh_observation', {
             tool: 'observe_device', arguments: { fallback: 'hybrid' }, instruction: 'Refresh the observation and use a current target. Retrying this reference will not send a tap.',
           });
@@ -1059,7 +1054,7 @@ export class Devices {
           const sentTo = this.beforeInput ?? before, signature = sentTo?.elements.length ? sentTo.signature : undefined;
           if (expect && delivered) result = { ...result, ...await this.readExpectation(expect, before,
             args.return_observation === true || this.batchStep?.returnObservation === true) };
-          else if (quick && delivered) result = { ...result, ...await phase('quick_scroll_observation', () => this.quickScrollObservation(baseline)) };
+          else if (quick && delivered) result = { ...result, ...await phase('quick_scroll_observation', () => this.quickScrollObservation()) };
           else if (looks && delivered) result = { ...result, ...await this.readback(signature, { structured: args.return_observation === true, structuredVisual: args.post_action_ocr === true }) };
           else if (touches && delivered && signature !== undefined) result = { ...result, ...await this.changedSince(signature) };
           // Which list the scroll moved, from the reads on either side of it.
