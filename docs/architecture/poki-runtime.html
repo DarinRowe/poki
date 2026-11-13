@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="generator" content="archify 3.2.0">
   <meta name="archify-reader-contract" content="declared-wide-v1">
-  <title>Poki 运行架构与动作验收</title>
+  <title>Poki MCP 运行架构</title>
   <script>
     // Resolve the theme before first paint so light-preference users don't
     // see a dark flash. The toolbar script below re-applies with UI state.
@@ -5194,18 +5194,19 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
            data-preset-badge-blueprint="蓝图 / 修订 01"
            data-preset-badge-editorial="编辑风格 / 现场笔记">
         <div class="pulse-dot"></div>
-        <h1>Poki 运行架构与动作验收</h1>
+        <h1>Poki MCP 运行架构</h1>
       </div>
+      <p class="subtitle">从 Agent 建立会话，到 AX 读屏、截图回退与触控验收。</p>
     </div>
 
-    <script id="archify-source-evidence-data" type="application/json">{"schemaVersion":1,"verified":true,"repository":{"url":"https://github.com/JosssphZhou/poki","revision":"e7928569dbb68119543f03eee12b659393c9e57f","shortRevision":"e792856","label":"JosssphZhou/poki","linkMode":"local-only"},"referenceCount":13,"nodes":{"agent":[{"path":"agent/prompts/pi-app.md","line":7,"endLine":11}],"mcp":[{"path":"src/stdio.mjs","line":51,"endLine":63}],"daemon":[{"path":"src/daemon.mjs","line":64,"endLine":89},{"path":"src/device.mjs","line":578,"endLine":619},{"path":"src/device.mjs","line":855,"endLine":886}],"bridge":[{"path":"src/device.mjs","line":235,"endLine":241},{"path":"src/device.mjs","line":262,"endLine":274},{"path":"src/device.mjs","line":686,"endLine":689}],"ocr":[{"path":"src/device.mjs","line":304,"endLine":323},{"path":"src/vision-ocr.mjs","line":157,"endLine":181}],"device":[{"path":"src/device.mjs","line":235,"endLine":241},{"path":"src/device.mjs","line":262,"endLine":274},{"path":"src/platform.mjs","line":128,"endLine":141}]}}</script>
+    <script id="archify-source-evidence-data" type="application/json">{"schemaVersion":1,"verified":true,"repository":{"url":"https://github.com/JosssphZhou/poki","revision":"090e2d8a918eed8484801899e356cf920930ade3","shortRevision":"090e2d8","label":"JosssphZhou/poki","linkMode":"local-only"},"referenceCount":22,"nodes":{"agent":[{"path":"agent/poki-client.mjs","line":6,"endLine":19},{"path":"agent/poki-client.mjs","line":23,"endLine":32},{"path":"agent/task-runner.mjs","line":525,"endLine":532}],"client":[{"path":"AGENTS.md","line":18,"endLine":21}],"stdio":[{"path":"src/stdio.mjs","line":1,"endLine":19},{"path":"src/local-mcp-client.mjs","line":14,"endLine":27}],"daemon":[{"path":"src/daemon.mjs","line":58,"endLine":94},{"path":"src/daemon.mjs","line":96,"endLine":122},{"path":"src/batch.mjs","line":61,"endLine":80}],"bridge":[{"path":"src/device.mjs","line":248,"endLine":262},{"path":"src/device.mjs","line":725,"endLine":756},{"path":"src/simulator.mjs","line":112,"endLine":137}],"device":[{"path":"src/device.mjs","line":280,"endLine":296},{"path":"docs/verification.md","line":5,"endLine":19}],"ax":[{"path":"src/device.mjs","line":57,"endLine":87},{"path":"src/device.mjs","line":437,"endLine":494}],"capture":[{"path":"src/device.mjs","line":279,"endLine":305},{"path":"src/device.mjs","line":855,"endLine":863},{"path":"src/image-processor.mjs","line":1,"endLine":8}],"ocr":[{"path":"src/device.mjs","line":323,"endLine":345},{"path":"src/device.mjs","line":685,"endLine":722},{"path":"src/vision-ocr.mjs","line":7,"endLine":10}]}}</script>
     <script id="archify-i18n-data" type="application/json">{"locale":"zh-CN","messages":{"viewer.kind.frontend":"前端","viewer.kind.backend":"后端","viewer.kind.database":"数据库","viewer.kind.cloud":"云服务","viewer.kind.security":"安全","viewer.kind.messagebus":"消息总线","viewer.kind.external":"外部系统","viewer.kind.neutral":"中性","viewer.kind.node":"节点","viewer.kind.start":"开始","viewer.kind.active":"活动","viewer.kind.waiting":"等待","viewer.kind.decision":"决策","viewer.kind.success":"成功","viewer.kind.failure":"失败","viewer.toolbar.actions":"图表操作","viewer.theme.toggle.title":"切换主题（T）","viewer.theme.toggle":"切换颜色主题","viewer.theme.dark":"深色","viewer.theme.light":"浅色","viewer.preset.choose.title":"选择视觉风格（S 循环切换）","viewer.preset.choose":"选择视觉风格","viewer.preset.style":"风格","viewer.preset.menu":"视觉风格","viewer.preset.identity":"视觉表达","viewer.preset.cycles":"循环切换","viewer.preset.classic":"经典","viewer.preset.classic.short":"经典","viewer.preset.classic.hint":"稳定的技术默认风格","viewer.preset.flow":"信号流","viewer.preset.flow.short":"流动","viewer.preset.flow.hint":"突出动态流向","viewer.preset.blueprint":"蓝图","viewer.preset.blueprint.hint":"工程评审","viewer.preset.editorial":"编辑风格","viewer.preset.editorial.hint":"适合发布与上线说明","viewer.preset.badge.signalFlow":"信号流","viewer.preset.badge.blueprint":"蓝图 / 修订 01","viewer.preset.badge.editorial":"编辑风格 / 现场笔记","viewer.preset.badge.editorialPlate":"ARCHIFY / 图版 04","viewer.preset.current":"当前视觉风格：{style}。选择视觉风格","viewer.motion.live":"动态","viewer.motion.still":"静态","viewer.motion.pause":"暂停动效","viewer.motion.resume":"恢复动效","viewer.motion.reduced":"已根据减少动态效果偏好暂停动效","viewer.motion.hidden":"页面不可见时已暂停动效","viewer.motion.yielding":"暂停动效；当前让位于{owner}","viewer.motion.yielding.title":"动态预览已启用 · 正在让位于{owner}","viewer.owner.route":"路径探测","viewer.owner.lens":"语义透镜","viewer.owner.relationship":"关系预览","viewer.owner.intent":"意图追踪","viewer.owner.focus":"语义聚焦","viewer.owner.legend":"图例预览","viewer.owner.reader":"读者交互","viewer.present.enter":"进入演示模式","viewer.present.enter.title":"演示模式（F）","viewer.present.exit":"退出演示模式","viewer.present.exit.title":"退出演示模式（F 或 Escape）","viewer.present.present":"演示","viewer.present.exit.label":"退出","viewer.export.button":"导出","viewer.export.button.title":"导出图表（E）","viewer.export.diagram":"导出图表","viewer.export.menu":"导出","viewer.export.subtitle":"便携、整洁的输出","viewer.export.share":"分享","viewer.export.shareCard":"分享卡片","viewer.export.routeShareCard":"路径分享卡片","viewer.export.reachShareCard":"可达范围分享卡片","viewer.export.copyDiagram":"复制图表","viewer.export.clipboardPng":"复制 PNG 到剪贴板","viewer.export.raster":"位图","viewer.export.image":"图像","viewer.export.lossless":"无损图像","viewer.export.compact":"紧凑图像","viewer.export.modern":"现代图像格式","viewer.export.vectorMotion":"矢量与动效","viewer.export.vectorMotion.heading":"矢量与动效","viewer.export.editable":"可编辑矢量图","viewer.export.svg.auto":"SVG · 自动","viewer.export.svg.auto.hint":"匹配宿主主题","viewer.export.svg.light":"SVG · 浅色","viewer.export.svg.light.hint":"始终浅色","viewer.export.svg.dark":"SVG · 深色","viewer.export.svg.dark.hint":"始终深色","viewer.export.motion6s":"6 秒动效","viewer.export.unsupported":"当前浏览器不支持","viewer.export.clipboardUnsupported":"当前浏览器不支持写入图片剪贴板","viewer.export.clipboardUnsupported.short":"此浏览器不支持写入图片剪贴板。","viewer.export.motionUnavailable":"当前浏览器无法录制动效","viewer.export.webmUnavailable":"当前浏览器不支持 WebM","viewer.export.failed":"导出失败：{message}","viewer.export.unknownVariant":"未知的分享卡片类型：{variant}","viewer.export.routeRequired":"请先追踪路径，再导出路径分享卡片","viewer.export.reachRequired":"请先追踪编写可达范围，再导出可达范围分享卡片","viewer.export.unknown":"未知错误","viewer.export.routeFailed":"路径分享卡片导出失败：{message}","viewer.export.reachFailed":"可达范围分享卡片导出失败：{message}","viewer.export.copyFailed":"复制失败：{message}","viewer.export.copiedPng":"已将 PNG 复制到剪贴板","viewer.export.downloadedRoute":"已下载路径分享卡片","viewer.export.downloadedReach":"已下载可达范围分享卡片","viewer.export.downloadedWebm":"已下载 WebM","viewer.export.recording":"正在录制 6 秒动效…","viewer.export.card.routeSummary.one":"路径：{source} → {target} · {count} 步","viewer.export.card.routeSummary.other":"路径：{source} → {target} · {count} 步","viewer.export.card.reachSummary":"从{origin}开始的编写{direction} · {nodes} · {links} · 最深 {hops}","viewer.export.card.node.one":"{count} 个节点","viewer.export.card.node.other":"{count} 个节点","viewer.export.card.link.one":"{count} 条连接","viewer.export.card.link.other":"{count} 条连接","viewer.export.card.hop.one":"{count} 跳","viewer.export.card.hop.other":"{count} 跳","viewer.export.card.routeBadge":"ARCHIFY · 路径 · {hops}","viewer.export.card.reachBadge":"ARCHIFY · {direction}可达范围","viewer.export.direction.upstream":"上游","viewer.export.direction.downstream":"下游","viewer.export.error.canvasUnavailable":"无法为{label}使用画布","viewer.export.error.contextUnavailable":"无法为{label}创建二维画布上下文","viewer.export.error.toBlobUnavailable":"{label}无法使用 canvas.toBlob","viewer.export.error.toBlobNull":"{label}的 canvas.toBlob 未返回数据","viewer.export.error.variantsCombined":"无法同时组合多种分享卡片类型","viewer.export.error.viewerState":"分享卡片导出无法移除临时 Viewer 状态","viewer.export.error.routeState":"路径卡片导出无法安全保留已解析路径","viewer.export.error.reachState":"可达范围卡片导出无法安全保留编写的可达范围","viewer.export.error.webmRequirements":"WebM 动效导出需要追踪动画及浏览器 MediaRecorder 支持","viewer.export.error.mediaRecorder":"MediaRecorder 录制失败","viewer.export.error.emptyWebm":"MediaRecorder 生成了空的 WebM","viewer.export.error.webmBackground":"无法为 WebM 导出加载 SVG 背景","viewer.guide.title":"探索此系统","viewer.focus.selectedNodes":"已选择 {count} 个节点","viewer.guide.eyebrow":"图表指南","viewer.guide.close":"关闭图表指南","viewer.guide.inspecting":"正在检查已编译语义","viewer.guide.actions":"图表探索操作","viewer.guide.find":"查找任意节点","viewer.guide.find.hint":"搜索标签、职责、类型和稳定 ID。","viewer.guide.route":"追踪路径","viewer.guide.route.aria":"追踪有向路径","viewer.guide.route.hint":"查看两个语义节点如何按编写方向连接。","viewer.guide.map":"查看完整系统","viewer.guide.map.hint":"打开带实时视口和稳定节点的语义雷达。","viewer.guide.lens":"比较语义类型","viewer.guide.lens.hint":"统计角色、显示流量并比较直接编写的连接。","viewer.guide.present":"进入演示模式","viewer.guide.present.hint":"让实时图表占满视口，同时不改变导出。","viewer.guide.shortcuts":"其他键盘快捷键","viewer.guide.shortcut.export":"导出","viewer.guide.shortcut.theme":"主题","viewer.guide.shortcut.style":"风格","viewer.guide.shortcut.reset":"重置","viewer.guide.shortcut.zoomIn":"放大","viewer.guide.shortcut.zoomOut":"缩小","viewer.guide.shortcut.close":"关闭","viewer.guide.credit":"觉得好用？在 GitHub 给 Archify 点个 Star","viewer.guide.star":"Star","viewer.guide.facts":"{nodes} · {relationships}","viewer.guide.fact.node.one":"{count} 个语义节点","viewer.guide.fact.node.other":"{count} 个语义节点","viewer.guide.fact.relationship.one":"{count} 条关系","viewer.guide.fact.relationship.other":"{count} 条关系","viewer.guide.open":"打开图表指南","viewer.finder.title":"查找节点","viewer.finder.close":"关闭节点查找器","viewer.finder.placeholder":"搜索标签或 ID","viewer.finder.search":"搜索图表节点","viewer.finder.results":"图表节点","viewer.finder.empty":"没有匹配的节点","viewer.finder.result.focus":"聚焦{label}","viewer.finder.result.routeStart":"选择{label}作为路径起点","viewer.finder.result.routeTarget":"选择{label}作为路径终点，{links}","viewer.finder.status.empty":"没有匹配的节点","viewer.finder.status.count.one":"{count} 个匹配节点","viewer.finder.status.count.other":"{count} 个匹配节点","viewer.finder.noun.nodes":"个节点","viewer.finder.link.one":"{count} 条连接","viewer.finder.link.other":"{count} 条连接","viewer.finder.result.focus.one":"聚焦{label}，{count} 条相关连接","viewer.finder.result.focus.other":"聚焦{label}，{count} 条相关连接","viewer.finder.status.filtered":"{visible}/{available} {noun}","viewer.finder.status.all":"{available} {noun}","viewer.passport.eyebrow":"语义护照","viewer.passport.metadata":"节点元数据","viewer.passport.evidence":"已验证的源代码证据","viewer.passport.verified":"已验证来源","viewer.passport.verificationScope":"已按固定修订版本验证本地 Git 证据，未检查远程访问权限。","viewer.passport.reach":"编写可达范围","viewer.passport.reach.trace":"追踪编写的可达性","viewer.passport.upstream":"上游","viewer.passport.downstream":"下游","viewer.passport.upstream.trace":"追踪上游编写可达性","viewer.passport.downstream.trace":"追踪下游编写可达性","viewer.passport.close":"关闭语义护照","viewer.passport.move":"移动语义护照。可拖动、使用方向键移动，或按 Home 恢复自动位置。","viewer.passport.copy":"复制链接","viewer.passport.copy.focus":"复制聚焦节点的链接","viewer.passport.relations":"关系","viewer.passport.relations.show":"显示关联关系","viewer.passport.relations.hide":"隐藏关联关系","viewer.passport.relations.list":"关联关系","viewer.passport.copyRelation":"复制关系","viewer.passport.copyNode":"复制节点","viewer.passport.copyPinned":"复制固定关系的链接","viewer.passport.copySource":"复制来源节点的链接","viewer.passport.copy.focused.success":"已复制聚焦节点链接","viewer.passport.copy.pinned.success":"已复制固定关系链接","viewer.passport.copy.focused.failed":"无法复制聚焦节点链接","viewer.passport.copy.pinned.failed":"无法复制固定关系链接","viewer.passport.relationship.none":"没有关联关系","viewer.passport.relationship.count.one":"{count} 条关系","viewer.passport.relationship.count.other":"{count} 条关系","viewer.passport.relationship.show.one":"显示 {count} 条关联关系","viewer.passport.relationship.show.other":"显示 {count} 条关联关系","viewer.passport.relationship.summary":"{out} 条出向 · {in} 条入向{loops}","viewer.passport.relationship.loops":" · {count} 条自环","viewer.passport.relationship.explorer":"直接关系浏览器","viewer.passport.relationship.help":"使用方向键浏览关系。按 Enter 或空格键固定详情；按 Escape 清除。","viewer.passport.relationship.loopsBack":"回环","viewer.passport.relationship.connectsTo":"连接到","viewer.passport.relationship.connectsFrom":"连接自","viewer.passport.relationship.pinned":"已固定关系 · {from} → {to} · {label}","viewer.passport.relationship.inspect":"检查第 {index}/{total} 条关系：{from} 到 {to}，{label}。按 Enter 查看详情。","viewer.passport.relationship.group.out":"出向","viewer.passport.relationship.group.in":"入向","viewer.passport.relationship.group.loop":"自环","viewer.passport.relationship.row":"{group}：{relationship}，{neighbor}","viewer.passport.relationship.direction.out":"出 →","viewer.passport.relationship.direction.in":"← 入","viewer.passport.relationship.direction.loop":"自环","viewer.passport.sourceCount.one":"{count} 个已验证来源引用","viewer.passport.sourceCount.other":"{count} 个已验证来源引用","viewer.passport.repository.open":"打开已验证的仓库修订版本 {revision}","viewer.passport.source.open":"打开修订版本 {revision} 中已验证的来源 {path}","viewer.passport.source.openLink":"打开 ↗","viewer.passport.reach.upstream.one":"追踪 {count} 个上游编写节点","viewer.passport.reach.upstream.other":"追踪 {count} 个上游编写节点","viewer.passport.reach.downstream.one":"追踪 {count} 个下游编写节点","viewer.passport.reach.downstream.other":"追踪 {count} 个下游编写节点","viewer.passport.reach.noUpstream":"没有上游编写节点","viewer.passport.reach.noDownstream":"没有下游编写节点","viewer.passport.reach.status":"{direction} · {nodes} 个节点 · {links} 条连接 · 最深 {hops} 跳","viewer.route.eyebrow":"路径","viewer.route.start":"点击路径的起点","viewer.route.start.find":"查找起点","viewer.route.start.find.aria":"查找路径起点","viewer.route.copy":"复制链接","viewer.route.copy.aria":"复制已追踪路径的链接","viewer.route.clear":"清除","viewer.route.clear.aria":"清除路径探测","viewer.route.traced":"路径","viewer.route.pickTwo":"在图上点两个节点","viewer.route.pickOne":"在图上点一个节点","viewer.route.controls":"路径旅程控制","viewer.route.previous":"上一个路径位置","viewer.route.play":"播放路径旅程","viewer.route.pause":"暂停路径旅程","viewer.route.replay":"重播路径旅程","viewer.route.next":"下一个路径位置","viewer.route.journey":"旅程","viewer.route.pause.label":"暂停","viewer.route.replay.label":"重播","viewer.route.overview":"总览","viewer.route.overview.aria":"显示完整路径总览","viewer.route.instructions":"先点起点，再点终点，沿箭头方向找路。","viewer.route.destination":"从{label}出发，走到哪里？","viewer.route.destination.find":"查找目标","viewer.route.destination.find.aria":"查找可达的路径目标","viewer.route.differentDestination":"选择其他目标","viewer.route.distinct":"请选两个不同的节点。","viewer.route.unreachable":"走不到{label}","viewer.route.unreachable.detail":"沿箭头方向，从{source}走不到{target}。请选一个高亮节点。","viewer.route.start.instructions":"接着选终点，能走到的节点会亮起。","viewer.route.copy.success":"已复制路径链接","viewer.route.copy.failed":"无法复制路径链接","viewer.route.position":"路径位置 {index}/{total}：{label}","viewer.route.step":"第 {index}/{total} 步 · {phase} · {label}","viewer.route.motionRequired":"自动旅程需要动态模式","viewer.route.trigger.clear":"清除已追踪路径","viewer.route.overview.status":"{nodes} · {hops} · 最短路径","viewer.route.overview.node.one":"{count} 个节点","viewer.route.overview.node.other":"{count} 个节点","viewer.route.overview.hop.one":"{count} 步","viewer.route.overview.hop.other":"{count} 步","viewer.route.phase.playing":"播放中","viewer.route.phase.complete":"已完成","viewer.route.phase.inspecting":"检查中","viewer.route.destination.count.one":"有 {count} 个能走到的节点已高亮，点一下。","viewer.route.destination.count.other":"有 {count} 个能走到的节点已高亮，点一个。","viewer.route.noOutgoing":"这个节点没有向外的箭头。清除后换一个起点。","viewer.route.result.title":"{source} 到 {target}","viewer.route.finder.source.title":"选择路径起点","viewer.route.finder.source.placeholder":"搜索路径来源","viewer.route.finder.source.empty":"没有匹配的路径来源","viewer.route.finder.source.results":"可作为路径起点的节点","viewer.route.finder.source.noun":"个路径来源","viewer.route.finder.source.badge":"起点","viewer.route.finder.target.title":"从{label}出发的目标","viewer.route.finder.target.placeholder":"搜索可达目标","viewer.route.finder.target.empty":"没有匹配的可达目标","viewer.route.finder.target.results":"可达路径目标","viewer.route.finder.target.noun":"个可达目标","viewer.route.hop.one":"{count} 跳","viewer.route.hop.other":"{count} 跳","viewer.lens.eyebrow":"语义透镜","viewer.lens.title":"比较系统角色","viewer.lens.close":"关闭语义透镜","viewer.lens.instruction":"最多选择两种语义类型。选择一种可显示其真实流量；选择两种只比较直接编写的关系。","viewer.lens.kinds":"语义类型","viewer.lens.choose":"选择一种类型以检查其节点和相连关系。","viewer.lens.copy":"复制语义透镜链接","viewer.lens.clear":"清除语义透镜","viewer.lens.open":"打开语义透镜","viewer.lens.openActive":"打开当前语义透镜","viewer.lens.legend":"语义图例","viewer.lens.legend.inspect.one":"检查{label}，{count} 个节点","viewer.lens.legend.inspect.other":"检查{label}，{count} 个节点","viewer.lens.kind.count.one":"{label}，{count} 个节点","viewer.lens.kind.count.other":"{label}，{count} 个节点","viewer.lens.compare.one":"{first} → {second}：{forward} · {second} → {first}：{reverse} · 共 {count} 条直接关系","viewer.lens.compare.other":"{first} → {second}：{forward} · {second} → {first}：{reverse} · 共 {count} 条直接关系","viewer.lens.single":"{nodes} · {relationships} · 已连接节点保持可见","viewer.lens.node.one":"{count} 个{label}节点","viewer.lens.node.other":"{count} 个{label}节点","viewer.lens.relationship.one":"{count} 条相连关系","viewer.lens.relationship.other":"{count} 条相连关系","viewer.radar.title":"语义雷达","viewer.radar.building":"正在构建总览","viewer.radar.openFull":"打开完整语义雷达","viewer.radar.open":"打开雷达","viewer.radar.close":"关闭语义雷达","viewer.radar.surface":"图表总览。点击节点进行聚焦，或使用方向键平移。","viewer.radar.click":"点击节点","viewer.radar.drag":"拖动平移","viewer.radar.space":"语义雷达需要更多地图可见空间。","viewer.radar.nodes":"语义图表雷达节点","viewer.radar.focus":"从语义雷达聚焦{label}","viewer.radar.status":"{count} 个节点 · {viewport}","viewer.radar.fullMap":"{count} 个节点 · 完整地图","viewer.radar.compacted":"已收紧雷达，避免遮挡语义护照或地图控件。","viewer.radar.cancelWaiting":"取消等待更多地图空间的语义雷达","viewer.radar.needsSpace":"语义雷达需要更多可见地图空间","viewer.radar.viewport.full":"完整地图","viewer.radar.viewport.width":"宽度 {percent}%","viewer.radar.viewport.scale":"视口 {percent}%","viewer.nav.controls":"图表视图控制","viewer.nav.route":"追踪有向路径","viewer.nav.route.title":"追踪路径（R）","viewer.nav.route.short":"路径","viewer.nav.radar":"打开语义雷达","viewer.nav.radar.title":"语义雷达（M）","viewer.nav.radar.short":"地图","viewer.nav.lens":"打开语义透镜","viewer.nav.lens.title":"语义透镜（L）","viewer.nav.lens.short":"透镜","viewer.nav.find":"查找节点","viewer.nav.find.title":"查找节点（/）","viewer.outline.title":"节点索引","viewer.rail.show":"要点与索引","viewer.rail.controls":"侧栏","viewer.rail.collapse":"收起侧栏","viewer.rail.bottom":"移到图下方","viewer.rail.right":"移到图右侧","viewer.nav.guide":"打开图表指南","viewer.nav.guide.title":"图表指南（?）","viewer.nav.zoomOut":"缩小","viewer.nav.zoomOut.title":"缩小（-）","viewer.nav.reset":"重置图表视图","viewer.nav.reset.title":"重置视图（0）","viewer.nav.read":"阅读","viewer.nav.zoomIn":"放大","viewer.nav.zoomIn.title":"放大（+）","viewer.nav.camera":"{hint}。重置图表视图","viewer.nav.camera.title":"{semantic}{hint} · 重置视图（0）","viewer.nav.camera.semantic":"语义相机已启用 · ","viewer.nav.level.map":"概览","viewer.nav.level.read":"阅读","viewer.nav.level.full":"完整","viewer.nav.level.auto":"自动","viewer.nav.detail.map":"放大以显示关系标签和节点上下文","viewer.nav.detail.read":"再次放大以显示标签和注释","viewer.nav.detail.full":"完整图表详情","viewer.intent.summary":"{label}。{out} 条出向，{in} 条入向{loops}。共 {total} 条连接。按 Enter 查看详情。","viewer.intent.loops":"，{count} 条自环","viewer.common.copied":"已复制","viewer.common.copyFailed":"复制失败","viewer.common.copyLink":"复制链接","viewer.common.clear":"清除","viewer.common.close":"关闭"}}</script>
     <!-- Main Diagram -->
     <div class="diagram-container" data-detail-level="read"
          data-preset-badge-editorial-plate="ARCHIFY / 图版 04">
-      <svg viewBox="0 0 1144 372" role="img" lang="zh-CN" aria-labelledby="archify-diagram-title archify-diagram-description" data-animation="trace" data-preset="classic" data-quality-profile="showcase" data-node-ui="" data-reader-fit="intrinsic-height" data-reader-min-text="7.5" data-reader-primary-text="14">
-        <title id="archify-diagram-title">Poki 运行架构与动作验收</title>
-        <desc id="archify-diagram-description">由 Archify 生成的架构图。</desc>
+      <svg viewBox="0 0 1362 445" role="img" lang="zh-CN" aria-labelledby="archify-diagram-title archify-diagram-description" data-animation="trace" data-preset="classic" data-quality-profile="showcase" data-node-ui="" data-reader-fit="intrinsic-height" data-reader-min-text="7.5" data-reader-primary-text="14">
+        <title id="archify-diagram-title">Poki MCP 运行架构</title>
+        <desc id="archify-diagram-description">从 Agent 建立会话，到 AX 读屏、截图回退与触控验收。</desc>
         <!-- Definitions -->
         <defs>
           <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
@@ -5254,118 +5255,184 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 
         <!-- Connection paths (before components for correct z-order) -->
         <g data-graph-role="automatic-crossover" style="--step:0">
-          <path data-graph-role="automatic-crossover-underlay" d="M 215 73 L 316 73" fill="none" stroke="var(--mask)" stroke-width="5.8" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
-          <path data-edge-from="agent" data-edge-to="mcp" data-edge-label="工具调用" data-edge-key="0" data-edge-id="agent-mcp" data-composition-points="215,73;316,73" data-composition-crossover="halo" data-composition-independent="true" d="M 215 73 L 316 73" class="a-emphasis" data-animate="edge" style="--step:0" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+          <path data-graph-role="automatic-crossover-underlay" d="M 649 93 L 649 165" fill="none" stroke="var(--mask)" stroke-width="5.8" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+          <path data-edge-from="agent" data-edge-to="daemon" data-edge-label="回环 HTTP 直连" data-edge-key="0" data-edge-id="agent-direct" data-composition-points="649,93;649,165" data-composition-crossover="halo" data-composition-independent="true" d="M 649 93 L 649 165" class="a-emphasis" data-animate="edge" style="--step:0" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
         </g>
         <g data-graph-role="automatic-crossover" style="--step:1">
-          <path data-graph-role="automatic-crossover-underlay" d="M 476 73 L 590 73" fill="none" stroke="var(--mask)" stroke-width="5.8" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
-          <path data-edge-from="mcp" data-edge-to="daemon" data-edge-label="会话转发" data-edge-key="1" data-edge-id="mcp-daemon" data-composition-points="476,73;590,73" data-composition-crossover="halo" data-composition-independent="true" d="M 476 73 L 590 73" class="a-emphasis" data-animate="edge" style="--step:1" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+          <path data-graph-role="automatic-crossover-underlay" d="M 190 195.5 L 280 195.5" fill="none" stroke="var(--mask)" stroke-width="5.8" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+          <path data-edge-from="client" data-edge-to="stdio" data-edge-label="stdio" data-edge-key="1" data-edge-id="client-stdio" data-composition-points="190,195.5;280,195.5" data-composition-crossover="halo" data-composition-independent="true" d="M 190 195.5 L 280 195.5" class="a-emphasis" data-animate="edge" style="--step:1" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
         </g>
         <g data-graph-role="automatic-crossover" style="--step:2">
-          <path data-graph-role="automatic-crossover-underlay" d="M 797 73 L 934 73" fill="none" stroke="var(--mask)" stroke-width="5.8" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
-          <path data-edge-from="daemon" data-edge-to="bridge" data-edge-label="AX / 截图 / 输入" data-edge-key="2" data-edge-id="daemon-device" data-composition-points="797,73;934,73" data-composition-crossover="halo" data-composition-independent="true" d="M 797 73 L 934 73" class="a-emphasis" data-animate="edge" style="--step:2" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+          <path data-graph-role="automatic-crossover-underlay" d="M 441 187.45 L 554 187.45" fill="none" stroke="var(--mask)" stroke-width="5.8" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+          <path data-edge-from="stdio" data-edge-to="daemon" data-edge-label="回环 HTTP" data-edge-key="2" data-edge-id="stdio-daemon" data-composition-points="441,187.45;554,187.45" data-composition-crossover="halo" data-composition-independent="true" d="M 441 187.45 L 554 187.45" class="a-emphasis" data-animate="edge" style="--step:2" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
         </g>
         <g data-graph-role="automatic-crossover" style="--step:3">
-          <path data-graph-role="automatic-crossover-underlay" d="M 693.5 106 L 693.5 238" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
-          <path data-edge-from="daemon" data-edge-to="ocr" data-edge-label="AX 不足时识字" data-edge-key="3" data-edge-id="read-ocr" data-composition-points="693.5,106;693.5,238" data-composition-crossover="halo" data-composition-independent="true" d="M 693.5 106 L 693.5 238" class="a-default" data-animate="edge" style="--step:3" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+          <path data-graph-role="automatic-crossover-underlay" d="M 744 195.5 L 875 195.5" fill="none" stroke="var(--mask)" stroke-width="5.8" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+          <path data-edge-from="daemon" data-edge-to="bridge" data-edge-label="AX / 截图 / 输入" data-edge-key="3" data-edge-id="daemon-device" data-composition-points="744,195.5;875,195.5" data-composition-crossover="halo" data-composition-independent="true" d="M 744 195.5 L 875 195.5" class="a-emphasis" data-animate="edge" style="--step:3" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
         </g>
         <g data-graph-role="automatic-crossover" style="--step:4">
-          <path data-graph-role="automatic-crossover-underlay" d="M 1019 106 L 1019 238" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
-          <path data-edge-from="bridge" data-edge-to="device" data-edge-label="读屏与执行" data-edge-key="4" data-edge-id="bridge-target" data-composition-points="1019,106;1019,238" data-composition-crossover="halo" data-composition-independent="true" d="M 1019 106 L 1019 238" class="a-default" data-animate="edge" style="--step:4" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+          <path data-graph-role="automatic-crossover-underlay" d="M 1050 195.5 L 1165 195.5" fill="none" stroke="var(--mask)" stroke-width="5.8" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+          <path data-edge-from="bridge" data-edge-to="device" data-edge-label="读屏与执行" data-edge-key="4" data-edge-id="bridge-target" data-composition-points="1050,195.5;1165,195.5" data-composition-crossover="halo" data-composition-independent="true" d="M 1050 195.5 L 1165 195.5" class="a-emphasis" data-animate="edge" style="--step:4" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        </g>
+        <g data-graph-role="automatic-crossover" style="--step:5">
+          <path data-graph-role="automatic-crossover-underlay" d="M 554 202.5 L 485.5 202.5 Q 477.5 202.5 477.5 210.5 L 477.5 316" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+          <path data-edge-from="daemon" data-edge-to="ax" data-edge-label="AX 根节点校验" data-edge-key="5" data-edge-id="check-viewport" data-composition-points="554,202.5;477.5,202.5;477.5,316" data-composition-crossover="halo" data-composition-independent="true" d="M 554 202.5 L 485.5 202.5 Q 477.5 202.5 477.5 210.5 L 477.5 316" class="a-default" data-animate="edge" style="--step:5" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        </g>
+        <g data-graph-role="automatic-crossover" style="--step:6">
+          <path data-graph-role="automatic-crossover-underlay" d="M 693 226 L 693 316" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+          <path data-edge-from="daemon" data-edge-to="capture" data-edge-label="需要图像" data-edge-key="6" data-edge-id="visual-capture" data-composition-points="693,226;693,316" data-composition-crossover="halo" data-composition-independent="true" d="M 693 226 L 693 316" class="a-default" data-animate="edge" style="--step:6" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        </g>
+        <g data-graph-role="automatic-crossover" style="--step:7">
+          <path data-graph-role="automatic-crossover-underlay" d="M 565 353.5 L 677 353.5" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+          <path data-edge-from="ax" data-edge-to="capture" data-edge-label="尺寸待确认" data-edge-key="7" data-edge-id="geometry-fallback" data-composition-points="565,353.5;677,353.5" data-composition-crossover="halo" data-composition-independent="true" d="M 565 353.5 L 677 353.5" class="a-default" data-animate="edge" style="--step:7" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        </g>
+        <g data-graph-role="automatic-crossover" style="--step:8">
+          <path data-graph-role="automatic-crossover-underlay" d="M 899 346.5 L 1008 346.5" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>
+          <path data-edge-from="capture" data-edge-to="ocr" data-edge-label="混合模式识字" data-edge-key="8" data-edge-id="hybrid-ocr" data-composition-points="899,346.5;1008,346.5" data-composition-crossover="halo" data-composition-independent="true" d="M 899 346.5 L 1008 346.5" class="a-default" data-animate="edge" style="--step:8" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         </g>
 
         <!-- Components -->
-        <g id="node-agent" data-node-id="agent" data-node-label="Agent 调用端" tabindex="0" role="button" aria-label="聚焦Agent 调用端，根据证据决定下一步, 架构组件" aria-pressed="false" data-node-kind="external" data-node-sublabel="根据证据决定下一步" data-node-context="架构组件">
-          <title>Agent 调用端 · 根据证据决定下一步 · 架构组件</title>
-          <rect x="40" y="40" width="175" height="66" rx="8" class="c-mask"/>
-          <rect x="40" y="40" width="175" height="66" rx="8" class="c-external" data-animate="node" style="--step:0" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(46 46) scale(0.6875)">
+        <g id="node-agent" data-node-id="agent" data-node-label="内置 Poki Agent" tabindex="0" role="button" aria-label="聚焦内置 Poki Agent，直连并发现工具, 架构组件" aria-pressed="false" data-node-kind="external" data-node-sublabel="直连并发现工具" data-node-context="架构组件">
+          <title>内置 Poki Agent · 直连并发现工具 · 架构组件</title>
+          <rect x="554" y="32" width="190" height="61" rx="8" class="c-mask"/>
+          <rect x="554" y="32" width="190" height="61" rx="8" class="c-external" data-animate="node" style="--step:0" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(560 38) scale(0.6875)">
             <rect x="2.5" y="5" width="8.5" height="8" rx="1.5"/>
             <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="127.5" y="71" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Agent 调用端</text>
-        <text data-detail="context" x="127.5" y="87" class="t-muted" font-size="9" text-anchor="middle">根据证据决定下一步</text>
+          <text data-node-label="" data-detail-anchor="" x="649" y="60.5" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">内置 Poki Agent</text>
+        <text data-detail="context" x="649" y="76.5" class="t-muted" font-size="9" text-anchor="middle">直连并发现工具</text>
         </g>
 
-        <g id="node-mcp" data-node-id="mcp" data-node-label="MCP 桥接" tabindex="0" role="button" aria-label="聚焦MCP 桥接，stdio → 本机 HTTP, 架构组件" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="stdio → 本机 HTTP" data-node-context="架构组件">
-          <title>MCP 桥接 · stdio → 本机 HTTP · 架构组件</title>
-          <rect x="316" y="40" width="160" height="66" rx="8" class="c-mask"/>
-          <rect x="316" y="40" width="160" height="66" rx="8" class="c-frontend" data-animate="node" style="--step:1" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(322 46) scale(0.6875)">
+        <g id="node-client" data-node-id="client" data-node-label="外部 MCP 客户端" tabindex="0" role="button" aria-label="聚焦外部 MCP 客户端，Codex · Claude Code, 架构组件" aria-pressed="false" data-node-kind="external" data-node-sublabel="Codex · Claude Code" data-node-context="架构组件">
+          <title>外部 MCP 客户端 · Codex · Claude Code · 架构组件</title>
+          <rect x="24" y="165" width="166" height="61" rx="8" class="c-mask"/>
+          <rect x="24" y="165" width="166" height="61" rx="8" class="c-external" data-animate="node" style="--step:1" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(30 171) scale(0.6875)">
+            <rect x="2.5" y="5" width="8.5" height="8" rx="1.5"/>
+            <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="107" y="193.5" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">外部 MCP 客户端</text>
+        <text data-detail="context" x="107" y="209.5" class="t-muted" font-size="9" text-anchor="middle">Codex · Claude Code</text>
+        </g>
+
+        <g id="node-stdio" data-node-id="stdio" data-node-label="stdio 桥接" tabindex="0" role="button" aria-label="聚焦stdio 桥接，转发到本机 HTTP, 架构组件" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="转发到本机 HTTP" data-node-context="架构组件">
+          <title>stdio 桥接 · 转发到本机 HTTP · 架构组件</title>
+          <rect x="280" y="165" width="161" height="61" rx="8" class="c-mask"/>
+          <rect x="280" y="165" width="161" height="61" rx="8" class="c-frontend" data-animate="node" style="--step:2" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(286 171) scale(0.6875)">
             <rect x="2" y="3" width="12" height="10" rx="2"/>
             <path d="M2 6.5h12"/>
             <circle cx="4.1" cy="4.8" r=".7" class="sigil-fill"/>
             <circle cx="6.3" cy="4.8" r=".7" class="sigil-fill"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="396" y="71" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">MCP 桥接</text>
-        <text data-detail="context" x="396" y="87" class="t-muted" font-size="9" text-anchor="middle">stdio → 本机 HTTP</text>
+          <text data-node-label="" data-detail-anchor="" x="360.5" y="193.5" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">stdio 桥接</text>
+        <text data-detail="context" x="360.5" y="209.5" class="t-muted" font-size="9" text-anchor="middle">转发到本机 HTTP</text>
         </g>
 
-        <g id="node-daemon" data-node-id="daemon" data-node-label="Poki 服务与会话" tabindex="0" role="button" aria-label="聚焦Poki 服务与会话，混合观察 · 动作 · 结果核验, 架构组件" aria-pressed="false" data-node-kind="backend" data-node-sublabel="混合观察 · 动作 · 结果核验" data-node-context="架构组件">
-          <title>Poki 服务与会话 · 混合观察 · 动作 · 结果核验 · 架构组件</title>
-          <rect x="590" y="40" width="207" height="66" rx="8" class="c-mask"/>
-          <rect x="590" y="40" width="207" height="66" rx="8" class="c-backend" data-animate="node" style="--step:2" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(596 46) scale(0.6875)">
+        <g id="node-daemon" data-node-id="daemon" data-node-label="Poki 服务与会话" tabindex="0" role="button" aria-label="聚焦Poki 服务与会话，令牌校验 · 每会话设备状态, 架构组件" aria-pressed="false" data-node-kind="backend" data-node-sublabel="令牌校验 · 每会话设备状态" data-node-context="架构组件">
+          <title>Poki 服务与会话 · 令牌校验 · 每会话设备状态 · 架构组件</title>
+          <rect x="554" y="165" width="190" height="61" rx="8" class="c-mask"/>
+          <rect x="554" y="165" width="190" height="61" rx="8" class="c-backend" data-animate="node" style="--step:1" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(560 171) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="693.5" y="71" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Poki 服务与会话</text>
-        <text data-detail="context" x="693.5" y="87" class="t-muted" font-size="9" text-anchor="middle">混合观察 · 动作 · 结果核验</text>
+          <text data-node-label="" data-detail-anchor="" x="649" y="193.5" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Poki 服务与会话</text>
+        <text data-detail="context" x="649" y="209.5" class="t-muted" font-size="9" text-anchor="middle">令牌校验 · 每会话设备状态</text>
         </g>
 
-        <g id="node-bridge" data-node-id="bridge" data-node-label="设备桥接" tabindex="0" role="button" aria-label="聚焦设备桥接，原生 AX · 截图 · 输入, 架构组件" aria-pressed="false" data-node-kind="backend" data-node-sublabel="原生 AX · 截图 · 输入" data-node-context="架构组件">
-          <title>设备桥接 · 原生 AX · 截图 · 输入 · 架构组件</title>
-          <rect x="934" y="40" width="170" height="66" rx="8" class="c-mask"/>
-          <rect x="934" y="40" width="170" height="66" rx="8" class="c-backend" data-animate="node" style="--step:3" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(940 46) scale(0.6875)">
+        <g id="node-bridge" data-node-id="bridge" data-node-label="设备桥接" tabindex="0" role="button" aria-label="聚焦设备桥接，原生助手 · CoreSimulator, 架构组件" aria-pressed="false" data-node-kind="backend" data-node-sublabel="原生助手 · CoreSimulator" data-node-context="架构组件">
+          <title>设备桥接 · 原生助手 · CoreSimulator · 架构组件</title>
+          <rect x="875" y="165" width="175" height="61" rx="8" class="c-mask"/>
+          <rect x="875" y="165" width="175" height="61" rx="8" class="c-backend" data-animate="node" style="--step:4" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(881 171) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="1019" y="71" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">设备桥接</text>
-        <text data-detail="context" x="1019" y="87" class="t-muted" font-size="9" text-anchor="middle">原生 AX · 截图 · 输入</text>
+          <text data-node-label="" data-detail-anchor="" x="962.5" y="193.5" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">设备桥接</text>
+        <text data-detail="context" x="962.5" y="209.5" class="t-muted" font-size="9" text-anchor="middle">原生助手 · CoreSimulator</text>
+        </g>
+
+        <g id="node-device" data-node-id="device" data-node-label="iPhone / 模拟器" tabindex="0" role="button" aria-label="聚焦iPhone / 模拟器，AX · 图像 · HID, 架构组件" aria-pressed="false" data-node-kind="external" data-node-sublabel="AX · 图像 · HID" data-node-context="架构组件">
+          <title>iPhone / 模拟器 · AX · 图像 · HID · 架构组件</title>
+          <rect x="1165" y="165" width="157" height="61" rx="8" class="c-mask"/>
+          <rect x="1165" y="165" width="157" height="61" rx="8" class="c-external" data-animate="node" style="--step:5" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(1171 171) scale(0.6875)">
+            <rect x="2.5" y="5" width="8.5" height="8" rx="1.5"/>
+            <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="1243.5" y="193.5" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">iPhone / 模拟器</text>
+        <text data-detail="context" x="1243.5" y="209.5" class="t-muted" font-size="9" text-anchor="middle">AX · 图像 · HID</text>
+        </g>
+
+        <g id="node-ax" data-node-id="ax" data-node-label="AX 视口校验" tabindex="0" role="button" aria-label="聚焦AX 视口校验，可信竖屏首读免截图, 架构组件" aria-pressed="false" data-node-kind="backend" data-node-sublabel="可信竖屏首读免截图" data-node-context="架构组件">
+          <title>AX 视口校验 · 可信竖屏首读免截图 · 架构组件</title>
+          <rect x="390" y="316" width="175" height="61" rx="8" class="c-mask"/>
+          <rect x="390" y="316" width="175" height="61" rx="8" class="c-backend" data-animate="node" style="--step:6" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(396 322) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="477.5" y="344.5" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">AX 视口校验</text>
+        <text data-detail="context" x="477.5" y="360.5" class="t-muted" font-size="9" text-anchor="middle">可信竖屏首读免截图</text>
+        </g>
+
+        <g id="node-capture" data-node-id="capture" data-node-label="截图与图像处理" tabindex="0" role="button" aria-label="聚焦截图与图像处理，视口尺寸 · 会话帧 PNG, 架构组件" aria-pressed="false" data-node-kind="backend" data-node-sublabel="视口尺寸 · 会话帧 PNG" data-node-context="架构组件">
+          <title>截图与图像处理 · 视口尺寸 · 会话帧 PNG · 架构组件</title>
+          <rect x="677" y="316" width="222" height="61" rx="8" class="c-mask"/>
+          <rect x="677" y="316" width="222" height="61" rx="8" class="c-backend" data-animate="node" style="--step:7" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(683 322) scale(0.6875)">
+            <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
+          </g>
+          <text data-node-label="" data-detail-anchor="" x="788" y="344.5" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">截图与图像处理</text>
+        <text data-detail="context" x="788" y="360.5" class="t-muted" font-size="9" text-anchor="middle">视口尺寸 · 会话帧 PNG</text>
         </g>
 
         <g id="node-ocr" data-node-id="ocr" data-node-label="Mac 本地 OCR" tabindex="0" role="button" aria-label="聚焦Mac 本地 OCR，默认 Tesseract · 可选 Vision, 架构组件" aria-pressed="false" data-node-kind="backend" data-node-sublabel="默认 Tesseract · 可选 Vision" data-node-context="架构组件">
           <title>Mac 本地 OCR · 默认 Tesseract · 可选 Vision · 架构组件</title>
-          <rect x="590" y="238" width="207" height="66" rx="8" class="c-mask"/>
-          <rect x="590" y="238" width="207" height="66" rx="8" class="c-backend" data-animate="node" style="--step:4" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(596 244) scale(0.6875)">
+          <rect x="1008" y="316" width="195" height="61" rx="8" class="c-mask"/>
+          <rect x="1008" y="316" width="195" height="61" rx="8" class="c-backend" data-animate="node" style="--step:9" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(1014 322) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="693.5" y="269" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Mac 本地 OCR</text>
-        <text data-detail="context" x="693.5" y="285" class="t-muted" font-size="9" text-anchor="middle">默认 Tesseract · 可选 Vision</text>
-        </g>
-
-        <g id="node-device" data-node-id="device" data-node-label="iPhone / 模拟器" tabindex="0" role="button" aria-label="聚焦iPhone / 模拟器，USB / 远程 · CoreSimulator, 架构组件" aria-pressed="false" data-node-kind="external" data-node-sublabel="USB / 远程 · CoreSimulator" data-node-context="架构组件">
-          <title>iPhone / 模拟器 · USB / 远程 · CoreSimulator · 架构组件</title>
-          <rect x="934" y="238" width="170" height="66" rx="8" class="c-mask"/>
-          <rect x="934" y="238" width="170" height="66" rx="8" class="c-external" data-animate="node" style="--step:5" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(940 244) scale(0.6875)">
-            <rect x="2.5" y="5" width="8.5" height="8" rx="1.5"/>
-            <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
-          </g>
-          <text data-node-label="" data-detail-anchor="" x="1019" y="269" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">iPhone / 模拟器</text>
-        <text data-detail="context" x="1019" y="285" class="t-muted" font-size="9" text-anchor="middle">USB / 远程 · CoreSimulator</text>
+          <text data-node-label="" data-detail-anchor="" x="1105.5" y="344.5" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Mac 本地 OCR</text>
+        <text data-detail="context" x="1105.5" y="360.5" class="t-muted" font-size="9" text-anchor="middle">默认 Tesseract · 可选 Vision</text>
         </g>
 
         <!-- Connection labels -->
-        <g data-detail="context" data-edge-from="agent" data-edge-to="mcp" data-edge-label="工具调用" data-edge-key="0" data-edge-id="agent-mcp">
-          <rect x="241.3" y="53" width="48.4" height="14" rx="3" class="c-mask"/>
-          <text x="265.5" y="63" class="t-edge-emphasis" font-size="8" text-anchor="middle">工具调用</text>
+        <g data-detail="context" data-edge-from="agent" data-edge-to="daemon" data-edge-label="回环 HTTP 直连" data-edge-key="0" data-edge-id="agent-direct">
+          <rect x="565.8" y="122" width="77.2" height="14" rx="3" class="c-mask"/>
+          <text x="604.4" y="132" class="t-edge-emphasis" font-size="8" text-anchor="middle">回环 HTTP 直连</text>
         </g>
-        <g data-detail="context" data-edge-from="mcp" data-edge-to="daemon" data-edge-label="会话转发" data-edge-key="1" data-edge-id="mcp-daemon">
-          <rect x="508.8" y="53" width="48.4" height="14" rx="3" class="c-mask"/>
-          <text x="533" y="63" class="t-edge-emphasis" font-size="8" text-anchor="middle">会话转发</text>
+        <g data-detail="context" data-edge-from="client" data-edge-to="stdio" data-edge-label="stdio" data-edge-key="1" data-edge-id="client-stdio">
+          <rect x="218" y="175.5" width="34" height="14" rx="3" class="c-mask"/>
+          <text x="235" y="185.5" class="t-edge-emphasis" font-size="8" text-anchor="middle">stdio</text>
         </g>
-        <g data-detail="context" data-edge-from="daemon" data-edge-to="bridge" data-edge-label="AX / 截图 / 输入" data-edge-key="2" data-edge-id="daemon-device">
-          <rect x="822.1" y="53" width="86.8" height="14" rx="3" class="c-mask"/>
-          <text x="865.5" y="63" class="t-edge-emphasis" font-size="8" text-anchor="middle">AX / 截图 / 输入</text>
+        <g data-detail="context" data-edge-from="stdio" data-edge-to="daemon" data-edge-label="回环 HTTP" data-edge-key="2" data-edge-id="stdio-daemon">
+          <rect x="470.9" y="167.45" width="53.199999999999996" height="14" rx="3" class="c-mask"/>
+          <text x="497.5" y="177.45" class="t-edge-emphasis" font-size="8" text-anchor="middle">回环 HTTP</text>
         </g>
-        <g data-detail="context" data-edge-from="daemon" data-edge-to="ocr" data-edge-label="AX 不足时识字" data-edge-key="3" data-edge-id="read-ocr">
-          <rect x="615.0999999999999" y="165" width="72.4" height="14" rx="3" class="c-mask"/>
-          <text x="651.3" y="175" class="t-edge-default" font-size="8" text-anchor="middle">AX 不足时识字</text>
+        <g data-detail="context" data-edge-from="daemon" data-edge-to="bridge" data-edge-label="AX / 截图 / 输入" data-edge-key="3" data-edge-id="daemon-device">
+          <rect x="766.1" y="175.5" width="86.8" height="14" rx="3" class="c-mask"/>
+          <text x="809.5" y="185.5" class="t-edge-emphasis" font-size="8" text-anchor="middle">AX / 截图 / 输入</text>
         </g>
         <g data-detail="context" data-edge-from="bridge" data-edge-to="device" data-edge-label="读屏与执行" data-edge-key="4" data-edge-id="bridge-target">
-          <rect x="955" y="165" width="58" height="14" rx="3" class="c-mask"/>
-          <text x="984" y="175" class="t-edge-default" font-size="8" text-anchor="middle">读屏与执行</text>
+          <rect x="1078.5" y="175.5" width="58" height="14" rx="3" class="c-mask"/>
+          <text x="1107.5" y="185.5" class="t-edge-emphasis" font-size="8" text-anchor="middle">读屏与执行</text>
+        </g>
+        <g data-detail="context" data-edge-from="daemon" data-edge-to="ax" data-edge-label="AX 根节点校验" data-edge-key="5" data-edge-id="check-viewport">
+          <rect x="441.3" y="239.25" width="72.4" height="14" rx="3" class="c-mask"/>
+          <text x="477.5" y="249.25" class="t-edge-default" font-size="8" text-anchor="middle">AX 根节点校验</text>
+        </g>
+        <g data-detail="context" data-edge-from="daemon" data-edge-to="capture" data-edge-label="需要图像" data-edge-key="6" data-edge-id="visual-capture">
+          <rect x="638.5999999999999" y="264" width="48.4" height="14" rx="3" class="c-mask"/>
+          <text x="662.8" y="274" class="t-edge-default" font-size="8" text-anchor="middle">需要图像</text>
+        </g>
+        <g data-detail="context" data-edge-from="ax" data-edge-to="capture" data-edge-label="尺寸待确认" data-edge-key="7" data-edge-id="geometry-fallback">
+          <rect x="592" y="333.5" width="58" height="14" rx="3" class="c-mask"/>
+          <text x="621" y="343.5" class="t-edge-default" font-size="8" text-anchor="middle">尺寸待确认</text>
+        </g>
+        <g data-detail="context" data-edge-from="capture" data-edge-to="ocr" data-edge-label="混合模式识字" data-edge-key="8" data-edge-id="hybrid-ocr">
+          <rect x="919.7" y="326.5" width="67.6" height="14" rx="3" class="c-mask"/>
+          <text x="953.5" y="336.5" class="t-edge-default" font-size="8" text-anchor="middle">混合模式识字</text>
         </g>
 
         <!-- Boundary labels (foreground masks keep routes out of titles) -->
@@ -5373,18 +5440,18 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 
         <!-- Legend -->
         <g data-legend="" data-legend-bridge="">
-          <text x="40" y="336" class="t-primary" font-size="12" font-weight="650">图例</text>
-          <g data-legend-semantic-kind="frontend" data-legend-kind="frontend" data-legend-label="前端" data-legend-x="40" data-legend-baseline="356" data-legend-width="68">
-            <rect x="40" y="347" width="16" height="10" rx="2.5" class="c-frontend" stroke-width="1"/>
-            <text x="62" y="356" class="t-muted" font-size="10" font-weight="500">前端</text>
+          <text x="40" y="409" class="t-primary" font-size="12" font-weight="650">图例</text>
+          <g data-legend-semantic-kind="frontend" data-legend-kind="frontend" data-legend-label="前端" data-legend-x="40" data-legend-baseline="429" data-legend-width="68">
+            <rect x="40" y="420" width="16" height="10" rx="2.5" class="c-frontend" stroke-width="1"/>
+            <text x="62" y="429" class="t-muted" font-size="10" font-weight="500">前端</text>
           </g>
-          <g data-legend-semantic-kind="backend" data-legend-kind="backend" data-legend-label="后端" data-legend-x="130" data-legend-baseline="356" data-legend-width="68">
-            <rect x="130" y="347" width="16" height="10" rx="2.5" class="c-backend" stroke-width="1"/>
-            <text x="152" y="356" class="t-muted" font-size="10" font-weight="500">后端</text>
+          <g data-legend-semantic-kind="backend" data-legend-kind="backend" data-legend-label="后端" data-legend-x="130" data-legend-baseline="429" data-legend-width="68">
+            <rect x="130" y="420" width="16" height="10" rx="2.5" class="c-backend" stroke-width="1"/>
+            <text x="152" y="429" class="t-muted" font-size="10" font-weight="500">后端</text>
           </g>
-          <g data-legend-semantic-kind="external" data-legend-kind="external" data-legend-label="外部系统" data-legend-x="220" data-legend-baseline="356" data-legend-width="93">
-            <rect x="220" y="347" width="16" height="10" rx="2.5" class="c-external" stroke-width="1"/>
-            <text x="242" y="356" class="t-muted" font-size="10" font-weight="500">外部系统</text>
+          <g data-legend-semantic-kind="external" data-legend-kind="external" data-legend-label="外部系统" data-legend-x="220" data-legend-baseline="429" data-legend-width="93">
+            <rect x="220" y="420" width="16" height="10" rx="2.5" class="c-external" stroke-width="1"/>
+            <text x="242" y="429" class="t-muted" font-size="10" font-weight="500">外部系统</text>
           </g>
         </g>
       </svg>
@@ -5566,69 +5633,58 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
     <div class="cards">
       <div class="card">
         <div class="card-header">
-          <div class="card-dot violet"></div>
-          <h3>运行状态</h3>
-        </div>
-        <ul>
-          <li>常驻进程在旧目录 poki，环境指定 Tesseract。最新遮挡回执与精确匹配位于 poki-local 的工作区，本图的测时用独立服务。</li>
-          <li>Poki MCP QA（iPhone Duo / iOS 27.1）保持运行。引用直达与条件等待为实验开关，本次计时显式开启。</li>
-        </ul>
-      </div>
-
-      <div class="card">
-        <div class="card-header">
           <div class="card-dot cyan"></div>
-          <h3>AX → OCR → PNG</h3>
+          <h3>会话与进程</h3>
         </div>
         <ul>
-          <li>AX 足够就返回结构与短期引用。文字不足时尝试本地 OCR，混合路由预算 1.5 秒，接受阈值为 0.8。</li>
-          <li>OCR 不足或请求视觉信息时返回截图，由调用端模型理解。首轮 AX 可能仍会截图建立坐标尺度。</li>
+          <li>内置 Agent 直连带令牌的回环 HTTP。旧服务未声明 Agent 工具配置时，经由 stdio 桥接。</li>
+          <li>服务按会话持有设备状态，支持取消请求与关闭会话。内置 Agent 退出后由服务释放会话。</li>
+          <li>批次中的每个设备步骤都指定同一已启动模拟器的 ID 时，后续步骤和最终读回复用设备解析。每次访问仍检查设备租约。</li>
         </ul>
       </div>
 
       <div class="card">
         <div class="card-header">
           <div class="card-dot emerald"></div>
-          <h3>Vision 的三种配置</h3>
+          <h3>竖屏首读与截图回退</h3>
         </div>
         <ul>
-          <li>默认 Tesseract。vision 按调用启动 Apple Vision；continuous 可后台试读相似真实截图。</li>
-          <li>两次试读达标（各 ≤100 ms）后才尝试前台 Vision，120 ms 超时回退。使用过的进程空闲 15 分钟退出，仅预热的进程约 90 秒回收。</li>
+          <li>模拟器读取设备信息，USB iPhone 读取 Lockdown 尺寸及缩放。竖屏尺寸和全屏 AX 根节点吻合时，用 AX 建立视口。</li>
+          <li>首次横屏、非 USB 真机或尺寸无法验证时，通过截图建立视口。发现旋转或 AX 视口失效时重新截图。实际处理图像时才加载 sharp，macOS 上限为 2 个线程。</li>
+          <li>会话帧保留按屏幕点缩放的 PNG。原始 PNG 只在本次捕获或全分辨率导出期间持有。save_screenshot 可写出原始 PNG，或按扩展名编码为同分辨率 JPEG。</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-dot violet"></div>
+          <h3>从 AX 到 OCR 和 PNG</h3>
+        </div>
+        <ul>
+          <li>可用的 AX 文字直接返回结构和引用。混合模式在 AX 文字不足时使用截图做本地 OCR，预算 1.5 秒，置信度阈值 0.8。</li>
+          <li>OCR 未提供可用文字或明确请求视觉信息时，返回 PNG。默认 Tesseract，亦可按调用启动 Vision，或使用 continuous 试读后启用常驻 Vision。</li>
         </ul>
       </div>
 
       <div class="card">
         <div class="card-header">
           <div class="card-dot amber"></div>
-          <h3>动作回执与恢复</h3>
+          <h3>横屏触控映射</h3>
         </div>
         <ul>
-          <li>有稳定对象 ID 且设备、前台、视口和目标一致才允许引用直达。条件等待用 AX 结果作为验收，并可返回下一步可复用的观察。</li>
-          <li>工作区补充了遮挡拒绝和旧引用失效。已明确未发送时换定位方式；发送结果不确定时先核验。批次可从未执行步骤续跑。</li>
+          <li>模拟器使用 Poki 请求的方向，并检查截图或视口的宽高。USB iPhone 从 SpringBoard 读取当前界面方向。</li>
+          <li>左右横屏各自将界面坐标转换到竖屏 HID 轴。USB 验证覆盖两种横屏的点击、拖动、双指缩放及截图回退。</li>
         </ul>
       </div>
 
       <div class="card">
         <div class="card-header">
-          <div class="card-dot cyan"></div>
-          <h3>同一场景实测 · 设置 → 通用</h3>
+          <div class="card-dot rose"></div>
+          <h3>动作验收</h3>
         </div>
         <ul>
-          <li>iOS 27.1 模拟器，poki-local 独立服务，导航与回读共 2.37 秒。启动、选择设备和模型推理未计时。</li>
-          <li>观察 418 ms（AX 97、视口截图 234）。引用校验 187 ms，缺稳定对象 ID，未发送。</li>
-          <li>精确标签点击并验收 1,763 ms。动作前 AX 185、定位与派发 995（含输入 994）、条件回读 578 ms。</li>
-        </ul>
-      </div>
-
-      <div class="card">
-        <div class="card-header">
-          <div class="card-dot emerald"></div>
-          <h3>同一目标页的两次读屏探测</h3>
-        </div>
-        <ul>
-          <li>通用页强制 Tesseract 439 ms（截图 277、OCR 158）。</li>
-          <li>同页直接返回 PNG 262 ms（截图 258），模型看图与推理耗时未测。</li>
-          <li>两条探测独立执行，不计入导航 2.37 秒。阶段有嵌套，输入耗时已包含在派发里。</li>
+          <li>引用直达需通过目标和视口校验。条件等待可用 AX 验收，并返回可复用的观察。</li>
+          <li>sent: true 表示输入已写入连接。结合 screen_changed、返回屏幕或目标条件确认结果。发送状态不明时先读屏再决定是否重试。</li>
         </ul>
       </div>
     </div>
