@@ -2,8 +2,10 @@ import test from 'node:test';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import assert from 'node:assert/strict';
-import { execFile, spawnSync } from 'node:child_process';
+import { execFile, spawn, spawnSync } from 'node:child_process';
 import { promisify } from 'node:util';
+import { once } from 'node:events';
+import { setTimeout as delay } from 'node:timers/promises';
 import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -161,16 +163,108 @@ test('Poki Agent opens its own MCP with the complete catalog even when the paren
     try {
       const tools = await client.open('agent-profile-contract');
       const result = await client.call('wait', { seconds: 0 });
-      console.log(JSON.stringify({ tools, result }));
+      console.log(JSON.stringify({ tools, result, direct: !!client.direct }));
     } finally { await client.close(); }
   `], { env: f.env });
-  const { tools, result } = JSON.parse(stdout);
+  const { tools, result, direct } = JSON.parse(stdout);
+  assert.equal(direct, true);
   assert.equal(tools.length, 63);
   for (const name of ['list_apps', 'observe_device', 'hide_keyboard', 'acquire_device', 'reconnect_device', 'disconnect_device']) {
     assert.ok(tools.some(tool => tool.name === name), name);
   }
   assert.equal(value(result).waited, 0);
-  t.diagnostic(`PokiClient.open -> src/stdio.mjs -> local HTTP daemon: ${tools.length} tools; hidden wait executed`);
+  t.diagnostic(`PokiClient.open -> local HTTP daemon: ${tools.length} tools; hidden wait executed`);
+});
+
+test('Poki Agent uses its own tool profile and falls back for an older endpoint', { timeout: 20000 }, async t => {
+  const f = await fixture(t, { extraEnv: () => ({ POKI_TOOL_PROFILE: 'cua' }) });
+  const entry = new URL('../agent/poki-client.mjs', import.meta.url).href;
+  const clientRun = async profile => {
+    const { stdout } = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', `
+      import { PokiClient } from ${JSON.stringify(entry)};
+      const client = new PokiClient();
+      try {
+        const tools = await client.open('agent-profile');
+        console.log(JSON.stringify({ total: tools.length, instructions: client.instructions, direct: !!client.direct }));
+      } finally { await client.close(); }
+    `], { env: { ...f.env, POKI_TOOL_PROFILE: profile } });
+    return JSON.parse(stdout);
+  };
+  const standard = await clientRun('default');
+  const cua = await clientRun('cua');
+  assert.equal(standard.direct, true);
+  assert.equal(cua.direct, true);
+  assert.equal(standard.total, 63);
+  assert.equal(cua.total, 63);
+  assert.notEqual(standard.instructions, cua.instructions);
+  const { agent_tool_profiles, ...oldEndpoint } = await endpointOf(f);
+  assert.equal(agent_tool_profiles, true);
+  await writeFile(endpointFile(f), JSON.stringify(oldEndpoint));
+  assert.deepEqual(await clientRun('default'), { ...standard, direct: false });
+});
+
+test('the direct Agent client cancels timed-out input and does not replay input across a daemon restart', { timeout: 30000 }, async t => {
+  const f = await fixture(t);
+  const entry = new URL('../agent/poki-client.mjs', import.meta.url).href;
+  const { PokiClient } = await import(entry);
+  const previousState = process.env.POKI_MCP_STATE_DIR;
+  const previousTimeout = process.env.POKI_MCP_CALL_TIMEOUT_MS;
+  process.env.POKI_MCP_STATE_DIR = f.env.POKI_MCP_STATE_DIR;
+  const client = new PokiClient();
+  t.after(async () => {
+    await client.close();
+    if (previousState === undefined) delete process.env.POKI_MCP_STATE_DIR;
+    else process.env.POKI_MCP_STATE_DIR = previousState;
+    if (previousTimeout === undefined) delete process.env.POKI_MCP_CALL_TIMEOUT_MS;
+    else process.env.POKI_MCP_CALL_TIMEOUT_MS = previousTimeout;
+  });
+  await client.open('agent-direct-lifecycle');
+  assert.ok(client.direct);
+  await f.set({ block: 'key' });
+  process.env.POKI_MCP_CALL_TIMEOUT_MS = '750';
+  await assert.rejects(client.call('press_key', { key: 'return' }), /timed out|timeout/i);
+  assert.equal((await f.events()).filter(e => e.op === 'key').length, 1);
+  process.env.POKI_MCP_CALL_TIMEOUT_MS = '3000';
+  assert.equal(value(await client.call('wait', { seconds: 0 })).waited, 0);
+  await f.set({ block: 'tap' });
+  const pending = client.call('tap', { x: 20, y: 20, verify: false });
+  await f.until(log => log.includes('"op":"tap"'));
+  await f.startDaemon();
+  await f.set({});
+  await f.daemon.stop();
+  const result = await pending;
+  assert.equal(result.isError, true);
+  assert.match(result.content[0].text, /may already have acted/);
+  assert.equal(value(await client.call('wait', { seconds: 0 })).waited, 0);
+  assert.equal((await f.events()).filter(e => e.op === 'tap').length, 1);
+});
+
+test('the daemon releases a direct Agent lease if its process exits without closing', { timeout: 15000 }, async t => {
+  const f = await fixture(t);
+  const entry = new URL('../agent/poki-client.mjs', import.meta.url).href;
+  const child = spawn(process.execPath, ['--input-type=module', '-e', `
+    import { PokiClient } from ${JSON.stringify(entry)};
+    const client = new PokiClient();
+    await client.open('agent-exit');
+    const result = await client.call('acquire_device', { device: 'fixture-phone', ttl_seconds: 60 });
+    if (!client.direct || result.isError) throw new Error(result.content[0]?.text ?? 'Direct Agent lease failed');
+    console.log('leased');
+    setInterval(() => {}, 1000);
+  `], { env: f.env, stdio: ['ignore', 'pipe', 'inherit'] });
+  const exited = once(child, 'exit');
+  t.after(async () => { child.kill('SIGKILL'); await exited; });
+  const [stdout] = await Promise.race([once(child.stdout, 'data'), exited.then(() => { throw new Error('Agent exited before acquiring its lease'); })]);
+  assert.equal(String(stdout).trim(), 'leased');
+  const occupied = await f.call('acquire_device', { device: 'fixture-phone', ttl_seconds: 60 });
+  assert.equal(occupied.isError, true);
+  child.kill('SIGKILL');
+  await exited;
+  for (let attempt = 0; attempt < 15; attempt++) {
+    const result = await f.call('acquire_device', { device: 'fixture-phone', ttl_seconds: 60 });
+    if (!result.isError) return;
+    await delay(200);
+  }
+  assert.fail('The dead Agent still holds its lease');
 });
 
 test('screenshot coordinates preserve HID corners and reject out-of-frame input', () => {

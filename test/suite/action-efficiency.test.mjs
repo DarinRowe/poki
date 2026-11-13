@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import sharp from 'sharp';
 import { fixture, value } from '../fixture.mjs';
 import { tokenUsage, pairedText, overlapRounds, toolWallTime } from '../../bin/eval-first-call.mjs';
+import { startResourceSampling } from './resource-sampling.mjs';
 
 const root = { role: 'Application', frame: { x: 0, y: 0, width: 100, height: 200 } };
 const element = (label, y, role = 'Button', extra = {}) => ({
@@ -203,6 +204,7 @@ const selected=process.env.POKI_EVAL_SCENARIO?.split(',');
 assert.ok(!selected||selected.every(name=>names.includes(name)));
 const beforeRoot=process.env.POKI_EVAL_BEFORE_ROOT;
 const variant=process.env.POKI_EVAL_VARIANT==='1';
+const sampleResources=process.env.POKI_EVAL_RESOURCES==='1';
 for (let round=1;round<=repeat;round++) for (const [index,name] of names.entries()) {
   const group=index<3?'development':'holdout';
   if(suite!=='all'&&group!==suite||selected&&!selected.includes(name))continue;
@@ -215,11 +217,16 @@ for (let round=1;round<=repeat;round++) for (const [index,name] of names.entries
     await scenario.prepare?.(f);
     await f.set(scenario.setup);
     const calls=[];
+    const finishSampling=sampleResources ? await startResourceSampling(f.daemon.pid) : undefined;
     const started=performance.now();
-    let error, metrics, elapsed;
+    let error, metrics, elapsed, resources;
     try {
-      metrics=model?await withModel(f,optimized,scenario,calls):await scripted(f,optimized,scenario,calls);
-      elapsed=Math.round(performance.now()-started);
+      try {
+        metrics=model?await withModel(f,optimized,scenario,calls):await scripted(f,optimized,scenario,calls);
+      } finally {
+        elapsed=Math.round(performance.now()-started);
+        resources=await finishSampling?.(elapsed);
+      }
       const state=JSON.parse(await readFile(f.env.FIXTURE_STATE,'utf8'));
       oracle(state,scenario);
       if (model) {
@@ -230,7 +237,7 @@ for (let round=1;round<=repeat;round++) for (const [index,name] of names.entries
     const state=JSON.parse(await readFile(f.env.FIXTURE_STATE,'utf8'));
     const phases=calls.flatMap(call=>call.stages);
     const row={group,name,after,round,variant,model:model?process.env.POKI_EVAL_MODEL:null,passed:!error,
-      elapsed_ms:elapsed ?? Math.round(performance.now()-started),tool_calls:calls.length,tool_wall_ms:toolWallTime(calls),call_details:calls,
+      elapsed_ms:elapsed,tool_calls:calls.length,tool_wall_ms:toolWallTime(calls),call_details:calls,
       explicit_reads:calls.filter(call=>['observe_device','list_elements','take_screenshot','wait_for'].includes(call.name)).length,
       ax_reads:phases.filter(stage=>stage.phase==='accessibility').length,
       captures:phases.filter(stage=>stage.phase==='screen_capture').length,
@@ -239,7 +246,7 @@ for (let round=1;round<=repeat;round++) for (const [index,name] of names.entries
       refusals:calls.flatMap(call=>call.refusals),
       observed_actions:(state.evalEvents??[]).map(({key,...event})=>event.match ? event : { ...event, request:JSON.parse(key) }),
       repeated_actions:(state.evalEvents??[]).filter(event=>event.repeated).length,wrong_actions:(state.evalEvents??[]).filter(event=>!event.match).length,
-      ...metrics,...(error?{error:error.message}:{})};
+      ...metrics,...(resources?{resources}:{}),...(error?{error:error.message}:{})};
     if(process.env.POKI_EVAL_RESULTS) await appendFile(process.env.POKI_EVAL_RESULTS,JSON.stringify(row)+'\n',{mode:0o600});
     if(error)throw error;
   });

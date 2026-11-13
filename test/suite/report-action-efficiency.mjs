@@ -15,6 +15,7 @@ const median = values => {
 const p95 = values => [...values].sort((a,b)=>a-b)[Math.ceil(values.length * .95)-1];
 const secs = value => Number.isFinite(value) ? (value / 1000).toFixed(3) : '—';
 const number = value => Number.isFinite(value) ? String(Math.round(value)) : '—';
+const decimal = value => Number.isFinite(value) ? value.toFixed(1) : '—';
 const split = (values, key) => [...new Set(values.map(key))];
 const phase = (row, name) => {
   const stages = (row.call_details ?? []).flatMap(call => call.stages ?? []).filter(stage => stage.phase === name);
@@ -64,6 +65,18 @@ for (const model of split(rows, row=>row.model ?? 'script')) {
     console.log(`| ${after?'新版':'旧版'} | ${secs(median(group.map(row=>row.tool_wall_ms)))} | ${secs(median(group.map(row=>row.elapsed_ms-row.tool_wall_ms)))} | ${middle('pre_action_ax')} | ${middle('resolve_and_dispatch')} | ${middle('input')} | ${middle('postcondition_wait')} |`);
   }
   console.log('\n工具时间合并了重叠调用。其余耗时包含客户端、模型、启动和传输。阶段列可能嵌套。');
+  if (trials.some(row=>row.resources)) {
+    console.log('\n| 场景 | 组 | 有进程采样 / 次数 | 空闲 RSS MiB | 峰值 RSS MiB | CPU ms | 平均 CPU % 单核 | 有 GPU 采样 / 次数 | 整机平均 GPU % | 整机峰值 GPU % |');
+    console.log('|---|---|---:|---:|---:|---:|---:|---:|---:|---:|');
+    for (const name of [null,...split(trials,row=>row.name)]) for (const after of [false,true]) {
+      const group=trials.filter(row=>row.after===after&&(!name||row.name===name));
+      if (!group.length) continue;
+      const resourceRows=group.map(row=>row.resources).filter(Boolean);
+      const middle=key=>decimal(median(resourceRows.map(row=>row[key])));
+      console.log(`| ${name??'全部'} | ${after?'新版':'旧版'} | ${resourceRows.filter(row=>row.samples>0).length}/${group.length} | ${middle('idle_rss_mib')} | ${middle('peak_rss_mib')} | ${middle('cpu_ms_observed')} | ${middle('cpu_mean_pct_one_core_observed')} | ${resourceRows.filter(row=>row.host_gpu_samples>0).length}/${group.length} | ${middle('host_gpu_mean_pct')} | ${middle('host_gpu_peak_pct')} |`);
+    }
+    console.log('\n各数值为每次任务统计的组内中位数。CPU、RSS 取样覆盖 Poki 服务及其子进程，短命进程可能漏采。GPU 为 macOS 整机读数，包含其他进程活动。');
+  }
   if(model==='script')continue;
   console.log('\n| 组 | 有 usage / 次数 | 输入中位 | 缓存中位 | 未缓存中位 | 输出中位 | 模型轮数估计中位 | 总 token / 成功任务 |\n|---|---:|---:|---:|---:|---:|---:|---:|');
   for(const after of [false,true]){

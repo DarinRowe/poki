@@ -26,4 +26,13 @@ node test/suite/report-action-efficiency.mjs /tmp/poki-script-results.jsonl /tmp
 
 报告包含成功率、误动作和重复动作尝试、总耗时、中位数、P95、MCP 调用、显式读屏、内部 AX 和截图阶段、分阶段耗时及模型 token。工具时间使用调用区间的并集，剩余时间包含模型、客户端、启动和传输。Token 缺失保留为空，失败消耗计入每成功任务的成本。
 
+用 `POKI_EVAL_RESOURCES=1` 给任一上述对照加资源采样，建议独立运行并另存结果。采样间隔为 250 ms，记录任务前 RSS、任务内采样峰值 RSS、观察到的累计 CPU 时间和平均单核占用率。100% 表示用满一个逻辑核。范围为 Poki daemon 和子进程，不含 Codex 客户端或模型服务。短命子进程可能漏采，进程 RSS 相加也可能重复计算共享页面。
+
+```sh
+POKI_EVAL_RESOURCES=1 POKI_EVAL_RESULTS=/tmp/poki-resource-results.jsonl node --test test/suite/action-efficiency.test.mjs
+node test/suite/report-action-efficiency.mjs /tmp/poki-resource-results.jsonl
+```
+
+macOS 上若 IOAccelerator 提供读数，还会记录整台 Mac 的 GPU 平均值和采样峰值。其他程序会影响读数，建议两组在相同前台负载下执行。缺失值显示为 `—`，报告同时给出覆盖次数。合成夹具使用模拟的设备和 OCR，资源数字不能代表真机、实际 OCR 后端或模型服务开销。
+
 可用模拟器上仍应运行 `bin/eval-first-call.mjs` 的 Safari T4 和现有真机对照，覆盖真实 URL、触控和系统界面。夹具的设备动作记录只能验收合成场景。

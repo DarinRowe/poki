@@ -8,13 +8,14 @@ import { access, mkdir, readFile, writeFile, unlink, stat } from 'node:fs/promis
 import { join, extname, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
-import sharp from 'sharp';
+import { imageProcessor } from './image-processor.mjs';
 import { ocrPageDescriptor, parseTesseractTSV, tesseractLanguages } from './ocr.mjs';
 import { root, stateDir, idevice, noUsbDevice } from './config.mjs';
 import { definitions } from './tools.mjs';
 import { platformTool, inventorySimulators, simulatorModels, readSettings, closePlatform } from './platform.mjs';
 import { interaction, actionBlocked, blockingOverlay, overlayRefusal, actionExpectation, promptWarning, readScreen, describeScreen, screenChanged, whatMoved, justReadMs, confirmAfterMs, launchWithinMs, launchPollMs } from './interaction.mjs';
 import { askHuman } from './human.mjs';
+import { portraitTouch } from './touch-orientation.mjs';
 import { simulatorRequest } from './simulator.mjs';
 import { prepareRecordingInput, resumeRecordings } from './recording.mjs';
 import { updateNotice } from './update-check.mjs';
@@ -73,6 +74,18 @@ function axRootOrientation(elements, viewport) {
   return same === rotated ? null : rotated ? 'rotated' : 'same';
 }
 
+// A hardware size can bootstrap AX only when a full-screen root agrees
+// exactly. A partial or conflicting root cannot establish touch geometry.
+function matchesScreenRoot(elements, viewport) {
+  const { width, height } = viewport;
+  if (axRootOrientation(elements, viewport) !== 'same') return false;
+  return elements.some(element => {
+    if (!/^(?:XCUIElementType)?(?:Application|Window)$/i.test(element.role ?? element.type ?? '')) return false;
+    const box = element.frame ?? element;
+    return box.x === 0 && box.y === 0 && box.width === width && box.height === height;
+  });
+}
+
 function sameForeground(a, b) {
   if (!a || !b) return false;
   if (a.bundle_id && b.bundle_id && a.bundle_id !== b.bundle_id) return false;
@@ -109,9 +122,10 @@ function referenceTarget(binding, reference, seen, size) {
   return blocked ? null : element;
 }
 
-export function hidPoint(x, y, width, height) {
+export function hidPoint(x, y, width, height, orientation) {
   if (![x,y,width,height].every(Number.isFinite) || width < 2 || height < 2 || x < 0 || y < 0 || x >= width || y >= height) throw new Error(`Coordinates must be inside the screen (${width} × ${height} points).`);
-  return [Math.round(x / (width - 1) * 65535), Math.round(y / (height - 1) * 65535)];
+  const point = portraitTouch(Math.min(1, x / (width - 1)), Math.min(1, y / (height - 1)), orientation);
+  return point.map(axis => Math.round(axis * 65535));
 }
 
 const names = (device, query) => device.id === query || device.name.toLocaleLowerCase() === query.toLocaleLowerCase();
@@ -152,14 +166,21 @@ export class Devices {
   access(target) { this.coordinator.access(this, target); }
   changed(target) { this.coordinator.changed(target.id); this.elements = []; this.elementsAt = 0; this.frame = undefined; this.seen = undefined; this.structureViewport = undefined; }
   async inventory(all = false) {
-    const { stdout } = await this.run('python3', [join(root, 'native/devices.py')], 8000);
+    // Both probes are read-only and independent. Wait for both to close even
+    // if USB discovery fails, so cancellation drains work owned by this call.
+    const [usb, simulatorList] = await Promise.allSettled([
+      this.run('python3', [join(root, 'native/devices.py')], 8000),
+      inventorySimulators(),
+    ]);
+    if (usb.status === 'rejected') throw usb.reason;
+    const { stdout } = usb.value;
     const physical = new Map();
     for (const device of JSON.parse(stdout)) {
       if (!device.id || (physical.has(device.id) && device.connection !== 'USB')) continue;
       physical.set(device.id, { ...device, kind: 'physical', name: this.physicalNames.get(device.id) ?? device.id });
     }
     for (const remote of await remoteDevices()) physical.set(remote.id, remote);
-    const simulators = await inventorySimulators().catch(() => []);
+    const simulators = simulatorList.status === 'fulfilled' ? simulatorList.value : [];
     return [...physical.values(), ...simulators.filter(d => all || d.state === 'Booted' || usedSimulators.has(d.id))];
   }
   async describeDevices(all) {
@@ -268,6 +289,7 @@ export class Devices {
       if (target.kind === 'simulator') await this.run('xcrun', ['simctl', 'io', target.id, 'screenshot', '--type=png', '--mask=black', path]);
       else if (target.remote) await nativeRequest(target, { op: 'screenshot', path });
       else await this.native(['screenshot', path], /Screenshot saved to:/);
+      const sharp = await imageProcessor();
       const original = await readFile(path), meta = await sharp(original).metadata();
       const scale = await this.scale(target);
       const width = Math.round(meta.width / scale), height = Math.round(meta.height / scale);
@@ -370,6 +392,7 @@ export class Devices {
       throw new Error('numeric_region must be a positive rectangle inside the captured screen.');
     }
     const left = Math.floor(x), top = Math.floor(y);
+    const sharp = await imageProcessor();
     const crop = await sharp(frame.data).extract({
       left, top, width: Math.ceil(x + width) - left, height: Math.ceil(y + height) - top,
     }).png().toBuffer();
@@ -411,6 +434,33 @@ export class Devices {
     const observation = this.observation(frame);
     return { observation, source, width: frame.width, height: frame.height, units: 'points', foreground, elements: this.elements, total: count, truncated: count > this.elements.length, ...(source === 'ocr' && nativeError ? { fallback_reason: nativeError } : {}) };
   }
+  async initialAXViewport(target, tree) {
+    const elements = tree.elements ?? [];
+    if (target.remote || !elements.some(element => element.label || element.text || element.value)) return;
+    try {
+      let width, height;
+      if (target.kind === 'simulator') {
+        ({ width, height } = await this.bridge({ op: 'info' }));
+      } else {
+        // Physical landscape coordinates are outside the supported input
+        // path. Keep screenshot geometry for non-portrait or unknown AX.
+        if (target.connection !== 'USB' || tree.orientation !== 1) return;
+        const pixelSize = async key => Number((await this.native(['lockdown', '--domain', 'com.apple.mobile.iTunes', 'get', key])).stdout);
+        const pixelsWide = await pixelSize('ScreenWidth');
+        const pixelsHigh = await pixelSize('ScreenHeight');
+        const scale = await this.scale(target);
+        if (!Number.isSafeInteger(pixelsWide) || !Number.isSafeInteger(pixelsHigh) || pixelsWide >= pixelsHigh) return;
+        width = Math.round(pixelsWide / scale);
+        height = Math.round(pixelsHigh / scale);
+      }
+      const viewport = { device: target.id, width, height, fromAX: true };
+      // Keep landscape on the capture path until its input mapping is verified.
+      if (Number.isSafeInteger(width) && Number.isSafeInteger(height) && width > 1 && width < height &&
+          matchesScreenRoot(elements, viewport)) return viewport;
+    } catch (error) {
+      if (stopped(error)) throw error;
+    }
+  }
   // One accessibility read and no screenshot, so polling costs one native request per attempt.
   async structure(maxAge = 0) {
     const target = await this.target();
@@ -426,11 +476,19 @@ export class Devices {
     const previousSize = this.size?.device === target.id ? this.size : undefined;
     // Rotation may occur externally between inputs. A verified AX root is
     // checked before filtering or converting any coordinates.
-    if (axRootOrientation(rawElements, previousSize) === 'rotated') {
+    if (axRootOrientation(rawElements, previousSize) === 'rotated' ||
+        previousSize?.fromAX && (!matchesScreenRoot(rawElements, previousSize) ||
+          target.kind === 'physical' && tree.orientation !== 1)) {
       this.structureViewport = undefined; this.elements = []; this.elementsAt = 0; this.frame = undefined;
+      this.size = undefined; this.seen = undefined;
       await this.capture();
     }
-    const viewport = this.size?.device === target.id ? this.size : await this.capture();
+    if (this.size?.device !== target.id) {
+      const initial = await phase('ax_viewport', () => this.initialAXViewport(target, tree));
+      checkWork();
+      this.size = initial;
+    }
+    const viewport = this.size ?? await this.capture();
     const rootVerified = axRootOrientation(rawElements, viewport) === 'same';
     if (!rootVerified) this.structureViewport = undefined;
     const elements = rawElements.filter(onScreen(viewport));
@@ -663,24 +721,37 @@ export class Devices {
         { type: 'image', data: frame.data.toString('base64'), mimeType: 'image/png' }],
     };
   }
+  async usbInterfaceOrientation() {
+    const { stdout } = await this.native(['springboard', 'get_interface_orientation'], undefined, 5000);
+    return stdout.trim();
+  }
   async input(request) {
     const target = await this.target();
     const frame = 'x' in request || 'x1' in request || request.op === 'pinch' || request.op === 'draw_strokes' ? await this.screenSize() : undefined;
     const command = { ...request };
+    if (frame && target.kind === 'simulator') command.viewport = { width: frame.width, height: frame.height };
+    let orientation;
+    if (frame && frame.width > frame.height && target.kind === 'physical' && !target.remote && target.connection === 'USB') {
+      const reported = await this.usbInterfaceOrientation();
+      orientation = { LandscapeLeft: 'landscape_left', LandscapeRight: 'landscape_right' }[reported];
+      if (!orientation) return { isError: true, sent: false, outcome: 'not_sent',
+        reason: 'landscape_orientation_unconfirmed', instruction: 'Refresh the screen before sending coordinates.' };
+    }
     if ('x' in command) {
-      const p = hidPoint(command.x, command.y, frame.width, frame.height);
+      const p = hidPoint(command.x, command.y, frame.width, frame.height, orientation);
       if (target.kind === 'physical') { command.x = p[0]; command.y = p[1]; }
     }
     if ('x1' in command) {
-      const a = hidPoint(command.x1, command.y1, frame.width, frame.height), b = hidPoint(command.x2, command.y2, frame.width, frame.height);
+      const a = hidPoint(command.x1, command.y1, frame.width, frame.height, orientation), b = hidPoint(command.x2, command.y2, frame.width, frame.height, orientation);
       if (target.kind === 'physical') [command.x1,command.y1,command.x2,command.y2] = [...a,...b];
     }
     if (command.op === 'draw_strokes') command.strokes = command.strokes.map(points => points.map(({ x, y, time_ms }) => {
-      const p = hidPoint(x, y, frame.width, frame.height);
+      const p = hidPoint(x, y, frame.width, frame.height, orientation);
       return target.kind === 'physical' ? { x: p[0], y: p[1], time_ms } : { x, y, time_ms };
     }));
     if (command.op === 'pinch' && target.kind === 'physical') {
       command.start_distance *= 65535 / (frame.width - 1); command.end_distance *= 65535 / (frame.width - 1);
+      if (orientation) command.angle = 90; // A horizontal landscape pinch is vertical in portrait HID axes.
     }
     await phase('recording_recovery', () => prepareRecordingInput(this, target));
     // The last screen read before the first input of a call is the one its effect is measured against.
@@ -767,6 +838,7 @@ export class Devices {
         case 'take_screenshot': {
           const frame = await this.capture();
           const width = Math.round(args.max_width ?? frame.width);
+          const sharp = await imageProcessor();
           const jpeg = await sharp(frame.data).resize({ width }).jpeg({ quality: 90 }).toBuffer();
           let prompt;
           try { prompt = { status:'checked', source:'ocr', warning:promptWarning(await this.ocr(frame)) }; }
@@ -782,7 +854,11 @@ export class Devices {
           const extension = extname(path).toLowerCase();
           if (!['.png','.jpg','.jpeg'].includes(extension)) throw new Error('Use a .png, .jpg or .jpeg path.');
           const frame = await this.capture();
-          const data = extension === '.png' ? frame.original : await sharp(frame.original).jpeg({quality:95}).toBuffer();
+          let data = frame.original;
+          if (extension !== '.png') {
+            const sharp = await imageProcessor();
+            data = await sharp(frame.original).jpeg({ quality: 95 }).toBuffer();
+          }
           await writeFile(path,data,{flag:args.overwrite?'w':'wx',mode:0o600}); return text({path,bytes:data.length});
         }
         case 'list_elements': return text(await this.recognize(args));
@@ -829,7 +905,11 @@ export class Devices {
             const result = await this.native(['rotate','left']);
             const orientation = result.stdout.match(/non_flat_orientation:\s*(\w+)/)?.[1];
             if (!orientation) throw new Error(result.stderr || 'No orientation response');
-            if (orientation === expected) { this.frame=undefined; this.elements=[]; return text({orientation:args.orientation,device_report:result.stdout}); }
+            const interfaceOrientation = target.connection === 'USB'
+              ? await this.usbInterfaceOrientation() : orientation;
+            if (interfaceOrientation === expected) {
+              return text({ orientation: args.orientation, device_report: result.stdout });
+            }
             if (/locked:\s*true/.test(result.stdout)) throw new Error('Device rotation is locked.');
           }
           throw new Error('The requested orientation was not reported by the device.');

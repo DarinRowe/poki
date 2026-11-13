@@ -1,4 +1,4 @@
-import sharp from 'sharp';
+import { imageProcessor } from './image-processor.mjs';
 import { checkWork, execute } from './work.mjs';
 const languagesByInstall = new Map();
 
@@ -44,6 +44,7 @@ export function parseTesseractTSV(tsv) {
 // nearby layouts share timing history without another accessibility read.
 export async function ocrPageDescriptor(frame) {
   const inset = Math.floor(frame.height * 0.05);
+  const sharp = await imageProcessor();
   const pixels = await sharp(frame.data)
     .extract({ left: 0, top: inset, width: frame.width, height: frame.height - 2 * inset })
     .resize(24, 32, { fit: 'fill' })

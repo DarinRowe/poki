@@ -2,11 +2,11 @@
 
 ## Status
 
-The Simulator path is tested end to end from a fresh clone. Physical iPhone support has been verified only with the Chinese interface in portrait orientation. `sent: true` only means the touch was written to the connection. The device does not acknowledge it, so check `screen_changed` and the returned screen.
+The Simulator path is tested end to end from a fresh clone. The broad physical iPhone acceptance runs cover portrait orientation. A separate USB test covers taps, drags, two-finger gestures, and screenshot fallback in both landscape orientations. `sent: true` only means the touch was written to the connection. The device does not acknowledge it, so check `screen_changed` and the returned screen.
 
 ## Physical iPhone status
 
-The earlier measurements below come from a single iPhone running iOS 27.3 over Wi-Fi. Treat them as a test log from that setup, not a guarantee for other apps or devices.
+The earlier Wi-Fi measurements below come from a single iPhone running iOS 27.3. Treat them as a test log from that setup, not a guarantee for other apps or devices.
 
 - With the old connection handling, tapping a specific search field in a chat app dropped 2 of 70 touches. Every dropped touch still returned `sent: true`. Keeping the connection open until the post-touch wait finished dropped 0 of 70 touches, and the final build dropped 0 of 24. These numbers only apply to that single search field.
 - Via MCP in the same app, `tap_text` took effect 12 of 12 times. Batches that launched the app and called `tap_text` opened the conversation 14 of 14 times.
@@ -14,8 +14,9 @@ The earlier measurements below come from a single iPhone running iOS 27.3 over W
 - Two earlier `tap_text` calls on a conversation row returned `sent: true` but had no effect. We have not reproduced this failure, so it may have a different cause. Why the device drops touches is unknown.
 - Touches sent too soon after app launch may have no effect. At 1.5 seconds after launch, 0 of 3 taps opened the conversation. At 2.8 seconds or later, 12 of 12 did. Via MCP, the pre-tap screen reads have so far delayed the tap past this window.
 - Tapping a target next to a bottom floating bar had no effect 4 of 4 times in the Settings app. This is not fixed. Those taps now return `screen_changed: false`.
-- We only measured taps. `drag` and `pinch` use the same connection path and were not measured. The latest update to how `screen_changed` compares screens has not been tested with touches on a physical phone.
-- In one landscape game, taps on button coordinates had no effect, while portrait taps in the same session worked. The cause is unknown.
+- The Wi-Fi measurements cover taps. The latest update to how `screen_changed` compares screens was outside that Wi-Fi run.
+- An iPhone 12 over USB passed three paired left and right landscape runs using a local Safari test page. The page recorded actual touch events for 24 gestures. Each orientation passed three taps, three drags, three 1.7× spreads, and three 0.6× pinches. Each landscape run also verified a single 844 × 390 screenshot fallback. USB reads the current interface direction from SpringBoard.
+- Landscape coordinate taps were checked on the iOS 27.1 simulator in both directions. The simulator uses the direction requested through Poki. If another app or host control rotates it, request the current direction through Poki and refresh the screen before sending coordinates.
 
 ## Measured on simulators only
 
@@ -41,7 +42,7 @@ These coordination checks use external-process fixtures. They do not establish r
 
 ## Known Platform Limits
 
-- **First release on physical iPhones**: Portrait orientation only. Landscape control is unsupported. App container export (`download_app_container`) and direct Settings subpage links (`open_settings` with a page) are unavailable. Open Settings normally and navigate its visible controls instead. These limits do not change simulator support.
+- **First release on physical iPhones**: The USB landscape verification covers coordinate taps, drags, and two-finger gestures on the local Safari test page. App container export (`download_app_container`) and direct Settings subpage links (`open_settings` with a page) are unavailable. Open Settings normally and navigate its visible controls instead. These limits do not change simulator support.
 
 - **Pasteboard (iOS 27 Simulator)**: On the tested iOS 27.0 runtime (24A5370g) and iOS 27.1 runtime (24A94425), `simctl pbcopy` leaves the simulator pasteboard empty. Because of this, `set_clipboard` fails its readback and non-ASCII text cannot reach a simulator field. `fill` reports this as a mismatch. Plain ASCII text does not use the pasteboard and is not affected.
 - **Emoji keyboard dismissal (iOS 27 Simulator)**: On the tested iOS 27 simulator, the emoji panel remains visible after toggling the keyboard. `hide_keyboard` truthfully reports failure while preserving field text; use the on-screen keyboard hide button or an app-supported outside tap instead.

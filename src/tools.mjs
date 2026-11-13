@@ -88,11 +88,10 @@ definitions.push(['poki_mcp_status', 'Report Poki MCP version, current Git commi
 
 // The computer-use profile (POKI_TOOL_PROFILE=cua, cua.mjs): look and do, plus device and status tools.
 for (const [name, description, schema, readOnlyHint] of cua.definitions) definitions.push([name, description, z.fromJSONSchema(schema), readOnlyHint]);
-const profile = (env = process.env) => env.POKI_TOOL_PROFILE ?? 'default';
 const listedFor = name => (name === 'cua' ? cua.tools : defaultTools);
 
-export function createServer(call) {
-  const computerUse = profile() === 'cua', listed = listedFor(profile());
+export function createServer(call, { allTools = process.env.POKI_MCP_TOOLS === 'all', toolProfile = process.env.POKI_TOOL_PROFILE } = {}) {
+  const computerUse = toolProfile === 'cua', listed = listedFor(toolProfile);
   const server = new McpServer({ name: 'poki-mcp', version }, { instructions: computerUse ? cua.instructions : instructions });
   for (const [name, description, inputSchema, readOnlyHint] of definitions) {
     server.registerTool(name, { description, inputSchema, annotations: { readOnlyHint } }, async (args, extra) => {
@@ -100,7 +99,7 @@ export function createServer(call) {
       catch (error) { return { isError: true, content: [{ type: 'text', text: error.message }] }; }
     });
   }
-  if (process.env.POKI_MCP_TOOLS !== 'all') {
+  if (!allTools) {
     server.server.setRequestHandler('tools/list', () => ({
       tools: definitions.filter(([name]) => listed.has(name)).map(([name, description, inputSchema, readOnlyHint]) => ({
         name, description, inputSchema: z.toJSONSchema(inputSchema, { io: 'input', target: 'draft-2020-12' }),

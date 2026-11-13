@@ -8,7 +8,7 @@ import { constants, readFileSync } from 'node:fs';
 import { basename, extname, isAbsolute, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import sharp from 'sharp';
+import { imageProcessor } from './image-processor.mjs';
 import { idevice, stateDir, root } from './config.mjs';
 import { startRecording, stopRecording, closeRecordings } from './recording.mjs';
 import { openInput, selectKeyboard } from './simulator-input.mjs';
@@ -439,6 +439,7 @@ async function openURLTransport(target, url) {
 async function observeScreen(ctx) {
   const frame = await ctx.capture();
   const top = Math.min(64, frame.height - 1), bottom = Math.min(34, frame.height - top - 1);
+  const sharp = await imageProcessor();
   const pixels = await sharp(frame.data).extract({ left: 0, top, width: frame.width, height: frame.height - top - bottom }).resize(64, 96).removeAlpha().greyscale().raw().toBuffer();
   const foreground = await ctx.bridge({ op: 'ax' }).then(tree => tree.foreground, () => null);
   return { pixels, foreground };

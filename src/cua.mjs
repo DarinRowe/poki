@@ -30,7 +30,7 @@
 // never sent again by us, and nothing after a failed action is sent. Element numbers not in the latest
 // read are refused before anything is sent. Actions and the wait after them get at most
 // POKI_CUA_ACTION_CAP_MS (4000). A locked or dark phone, or Poki's own app in front, stops dispatching.
-import sharp from 'sharp';
+import { imageProcessor } from './image-processor.mjs';
 import { pause, stopped } from './work.mjs';
 import { wdaContext } from './cua-wda.mjs';
 import { platformTool } from './platform.mjs';
@@ -75,6 +75,7 @@ async function read(ctx) {
   const frame = frameResult.value;
   let elements = [], source = 'accessibility', foreground, note;
   // A dark, uniform picture is a locked or sleeping display: say so instead of reading it.
+  const sharp = await imageProcessor();
   const { channels } = await sharp(frame.data).stats();
   const dark = channels.slice(0, 3).every(c => c.mean < 12 && c.stdev < 6);
   if (dark && !(treeResult.status === 'fulfilled' && treeResult.value.elements?.length)) {
@@ -119,6 +120,7 @@ async function reply(ctx, seen, { full = false, actions = [], error } = {}) {
     fresh ? `elements (${lines.length}):` : `elements (${lines.length}; + = new since the last read):`,
   ];
   const footer = gone.length ? [`gone since the last read: ${gone.join(', ')}`] : [];
+  const sharp = await imageProcessor();
   const image = await sharp(seen.frame.data).resize({ width: imageWidth }).jpeg({ quality: 60 }).toBuffer();
   return { content: [
     { type: 'text', text: [...header, ...shown.slice(0, full ? 1000 : lineLimit).map(l => l.text), ...footer].join('\n') },
