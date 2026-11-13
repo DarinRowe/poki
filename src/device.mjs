@@ -276,8 +276,8 @@ export class Devices {
     if (!Number.isFinite(scale) || scale <= 0 || scale > 5) throw new Error('Could not read the screen scale. Refusing to guess touch coordinates.');
     this.scales.set(target.id, scale); return scale;
   }
-  capture() { return phase('screen_capture', () => this.captureFrame()); }
-  async captureFrame() {
+  capture(options) { return phase('screen_capture', () => this.captureFrame(options)); }
+  async captureFrame({ keepOriginal = false } = {}) {
     checkWork();
     const started = new Date().toISOString();
     const target = await this.target();
@@ -297,10 +297,11 @@ export class Devices {
       this.coordinator.observeFrame(target.id, data);
       if (this.frame?.revision !== this.coordinator.revision(target.id) || this.frame?.device !== target.id || this.frame?.width !== width || this.frame?.height !== height || !this.frame.data.equals(data)) { this.elements=[]; this.elementsAt=0; }
       checkWork();
-      this.frame = { id: randomUUID(), device: target.id, revision: this.coordinator.revision(target.id), width, height, scale, data, original, at: Date.now(), capture_started_at: started, capture_completed_at: new Date().toISOString() };
+      this.frame = { id: randomUUID(), device: target.id, revision: this.coordinator.revision(target.id), width, height, scale, data, at: Date.now(), capture_started_at: started, capture_completed_at: new Date().toISOString() };
       this.structureViewport = undefined;
       this.size = { device: target.id, width, height };
-      return this.frame;
+      // Only save_screenshot needs the native-resolution PNG, for this call.
+      return keepOriginal ? { original } : this.frame;
     } finally { await unlink(path).catch(() => {}); }
   }
   async viewport() {
@@ -769,7 +770,7 @@ export class Devices {
     }
     return result;
   }
-  async dispatch(name, original = {}) {
+  async dispatch(name, original = {}, pinned) {
     const def = definitions.find(d => d[0] === name);
     if (!def) throw new Error(`Unknown tool: ${name}`);
     const args = def[2].parse(original);
@@ -784,7 +785,7 @@ export class Devices {
     const previous = this.requested, previousResolved = this.resolved;
     // Steps of one batch share a lookup, which runs a Python process and simctl each time.
     const sharesTarget = this.inBatch && args.device === undefined;
-    if (!sharesTarget) this.resolved = undefined;
+    if (!sharesTarget) this.resolved = pinned?.simulator;
     this.requested = args.device ?? previous;
     try {
       checkWork();
@@ -853,11 +854,11 @@ export class Devices {
           if (isDirectory) { const target=await this.target(); await mkdir(path,{recursive:true,mode:0o700}); path=join(path,`${target.name.replace(/[^\p{L}\p{N}._-]/gu,'_')}-${Date.now()}-${randomUUID().slice(0,8)}.png`); }
           const extension = extname(path).toLowerCase();
           if (!['.png','.jpg','.jpeg'].includes(extension)) throw new Error('Use a .png, .jpg or .jpeg path.');
-          const frame = await this.capture();
-          let data = frame.original;
+          const { original } = await this.capture({ keepOriginal: true });
+          let data = original;
           if (extension !== '.png') {
             const sharp = await imageProcessor();
-            data = await sharp(frame.original).jpeg({ quality: 95 }).toBuffer();
+            data = await sharp(original).jpeg({ quality: 95 }).toBuffer();
           }
           await writeFile(path,data,{flag:args.overwrite?'w':'wx',mode:0o600}); return text({path,bytes:data.length});
         }
@@ -992,6 +993,13 @@ export class Devices {
           return { ...text(result), ...(unchanged || result.screen_change ? { _meta: { ...(unchanged ? { stop_reason: 'no_change' } : {}), ...(result.screen_change ? { verdict: result.screen_change } : {}) } } : {}) };
         }
       }
-    } finally { this.requested=previous; if (!sharesTarget) this.resolved=previousResolved; }
+    } finally {
+      // Reuse a simulator's exact ID. Names can become ambiguous, and a
+      // physical device's route can change between steps.
+      if (pinned && this.resolved?.kind === 'simulator' && this.resolved.id === pinned.selector &&
+          this.resolved.state === 'Booted') pinned.simulator = this.resolved;
+      this.requested = previous;
+      if (!sharesTarget) this.resolved = previousResolved;
+    }
   }
 }

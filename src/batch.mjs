@@ -58,6 +58,13 @@ export async function runBatch(ctx, args) {
   }
   const blocks = [];
   let stopReason, failed = false, ran = 0, failure, failureOutcome, unchanged, finalInput, finalExpectation;
+  // The Agent pins every step to one device ID. Keep mixed routing and batches
+  // that can change the available devices on the regular per-step path.
+  const selector = commands[0].arguments?.device;
+  const pinned = typeof selector === 'string' && selector && commands.every(({ tool, arguments: stepArgs }) =>
+    stepArgs?.device === selector && !offDevice.has(tool) && !changesDevice.has(tool) &&
+    tool !== 'disconnect_device' && tool !== 'reconnect_device' && definitions.find(([name]) => name === tool)?.[2].shape?.device
+  ) ? { selector } : undefined;
   ctx.inBatch = true;
   try {
     for (const [index, command] of commands.entries()) {
@@ -70,7 +77,7 @@ export async function runBatch(ctx, args) {
         const problem = invalidStep(command);
         if (problem) throw new Error(problem);
         dispatchStarted = true;
-        result = await ctx.dispatch(command.tool, command.arguments ?? {});
+        result = await ctx.dispatch(command.tool, command.arguments ?? {}, pinned);
       } catch (error) {
         result = { isError: true, content: [{ type: 'text', text: error.message }] };
         if (stopped(error)) stopReason = stoppingReason(error);
@@ -113,7 +120,7 @@ export async function runBatch(ctx, args) {
   const last = commands.slice(0, ran).findLast(command => !offDevice.has(command.tool));
   if (last && last.tool !== 'shut_down_simulator') {
     // dispatch restores both when this batch ends.
-    if (last.arguments?.device) { ctx.requested = last.arguments.device; ctx.resolved = undefined; }
+    if (last.arguments?.device) { ctx.requested = last.arguments.device; ctx.resolved = pinned?.simulator; }
     const structured = finalInput && !stopReason && !failed && last === commands[ran - 1];
     const terminal = !failed && !stopReason && last === commands[ran - 1] && finalExpectation;
     const { screen, stop_reason, receipt_id, input_completed_at, post_action_observation } = terminal ||
