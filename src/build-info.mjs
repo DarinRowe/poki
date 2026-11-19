@@ -1,5 +1,6 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { readdir, stat, access, constants, readFile } from 'node:fs/promises';
+import { readdir, stat, readFile } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { join } from 'node:path';
@@ -9,17 +10,30 @@ export const version = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8
 const execute = promisify(execFile);
 const bridge = join(root, 'build/poki-native');
 
+let fileDigests = new Map();
+
 async function codeMarker() {
   const files = (await readdir(join(root, 'src'), { recursive: true }))
-    .filter(file => file.endsWith('.mjs')).map(file => join('src', file));
+    .filter(file => /\.(?:mjs|json)$/.test(file)).map(file => join('src', file));
   files.push('package.json', 'build/poki-native');
-  return JSON.stringify(await Promise.all(files.sort().map(async file => {
-    const info = await stat(join(root, file)).catch(error => {
-      if (error.code === 'ENOENT') return null;
+  const previous = fileDigests;
+  const entries = await Promise.all(files.sort().map(async file => {
+    const path = join(root, file);
+    try {
+      // Metadata tells us when to read again. Only different bytes make the running build stale.
+      const info = await stat(path, { bigint: true });
+      const stamp = [info.dev, info.ino, info.size, info.mtimeNs, info.ctimeNs].join(':');
+      const cached = previous.get(file);
+      if (cached?.stamp === stamp) return [file, cached];
+      const digest = createHash('sha256').update(await readFile(path)).digest('hex');
+      return [file, { stamp, digest }];
+    } catch (error) {
+      if (error.code === 'ENOENT') return [file, { stamp: null, digest: null }];
       throw error;
-    });
-    return [file, info && [info.mtimeMs, info.ctimeMs, info.size, info.ino]];
-  })));
+    }
+  }));
+  fileDigests = new Map(entries);
+  return JSON.stringify(entries.map(([file, { digest }]) => [file, digest]));
 }
 
 const startupCode = await codeMarker();

@@ -4,7 +4,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import assert from 'node:assert/strict';
 import { execFile, spawnSync } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { root } from '../src/config.mjs';
@@ -48,6 +48,22 @@ test('fill asks for a daemon restart after native or JavaScript updates and reco
     assert.equal(screen.elements.find(e => e.type === 'TextField').value, 'after restart');
     t.diagnostic(`${updated} update after restart: field value="after restart"`);
   });
+});
+
+test('the daemon distinguishes metadata-only changes from runtime content changes', async t => {
+  const f = await fixture(t);
+  const source = join(f.dir, 'src/interaction.mjs');
+  const data = join(f.dir, 'src/data/interaction.json');
+  const initial = await readFile(data, 'utf8');
+  await chmod(source, 0o600);
+  const available = await f.call('list_devices');
+  assert.ok(!available.isError, JSON.stringify(available));
+  await writeFile(data, initial + '\n');
+  const stale = await f.call('list_devices');
+  assert.ok(stale.isError);
+  assert.match(stale.content[0].text, /running old code/);
+  await writeFile(data, initial);
+  assert.ok(!(await f.call('list_devices')).isError);
 });
 
 test('stdio reaches the authenticated local MCP service and rejects an absent device', { timeout: 20000 }, async t => {
