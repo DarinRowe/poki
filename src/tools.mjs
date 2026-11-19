@@ -10,7 +10,7 @@ const defaultTools = new Set([
   'get_foreground_app', 'launch_app', 'open_url', 'tap', 'tap_text', 'fill', 'type_text',
   'scroll', 'swipe', 'press_key', 'go_back', 'wait_for', 'handle_alert', 'batch_commands',
   'long_press', 'double_tap', 'drag', 'hide_keyboard', 'press_button',
-  'scroll_to', 'terminate_app', 'pinch', 'list_apps', 'get_clipboard',
+  'set_slider', 'add_control', 'system_gesture', 'scroll_to', 'terminate_app', 'pinch', 'list_apps', 'get_clipboard',
 ]);
 const instructions = 'When the request already says what to do on the device, use batch_commands for launch_app and steps whose targets are already known; use fill without field for a single visible input, and use exact observed labels when a selector is needed; it is usually the only device call needed. Tapping steps wait for their target, and the reply ends with the visible text. With one device available, skip list_devices and select_device; use them when a call reports several devices. Consecutive calls do not require an explicit device lease. For new screen evidence, prefer observe_device with fallback=hybrid. When a known complete target label is missing from AX, observe_device with ax_hint set to that label. For tap_text on a known complete label set exact=true. If an action reports blocking_overlay, resolve it before retrying. Use require_visual for visual tasks.';
 const readOnly = new Set(['observe_device','list_devices', 'get_device_info', 'take_screenshot', 'get_foreground_app', 'list_elements', 'list_apps', 'get_clipboard', 'list_crashes', 'get_crash', 'wait_for', 'wait']);
@@ -85,6 +85,16 @@ const schemaOf = tool => {
   return strokeChecks[tool.name] ? schema.superRefine(strokeChecks[tool.name]) : schema;
 };
 export const definitions = catalog.tools.map(tool => [tool.name, [tool.description, guidance[tool.name]].filter(Boolean).join('\n\n'), schemaOf(tool), readOnly.has(tool.name)]);
+const trackPoint = z.object({ x: z.number(), y: z.number() });
+definitions.push(['set_slider', 'Set one visible adjustable control by its exact accessibility label and verify its percentage. Expand a Control Center tile first if it exposes no value. Works on system and app sliders.', z.object({
+  text: z.string().min(1), percent: z.number().min(0).max(100), tolerance: z.number().min(0).max(5).optional(),
+  axis: z.enum(['vertical', 'left_to_right', 'right_to_left']).optional(),
+  track: z.object({ min: trackPoint, max: trackPoint }).optional().describe('Visible centers for 0% and 100% in current screen points, inside the accessibility frame.'),
+  device: z.string().optional(),
+}), false]);
+definitions.push(['add_control', 'In the open iOS Add a Control gallery, add one control by exact visible name. It searches if necessary. Uses a screenshot when the installed layout cannot be verified. Check the layout before retrying. Inspect the current layout first to avoid duplicates.', z.object({
+  text: z.string().min(1), include_image: z.boolean().optional(), device: z.string().optional(),
+}), false]);
 definitions.push(['disconnect_device', 'Close the selected remote device connection and its local helper. Cellular reconnection may require returning the iPhone to Wi-Fi. Does not undo input.', z.object({ device: z.string().optional() }), false]);
 definitions.push(['reconnect_device', 'Re-establish the selected RemotePairing tunnel. Does not replay input. A new session may require Wi-Fi when iOS closes its remote pairing listener.', z.object({ device: z.string().optional() }), false]);
 definitions.push(['poki_mcp_status', 'Report Poki MCP version, current Git commit, native bridge build time, tool count, connected-device count, selected device, approval mode for this session, and any available Poki update with release notes and the update command.', z.object({}), true]);

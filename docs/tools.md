@@ -55,6 +55,12 @@ Consecutive device calls do not require `acquire_device`. With one available dev
 
 Poki Agent starts its own stdio process with `POKI_MCP_TOOLS=all`. Its existing tool allowlist determines which tools reach its model.
 
+### Control Center and other sliders
+
+Open Control Center with `system_gesture` and `gesture: "control_center"`. Use a current screenshot if its compact tiles have no accessibility labels. Long-press the tile you see, then use `set_slider` with the expanded slider's exact label and desired percent. This also works for app sliders that expose a percentage. Pass `axis: "right_to_left"` for a horizontal slider whose minimum is on the right. If the accessibility frame includes padding or icons, pass `track.min` and `track.max` as the measured thumb-center endpoints from the current screen. The default tolerance is three percentage points. Report success only when `value_verified` is true. A lost readback after a drag requires inspection before retrying.
+
+For a new control, first check the current layout for duplicates. Open editing and choose Add a Control. In the gallery, call `add_control` with the exact label in the system's language. It can search for a missing visible entry and only taps a unique matching control. If the editor cannot expose the installed layout, the tool reports the selection as unverified and normally attaches a screenshot. Inspect it before retrying. Control Center layout and edit affordances vary by iOS version.
+
 ### Computer-use profile: look and do
 
 `POKI_TOOL_PROFILE=cua` lists only `look`, `do`, `list_apps`, `list_devices`, `select_device` and `poki_mcp_status`, with short server instructions. It works the way desktop computer-use tools do: `do` runs a list of actions in order (tap by element number or point, type, key, swipe, scroll_to, long_press, drag, pinch, button, launch, wait), waits a short fixed time after the last one, and reads the screen once; `look` reads it without acting. Each answer lists the screen's elements with numbers for the next call, marks the ones that are new since the previous read, names what disappeared, and attaches a screenshot. There is no verdict: the model decides what happened from the elements and the picture.
