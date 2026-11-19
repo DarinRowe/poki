@@ -28,12 +28,16 @@ export function invalidStep(command) {
   return `Invalid arguments for ${command.tool}: ${issues}. It accepts: ${Object.keys(schema.shape ?? {}).join(', ')}.`;
 }
 
-function advice(reason, failedStep) {
-  const earlier = failedStep > 1 ? `Steps 1-${failedStep - 1} already ran; do not repeat them.` : 'No earlier step ran.';
-  if (reason === 'error') return `${earlier} Fix the failed step, then send only remaining_steps.`;
-  if (reason === 'unknown') return `${earlier} Step ${failedStep} may have been delivered, so check the screen before resending it.`;
-  if (reason === 'no_change') return `${failedStep > 1 ? `Steps 1-${failedStep - 1} already ran; do not repeat them. ` : ''}Step ${failedStep} was sent, and no change was observed after it (same elements, text, values, state and positions). That is not proof it failed, but the steps after it were written for the screen it should produce, so they did not run. Check screen: if it already shows that screen, send only remaining_steps; if not, send step ${failedStep} again followed by remaining_steps. stop_on_error=false runs a batch through such taps.`;
-  return `${earlier} Work stopped (${reason}); check the screen before continuing.`;
+function actionReceipt(result) {
+  const block = result.content.find(item => item.type === 'text');
+  try { return JSON.parse(block?.text) ?? {}; } catch { return {}; }
+}
+
+function advice(reason, step, outcome) {
+  const earlier = step > 1 ? `Steps 1-${step - 1} already ran; do not repeat them.` : 'No earlier step ran.';
+  if (outcome === 'not_sent') return `${earlier} Fix step ${step} using the current screen and continue with the unattempted steps.`;
+  if (reason === 'no_change') return `${earlier} Step ${step} was sent and no change was observed. Verify its effect before deciding whether to retry it or continue with the unattempted steps.`;
+  return `${earlier} Verify what step ${step} actually did before deciding whether to retry it or continue with the unattempted steps.`;
 }
 
 // A batch is one queued operation, so its steps share a device lookup. A touch is compared with the
@@ -50,38 +54,72 @@ export async function runBatch(ctx, args) {
   const invalid = stopOnError ? commands.findIndex(invalidStep) : -1;
   if (invalid >= 0) {
     const error = invalidStep(commands[invalid]);
-    return { isError: true, content: [json({ step: invalid + 1, tool: commands[invalid].tool, isError: true, elapsed_ms: 0 }), { type: 'text', text: error }, receipt({ completed_steps: 0, stop_reason: 'error', failed_step: { step: invalid + 1, ...commands[invalid], error }, remaining_steps: commands, next: 'Nothing ran. Fix the failed step and send the whole batch again.' })] };
+    return { isError: true, content: [json({ step: invalid + 1, tool: commands[invalid].tool, isError: true, elapsed_ms: 0 }), { type: 'text', text: error }, receipt({ completed_steps: 0, stop_reason: 'error', failed_step: { step: invalid + 1, ...commands[invalid], error }, remaining_steps: commands, recovery: { outcome: 'not_started', step: invalid + 1, unattempted_steps: commands }, next: 'Nothing ran. Fix the failed step and send the whole batch again.' })] };
   }
   const blocks = [];
-  let stopReason, failed = false, ran = 0, failure, unchanged;
+  let stopReason, failed = false, ran = 0, failure, failureOutcome, unchanged, finalInput, finalObservation, failureScreen;
+  // The Agent pins every step to one device ID. Keep mixed routing and batches
+  // that can change the available devices on the regular per-step path.
+  const selector = commands[0].arguments?.device;
+  const pinned = typeof selector === 'string' && selector && commands.every(({ tool, arguments: stepArgs }) =>
+    stepArgs?.device === selector && !offDevice.has(tool) && !changesDevice.has(tool) &&
+    tool !== 'disconnect_device' && tool !== 'reconnect_device' && definitions.find(([name]) => name === tool)?.[2].shape?.device
+  ) ? { selector } : undefined;
   ctx.inBatch = true;
   try {
     for (const [index, command] of commands.entries()) {
       const started = performance.now();
-      ctx.batchStep = { next: commands[index + 1], stopOnError };
-      let result;
+      ctx.batchStep = { previous: commands[index - 1], next: commands[index + 1], stopOnError, returnObservation: args.return_observation === true && index === commands.length - 1 };
+      let result, dispatchStarted = false;
+      const previousInput = ctx.lastInputAt;
       try {
         checkWork();
         const problem = invalidStep(command);
         if (problem) throw new Error(problem);
-        result = await ctx.dispatch(command.tool, command.arguments ?? {});
+        dispatchStarted = true;
+        result = await ctx.dispatch(command.tool, command.arguments ?? {}, pinned);
       } catch (error) {
         result = { isError: true, content: [{ type: 'text', text: error.message }] };
         if (stopped(error)) stopReason = stoppingReason(error);
       }
       ran++;
-      blocks.push(json({ step: ran, tool: command.tool, isError: Boolean(result.isError), elapsed_ms: Math.round(performance.now() - started) }), ...result.content);
       // A fill that typed the wrong text is an ordinary failure: stop_on_error decides, not this block.
       // A touch with no observed change may still have worked. The batch pauses only to hold back the steps
       // written for the screen it should produce, so with none left, or when the caller allows it, it goes on.
       const reason = result._meta?.stop_reason;
+      const data = actionReceipt(result);
+      const inputOccurred = ctx.lastInputAt !== previousInput;
+      const quickScroll = ['scroll', 'swipe'].includes(command.tool) && command.arguments?.observe === 'quick';
+      // Quick mode owns the step's output. A batch can still explicitly request stable final evidence.
+      const structuredRequested = args.return_observation === true || (!quickScroll && command.arguments?.return_observation === true);
+      finalInput = !result.isError && inputOccurred && data.sent === true && data.outcome !== 'unknown' && structuredRequested;
+      finalObservation = !result.isError && inputOccurred &&
+        (data.expectation?.matched === true || quickScroll && data.screen && !structuredRequested) ? data : undefined;
       if (reason === 'no_change') { if (stopOnError && ran < commands.length) { stopReason = reason; unchanged = { step: ran, ...command }; } }
       else if (stopsRun(reason)) stopReason = reason;
       if (result.isError) {
         failed = true;
-        failure = { step: ran, ...command, error: result.content.find(block => block.type === 'text')?.text };
+        const selectorRefused = !inputOccurred && ['fill', 'tap_text'].includes(command.tool) &&
+          (data.reason === 'target_not_found' || /No visible element matches|Requested field is not visible/.test(result.content[0]?.text ?? ''));
+        failureScreen = (reason === 'postcondition_unverified' || data.reason === 'target_not_found' || quickScroll) && data.screen
+          ? { screen: data.screen } : undefined;
+        failureOutcome = data.outcome === 'unknown' || reason === 'unknown' ? 'verify' :
+          !dispatchStarted || data.outcome === 'not_sent' || data.sent === false || selectorRefused ? 'not_sent' : 'verify';
+        const error = (quickScroll || data.reason === 'target_not_found' ? data.error : undefined) ??
+          result.content.find(block => block.type === 'text')?.text;
+        failure = { step: ran, ...command, error };
         if (!stopReason && stopOnError) stopReason = 'error';
       } else failure = undefined;
+      let content = result.content;
+      if (quickScroll && (stopReason && failureScreen || !failed && ran === commands.length && finalObservation)) {
+        const { screen: _screen, ...action } = data;
+        content = [receipt(action), ...content.slice(1)];
+      } else if (finalObservation && ran === commands.length && !failed && !stopReason && data.post_action_observation) {
+        const { post_action_observation: _observation, receipt_id: _id, input_completed_at: _time, ...action } = data;
+        content = [receipt(action), ...content.slice(1)];
+      }
+      blocks.push(json({ step: ran, tool: command.tool, isError: Boolean(result.isError),
+        elapsed_ms: Math.round(performance.now() - started) }), ...content);
       if (stopReason) break;
       if (changesDevice.has(command.tool)) ctx.resolved = undefined;
     }
@@ -91,15 +129,28 @@ export async function runBatch(ctx, args) {
   const last = commands.slice(0, ran).findLast(command => !offDevice.has(command.tool));
   if (last && last.tool !== 'shut_down_simulator') {
     // dispatch restores both when this batch ends.
-    if (last.arguments?.device) { ctx.requested = last.arguments.device; ctx.resolved = undefined; }
-    const { screen, stop_reason } = await phase('batch_readback', () => ctx.readback(undefined, { once: unverified }));
+    if (last.arguments?.device) { ctx.requested = last.arguments.device; ctx.resolved = pinned?.simulator; }
+    const structured = finalInput && !stopReason && !failed && last === commands[ran - 1];
+    const terminal = !failed && !stopReason && last === commands[ran - 1] && finalObservation;
+    const stoppedScreen = stopReason && failure && last === commands[ran - 1] && failureScreen;
+    const { screen, stop_reason, receipt_id, input_completed_at, post_action_observation } = terminal || stoppedScreen ||
+      await phase('batch_readback', () => ctx.readback(undefined, { once: unverified && !structured, structured }));
     stopReason ??= stop_reason;
     summary.screen = screen;
+    if (!stopReason && post_action_observation) Object.assign(summary, {
+      sent: true, receipt_id, input_completed_at, post_action_observation,
+    });
   }
   if (stopReason) {
     if (failure) {
-      Object.assign(summary, { failed_step: failure, remaining_steps: commands.slice(failure.step - 1), next: advice(stopReason, failure.step) });
-      if (failure.tool === 'fill' && /No visible element matches|Requested field is not visible/.test(failure.error ?? '')) {
+      const unattempted = commands.slice(ran);
+      Object.assign(summary, { failed_step: failure,
+        remaining_steps: stopReason === 'unknown' ? unattempted : commands.slice(failure.step - 1),
+        recovery: { outcome: failureOutcome, step: failure.step, unattempted_steps: unattempted },
+        next: advice(stopReason, failure.step, failureOutcome) });
+      if (failureOutcome === 'not_sent' && stopReason === 'error' && failure.tool === 'fill' &&
+          summary.screen?.source === 'accessibility' && !summary.screen.stale && !summary.screen.partial && !summary.screen.prompt &&
+          /No visible element matches|Requested field is not visible/.test(failure.error ?? '')) {
         const fields = (ctx.seen?.elements ?? []).filter(element => flagOn(element.visible) && /^(?:AX|XCUIElementType)?(?:Secure)?(?:TextField|TextArea|TextView|SearchField)$/i.test(element.type ?? element.role ?? ''))
           .map(element => element.identifier || element.label || element.placeholder);
         if (fields.length === 1 && fields[0]) {
@@ -109,8 +160,9 @@ export async function runBatch(ctx, args) {
         }
       }
     }
-    else if (unchanged) Object.assign(summary, { unchanged_step: unchanged, remaining_steps: commands.slice(ran), next: advice(stopReason, ran) });
-    else Object.assign(summary, { remaining_steps: commands.slice(ran), next: advice(stopReason, ran + 1) });
+    else if (unchanged) Object.assign(summary, { unchanged_step: unchanged, remaining_steps: commands.slice(ran),
+      recovery: { outcome: 'verify', step: ran, unattempted_steps: commands.slice(ran) }, next: advice(stopReason, ran, 'verify') });
+    else Object.assign(summary, { remaining_steps: commands.slice(ran), next: `Work stopped (${stopReason}). Check the current screen before continuing.` });
   }
   return { ...(failed || stopReason ? { isError: true } : {}), content: [...blocks, receipt({ completed_steps: ran, stop_reason: stopReason ?? null, ...summary })] };
 }

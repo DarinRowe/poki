@@ -66,7 +66,7 @@ test('a changed post-input image does not invalidate stable AX simply because th
 
 test('rotation between coordinate taps refreshes viewport before HID conversion', { timeout: 30000 }, async t => {
   const f = await fixture(t);
-  const ax = (width, height) => ({ elements: [
+  const ax = (width, height) => ({ interfaceOrientation: width > height ? 'LandscapeRight' : 'Portrait', elements: [
     { role: 'Application', label: 'Fixture', frame: { x: 0, y: 0, width, height } },
     { role: 'Button', label: 'Go', frame: { x: 10, y: 10, width: 40, height: 20 } },
   ] });
@@ -85,7 +85,7 @@ test('rotation between coordinate taps refreshes viewport before HID conversion'
   const taps = (await f.events()).filter(e => e.op === 'tap');
   assert.equal(taps.length, 2);
   const actual = taps[1].request;
-  const expected = [Math.round(180 / 199 * 65535), Math.round(60 / 99 * 65535)];
+  const expected = [Math.round((1 - 60 / 99) * 65535), Math.round(180 / 199 * 65535)];
   assert.deepEqual([actual.x, actual.y], expected,
     'Coordinate conversion must use the newly captured 200×100 viewport');
 });
@@ -97,16 +97,17 @@ test('unverifiable AX root safely falls back to capture for coordinate taps', { 
   assert.ok(!(await f.call('tap', { x: 80, y: 170, return_observation: true })).isError);
   await sharp({ create: { width: 200, height: 100, channels: 3, background: 'white' } })
     .png().toFile(f.image);
+  await f.set({ interfaceOrientation: 'LandscapeRight', elements: [{ role: 'Button', label: 'Go', frame: { x: 10, y: 10, width: 40, height: 20 } }] });
   assert.ok(!(await f.call('tap', { x: 180, y: 60, return_observation: true })).isError,
     'Do not trust an AX-only viewport when there is no verifiable root frame');
   const taps = (await f.events()).filter(e => e.op === 'tap');
   assert.deepEqual([taps.at(-1).request.x, taps.at(-1).request.y],
-    [Math.round(180 / 199 * 65535), Math.round(60 / 99 * 65535)]);
+    [Math.round((1 - 60 / 99) * 65535), Math.round(180 / 199 * 65535)]);
 });
 
 test('verify:false coordinate tap refreshes dimensions after rotation', { timeout: 30000 }, async t => {
   const f = await fixture(t);
-  const ax = (width, height) => ({ elements: [
+  const ax = (width, height) => ({ interfaceOrientation: width > height ? 'LandscapeRight' : 'Portrait', elements: [
     { role: 'Application', label: 'Fixture', frame: { x: 0, y: 0, width, height } },
     { role: 'Button', label: 'Go', frame: { x: 10, y: 10, width: 40, height: 20 } },
   ] });
@@ -126,7 +127,7 @@ test('verify:false coordinate tap refreshes dimensions after rotation', { timeou
   const taps = (await f.events()).filter(e => e.op === 'tap');
   assert.equal(taps.length, 2);
   assert.deepEqual([taps[1].request.x, taps[1].request.y],
-    [Math.round(180 / 199 * 65535), Math.round(60 / 99 * 65535)],
+    [Math.round((1 - 60 / 99) * 65535), Math.round(180 / 199 * 65535)],
     'Even without AX verification, the second tap must use landscape dimensions');
 });
 
@@ -136,7 +137,7 @@ for (const [name, command] of [
   ['drag', { tool: 'drag', arguments: { from_x: 90, from_y: 60, to_x: 10, to_y: 60 } }],
 ]) test(`rotation before a batch ${name} step refreshes dimensions`, { timeout: 30000 }, async t => {
   const f = await fixture(t);
-  const ax = (width, height) => ({ elements: [
+  const ax = (width, height) => ({ interfaceOrientation: width > height ? 'LandscapeRight' : 'Portrait', elements: [
     { role: 'Application', label: 'Fixture', frame: { x: 0, y: 0, width, height } },
     { role: 'Button', label: 'Go', frame: { x: 10, y: 10, width: 40, height: 20 } },
   ] });
@@ -149,7 +150,7 @@ for (const [name, command] of [
   const drags = (await f.events()).slice(before).filter(e => e.op === 'drag');
   assert.equal(drags.length, 1);
   assert.deepEqual([drags[0].request.x1, drags[0].request.y1],
-    [Math.round(90 / 199 * 65535), Math.round(60 / 99 * 65535)],
+    [Math.round((1 - 60 / 99) * 65535), Math.round(90 / 199 * 65535)],
     'The first batch step must use the landscape 200×100 viewport');
 });
 

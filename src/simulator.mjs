@@ -1,6 +1,7 @@
 import { execute, pause } from './work.mjs';
 import { join } from 'node:path';
 import { root } from './config.mjs';
+import { portraitTouch } from './touch-orientation.mjs';
 import { selectKeyboard, sendInput } from './simulator-input.mjs';
 
 const strokeGapMs = 80;
@@ -121,10 +122,17 @@ export async function simulatorRequest(id, request) {
     const payload = { usagePage: 12, usageCode: usage };
     events.push({ messageType: 'IndigoButtonEvent', payload: { ...payload, state: 1 } }, { delay_ms: 60 }, { messageType: 'IndigoButtonEvent', payload: { ...payload, state: 2 } });
   } else if (!isKeyboard) {
-    const geometry = await simulatorRequest(id, { op: 'info' });
+    const geometry = request.viewport ?? await simulatorRequest(id, { op: 'info' });
+    const orientation = orientations.get(id);
+    const landscape = geometry.width > geometry.height;
+    if (landscape !== Boolean(orientation?.startsWith('landscape'))) {
+      return { isError: true, sent: false, outcome: 'not_sent', reason: 'orientation_unconfirmed',
+        instruction: 'The screen and requested simulator orientation disagree. Request the current orientation and refresh the screen before sending coordinates.' };
+    }
     const point = (x, y) => {
       if (![x, y].every(Number.isFinite) || x < 0 || y < 0 || x > geometry.width || y > geometry.height) throw new Error(`Simulator point is outside ${geometry.width} × ${geometry.height}.`);
-      return { x: x / geometry.width, y: y / geometry.height };
+      const [px, py] = portraitTouch(x / geometry.width, y / geometry.height, orientation);
+      return { x: px, y: py };
     };
     const touch = (first, type, second) => ({ messageType: 'IndigoDigitizerEvent', payload: { pointOne: first, ...(second ? { pointTwo: second } : {}), eventType: type, edge: 0, target: 0 } });
     if (['tap', 'double_tap', 'long_press'].includes(op)) {

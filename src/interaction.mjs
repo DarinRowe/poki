@@ -141,8 +141,8 @@ const sameField = (a, b) => (a.object_id ?? fieldKey(a)) === (b.object_id ?? fie
 // is allowed to finish, because it is the only source a screen accessibility cannot read has and a
 // phone-sized image takes seconds. A target that `mustHold` selects takes two matching reads even
 // on a quiet screen.
-async function locate(ctx, find, describe, mustHold, verify = true) {
-  let previous, seen = { elements: [] }, last = [];
+async function locate(ctx, find, describe, mustHold, verify = true, axOnly = false) {
+  let previous, seen = { elements: [] }, lastAX, last = [];
   try {
     return await deadline(patienceMs + ocrAllowanceMs, async () => {
       const started = performance.now();
@@ -157,7 +157,11 @@ async function locate(ctx, find, describe, mustHold, verify = true) {
         checkWork();
         seen = await deadline(Math.max(1, remaining()), () => readStructure(ctx, verify && attempt === 0 ? justReadMs : 0));
         checkWork();
+        if (seen.elements.length) lastAX = seen;
+        const guard = describe.guard?.(seen);
+        if (guard) return { blockedOverlay: guard };
         let found = find(seen.elements);
+        if (axOnly && !found.length) return { missingAX: seen };
         const elapsed = performance.now() - started, quiet = performance.now() - ctx.lastInputAt > quietMs;
         if (!found.length && elapsed < patienceMs && (elapsed >= nextOcr || !seen.elements.length && quiet)) {
           nextOcr = elapsed + ocrEveryMs;
@@ -165,6 +169,8 @@ async function locate(ctx, find, describe, mustHold, verify = true) {
           // it does not end it.
           try {
             seen = { ...seen, ...await ctx.recognize({ source: 'ocr', max_elements: Number.MAX_SAFE_INTEGER }) };
+            const guard = describe.guard?.(seen);
+            if (guard) return { blockedOverlay: guard };
             found = find(seen.elements);
             if (found.length) nextOcr = elapsed;
           } catch (error) { if (stopped(error)) throw error; ocrMissing = true; }
@@ -193,6 +199,7 @@ async function locate(ctx, find, describe, mustHold, verify = true) {
     checkWork();
     if (last.length > 1) throw new Error(describe.many(last));
     if (last.length) throw new Error(`The target kept moving for ${patienceMs / 1000} seconds. Nothing was sent to it. Look at the screen before retrying.`);
+    if (describe.reportMiss) return { missingAX: lastAX, error: describe.missing(seen), missed: true };
     throw new Error(describe.missing(seen));
   }
 }
@@ -332,7 +339,7 @@ export async function readScreen(ctx, { once = false, before, confirmation, stru
           width: observation.width, height: observation.height,
           // If AX did not identify an unambiguous full-screen root,
           // the next coordinate/ref action must capture to verify size.
-          rootVerified: seen.rootVerified === true,
+          rootVerified: seen.rootVerified === true, foreground: seen.foreground,
         };
         structuredObservation = { observation, source: 'accessibility', foreground: seen.foreground,
           elements: ctx.elements, total: ctx.elements.length, truncated: false, prompt };
@@ -383,9 +390,45 @@ const opensApp = (element, seen) => {
   return /^(?:AX|XCUIElementType)?Icon$/i.test(role) || seen?.foreground?.bundle_id === 'com.apple.springboard' && /^(?:AX|XCUIElementType)?Button$/i.test(role);
 };
 
-export async function interaction(ctx, name, args) {
+export function blockingOverlay(seen) {
+  const elements = seen?.elements?.filter(visible) ?? [];
+  const prompt = promptWarning(elements);
+  const modal = elements.find(e => /^(?:AX|XCUIElementType)?(?:Alert|Sheet|Dialog|Popover)$/i.test(e.role ?? e.type ?? ''));
+  if (!prompt && !modal) return null;
+  return { ...(prompt ? { prompt } : {}), ...(modal ? { role: modal.role ?? modal.type, label: modal.label ?? modal.text } : {}),
+    visible_buttons: [...new Set(elements.filter(e => /^(?:AX|XCUIElementType)?Button$/i.test(e.role ?? e.type ?? '') &&
+      flagOn(e.enabled)).map(e => e.label ?? e.text).filter(Boolean))].slice(0, 8) };
+}
+
+export const actionBlocked = seen => Boolean(blockingOverlay(seen));
+
+export function overlayRefusal(overlay) {
+  return { isError: true, stop_reason: 'blocked_by_overlay', sent: false, outcome: 'not_sent',
+    reason: 'blocking_overlay', blocker: overlay, recovery: { tool: 'handle_alert',
+      instruction: 'Resolve the visible overlay first. Use handle_alert with the exact label of an authorized overlay button, or ask the user if its choice requires them. Refresh the target after the overlay closes.' } };
+}
+
+export function actionExpectation(seen, { text, role, state = 'visible' }) {
+  const normalizeRole = value => normalize(value).replace(/^(?:xcuielementtype|ax)/, '');
+  const expectedRole = role === undefined ? undefined : normalizeRole(role);
+  const matches = matching(seen.elements, text, true).filter(element =>
+    expectedRole === undefined || normalizeRole(element.role ?? element.type ?? '') === expectedRole);
+  // An unselected tab or a title with the same label cannot satisfy selection.
+  if (state === 'selected') return matches.filter(e => e.selected === true || e.selected === 1).length === 1;
+  if (matches.length !== 1) return false;
+  const [element] = matches;
+  if (state === 'enabled') return element.enabled === true || element.enabled === 1;
+  if (state === 'focused') return element.focused === true || element.focused === 1;
+  return true;
+}
+
+export async function interaction(ctx, name, args, directElement, maySend, actionStartedAt, scrollRead) {
   const frame = () => ctx.screenSize();
   const point = async a => {
+    if (directElement) {
+      ctx.expectsForeground = opensApp(directElement, ctx.seen);
+      return center(directElement);
+    }
     if (a.ref) {
       await ctx.viewport();
       const e = ctx.elements.find(e => e.ref === a.ref.toLowerCase());
@@ -424,9 +467,29 @@ export async function interaction(ctx, name, args) {
   switch (name) {
     case 'tap': case 'double_tap': case 'long_press': return tap(args, name);
     case 'tap_text': {
-      const element = await locate(ctx, elements => matching(elements, args.text, args.exact), { missing: seen => missingText(args.text, seen), many: found => tooMany(args.text, found) }, undefined, args.verify !== false);
+      const axOnly = args.source === 'accessibility';
+      const guarded = axOnly || maySend || process.env.POKI_DIRECT_REF === '1';
+      if (axOnly) await ctx.settle();
+      const element = await locate(ctx, elements => matching(elements, args.text, args.exact), {
+        missing: seen => missingText(args.text, seen), many: found => tooMany(args.text, found),
+        reportMiss: ctx.inBatch,
+        ...(guarded ? { guard: seen => blockingOverlay(seen) } : {}),
+      }, undefined, args.verify !== false, axOnly);
+      if (element.blockedOverlay) return overlayRefusal(element.blockedOverlay);
+      if (element.missingAX || element.missed) {
+        const seen = element.missingAX;
+        const current = seen?.elements.length && seen === ctx.seen && seen.startedAt >= ctx.lastInputAt &&
+          performance.now() - seen.at <= ctx.reuseMs() && ctx.observationFromStructure(seen);
+        return { isError: true, stop_reason: 'error', outcome: 'not_sent', sent: false, reason: 'target_not_found',
+          error: element.error ?? `No visible AX element matches ${JSON.stringify(args.text)}. Use scroll_to if it is offscreen or retry with the default search if it needs OCR or time to appear.`,
+          ...(current ? { screen: { ...describeScreen(seen), screen_stable: false } } : {}) };
+      }
+      if (maySend && !maySend(ctx.seen)) return { isError: true, stop_reason: 'error', sent: false,
+        outcome: 'not_sent', reason: 'expectation_needs_unmatched_current_ax' };
       ctx.expectsForeground = opensApp(element, ctx.seen);
-      return ctx.input({ op: 'tap', ...center(element), duration_ms: 50 });
+      const seen = ctx.seen;
+      const targetRead = (seen?.startedAt >= actionStartedAt || ctx.inBatch) && seen?.elements.includes(element) ? seen : undefined;
+      return ctx.input({ op: 'tap', ...center(element), duration_ms: 50 }, targetRead);
     }
     case 'swipe': case 'drag': return ctx.input({
       op: 'drag', x1: args.from_x, y1: args.from_y, x2: args.to_x, y2: args.to_y,
@@ -434,8 +497,8 @@ export async function interaction(ctx, name, args) {
       hold_ms: name === 'drag' ? Math.round((args.hold_seconds ?? 0.6) * 1000) : 0,
     });
     case 'scroll': {
-      const f = await frame();
       const box = args.container ? await containerBox(ctx, args.container) : undefined;
+      const f = await ctx.screenSize(scrollRead);
       const x = (args.x ?? (box ? box.x + box.width / 2 : f.width / 2)) / f.width, y = (args.y ?? (box ? box.y + box.height / 2 : f.height / 2)) / f.height;
       const horizontal = ['left', 'right'].includes(args.direction);
       const direction = ['down', 'right'].includes(args.direction) ? -1 : 1;
@@ -449,7 +512,7 @@ export async function interaction(ctx, name, args) {
         x2: clamp(x + (horizontal ? direction * half : 0)) * (f.width - 1),
         y2: clamp(y + (horizontal ? 0 : direction * half)) * (f.height - 1),
         duration_ms: args.pages ? 600 : 350, hold_ms: 0, ...(args.pages ? { end_hold_ms: 250 } : {}),
-      });
+      }, scrollRead);
       let result;
       for (let page = 0; page < (args.pages ?? 1); page++) {
         if (page) await pause(300);
@@ -461,18 +524,50 @@ export async function interaction(ctx, name, args) {
     case 'scroll_to': {
       let previous, first;
       const maximum = Math.min(args.max_scrolls ?? args.max_swipes ?? 10, 50);
-      // Sideways lists page and snap: a short drag may not move them, and a fling skips items.
-      const pages = ['left', 'right'].includes(args.direction) ? 1 : undefined;
+      const nextTap = ctx.batchStep?.next;
+      const preparingTap = nextTap?.tool === 'tap_text' &&
+        nextTap.arguments?.device === args.device &&
+        typeof nextTap.arguments?.text === 'string' && normalize(nextTap.arguments.text) === normalize(args.text);
+      // Page with overlap and hold before release so a following tap samples less coasting.
+      // Sideways lists also need a page to move past snap points.
+      const pages = preparingTap || ['left', 'right'].includes(args.direction) ? 1 : undefined;
       for (let count = 0; count <= maximum; count++) {
-        const result = await findText(args.text, args.exact);
+        const previousFrame = ctx.frame;
+        const seen = await readStructure(ctx, count ? 0 : justReadMs);
+        const overlay = blockingOverlay(seen);
+        if (overlay) return { ...overlayRefusal(overlay), ...(count ? { sent: true, outcome: 'partial', scrolls: count } : {}) };
+        let result = { elements: seen.elements, source: 'accessibility' };
+        let matches = matching(result.elements, args.text, args.exact);
+        if (!matches.length && args.source !== 'accessibility') {
+          try {
+            const ocr = await ctx.recognize({ source: 'ocr', max_elements: Number.MAX_SAFE_INTEGER },
+              ctx.frame !== previousFrame ? ctx.frame : undefined);
+            const blocker = blockingOverlay(ocr);
+            if (blocker) return { ...overlayRefusal(blocker), ...(count ? { sent: true, outcome: 'partial', scrolls: count } : {}) };
+            if (ocr.elements.length) result = ocr;
+            matches = matching(result.elements, args.text, args.exact);
+          } catch (error) { if (stopped(error) || !seen.elements.length) throw error; }
+        }
         first ??= result.elements;
-        const matches = result.matches;
-        if (matches.length) return { found: true, scrolls: count, elements: matches, source: result.source, ...(count ? { moved: whatMoved(first, result.elements) } : {}) };
-        const signature = JSON.stringify(result.elements.filter(visible).flatMap(e => [e.label, e.text, e.value].filter(t => typeof t === 'string')));
+        if (matches.length) {
+          if (result.source === 'accessibility') {
+            const observation = ctx.observationFromStructure(seen);
+            if (observation) matches = ctx.bindStructure(seen, observation, matches);
+          }
+          return { found: true, scrolls: count, elements: matches, source: result.source, ...(count ? { moved: whatMoved(first, result.elements) } : {}) };
+        }
+        const signature = JSON.stringify([seen.signature, result.elements.filter(visible).map(e => [e.label, e.text, e.value, place(e)])]);
         const unchanged = signature === previous;
-        if (count === maximum || unchanged) throw new Error(`Text ${JSON.stringify(args.text)} was not found after ${count} scrolls${unchanged ? '; visible content stopped changing' : ''}.`);
+        const axUnavailable = args.source === 'accessibility' && !seen.elements.length;
+        if (axUnavailable || count === maximum || unchanged) return { isError: true, stop_reason: 'error',
+          found: false, scrolls: count, sent: count > 0, outcome: count ? 'partial' : 'not_sent',
+          error: axUnavailable ? 'No readable accessibility elements. Inspect the current screen or use the default search.' :
+            `Text ${JSON.stringify(args.text)} was not found after ${count} scrolls${unchanged ? '; visible content stopped changing' : ''}.` };
         previous = signature;
-        await interaction(ctx, 'scroll', { ...args, direction: args.direction ?? 'down', ...(pages ? { pages } : {}) });
+        const drag = await interaction(ctx, 'scroll', { ...args, direction: args.direction ?? 'down', ...(pages ? { pages } : {}) },
+          undefined, undefined, undefined, seen);
+        if (drag.sent !== true || drag.isError || drag.stopped) return { ...drag, isError: true, found: false, scrolls: count,
+          ...(count && drag.outcome === 'not_sent' ? { sent: true, outcome: 'partial' } : {}) };
         await pause(200);
       }
       break;
@@ -562,10 +657,29 @@ export async function interaction(ctx, name, args) {
       }
       if (physical) {
         // Clearing, pasting, reading back and Return stay in one native request: each separate request costs seconds, and only native can check the field right before the first key press.
-        const { object_id, label, placeholder, value = '' } = here;
-        const typed = await ctx.input({ op: 'type_text', text: args.text, clear: true, submit: args.submit ?? false, target: { object_id, role: here.role ?? here.type, label, placeholder, value } });
+        const typeInto = ({ object_id, role, type, label, placeholder, value = '' }) => ctx.input({
+          op: 'type_text', text: args.text, clear: true, submit: args.submit ?? false,
+          target: { object_id, role: role ?? type, label, placeholder, value },
+        });
+        const foreground = ctx.seen?.foreground;
+        let typed = await typeInto(here);
+        if (typed.reason === 'target_changed' && typed.outcome === 'not_sent' && typed.sent === false &&
+            typed.submit_sent === false && here.object_id && !/secure/i.test(here.role ?? here.type ?? '') &&
+            Number.isSafeInteger(foreground?.pid)) {
+          // Retry only after a fresh tree confirms the same focused field and its original content.
+          // A new field or a changed value may be the user's input and must be kept.
+          const current = await readStructure(ctx, 0);
+          const focused = current.elements.filter(e => e.focused);
+          const [field] = focused;
+          if (current.foreground?.pid === foreground.pid && current.foreground.bundle_id === foreground.bundle_id &&
+              focused.length === 1 && isTextInput(field) && field.object_id === here.object_id &&
+              (field.role ?? field.type) === (here.role ?? here.type) && field.label === here.label &&
+              field.placeholder === here.placeholder && field.value === here.value) {
+            typed = { ...await typeInto(field), target_revalidated: true };
+          }
+        }
         if (!typed.isError || !typed.sent) return typed;
-        const aimed = (await readStructure(ctx, 0)).elements.find(e => isTextInput(e) && e.object_id === object_id);
+        const aimed = (await readStructure(ctx, 0)).elements.find(e => isTextInput(e) && e.object_id === here.object_id);
         const held = aimed && !/secure/i.test(aimed.type ?? '') ? heldText(aimed) : undefined;
         return held === undefined ? typed : { ...typed, instruction: `The field holds ${JSON.stringify(held)} instead of the requested text. ${typed.instruction}` };
       }
@@ -588,7 +702,13 @@ export async function interaction(ctx, name, args) {
       // A field that still looks like the target did not take the text, whatever is being edited now.
       if (known && holder && (fieldKey(holder) !== fieldKey(known) || seen.some(e => e !== holder && isTextInput(e) && sameField(e, known)))) return failed(`The text went into ${quoted(names([holder]))}, not the requested field. Nothing was submitted. Look at it before continuing.`);
       if (!args.submit) return typed;
-      await ctx.input({ op: 'key', key: 'return', modifiers: [], count: 1 });
+      const submit = await ctx.input({ op: 'key', key: 'return', modifiers: [], count: 1 });
+      if (submit.sent !== true || submit.isError) return {
+        ...typed, isError: true, stop_reason: submit.stop_reason ?? 'unknown',
+        outcome: 'unknown', submit_sent: submit.sent === false ? false : undefined,
+        ...(submit.error ? { error: submit.error } : {}),
+        instruction: 'The field was filled. Verify the current field and submission result before deciding whether to press Return.',
+      };
       return { ...typed, submit_sent: true };
     }
     case 'press_key': return ctx.input({ op: 'key', key: args.key, modifiers: args.modifiers ?? [], count: args.count ?? 1 });

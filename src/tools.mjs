@@ -6,18 +6,18 @@ import { version } from './build-info.mjs';
 
 const catalog = JSON.parse(readFileSync(new URL('./data/tools.json', import.meta.url), 'utf8'));
 const defaultTools = new Set([
-  'poki_mcp_status', 'list_devices', 'select_device', 'list_elements', 'take_screenshot',
+  'poki_mcp_status', 'list_devices', 'select_device', 'list_elements', 'take_screenshot', 'observe_device',
   'get_foreground_app', 'launch_app', 'open_url', 'tap', 'tap_text', 'fill', 'type_text',
   'scroll', 'swipe', 'press_key', 'go_back', 'wait_for', 'handle_alert', 'batch_commands',
   'long_press', 'double_tap', 'drag', 'hide_keyboard', 'press_button',
   'scroll_to', 'terminate_app', 'pinch', 'list_apps', 'get_clipboard',
 ]);
-const instructions = 'When the request already says what to do on the device, use batch_commands for launch_app and steps whose targets are already known; use fill without field for a single visible input, and use exact observed labels when a selector is needed; it is usually the only device call needed. Tapping steps wait for their target, and the reply ends with the visible text. With one device available, skip list_devices and select_device; use them when a call reports several devices. Consecutive calls do not require an explicit device lease. Single-step tools remain for exploring an unknown screen.';
+const instructions = 'When the request already says what to do on the device, use batch_commands for launch_app and steps whose targets are already known; use fill without field for a single visible input, and use exact observed labels when a selector is needed; it is usually the only device call needed. Tapping steps wait for their target, and the reply ends with the visible text. With one device available, skip list_devices and select_device; use them when a call reports several devices. Consecutive calls do not require an explicit device lease. For new screen evidence, prefer observe_device with fallback=hybrid. When a known complete target label is missing from AX, observe_device with ax_hint set to that label. For tap_text on a known complete label set exact=true. If an action reports blocking_overlay, resolve it before retrying. Use require_visual for visual tasks.';
 const readOnly = new Set(['observe_device','list_devices', 'get_device_info', 'take_screenshot', 'get_foreground_app', 'list_elements', 'list_apps', 'get_clipboard', 'list_crashes', 'get_crash', 'wait_for', 'wait']);
 const guidance = {
   acquire_device: 'Only needed to keep other sessions off a device across several calls. One batch_commands call already runs without interruption, so a single-call task needs no lease. If you take one, keep the returned lease_id, renew before expiry, then release.',
   wait_for: 'The timeout covers device capture, AX, OCR and polling. Success includes the matching observation and its image, so a second screenshot is not needed to inspect the matched state.',
-  batch_commands: `Batch known operations. A single visible input can be filled without field. Field and button labels come from observed screen text, in its original language; guesses such as a translated Search label or an unobserved New Tab button require an observation first.
+  batch_commands: `Batch known operations. For a known native control on a loaded page, tap_text with source=accessibility returns promptly if it is missing. If it may be offscreen in a known list, put scroll_to before tap_text in the same batch. For a known destination, use expect on the final tap when supported so the matching observation also supplies the batch's final screen. Use the stop receipt's screen and recovery.unattempted_steps to continue a failed batch. Verify uncertain input before retrying it. A single visible input can be filled without field. Use exact labels in the screen's language.
 
 Example:
 {"commands":[
@@ -55,14 +55,31 @@ const strokeChecks = {
 // behavior and the upstream stroke timing refinements are preserved.
 const actionObservationTools = new Set(['tap', 'double_tap', 'long_press', 'tap_text', 'swipe',
   'drag', 'scroll', 'pinch', 'type_text', 'fill', 'press_key', 'press_button', 'go_back', 'handle_alert']);
+const tapExpectation = {
+  type: 'object', additionalProperties: false, required: ['text'],
+  properties: {
+    text: { type: 'string', minLength: 1, maxLength: 200 },
+    role: { type: 'string', minLength: 1, maxLength: 80, description: 'Accessibility role from the observed element, for example Button or StaticText.' },
+    state: { type: 'string', enum: ['visible', 'enabled', 'focused', 'selected'] },
+    timeout_seconds: { type: 'number', minimum: 0.1, maximum: 30 },
+  },
+  description: 'Wait for one exact accessibility match to newly reach this state after the tap (POKI_CONDITIONAL_WAIT=1). The default state is visible.',
+};
 const schemaOf = tool => {
   const schemaWithObservations = actionObservationTools.has(tool.name)
     ? { ...tool.inputSchema, properties: { ...tool.inputSchema.properties,
+      ...(['tap', 'tap_text'].includes(tool.name) ? { expect: tapExpectation } : {}),
+      ...(['scroll', 'swipe'].includes(tool.name) ? { observe: { type: 'string', enum: ['quick'],
+        description: 'For browsing or counting: return one fresh, unverified post-gesture AX sample in tree order, preserving duplicate labels. No element refs. Use observe_device if more evidence is needed.' } } : {}),
       return_observation: { type: 'boolean', description: 'Request a ref-bearing post-input observation when available.' },
       post_action_ocr: { type: 'boolean', description: 'Capture after stable AX and check image OCR prompts (default false).' } } }
     : tool.name === 'observe_device'
       ? { ...tool.inputSchema, properties: { ...tool.inputSchema.properties,
-        include_image: { type: 'boolean', description: 'Attach PNG (default true); false retains capture and prompt checks.' } } }
+        include_image: { type: 'boolean', description: 'Allow PNG attachments (default true). Set false for text-only results. Hybrid may still capture locally for OCR. If no usable text is found, source=unavailable. require_visual=true needs attachments.' },
+        fallback: { type: 'string', enum: ['image', 'hybrid'], description: 'Hybrid reads AX, then local OCR, then supplies an image if text is insufficient. Image mode skips OCR.' },
+        ax_hint: { type: 'string', minLength: 1, maxLength: 200, description: 'Known visible text or label substring for a fallback mode. Use to find missing text in a partially accessible screen. Omit when the text is unknown.' },
+        require_visual: { type: 'boolean', description: 'With fallback=hybrid, request the screenshot directly for color, icons, layout, or ambiguous text.' },
+        skip_ax: { type: 'boolean', description: 'With fallback=hybrid, start with local OCR when the current AX observation already lacks the needed unknown text.' } } }
       : tool.inputSchema;
   const schema = z.fromJSONSchema(schemaWithObservations);
   return strokeChecks[tool.name] ? schema.superRefine(strokeChecks[tool.name]) : schema;
@@ -74,11 +91,10 @@ definitions.push(['poki_mcp_status', 'Report Poki MCP version, current Git commi
 
 // The computer-use profile (POKI_TOOL_PROFILE=cua, cua.mjs): look and do, plus device and status tools.
 for (const [name, description, schema, readOnlyHint] of cua.definitions) definitions.push([name, description, z.fromJSONSchema(schema), readOnlyHint]);
-const profile = (env = process.env) => env.POKI_TOOL_PROFILE ?? 'default';
 const listedFor = name => (name === 'cua' ? cua.tools : defaultTools);
 
-export function createServer(call) {
-  const computerUse = profile() === 'cua', listed = listedFor(profile());
+export function createServer(call, { allTools = process.env.POKI_MCP_TOOLS === 'all', toolProfile = process.env.POKI_TOOL_PROFILE } = {}) {
+  const computerUse = toolProfile === 'cua', listed = listedFor(toolProfile);
   const server = new McpServer({ name: 'poki-mcp', version }, { instructions: computerUse ? cua.instructions : instructions });
   for (const [name, description, inputSchema, readOnlyHint] of definitions) {
     server.registerTool(name, { description, inputSchema, annotations: { readOnlyHint } }, async (args, extra) => {
@@ -86,7 +102,7 @@ export function createServer(call) {
       catch (error) { return { isError: true, content: [{ type: 'text', text: error.message }] }; }
     });
   }
-  if (process.env.POKI_MCP_TOOLS !== 'all') {
+  if (!allTools) {
     server.server.setRequestHandler('tools/list', () => ({
       tools: definitions.filter(([name]) => listed.has(name)).map(([name, description, inputSchema, readOnlyHint]) => ({
         name, description, inputSchema: z.toJSONSchema(inputSchema, { io: 'input', target: 'draft-2020-12' }),
