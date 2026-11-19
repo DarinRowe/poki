@@ -13,7 +13,7 @@ import { ocrPageDescriptor, parseTesseractTSV, tesseractLanguages } from './ocr.
 import { root, stateDir, idevice, noUsbDevice } from './config.mjs';
 import { definitions } from './tools.mjs';
 import { platformTool, inventorySimulators, simulatorModels, readSettings, closePlatform } from './platform.mjs';
-import { interaction, actionBlocked, blockingOverlay, overlayRefusal, actionExpectation, promptWarning, readScreen, describeScreen, screenChanged, whatMoved, justReadMs, confirmAfterMs, launchWithinMs, launchPollMs } from './interaction.mjs';
+import { interaction, actionBlocked, blockingOverlay, overlayRefusal, actionExpectation, promptWarning, screenDeviceState, readScreen, describeScreen, screenChanged, whatMoved, justReadMs, confirmAfterMs, launchWithinMs, launchPollMs } from './interaction.mjs';
 import { askHuman } from './human.mjs';
 import { portraitTouch } from './touch-orientation.mjs';
 import { simulatorRequest } from './simulator.mjs';
@@ -433,7 +433,8 @@ export class Devices {
     frame.structure_completed_at = new Date().toISOString();
     frame.source = source;
     const observation = this.observation(frame);
-    return { observation, source, width: frame.width, height: frame.height, units: 'points', foreground, elements: this.elements, total: count, truncated: count > this.elements.length, ...(source === 'ocr' && nativeError ? { fallback_reason: nativeError } : {}) };
+    const deviceState = source === 'accessibility' ? screenDeviceState({ foreground, elements }) : undefined;
+    return { observation, source, ...(deviceState ? { device_state: deviceState } : {}), width: frame.width, height: frame.height, units: 'points', foreground, elements: this.elements, total: count, truncated: count > this.elements.length, ...(source === 'ocr' && nativeError ? { fallback_reason: nativeError } : {}) };
   }
   async initialAXViewport(target, tree) {
     const elements = tree.elements ?? [];

@@ -24,12 +24,41 @@ const visible = e => flagOn(e.visible);
 // go unrecognised.
 const alertText = v => normalize(v.normalize('NFD').replace(/\p{M}/gu, '').replace(/’/g, "'"));
 
+const modalRole = /^(?:AX|XCUIElementType)?(?:Alert|Sheet|Dialog|Popover)$/i;
+const buttonRole = /^(?:AX|XCUIElementType)?Button$/i;
+const elementRole = element => element.role ?? element.type ?? '';
+const shownText = element => [element.label, element.text].filter(value => typeof value === 'string').map(normalize);
+
 export function promptWarning(elements) {
-  const texts = elements.flatMap(strings).map(t => normalize(t));
-  // The patterns in data/interaction.json are written the way a person writes them, so they go
-  // through the same normalisation as the text they are compared with.
-  const rule = behavior.prompt_detector.find(rule => texts.some(t => rule.exact.some(e => normalize(e) === t) || rule.contains.some(part => t.includes(normalize(part)))));
-  return rule ? { kind: rule.name } : null;
+  const texts = elements.flatMap(strings).map(normalize);
+  for (const rule of behavior.prompt_detector) {
+    if (rule.confirmation_titles) {
+      const shown = elements.filter(element => element.visible === undefined || visible(element));
+      const labels = shown.flatMap(shownText);
+      const buttons = shown.filter(element => buttonRole.test(elementRole(element))).flatMap(shownText);
+      // OCR presents button captions as text. Require both choices when the modal has no AX role.
+      const choices = buttons.length ? buttons : labels;
+      const confirmation = rule.confirmation_titles.some(title => labels.includes(title)) &&
+        (shown.some(element => modalRole.test(elementRole(element))) ||
+          rule.confirm_buttons.some(label => choices.includes(label)) &&
+          rule.cancel_buttons.some(label => choices.includes(label)));
+      if (confirmation || rule.exact.some(label => labels.includes(normalize(label)))) return { kind: rule.name };
+    } else if (texts.some(text => rule.exact.some(label => normalize(label) === text) ||
+      rule.contains.some(part => text.includes(normalize(part))))) return { kind: rule.name };
+  }
+  return null;
+}
+
+export function screenDeviceState(seen) {
+  if (seen.foreground?.bundle_id !== 'com.apple.springboard') return undefined;
+  const elements = seen.elements.filter(visible);
+  const labels = elements.flatMap(shownText);
+  const password = elements.some(element =>
+    /^(?:AX|XCUIElementType)?SecureTextField$/i.test(elementRole(element)));
+  const title = ['enter passcode', 'enter iphone passcode', 'enter ipad passcode', 'enter your passcode',
+    '输入密码', '輸入密碼'].some(text => labels.includes(text));
+  if (labels.includes('passcode field') || title && password) return 'locked';
+  return undefined;
 }
 
 export function matching(elements, value, exact = false) {
@@ -221,7 +250,9 @@ const describeElement = element => {
 export function describeScreen(seen, elements = seen.elements, source = 'accessibility') {
   const text = [...new Set(elements.filter(visible).map(describeElement).filter(Boolean))];
   const warning = promptWarning(elements);
+  const deviceState = source === 'accessibility' ? screenDeviceState(seen) : undefined;
   return {
+    ...(deviceState ? { device_state: deviceState } : {}),
     // When the read behind this text began, and how old it is now.
     ...(seen.observedAt ? { observed_at: seen.observedAt, tree_age_ms: Math.round(performance.now() - seen.startedAt) } : {}),
     ...(seen.served ? { served: seen.served } : {}),
@@ -250,7 +281,7 @@ export async function readScreen(ctx, { once = false, before, confirmation, stru
   // A read that began before the last input shows the screen the input was sent to, never the current one.
   if (seen.startedAt < ctx.lastInputAt) seen = await readStructure(ctx, 0);
   const window = Math.max(stableWithinMs, 2 * cost() + pollMs);
-  while (!once && performance.now() - started < window) {
+  while (!once && !screenDeviceState(seen) && performance.now() - started < window) {
     if (remaining() < cost() + pollMs) break;
     await pause(pollMs);
     const next = await readStructure(ctx, 0);
@@ -259,7 +290,7 @@ export async function readScreen(ctx, { once = false, before, confirmation, stru
     if (same) { stable = true; break; }
   }
   reuseStable = stable;
-  if (before !== undefined && seen.elements.length && seen.signature === before) {
+  if (before !== undefined && seen.elements.length && seen.signature === before && !screenDeviceState(seen)) {
     const confirmed = await confirmUnchanged(ctx, before, seen, confirmation);
     if (confirmed !== seen) {
       // A later AX read with an unchanged signature can be reused; keep

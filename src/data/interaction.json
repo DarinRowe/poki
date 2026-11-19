@@ -670,17 +670,22 @@
     },
     {
       "name": "purchase",
-      "contains": [
+      "contains": [],
+      "exact": [
         "double-click to pay",
         "double click to pay",
         "double-click to install",
         "double click to install",
         "confirm with side button",
         "confirm with top button",
-        "购买",
-        "購買"
+        "连按两下以购买",
+        "連按兩下以購買",
+        "连按两下以安装",
+        "連按兩下以安裝"
       ],
-      "exact": []
+      "confirmation_titles": ["confirm purchase", "确认购买", "確認購買"],
+      "confirm_buttons": ["confirm", "ok", "buy", "确定", "確定", "购买", "購買"],
+      "cancel_buttons": ["cancel", "取消"]
     }
   ]
 }
