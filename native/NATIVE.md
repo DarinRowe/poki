@@ -99,9 +99,9 @@ Local helpers belong to one daemon and stop when its stdin pipe closes. The daem
 
 ## Screen text recognition
 
-`native/ocr.swift` is a host binary, not part of the bridge: it prints recognized text as JSON boxes, and `src/device.mjs` runs `build/ocr` whenever the accessibility tree cannot describe a screen. It links Vision, so a host without Vision has no recognizer at all, and until now that surfaced as `spawn build/ocr ENOENT` in the middle of a tap.
+`native/ocr.swift` builds the standalone Vision recognizer and the persistent Vision worker for macOS. Both return recognized text and boxes. The daemon uses Tesseract by default and starts the Vision worker only in continuous mode.
 
-`native/ocr-linux.py` is the same contract built on tesseract: it prints `text`, `confidence`, `x`, `y`, `width`, `height` in pixels of the image it was given. Nothing above it changes when it replaces the Swift helper. A host with neither keeps working from the accessibility tree: recognition reports itself unavailable once, and that is remembered only for a missing or unexecutable binary - a run that failed once is reported for that frame and retried on the next.
+`native/ocr-linux.py` uses Tesseract and prints `text`, `confidence`, `x`, `y`, `width`, `height` in input image pixels. Existing Linux installations with this wrapper at `build/ocr` keep using it by default. Set `POKI_OCR_BACKEND=tesseract` to select the direct Tesseract executable. When OCR is unavailable, the accessibility tree can still provide screen structure. See [local OCR configuration](../docs/tools.md#local-ocr).
 
 ```sh
 # Debian/Ubuntu host or image

@@ -8,6 +8,7 @@ import { createServer, definitions } from './tools.mjs';
 import { withCallLog } from './call-log.mjs';
 import { Coordination } from './coordination.mjs';
 import { Devices } from './device.mjs';
+import { VisionOCR } from './vision-ocr.mjs';
 import { stateDir, endpointFile } from './config.mjs';
 import { startUpdateChecks } from './update-check.mjs';
 import { warnIfNativeStale } from './build-info.mjs';
@@ -17,7 +18,10 @@ const port = portIndex < 0 ? 47825 : Number(process.argv[portIndex + 1]);
 if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('Invalid port');
 await warnIfNativeStale();
 const sessions = new Map();
+const agentWatchdogs = new Map();
 const coordinator = new Coordination();
+const visionOCR = process.platform === 'darwin' && process.env.POKI_OCR_BACKEND === 'continuous'
+  ? new VisionOCR() : undefined;
 const token = process.env.POKI_MCP_TOKEN?.trim() || randomBytes(32).toString('hex');
 // A short token is the only thing standing between the network and the device, and it is cheap
 // to type in a shell by mistake.
@@ -25,11 +29,12 @@ if (token.length < 32) throw new Error('POKI_MCP_TOKEN must be at least 32 chara
 const expected = Buffer.from(`Bearer ${token}`);
 const requestedBind = process.env.POKI_BIND_HOST?.trim() ?? '';
 if (process.env.POKI_BIND_HOST !== undefined && !requestedBind) throw new Error('POKI_BIND_HOST is empty. Unset it to listen on 127.0.0.1.');
-// Local clients are pinned to one name. `src/stdio.mjs` reads mcp.json, refuses any endpoint whose
+// Local clients are pinned to one name. The MCP client reads mcp.json, refuses any endpoint whose
 // hostname is not `127.0.0.1`, and then sends `Host: 127.0.0.1:PORT`. `localhost` and `::1` are
 // different addresses as far as that request and the Host check are concerned, so only `127.0.0.1`
 // - or a wildcard, which answers on it too - keeps the local clients reachable.
 const localHost = '127.0.0.1';
+const loopback = address => address === localHost || address === `::ffff:${localHost}`;
 const wildcard = new Set(['0.0.0.0', '::']);
 const answersLocalClients = host => host === localHost || wildcard.has(host);
 const requested = (requestedBind || localHost).split(',').map(part => part.trim()).filter(Boolean);
@@ -50,6 +55,25 @@ const validHost = hostAllow.length ? hostHeaderValidation(hostAllow) : localhost
 const validOrigin = localhostOriginValidation();
 const active = new Set();
 
+async function closeSession(session, devices) {
+  clearInterval(agentWatchdogs.get(session));
+  agentWatchdogs.delete(session);
+  await devices.close();
+  sessions.delete(session);
+}
+
+function watchAgent(session, devices, pid) {
+  if (agentWatchdogs.has(session)) return;
+  // The stdio bridge closed the session when its parent disappeared.
+  // The daemon owns the equivalent cleanup for a direct Agent client.
+  const timer = setInterval(() => {
+    try { process.kill(pid, 0); }
+    catch (error) { if (error.code === 'ESRCH') void closeSession(session, devices).catch(() => {}); }
+  }, 1500);
+  timer.unref();
+  agentWatchdogs.set(session, timer);
+}
+
 async function handle(req, res) {
   if (!validHost(req, res) || !validOrigin(req, res)) return;
   const received = Buffer.from(req.headers.authorization ?? '');
@@ -61,13 +85,13 @@ async function handle(req, res) {
   if (!['/mcp', '/session/close', '/request/cancel'].includes(req.url)) { res.writeHead(404); res.end(); return; }
   const session = req.headers['x-poki-mcp-session'];
   if (typeof session !== 'string' || !/^[a-zA-Z0-9_-]{1,80}$/.test(session)) { res.writeHead(400); res.end('Invalid session'); return; }
-  if (!sessions.has(session)) sessions.set(session, new Devices(coordinator));
+  if (!sessions.has(session)) sessions.set(session, new Devices(coordinator, visionOCR));
   const devices = sessions.get(session);
   devices.peers = () => sessions.values();
   devices.label ??= session;
   if (req.url === '/session/close') {
     if (req.method !== 'POST') { res.writeHead(405); res.end(); return; }
-    await devices.close(); sessions.delete(session); res.end('{}'); return;
+    await closeSession(session, devices); res.end('{}'); return;
   }
   if (req.url === '/request/cancel') {
     if (req.method !== 'POST') { res.writeHead(405); res.end(); return; }
@@ -79,10 +103,17 @@ async function handle(req, res) {
     for (const operation of coordinator.operations) if (operation.owner === devices && operation.requestId === id) operation.controller.abort(new DOMException('Request cancelled', 'AbortError'));
     res.end('{}'); return;
   }
+  const agentProfile = req.headers['x-poki-agent-tool-profile'];
+  const toolOptions = loopback(req.socket.localAddress) && loopback(req.socket.remoteAddress) &&
+    (agentProfile === 'default' || agentProfile === 'cua') ? { allTools: true, toolProfile: agentProfile } : undefined;
+  const agentPid = Number(req.headers['x-poki-agent-pid']);
+  if (toolOptions && Number.isSafeInteger(agentPid) && agentPid > 1 && agentPid <= 0x7fffffff) {
+    watchAgent(session, devices, agentPid);
+  }
   const server = createServer((name, args, extra) => {
     if (devices.cancelledRequests?.delete(extra?.requestId)) throw new DOMException('Request cancelled', 'AbortError');
     return withCallLog(session, name, () => devices.call(name, args, extra?.signal, extra?.requestId));
-  });
+  }, toolOptions);
   const transport = new NodeStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   active.add(server);
   res.once('close', () => { active.delete(server); void server.close(); });
@@ -102,7 +133,7 @@ await once(servers[0], 'listening');
 const actualPort = servers[0].address().port;
 for (const [index, server] of servers.entries()) if (index > 0) server.listen(actualPort, bindHosts[index]);
 await Promise.all(servers.slice(1).map(server => once(server, 'listening')));
-const entry = { url: `http://127.0.0.1:${actualPort}/mcp`, port: actualPort, token, enabled: true, pid: process.pid };
+const entry = { url: `http://127.0.0.1:${actualPort}/mcp`, port: actualPort, token, enabled: true, pid: process.pid, agent_tool_profiles: true };
 const temporary = `${endpointFile}.${process.pid}.tmp`;
 await writeFile(temporary, JSON.stringify(entry, null, 2), { mode: 0o600, flag: 'wx' });
 await rename(temporary, endpointFile);
@@ -116,11 +147,13 @@ async function stop() {
   if (stopping) return;
   stopping = true;
   stopUpdateChecks();
+  const closingOCR = visionOCR?.close();
   const closed = Promise.all(servers.map(server => new Promise(resolve => server.close(resolve))));
   for (const server of servers) server.closeAllConnections();
-  await Promise.allSettled([...sessions.values()].map(devices => devices.close()));
+  await Promise.allSettled([...sessions].map(([session, devices]) => closeSession(session, devices)));
   await Promise.allSettled([...active].map(server => server.close()));
   await closeLocalHelpers();
+  await closingOCR;
   await closed;
   const entry = await readFile(endpointFile, 'utf8').then(JSON.parse).catch(() => null);
   if (entry?.pid === process.pid) await unlink(endpointFile);

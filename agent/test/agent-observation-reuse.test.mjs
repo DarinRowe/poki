@@ -7,13 +7,14 @@ import { once } from 'node:events';
 import { taskServices } from './fixtures/task-services.mjs';
 import { PhoneTask } from '../task-runner.mjs';
 
-async function scenario(t, postActionObservation) {
+async function scenario(t, postActionObservation, batch = false) {
   const directory = await mkdtemp(join(tmpdir(), 'poki-reuse-'));
-  const services = await taskServices(join(directory, 'mcp'), { route: true, postActionObservation, execution: [
+  const services = await taskServices(join(directory, 'mcp'), { route: true, postActionObservation, pidOnlyReceipt: batch, execution: [
     ['report_plan', { title: 'Write fixture', steps: ['Open app', 'Fill field'], currentStep: 1 }],
     ['launch_app', { bundle_id: 'org.example.channel-fixture' }],
     ['report_plan', { title: 'Write fixture', steps: ['Open app', 'Fill field'], currentStep: 2 }],
-    ['fill', { field: 'Value', text: 'Example', submit: false }],
+    batch ? ['batch_commands', { commands: [{ tool: 'fill', arguments: { field: 'Value', text: 'Example', submit: false } }] }]
+      : ['fill', { field: 'Value', text: 'Example', submit: false }],
     ['finish_task', { success: true, summary: 'Saved: Example',
       details: [{ label: 'Value', value: 'Example' }], answer: { kind: 'action' } }],
   ] });
@@ -53,4 +54,12 @@ test('Agent retains list_elements fallback for a legacy receipt', { timeout: 600
   const legacy = await scenario(t, false);
   assert.equal(legacy.listCalls, 2);
   assert.ok(!legacy.trace.some(e => e.tool === 'post_action_observation'));
+});
+
+
+test('Agent uses a PID-bound terminal batch observation without another list_elements call', async t => {
+  const reused = await scenario(t, true, true);
+  assert.equal(reused.listCalls, 2, 'One launch read and one batch readback');
+  assert.equal(reused.trace.filter(e => e.tool === 'post_action_observation' && e.reused).length, 1);
+  assert.equal(reused.trace.filter(e => e.tool === 'list_elements').length, 1);
 });

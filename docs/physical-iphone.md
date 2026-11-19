@@ -2,7 +2,7 @@
 
 For remote access, see [Remote iPhone over LAN or Tailscale](remote-iphone.md). Both paths require initial trusted USB setup; cross-network access also requires Tailscale.
 
-Physical iPhone support has been verified only with the Chinese interface in portrait orientation. Read the [verification record and known limits](verification.md) first.
+Broad physical iPhone acceptance covers portrait orientation. USB landscape taps, drags, and two-finger gestures were also verified on an iPhone 12. See the [verification record and known limits](verification.md).
 
 Run `./bin/setup` first. It needs full Xcode and the Rust toolchain, and you do not need to set any environment variables. See the [requirements](install.md#requirements).
 

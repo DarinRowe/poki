@@ -10,6 +10,7 @@
     "start": "node src/daemon.mjs",
     "mcp": "node src/stdio.mjs",
     "test": "node --test test/*.test.mjs",
+    "test:catalog": "node bin/test-catalog.mjs",
     "build:native": "./bin/build-native"
   },
   "dependencies": {

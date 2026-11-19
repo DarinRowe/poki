@@ -1,19 +1,21 @@
 import { remoteDevices, nativeRequest } from './remote.mjs';
-import { execute, checkWork, deadline, pause, phase, stopped, stoppingReason, timingCount, timingsSince } from './work.mjs';
+import { execute, checkWork, deadline, pause, phase, stopped, stoppingReason, timingCount, timingsSince, remaining, signal } from './work.mjs';
 import { Coordination, managementTools } from './coordination.mjs';
 import { runBatch } from './batch.mjs';
 import { runCode } from './run-code.mjs';
 import { flagOn } from './element-flags.mjs';
-import { mkdir, readFile, writeFile, unlink, stat } from 'node:fs/promises';
+import { access, mkdir, readFile, writeFile, unlink, stat } from 'node:fs/promises';
 import { join, extname, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
-import sharp from 'sharp';
+import { imageProcessor } from './image-processor.mjs';
+import { ocrPageDescriptor, parseTesseractTSV, tesseractLanguages } from './ocr.mjs';
 import { root, stateDir, idevice, noUsbDevice } from './config.mjs';
 import { definitions } from './tools.mjs';
 import { platformTool, inventorySimulators, simulatorModels, readSettings, closePlatform } from './platform.mjs';
-import { interaction, promptWarning, screenDeviceState, readScreen, describeScreen, screenChanged, whatMoved, justReadMs, confirmAfterMs, launchWithinMs, launchPollMs } from './interaction.mjs';
+import { interaction, actionBlocked, blockingOverlay, overlayRefusal, actionExpectation, promptWarning, screenDeviceState, readScreen, describeScreen, screenChanged, whatMoved, justReadMs, confirmAfterMs, launchWithinMs, launchPollMs } from './interaction.mjs';
 import { askHuman } from './human.mjs';
+import { portraitTouch } from './touch-orientation.mjs';
 import { simulatorRequest } from './simulator.mjs';
 import { prepareRecordingInput, resumeRecordings } from './recording.mjs';
 import { updateNotice } from './update-check.mjs';
@@ -31,6 +33,7 @@ const platformTools = new Set(['start_simulator', 'shut_down_simulator', 'start_
 // the reads it has just measured, up to a cap.
 const springBoardId = 'com.apple.springboard', springBoardExecutable = /(?:^|\/)SpringBoard(?:\.app\/SpringBoard)?$/;
 const settleMs = 600, readbackMs = 5000, maxReadbackMs = 12000;
+const hybridOCRDeadlineMs = 1500, hybridOCRConfidence = 0.8;
 const reportsScreen = new Set(['tap', 'double_tap', 'long_press', 'tap_text', 'swipe', 'drag', 'scroll', 'pinch', 'touch_path', 'draw_strokes', 'type_text', 'fill', 'press_key', 'press_button', 'go_back', 'handle_alert', 'system_gesture']);
 // These exist to act on a control, so the reply says when nothing was seen to change after one.
 const touchesControl = new Set(['tap', 'double_tap', 'long_press', 'tap_text', 'go_back', 'handle_alert']);
@@ -71,9 +74,58 @@ function axRootOrientation(elements, viewport) {
   return same === rotated ? null : rotated ? 'rotated' : 'same';
 }
 
-export function hidPoint(x, y, width, height) {
+// A hardware size can bootstrap AX only when a full-screen root agrees
+// exactly. A partial or conflicting root cannot establish touch geometry.
+function matchesScreenRoot(elements, viewport) {
+  const { width, height } = viewport;
+  if (axRootOrientation(elements, viewport) !== 'same') return false;
+  return elements.some(element => {
+    if (!/^(?:XCUIElementType)?(?:Application|Window)$/i.test(element.role ?? element.type ?? '')) return false;
+    const box = element.frame ?? element;
+    return box.x === 0 && box.y === 0 && box.width === width && box.height === height;
+  });
+}
+
+function sameForeground(a, b) {
+  if (!a || !b) return false;
+  if (a.bundle_id && b.bundle_id && a.bundle_id !== b.bundle_id) return false;
+  if (Number.isSafeInteger(a.pid) && a.pid > 0 && Number.isSafeInteger(b.pid) && b.pid > 0) return a.pid === b.pid;
+  return Boolean(a.bundle_id && a.bundle_id === b.bundle_id);
+}
+
+function referenceTarget(binding, reference, seen, size) {
+  if (!binding?.rootVerified || !reference?.object_id || !seen?.rootVerified ||
+      seen.device !== binding.device || seen.revision !== binding.revision || size?.device !== seen.device ||
+      size.width !== binding.width || size.height !== binding.height ||
+      !sameForeground(binding.foreground, seen.foreground)) return null;
+  const matches = seen.elements.filter(e => e.object_id === reference.object_id);
+  if (matches.length !== 1) return null;
+  const [element] = matches;
+  if (!flagOn(element.visible) || !flagOn(element.enabled) ||
+      (element.type ?? element.role) !== (reference.type ?? reference.role) ||
+      element.label !== reference.label || element.identifier !== reference.identifier ||
+      element.placeholder !== reference.placeholder) return null;
+  const previous = reference.frame ?? reference, current = element.frame ?? element;
+  if (!['x', 'y', 'width', 'height'].every(key => Number.isFinite(current[key]) && current[key] === previous[key]) ||
+      current.width <= 0 || current.height <= 0 || current.x < 0 || current.y < 0 ||
+      current.x + current.width > size.width || current.y + current.height > size.height) return null;
+  const x = current.x + current.width / 2, y = current.y + current.height / 2;
+  // Reject a separate actionable peer at the same point. Larger enclosing AX
+  // containers are common, so only peers no larger than the target count.
+  const blocked = seen.elements.some(e => {
+    if (e === element || !flagOn(e.visible) || !flagOn(e.enabled) ||
+        !/(?:button|link|textfield|searchfield|switch|cell)$/i.test(e.role ?? e.type ?? '')) return false;
+    const box = e.frame ?? e;
+    return box.width > 0 && box.height > 0 && box.width * box.height <= current.width * current.height &&
+      x >= box.x && x < box.x + box.width && y >= box.y && y < box.y + box.height;
+  });
+  return blocked ? null : element;
+}
+
+export function hidPoint(x, y, width, height, orientation) {
   if (![x,y,width,height].every(Number.isFinite) || width < 2 || height < 2 || x < 0 || y < 0 || x >= width || y >= height) throw new Error(`Coordinates must be inside the screen (${width} × ${height} points).`);
-  return [Math.round(x / (width - 1) * 65535), Math.round(y / (height - 1) * 65535)];
+  const point = portraitTouch(Math.min(1, x / (width - 1)), Math.min(1, y / (height - 1)), orientation);
+  return point.map(axis => Math.round(axis * 65535));
 }
 
 const names = (device, query) => device.id === query || device.name.toLocaleLowerCase() === query.toLocaleLowerCase();
@@ -81,7 +133,10 @@ const names = (device, query) => device.id === query || device.name.toLocaleLowe
 export class Devices {
   selected; requested; frame; size; seen; structureViewport; batchViewportVerified = false; elements = []; elementsAt = 0; lastInputAt = -Infinity; lastInputCompletedAt; inBatch = false;
   scales = new Map(); readCosts = new Map(); physicalNames = new Map(); backgroundDevices = new Map(); nextRef = 0;
-  constructor(coordinator = new Coordination()) { this.coordinator = coordinator; }
+  constructor(coordinator = new Coordination(), visionOCR) {
+    this.coordinator = coordinator;
+    this.visionOCR = visionOCR;
+  }
   async run(file, args, timeout = 45000, input) {
     const result = await execute(file, args, { timeout, input });
     return { stdout: result.stdout.trimEnd(), stderr: result.stderr.trimEnd() };
@@ -111,14 +166,21 @@ export class Devices {
   access(target) { this.coordinator.access(this, target); }
   changed(target) { this.coordinator.changed(target.id); this.elements = []; this.elementsAt = 0; this.frame = undefined; this.seen = undefined; this.structureViewport = undefined; }
   async inventory(all = false) {
-    const { stdout } = await this.run('python3', [join(root, 'native/devices.py')], 8000);
+    // Both probes are read-only and independent. Wait for both to close even
+    // if USB discovery fails, so cancellation drains work owned by this call.
+    const [usb, simulatorList] = await Promise.allSettled([
+      this.run('python3', [join(root, 'native/devices.py')], 8000),
+      inventorySimulators(),
+    ]);
+    if (usb.status === 'rejected') throw usb.reason;
+    const { stdout } = usb.value;
     const physical = new Map();
     for (const device of JSON.parse(stdout)) {
       if (!device.id || (physical.has(device.id) && device.connection !== 'USB')) continue;
       physical.set(device.id, { ...device, kind: 'physical', name: this.physicalNames.get(device.id) ?? device.id });
     }
     for (const remote of await remoteDevices()) physical.set(remote.id, remote);
-    const simulators = await inventorySimulators().catch(() => []);
+    const simulators = simulatorList.status === 'fulfilled' ? simulatorList.value : [];
     return [...physical.values(), ...simulators.filter(d => all || d.state === 'Booted' || usedSimulators.has(d.id))];
   }
   async describeDevices(all) {
@@ -214,8 +276,8 @@ export class Devices {
     if (!Number.isFinite(scale) || scale <= 0 || scale > 5) throw new Error('Could not read the screen scale. Refusing to guess touch coordinates.');
     this.scales.set(target.id, scale); return scale;
   }
-  capture() { return phase('screen_capture', () => this.captureFrame()); }
-  async captureFrame() {
+  capture(options) { return phase('screen_capture', () => this.captureFrame(options)); }
+  async captureFrame({ keepOriginal = false } = {}) {
     checkWork();
     const started = new Date().toISOString();
     const target = await this.target();
@@ -227,6 +289,7 @@ export class Devices {
       if (target.kind === 'simulator') await this.run('xcrun', ['simctl', 'io', target.id, 'screenshot', '--type=png', '--mask=black', path]);
       else if (target.remote) await nativeRequest(target, { op: 'screenshot', path });
       else await this.native(['screenshot', path], /Screenshot saved to:/);
+      const sharp = await imageProcessor();
       const original = await readFile(path), meta = await sharp(original).metadata();
       const scale = await this.scale(target);
       const width = Math.round(meta.width / scale), height = Math.round(meta.height / scale);
@@ -234,10 +297,11 @@ export class Devices {
       this.coordinator.observeFrame(target.id, data);
       if (this.frame?.revision !== this.coordinator.revision(target.id) || this.frame?.device !== target.id || this.frame?.width !== width || this.frame?.height !== height || !this.frame.data.equals(data)) { this.elements=[]; this.elementsAt=0; }
       checkWork();
-      this.frame = { id: randomUUID(), device: target.id, revision: this.coordinator.revision(target.id), width, height, scale, data, original, at: Date.now(), capture_started_at: started, capture_completed_at: new Date().toISOString() };
+      this.frame = { id: randomUUID(), device: target.id, revision: this.coordinator.revision(target.id), width, height, scale, data, at: Date.now(), capture_started_at: started, capture_completed_at: new Date().toISOString() };
       this.structureViewport = undefined;
       this.size = { device: target.id, width, height };
-      return this.frame;
+      // Only save_screenshot needs the native-resolution PNG, for this call.
+      return keepOriginal ? { original } : this.frame;
     } finally { await unlink(path).catch(() => {}); }
   }
   async viewport() {
@@ -261,32 +325,93 @@ export class Devices {
     return frame.ocr ??= phase('ocr', () => this.readOCR(frame));
   }
   async readOCR(frame) {
-    if (this.ocrUnavailable) throw new Error(this.ocrUnavailable);
-    const file = join(stateDir, 'frames', `${randomUUID()}-ocr.png`);
-    const binary = join(root, 'build/ocr');
+    const mode = process.env.POKI_OCR_BACKEND ?? 'tesseract';
+    if (!['vision', 'tesseract', 'continuous'].includes(mode)) {
+      throw new Error('POKI_OCR_BACKEND must be tesseract, continuous or vision');
+    }
+    let rows;
+    if (mode === 'continuous' && this.visionOCR) {
+      rows = await phase('ocr_vision_worker', async () => {
+        const descriptor = await ocrPageDescriptor(frame);
+        checkWork();
+        return this.visionOCR.recognize(frame.data, { descriptor, signal: signal(), budget: remaining() });
+      });
+      checkWork();
+    }
+    if (rows === undefined) {
+      const backend = mode === 'vision' ? 'vision' : await this.tesseractBackend(mode);
+      rows = await phase(backend === 'vision' ? 'ocr_vision' : 'ocr_tesseract',
+        () => this.runOCR(frame.data, backend));
+    }
+    return rows.map(e => ({ ...e, label: e.text, type: 'StaticText', frame: { x: e.x, y: e.y, width: e.width, height: e.height } }));
+  }
+  async tesseractBackend(mode) {
+    // Existing Linux installations can use the Tesseract wrapper with upscaling and their language settings.
+    if (process.platform === 'linux' && mode === 'tesseract' && process.env.POKI_OCR_BACKEND === undefined &&
+        !process.env.POKI_TESSERACT_BIN && !process.env.POKI_OCR_LANGUAGES && !process.env.POKI_TESSDATA_DIR) {
+      const installed = await access(join(root, 'build/ocr')).then(() => true, () => false);
+      if (installed) return 'linux-tesseract';
+    }
+    return 'tesseract';
+  }
+  async runOCR(data, backend, { numeric = false } = {}) {
+    if (this.ocrUnavailable?.backend === backend) throw new Error(this.ocrUnavailable.message);
+    const tesseract = backend === 'tesseract';
+    const file = tesseract ? undefined : join(stateDir, 'frames', `${randomUUID()}-ocr.png`);
+    const binary = tesseract ? process.env.POKI_TESSERACT_BIN || 'tesseract' : join(root, 'build/ocr');
     try {
-      await writeFile(file, frame.data, { mode: 0o600 });
-      const { stdout } = await this.run(binary, [file]);
-      return JSON.parse(stdout).map(e => ({ ...e, label: e.text, type: 'StaticText', frame: { x:e.x,y:e.y,width:e.width,height:e.height } }));
+      if (file) await writeFile(file, data, { mode: 0o600 });
+      let args = [file];
+      if (tesseract) {
+        const dataDir = process.env.POKI_TESSDATA_DIR;
+        const languages = numeric ? 'eng' : await tesseractLanguages(binary, dataDir, process.env.POKI_OCR_LANGUAGES);
+        // Pass the captured PNG directly. Leptonica can reject paths through /tmp on macOS.
+        args = ['stdin', 'stdout', '-l', languages, '--psm', numeric ? '8' : '11',
+          ...(dataDir ? ['--tessdata-dir', dataDir] : []),
+          ...(numeric ? ['-c', 'tessedit_char_whitelist=0123456789.,:+-−%'] : []), 'tsv'];
+      }
+      const { stdout } = await this.run(binary, args, tesseract ? 5000 : 45000, tesseract ? data : undefined);
+      return tesseract ? parseTesseractTSV(stdout) : JSON.parse(stdout);
     } catch (error) {
-      // A caller's deadline is not a broken recognizer; it must not be remembered as one.
-      if (stopped(error)) throw error;
+      // A recognizer's deadline leaves the screenshot usable. Only the enclosing
+      // call's cancellation or deadline stops the observation itself.
+      checkWork();
       // The recognizer is a host binary (Vision on macOS, tesseract on Linux). Only the binary being
       // absent is permanent: a run that failed once - a frame it could not decode, a crashed Vision
       // process - must not switch recognition off for the rest of the daemon's life.
       const absent = error.code === 'ENOENT' || error.code === 'EACCES' || /\b(ENOENT|EACCES)\b/.test(error.message ?? '');
       const message = absent
-        ? `Screen text recognition is unavailable on this host: ${binary} is missing or not executable. Only the accessibility tree can be read here.`
+        ? `Screen text recognition is unavailable: ${binary} is missing or not executable.${backend === 'tesseract' ? ' Install Tesseract or set POKI_TESSERACT_BIN in the daemon environment.' : ''}`
         : `Screen text recognition failed on this frame: ${error.message}`;
-      if (absent) this.ocrUnavailable = message;
+      if (absent) this.ocrUnavailable = { backend, message };
       throw new Error(message);
-    } finally { await unlink(file).catch(() => {}); }
+    } finally { if (file) await unlink(file).catch(() => {}); }
+  }
+  async recognizeNumber(frame, region) {
+    const { x, y, width, height } = region;
+    if (x < 0 || y < 0 || width <= 0 || height <= 0 || x + width > frame.width || y + height > frame.height) {
+      throw new Error('numeric_region must be a positive rectangle inside the captured screen.');
+    }
+    const left = Math.floor(x), top = Math.floor(y);
+    const sharp = await imageProcessor();
+    const crop = await sharp(frame.data).extract({
+      left, top, width: Math.ceil(x + width) - left, height: Math.ceil(y + height) - top,
+    }).png().toBuffer();
+    const rows = await phase('ocr_tesseract_numeric', () => this.runOCR(crop, 'tesseract', { numeric: true }));
+    return rows.filter(row => /[0-9]/.test(row.text)).map(row => {
+      const x = row.x + left, y = row.y + top;
+      return { ...row, x, y, label: row.text, type: 'StaticText', frame: { x, y, width: row.width, height: row.height } };
+    });
   }
   async recognize(args = {}, existingFrame) {
     checkWork();
     const frame = existingFrame ?? await this.capture();
     let elements, source, foreground, nativeError;
-    if (args.source !== 'ocr') {
+    if (args.numeric_region) {
+      if (args.source && args.source !== 'ocr') throw new Error('numeric_region requires source=ocr or no source.');
+      elements = await this.recognizeNumber(frame, args.numeric_region);
+      source = 'ocr';
+    } else if (args.source !== 'ocr') {
       try {
         const tree = await phase('accessibility', () => this.bridge({ op: 'ax', include_offscreen: args.include_offscreen ?? false }));
         if (!Array.isArray(tree.elements) || !tree.elements.length) throw new Error('No accessibility elements returned');
@@ -311,10 +436,38 @@ export class Devices {
     const deviceState = source === 'accessibility' ? screenDeviceState({ foreground, elements }) : undefined;
     return { observation, source, ...(deviceState ? { device_state: deviceState } : {}), width: frame.width, height: frame.height, units: 'points', foreground, elements: this.elements, total: count, truncated: count > this.elements.length, ...(source === 'ocr' && nativeError ? { fallback_reason: nativeError } : {}) };
   }
+  async initialAXViewport(target, tree) {
+    const elements = tree.elements ?? [];
+    if (target.remote || !elements.some(element => element.label || element.text || element.value)) return;
+    try {
+      let width, height;
+      if (target.kind === 'simulator') {
+        ({ width, height } = await this.bridge({ op: 'info' }));
+      } else {
+        // Physical landscape coordinates are outside the supported input
+        // path. Keep screenshot geometry for non-portrait or unknown AX.
+        if (target.connection !== 'USB' || tree.orientation !== 1) return;
+        const pixelSize = async key => Number((await this.native(['lockdown', '--domain', 'com.apple.mobile.iTunes', 'get', key])).stdout);
+        const pixelsWide = await pixelSize('ScreenWidth');
+        const pixelsHigh = await pixelSize('ScreenHeight');
+        const scale = await this.scale(target);
+        if (!Number.isSafeInteger(pixelsWide) || !Number.isSafeInteger(pixelsHigh) || pixelsWide >= pixelsHigh) return;
+        width = Math.round(pixelsWide / scale);
+        height = Math.round(pixelsHigh / scale);
+      }
+      const viewport = { device: target.id, width, height, fromAX: true };
+      // Keep landscape on the capture path until its input mapping is verified.
+      if (Number.isSafeInteger(width) && Number.isSafeInteger(height) && width > 1 && width < height &&
+          matchesScreenRoot(elements, viewport)) return viewport;
+    } catch (error) {
+      if (stopped(error)) throw error;
+    }
+  }
   // One accessibility read and no screenshot, so polling costs one native request per attempt.
   async structure(maxAge = 0) {
     const target = await this.target();
-    if (this.seen?.device === target.id && performance.now() - this.seen.at <= maxAge) return this.seen;
+    if (this.seen?.device === target.id && this.seen.revision === this.coordinator.revision(target.id) &&
+        performance.now() - this.seen.at <= maxAge) return this.seen;
     const started = performance.now(), observedAt = new Date().toISOString(), timings = timingCount();
     const tree = await phase('accessibility', () => this.bridge({ op: 'ax', include_offscreen: false }));
     this.readCosts.set(target.id, performance.now() - started);
@@ -326,12 +479,23 @@ export class Devices {
     const previousSize = this.size?.device === target.id ? this.size : undefined;
     // Rotation may occur externally between inputs. A verified AX root is
     // checked before filtering or converting any coordinates.
-    if (axRootOrientation(rawElements, previousSize) === 'rotated') {
+    if (axRootOrientation(rawElements, previousSize) === 'rotated' ||
+        previousSize?.fromAX && (!matchesScreenRoot(rawElements, previousSize) ||
+          target.kind === 'physical' && tree.orientation !== 1)) {
       this.structureViewport = undefined; this.elements = []; this.elementsAt = 0; this.frame = undefined;
+      this.size = undefined; this.seen = undefined;
       await this.capture();
     }
-    const viewport = this.size?.device === target.id ? this.size : await this.capture();
+    if (this.size?.device !== target.id) {
+      const initial = await phase('ax_viewport', () => this.initialAXViewport(target, tree));
+      checkWork();
+      this.size = initial;
+    }
+    const viewport = this.size ?? await this.capture();
     const rootVerified = axRootOrientation(rawElements, viewport) === 'same';
+    const portraitTouchViewport = target.kind === 'physical' && !target.remote && target.connection === 'USB' &&
+      tree.orientation === 1 && viewport.width < viewport.height && matchesScreenRoot(rawElements, viewport)
+      ? { width: viewport.width, height: viewport.height } : undefined;
     if (!rootVerified) this.structureViewport = undefined;
     const elements = rawElements.filter(onScreen(viewport));
     // Preserve upstream foreground-based identity, including PID-only roots.
@@ -342,15 +506,23 @@ export class Devices {
     })]);
     return this.seen = {
       device: target.id, revision: this.coordinator.revision(target.id), foreground: tree.foreground,
-      elements, signature, rootVerified, at: performance.now(), startedAt: started, observedAt,
+      elements, signature, rootVerified, portraitTouchViewport, at: performance.now(), startedAt: started, observedAt,
       structure_started_at: observedAt, structure_completed_at: new Date().toISOString(),
       ...(served ? { served } : {}),
     };
   }
   // A simulator's size only changes when it rotates. A physical device maps touches through its
   // current orientation, so it keeps taking a fresh frame.
-  async screenSize() {
+  touchViewport(target, targetRead) {
+    if (targetRead && targetRead === this.seen && targetRead.device === target.id &&
+        targetRead.revision === this.coordinator.revision(target.id) && performance.now() - targetRead.at <= justReadMs) {
+      return targetRead.portraitTouchViewport;
+    }
+  }
+  async screenSize(targetRead) {
     const target = await this.target();
+    const viewport = this.touchViewport(target, targetRead);
+    if (viewport) return viewport;
     if (target.kind === 'simulator' && this.size?.device === target.id) return this.size;
     // A batch may retain only a viewport that was captured or validated
     // during THIS batch, not one inherited from a previous AX-only action.
@@ -401,6 +573,79 @@ export class Devices {
       return { ...screenChange(before, before !== undefined && seen.signature !== before ? seen.signature : undefined), screen: { ...describeScreen(seen), ...(seen.startedAt < this.lastInputAt ? { stale: true } : {}), partial: true, reason: `${error.message}: the screen may still have been changing; this is the last complete read.` } };
     }
   }
+  async quickScrollObservation() {
+    const target = await this.target();
+    const unavailable = { source: 'unavailable', screen_stable: false, elements: [],
+      instruction: 'Inspect the current screen with observe_device before continuing.' };
+    try {
+      const seen = await deadline(this.observationBudget(target), async () => {
+        await this.settle();
+        return this.structure();
+      });
+      const observation = seen.startedAt >= this.lastInputAt && this.observationFromStructure(seen);
+      if (!observation) return { screen: unavailable, ...screenChange() };
+      const blocker = blockingOverlay(seen);
+      const elements = seen.elements.filter(e => {
+        const role = e.role ?? e.type ?? '';
+        return flagOn(e.visible) && !/^(?:AX|XCUIElementType)?(?:Application|Window|StatusBar)$/i.test(role) &&
+          [e.label, e.text, e.value, e.placeholder].some(value => typeof value === 'string' && value.trim());
+      });
+      if (!blocker && !elements.length) return { screen: unavailable, ...screenChange() };
+      const limit = 80;
+      return { ...screenChange(),
+        ...(blocker && this.inBatch ? { isError: true, stop_reason: 'blocked_by_overlay', error: 'A visible overlay blocked further steps.' } : {}), screen: {
+        observation, source: 'accessibility', foreground: seen.foreground, screen_stable: false,
+        elements: elements.slice(0, limit).map(e => {
+          const { x, y, width, height } = e.frame ?? e;
+          return { role: e.role ?? e.type, label: e.label ?? e.text, value: e.value, placeholder: e.placeholder,
+            frame: [x, y, width, height] };
+        }), total: elements.length, truncated: elements.length > limit, ...(blocker ? { blocker } : {}),
+      } };
+    } catch {
+      try { checkWork(); } catch (stop) { return { stopped: true, stop_reason: stoppingReason(stop) }; }
+      return { screen: unavailable, ...screenChange() };
+    }
+  }
+  async readExpectation(expect, before, structured) {
+    let seen, lastRead;
+    try {
+      seen = await phase('postcondition_wait', () => deadline((expect.timeout_seconds ?? 8) * 1000, async () => {
+        for (;;) {
+          const current = await this.structure();
+          checkWork();
+          if (current.device !== before.device) return;
+          if (current.startedAt >= this.lastInputAt && current.elements.length) lastRead = current;
+          if (!sameForeground(current.foreground, before.foreground) || actionBlocked(current)) return;
+          if (lastRead === current && actionExpectation(current, expect)) return current;
+          await pause(100);
+        }
+      }));
+    } catch {
+      // Keep the tap receipt even if its verification is interrupted.
+    }
+    if (!seen) {
+      let stopReason = 'postcondition_unverified';
+      try { checkWork(); } catch (error) { stopReason = stoppingReason(error); }
+      const screen = lastRead && lastRead.revision === this.coordinator.revision(lastRead.device)
+        ? { ...describeScreen(lastRead), screen_stable: false } : undefined;
+      return { isError: true, stop_reason: stopReason, expectation: { matched: false }, ...(screen ? { screen } : {}),
+        instruction: 'The tap was sent. Verify the resulting screen before deciding whether to try again.' };
+    }
+    const result = { screen: describeScreen(seen), expectation: { matched: true, state: expect.state ?? 'visible' },
+      ...screenChange(before.signature, seen.signature) };
+    const observation = structured && seen.elements.length <= 400 && this.observationFromStructure(seen);
+    if (observation) {
+      const receiptId = randomUUID();
+      this.elements = seen.elements.map(element => ({ ...element, ref: `e${++this.nextRef}` }));
+      this.elementsAt = Date.now();
+      this.structureViewport = { device: seen.device, revision: seen.revision, width: observation.width, height: observation.height,
+        rootVerified: seen.rootVerified, foreground: seen.foreground };
+      Object.assign(result, { receipt_id: receiptId, input_completed_at: this.lastInputCompletedAt,
+        post_action_observation: { version: 1, action_receipt_id: receiptId, observation, source: 'accessibility', foreground: seen.foreground,
+          elements: this.elements, total: this.elements.length, truncated: false, prompt: { status: 'checked', source: 'accessibility', warning: null } } });
+    }
+    return result;
+  }
   // The action does not depend on this read, so a slow read only costs the comparison.
   async readBefore(maxAge) {
     try { return await deadline(readbackMs, () => this.structure(maxAge)); } catch { checkWork(); }
@@ -439,24 +684,149 @@ export class Devices {
         capture_completed_at: frame.capture_completed_at } : {}),
     };
   }
-  async input(request) {
+  bindStructure(seen, observation, elements) {
+    this.elements = elements.map(element => ({ ...element, ref: `e${++this.nextRef}` }));
+    this.elementsAt = Date.now();
+    this.structureViewport = { device: observation.device, revision: observation.revision,
+      width: observation.width, height: observation.height, rootVerified: seen.rootVerified, foreground: seen.foreground };
+    return this.elements;
+  }
+  async observeWithFallback(args) {
+    const hybrid = args.fallback === 'hybrid';
+    const attachImage = args.include_image !== false;
+    if (args.include_offscreen || (args.source && args.source !== 'auto')) {
+      throw new Error('Observation fallback requires source=auto and visible elements.');
+    }
+    if (args.require_visual && !attachImage) {
+      throw new Error('require_visual=true needs image attachments. Omit include_image or set it to true.');
+    }
+    const hint = args.ax_hint?.normalize('NFKC').trim().toLowerCase();
+    if (args.ax_hint !== undefined && !hint) throw new Error('ax_hint must contain visible text.');
+    const previousFrame = this.frame;
+    let seen, reason;
+    try { if (!args.require_visual && !args.skip_ax) seen = await deadline(2500, () => this.structure()); }
+    catch (error) {
+      checkWork();
+      reason = error.name === 'TimeoutError' ? 'accessibility_timeout' : 'accessibility_unavailable';
+    }
+
+    const nodes = (seen?.elements ?? []).filter(element => flagOn(element.visible));
+    const max = args.max_elements ?? (hybrid ? 80 : 400);
+    const visibleText = element => [element.label, element.text, element.value].some(value =>
+      typeof value === 'string' && value.trim() &&
+      (!hint || value.normalize('NFKC').toLowerCase().includes(hint)));
+    const usableAXText = element => !/^(?:XCUIElementType)?(?:Application|Window|StatusBar)$/i.test(element.type ?? element.role ?? '') &&
+      visibleText(element);
+    const orderedAX = hybrid && hint ? [...nodes.filter(usableAXText), ...nodes.filter(element => !usableAXText(element))] : nodes;
+    const hasText = orderedAX.slice(0, max).some(usableAXText);
+    const warning = promptWarning(nodes);
+    const observation = hasText && this.observationFromStructure(seen);
+
+    if (observation) {
+      this.bindStructure(seen, observation, orderedAX.slice(0, max));
+      const overlay = hybrid && process.env.POKI_DIRECT_REF === '1' && blockingOverlay({ elements: nodes });
+      return text({ observation, source: 'accessibility', foreground: seen.foreground,
+        ...(overlay ? { blocker: overlay, recovery: overlayRefusal(overlay).recovery } : {}),
+        width: observation.width, height: observation.height, units: 'points',
+        elements: this.elements, total: nodes.length, truncated: nodes.length > max,
+        prompt: { status: 'checked', source: 'accessibility', warning } });
+    }
+
+    const axReason = args.skip_ax ? 'ocr_requested' : reason ?? (hasText ? 'accessibility_viewport_changed' : hint ? 'ax_hint_missing' : 'accessibility_empty');
+    let fallbackReason = args.require_visual ? 'visual_requested' : axReason;
+    let prompt = warning ? { status: 'checked', source: 'accessibility', warning }
+      : { status: 'unavailable', instruction: attachImage ? 'Inspect the image for system prompts before continuing.'
+        : 'Check for system prompts before continuing. Allow image attachments to inspect the screen visually.' };
+    // OCR needs local pixels even when the caller declines image attachments.
+    // The image-only route has no use for a second capture without an attachment.
+    let frame;
+    if (hybrid || attachImage) {
+      try { frame = this.frame && this.frame !== previousFrame ? this.frame : await this.capture(); }
+      catch (error) {
+        if (attachImage || stopped(error)) throw error;
+        fallbackReason = 'capture_unavailable';
+      }
+    }
+
+    if (hybrid && frame && !args.require_visual) {
+      let rows;
+      try { rows = await deadline(hybridOCRDeadlineMs, () => this.ocr(frame)); }
+      catch (error) {
+        checkWork();
+        fallbackReason = error.name === 'TimeoutError' ? 'ocr_timeout' : 'ocr_unavailable';
+      }
+      if (rows) {
+        const ocrWarning = promptWarning(rows);
+        prompt = warning ? prompt : { status: 'checked', source: 'ocr', warning: ocrWarning };
+        const readable = rows.filter(row => row.confidence >= hybridOCRConfidence && onScreen(frame)(row));
+        // A clock or carrier label alone cannot establish that the page was read.
+        const inset = frame.height * 0.05;
+        const candidates = readable.filter(row => visibleText(row) &&
+          (hint || (row.frame.y + row.frame.height / 2 > inset && row.frame.y + row.frame.height / 2 < frame.height - inset)));
+        if (candidates.length) {
+          // Put the requested evidence inside the caller's element budget.
+          const ordered = hint ? [...candidates, ...readable.filter(row => !visibleText(row))] : readable;
+          this.elements = ordered.slice(0, max).map(row => ({ ...row, ref: `e${++this.nextRef}` }));
+          this.elementsAt = Date.now();
+          frame.source = 'ocr';
+          frame.structure_completed_at = new Date().toISOString();
+          return text({ observation: this.observation(frame), source: 'ocr', foreground: seen?.foreground,
+            width: frame.width, height: frame.height, units: 'points', elements: this.elements,
+            total: readable.length, truncated: readable.length > max, fallback_reason: axReason, prompt });
+        }
+        fallbackReason = hint && !rows.some(visibleText) ? 'ocr_hint_missing' : 'ocr_uncertain';
+      }
+    }
+    this.elements = [];
+    this.elementsAt = 0;
+    this.structureViewport = undefined;
+    if (!attachImage) {
+      return text({ source: 'unavailable', foreground: seen?.foreground, elements: [], total: 0,
+        fallback_reason: fallbackReason, prompt,
+        instruction: 'The requested screen evidence could not be read as text. Retry with image attachments for visual inspection.' });
+    }
+    return {
+      content: [...text({ observation: this.observation(frame), source: 'image', foreground: seen?.foreground,
+        width: frame.width, height: frame.height, units: 'points', elements: [], total: 0,
+        fallback_reason: fallbackReason,
+        prompt }).content,
+        { type: 'image', data: frame.data.toString('base64'), mimeType: 'image/png' }],
+    };
+  }
+  async usbInterfaceOrientation() {
+    const { stdout } = await this.native(['springboard', 'get_interface_orientation'], undefined, 5000);
+    return stdout.trim();
+  }
+  async input(request, targetRead) {
     const target = await this.target();
-    const frame = 'x' in request || 'x1' in request || request.op === 'pinch' || request.op === 'draw_strokes' ? await this.screenSize() : undefined;
+    // A semantic tap can use geometry from the same AX read that located its target.
+    const verifiedViewport = this.touchViewport(target, targetRead);
+    const needsViewport = 'x' in request || 'x1' in request || request.op === 'pinch' || request.op === 'draw_strokes';
+    const frame = needsViewport ? verifiedViewport ?? await this.screenSize() : undefined;
     const command = { ...request };
+    if (frame && target.kind === 'simulator') command.viewport = { width: frame.width, height: frame.height };
+    let orientation;
+    if (frame && frame.width > frame.height && target.kind === 'physical' && !target.remote && target.connection === 'USB') {
+      const reported = await this.usbInterfaceOrientation();
+      orientation = { LandscapeLeft: 'landscape_left', LandscapeRight: 'landscape_right' }[reported];
+      if (!orientation) return { isError: true, sent: false, outcome: 'not_sent',
+        reason: 'landscape_orientation_unconfirmed', instruction: 'Refresh the screen before sending coordinates.' };
+    }
     if ('x' in command) {
-      const p = hidPoint(command.x, command.y, frame.width, frame.height);
+      const p = hidPoint(command.x, command.y, frame.width, frame.height, orientation);
       if (target.kind === 'physical') { command.x = p[0]; command.y = p[1]; }
     }
     if ('x1' in command) {
-      const a = hidPoint(command.x1, command.y1, frame.width, frame.height), b = hidPoint(command.x2, command.y2, frame.width, frame.height);
+      const a = hidPoint(command.x1, command.y1, frame.width, frame.height, orientation), b = hidPoint(command.x2, command.y2, frame.width, frame.height, orientation);
       if (target.kind === 'physical') [command.x1,command.y1,command.x2,command.y2] = [...a,...b];
     }
     if (command.op === 'draw_strokes') command.strokes = command.strokes.map(points => points.map(({ x, y, time_ms }) => {
-      const p = hidPoint(x, y, frame.width, frame.height);
+      const p = hidPoint(x, y, frame.width, frame.height, orientation);
       return target.kind === 'physical' ? { x: p[0], y: p[1], time_ms } : { x, y, time_ms };
     }));
     if (command.op === 'pinch' && target.kind === 'physical') {
       command.start_distance *= 65535 / (frame.width - 1); command.end_distance *= 65535 / (frame.width - 1);
+      if (orientation) command.angle = 90; // A horizontal landscape pinch is vertical in portrait HID axes.
     }
     await phase('recording_recovery', () => prepareRecordingInput(this, target));
     // The last screen read before the first input of a call is the one its effect is measured against.
@@ -474,7 +844,7 @@ export class Devices {
     }
     return result;
   }
-  async dispatch(name, original = {}) {
+  async dispatch(name, original = {}, pinned) {
     const def = definitions.find(d => d[0] === name);
     if (!def) throw new Error(`Unknown tool: ${name}`);
     const args = def[2].parse(original);
@@ -483,11 +853,13 @@ export class Devices {
     // input branch; without this they could reuse portrait size after rotation.
     // The default input branch may renew it only after its own fresh AX read.
     const previousViewport = this.structureViewport;
+    const reference = name === 'tap' && args.ref && process.env.POKI_DIRECT_REF === '1';
+    const previousElement = reference && Date.now() - this.elementsAt <= 30000 && this.elements.find(element => element.ref === args.ref.toLowerCase());
     this.structureViewport = undefined;
     const previous = this.requested, previousResolved = this.resolved;
     // Steps of one batch share a lookup, which runs a Python process and simctl each time.
     const sharesTarget = this.inBatch && args.device === undefined;
-    if (!sharesTarget) this.resolved = undefined;
+    if (!sharesTarget) this.resolved = pinned?.simulator;
     this.requested = args.device ?? previous;
     try {
       checkWork();
@@ -541,6 +913,7 @@ export class Devices {
         case 'take_screenshot': {
           const frame = await this.capture();
           const width = Math.round(args.max_width ?? frame.width);
+          const sharp = await imageProcessor();
           const jpeg = await sharp(frame.data).resize({ width }).jpeg({ quality: 90 }).toBuffer();
           let prompt;
           try { prompt = { status:'checked', source:'ocr', warning:promptWarning(await this.ocr(frame)) }; }
@@ -555,12 +928,21 @@ export class Devices {
           if (isDirectory) { const target=await this.target(); await mkdir(path,{recursive:true,mode:0o700}); path=join(path,`${target.name.replace(/[^\p{L}\p{N}._-]/gu,'_')}-${Date.now()}-${randomUUID().slice(0,8)}.png`); }
           const extension = extname(path).toLowerCase();
           if (!['.png','.jpg','.jpeg'].includes(extension)) throw new Error('Use a .png, .jpg or .jpeg path.');
-          const frame = await this.capture();
-          const data = extension === '.png' ? frame.original : await sharp(frame.original).jpeg({quality:95}).toBuffer();
+          const { original } = await this.capture({ keepOriginal: true });
+          let data = original;
+          if (extension !== '.png') {
+            const sharp = await imageProcessor();
+            data = await sharp(original).jpeg({ quality: 95 }).toBuffer();
+          }
           await writeFile(path,data,{flag:args.overwrite?'w':'wx',mode:0o600}); return text({path,bytes:data.length});
         }
         case 'list_elements': return text(await this.recognize(args));
         case 'observe_device': {
+          if ((args.require_visual !== undefined || args.skip_ax !== undefined) && args.fallback !== 'hybrid') {
+            throw new Error('require_visual and skip_ax require fallback=hybrid.');
+          }
+          if (args.fallback) return this.observeWithFallback(args);
+          if (args.ax_hint !== undefined) throw new Error('ax_hint requires fallback=image or fallback=hybrid.');
           const result = await this.recognize(args), frame = this.frame;
           let prompt;
           try { prompt = { status: 'checked', source: 'ocr', warning: promptWarning(await this.ocr(frame)) }; }
@@ -598,13 +980,20 @@ export class Devices {
             const result = await this.native(['rotate','left']);
             const orientation = result.stdout.match(/non_flat_orientation:\s*(\w+)/)?.[1];
             if (!orientation) throw new Error(result.stderr || 'No orientation response');
-            if (orientation === expected) { this.frame=undefined; this.elements=[]; return text({orientation:args.orientation,device_report:result.stdout}); }
+            const interfaceOrientation = target.connection === 'USB'
+              ? await this.usbInterfaceOrientation() : orientation;
+            if (interfaceOrientation === expected) {
+              return text({ orientation: args.orientation, device_report: result.stdout });
+            }
             if (/locked:\s*true/.test(result.stdout)) throw new Error('Device rotation is locked.');
           }
           throw new Error('The requested orientation was not reported by the device.');
         }
         // Without await, the finally below restores the device state while the first step is still looking up its device.
         case 'batch_commands': {
+          // The first command independently revalidates a reference. Retain its
+          // incoming binding for that check when guarded references are enabled.
+          if (process.env.POKI_DIRECT_REF === '1') this.structureViewport = previousViewport;
           this.batchViewportVerified = false;
           try { return await runBatch(this, args); }
           finally { this.batchViewportVerified = false; }
@@ -614,14 +1003,31 @@ export class Devices {
         case 'run_code': return await runCode(this, args);
         default: {
           const verify = args.verify !== false;
+          const quick = args.observe === 'quick' && (name === 'scroll' || name === 'swipe');
           // A batch step that asks for verification (verify: true) is compared even when checksStep would skip it.
-          const looks = verify && reportsScreen.has(name) && !this.inBatch, touches = verify && touchesControl.has(name) && (args.verify === true || this.checksStep());
+          const looks = !quick && verify && reportsScreen.has(name) && !this.inBatch, touches = verify && touchesControl.has(name) && (args.verify === true || this.checksStep());
           this.beforeInput = undefined; this.expectsForeground = false;
           // The AX-only binding is valid only when this same call has just
           // performed a fresh root-verified AX read. Unverified or first-step
           // batch gestures fall back to image capture for coordinate sizing.
-          const before = looks || touches
-            ? await this.readBefore(previousViewport ? 0 : this.inBatch ? this.reuseMs() : 0)
+          const expect = args.expect;
+          const refusalResult = data => ({ isError: true, ...text(data), _meta: { stop_reason: data.stop_reason ?? 'error' } });
+          const refused = (reason, recovery) => refusalResult({ sent: false, outcome: 'not_sent', reason, ...(recovery ? { recovery } : {}) });
+          if (quick && args.post_action_ocr) return refused('quick_observation_requires_separate_visual_inspection');
+          const stale = () => refused('reference_requires_fresh_observation', {
+            tool: 'observe_device', arguments: { fallback: 'hybrid' }, instruction: 'Refresh the observation and use a current target. Retrying this reference will not send a tap.',
+          });
+          if (expect && (process.env.POKI_CONDITIONAL_WAIT !== '1' || !verify || args.post_action_ocr)) {
+            return refused('expect_requires_conditional_wait_and_ax_verification');
+          }
+          if (expect && !expect.text.trim()) return refused('empty_expectation');
+          if (reference && !previousElement) return stale();
+          const actionStartedAt = performance.now();
+          // The immediately preceding scroll search already read this viewport.
+          // locate still checks that the target has stopped moving before tapping.
+          const afterScrollSearch = this.inBatch && this.batchStep?.previous?.tool === 'scroll_to' && name === 'tap_text';
+          const before = looks || touches || reference || expect
+            ? await phase('pre_action_ax', () => this.readBefore(afterScrollSearch ? justReadMs : reference || expect || previousViewport ? 0 : this.inBatch ? this.reuseMs() : 0))
             : undefined;
           if (previousViewport && before?.rootVerified === true &&
               before.device === previousViewport.device &&
@@ -631,19 +1037,33 @@ export class Devices {
               this.elements.length && Date.now() - this.elementsAt <= 30000) {
             this.structureViewport = { ...previousViewport, revision: before.revision };
           }
-          let result = await interaction(this,name,args);
+          const overlay = (reference || expect || name === 'tap_text' && process.env.POKI_DIRECT_REF === '1') && blockingOverlay(before);
+          if (overlay) {
+            this.elements = []; this.structureViewport = undefined;
+            return refusalResult(overlayRefusal(overlay));
+          }
+          const directElement = reference && referenceTarget(previousViewport, previousElement, before, this.size);
+          if (reference && !directElement) return stale();
+          const maySend = expect && (seen => Boolean(seen?.elements.length && sameForeground(before?.foreground, seen.foreground) &&
+            !actionBlocked(seen) && !actionExpectation(seen, expect)));
+          if (maySend && !maySend(before)) return refused('expectation_needs_unmatched_current_ax');
+          let result = await phase('resolve_and_dispatch', () => interaction(this,name,args,directElement,maySend,actionStartedAt));
+          if (directElement && result.sent === true) result.target_source = 'validated_reference';
           if(result===undefined) throw new Error(`No implementation for ${name}`);
           const delivered = result.sent === true && !result.isError && !result.stopped;
           // A target that had to be waited for is compared with the screen it was found on, not the one before the wait.
           const sentTo = this.beforeInput ?? before, signature = sentTo?.elements.length ? sentTo.signature : undefined;
-          if (looks && delivered) result = { ...result, ...await this.readback(signature, { structured: args.return_observation === true, structuredVisual: args.post_action_ocr === true }) };
+          if (expect && delivered) result = { ...result, ...await this.readExpectation(expect, before,
+            args.return_observation === true || this.batchStep?.returnObservation === true) };
+          else if (quick && delivered) result = { ...result, ...await phase('quick_scroll_observation', () => this.quickScrollObservation()) };
+          else if (looks && delivered) result = { ...result, ...await this.readback(signature, { structured: args.return_observation === true, structuredVisual: args.post_action_ocr === true }) };
           else if (touches && delivered && signature !== undefined) result = { ...result, ...await this.changedSince(signature) };
           // Which list the scroll moved, from the reads on either side of it.
           if (name === 'scroll' && looks && delivered && sentTo?.elements.length && this.seen?.elements.length && this.seen.startedAt > this.lastInputAt) result = { ...result, moved: whatMoved(sentTo.elements, this.seen.elements) };
           // The input layers answer screen_change_verified false before anything is read, which means not looked at, not unchanged.
           if (result.screen_change === undefined && result.screen_change_verified === false && !this.inBatch) result = { ...result, screen_change: 'unknown' };
           if (!verify) result = { ...result, verified: false };
-          const unchanged = touches && result.screen_change === 'unchanged' && !result.stopped;
+          const unchanged = touches && result.screen_change === 'unchanged' && !result.stopped && !result.expectation?.matched;
           if (unchanged) result = { ...result, instruction: unchangedAdvice };
           // The input layers always answer false here. Only a touch is compared inside a batch; the batch ends with the screen.
           if (this.inBatch && result.screen_change_verified === false) { const { screen_change_verified, ...rest } = result; result = rest; }
@@ -661,6 +1081,13 @@ export class Devices {
           return { ...text(result), ...(unchanged || result.screen_change ? { _meta: { ...(unchanged ? { stop_reason: 'no_change' } : {}), ...(result.screen_change ? { verdict: result.screen_change } : {}) } } : {}) };
         }
       }
-    } finally { this.requested=previous; if (!sharesTarget) this.resolved=previousResolved; }
+    } finally {
+      // Reuse a simulator's exact ID. Names can become ambiguous, and a
+      // physical device's route can change between steps.
+      if (pinned && this.resolved?.kind === 'simulator' && this.resolved.id === pinned.selector &&
+          this.resolved.state === 'Booted') pinned.simulator = this.resolved;
+      this.requested = previous;
+      if (!sharesTarget) this.resolved = previousResolved;
+    }
   }
 }

@@ -17,12 +17,12 @@ test('rotation before a do coordinate tap refreshes dimensions', { timeout: 3000
   assert.ok(value(first).post_action_observation, 'AX-only binding created');
   await sharp({ create: { width: 200, height: 100, channels: 3, background: 'white' } })
     .png().toFile(f.image);
-  await f.set({ elements: ax(200, 100, 'Done'), afterInput: null });
+  await f.set({ elements: ax(200, 100, 'Done'), interfaceOrientation: 'LandscapeRight', afterInput: null });
   const before = (await f.events()).length;
   const r = await f.call('do', { actions: [{ tap: [90, 60] }] });
   const taps = (await f.events()).slice(before).filter(e => e.op === 'tap');
   assert.equal(taps.length, 1, JSON.stringify(r.content));
   assert.deepEqual([taps[0].request.x, taps[0].request.y],
-    [Math.round(90 / 199 * 65535), Math.round(60 / 99 * 65535)],
+    [Math.round((1 - 60 / 99) * 65535), Math.round(90 / 199 * 65535)],
     'do must convert against the rotated 200×100 screen');
 });

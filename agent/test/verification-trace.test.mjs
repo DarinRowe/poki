@@ -64,3 +64,31 @@ test('A batch that fails partway gives the verifier each step it ran, the failur
   assert.equal(batch.result.screen.elements[0].label, 'Fixture ready.', 'The verifier sees the screen the batch ended on');
   assert.ok(trace.indexOf(launch) < trace.indexOf(alert) && trace.indexOf(alert) < trace.indexOf(batch), 'Steps appear in the order they ran, then the batch outcome');
 });
+
+test('A visual answer carries the hybrid screenshot to verification without learning a text route', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'poki-visual-verification-'));
+  const services = await taskServices(join(directory, 'mcp'), { execution: [
+    ['report_plan', { title: 'Inspect the fixture', steps: ['Read the image'], currentStep: 1 }],
+    ['observe_device', { fallback: 'hybrid', require_visual: true }],
+    ['finish_task', { success: true, summary: 'The fixture is white.', details: [{ label: 'Color', value: 'white' }], answer: { kind: 'visual' } }],
+  ] });
+  const before = { ...process.env };
+  Object.assign(process.env, { POKI_MCP_STATE_DIR: join(directory, 'mcp'), OPENAI_BASE_URL: services.modelURL,
+    OPENAI_API_KEY: 'sk-local-channel-fixture', POKI_AGENT_AUTH: 'api-key' });
+  const task = new PhoneTask('What color is the fixture?', 'synthetic-device', { stateDirectory: join(directory, 'state'), auth: 'api-key', model: 'gpt-5.4', stepTimeout: 10 });
+  t.after(async () => {
+    await task.close(); await services.close();
+    for (const key of Object.keys(process.env)) if (!(key in before)) delete process.env[key];
+    Object.assign(process.env, before);
+    await rm(directory, { recursive: true, force: true });
+  });
+  const closed = once(task, 'closed');
+  void task.start();
+  await closed;
+  const verification = services.modelRequests.find(isVerification);
+  assert.ok(verification?.input.some(item => Array.isArray(item.content) && item.content.some(part => part.type === 'input_image')));
+  assert.equal(task.snapshot.phase, 'completed');
+  assert.equal(task.snapshot.execution.learned, null);
+  assert.deepEqual(services.deviceCalls.filter(call => call.name === 'observe_device').map(call => call.args),
+    [{ device: 'synthetic-device', fallback: 'hybrid', require_visual: true }]);
+});

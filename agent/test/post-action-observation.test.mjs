@@ -25,6 +25,17 @@ test('reuses only a bound, fresh, full post-action observation', () => {
   assert.equal(reusableActionObservation(receipt(), 'fixture-phone', 'other.app'), null);
 });
 
+test('a PID-only foreground must match the verified launch of the expected app', () => {
+  const r = receipt();
+  const pid = 4242;
+  r.post_action_observation.foreground = { pid };
+  assert.equal(usable(r), false);
+  assert.ok(reusableActionObservation(r, 'fixture-phone', 'org.example', { expectedPid: pid }));
+  assert.equal(reusableActionObservation(r, 'fixture-phone', 'org.example', { expectedPid: pid + 1 }), null);
+  r.post_action_observation.foreground.bundle_id = 'different.app';
+  assert.equal(reusableActionObservation(r, 'fixture-phone', 'org.example', { expectedPid: pid }), null);
+});
+
 test('rejects uncertain input, missing identity and observations captured before the action', () => {
   for (const mutate of [
     r => { r.sent = false; },

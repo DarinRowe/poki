@@ -56,3 +56,40 @@ test('Input on a phone without displayservice reports nothing sent and names the
   assert.equal(result.outcome, 'not_sent');
   assert.match(result.instruction, /node bin\/prepare-device\.mjs fixture-phone/);
 });
+
+test('batch reuses its final read as an action receipt and excludes uncertain input from the suffix', async t => {
+  const f = await fixture(t);
+  await f.set(input());
+  const fill = { tool: 'fill', arguments: { text: 'verified input' } };
+  const completed = summary(await f.call('batch_commands', { commands: [fill], return_observation: true }));
+  assert.equal(completed.sent, true);
+  assert.equal(completed.receipt_id, completed.post_action_observation.action_receipt_id);
+  assert.ok(completed.post_action_observation.elements.some(element => element.value === 'verified input' && element.ref));
+  assert.ok(Date.parse(completed.post_action_observation.observation.structure_started_at) >= Date.parse(completed.input_completed_at));
+
+  await f.set({ ...input(), inputError: true });
+  const stopped = summary(await f.call('batch_commands', { return_observation: true, commands: [
+    { tool: 'press_key', arguments: { key: 'return' } }, fill,
+  ] }));
+  assert.equal(stopped.recovery.outcome, 'verify');
+  assert.equal(stopped.recovery.step, 1);
+  assert.deepEqual(stopped.recovery.unattempted_steps, [fill]);
+  assert.deepEqual(stopped.remaining_steps, [fill]);
+  assert.equal(stopped.post_action_observation, undefined);
+});
+
+test('fill retries a refused target once only when the fresh focused field and its value still match', async t => {
+  const f = await fixture(t);
+  const count = async () => (await f.events()).filter(event => event.request?.op === 'type_text').length;
+  await f.set({ ...input(), launched: true, refuseOnce: {} });
+  const retried = value(await f.call('fill', { text: 'verified input' }));
+  assert.equal(retried.text_verified, true);
+  assert.equal(retried.target_revalidated, true);
+  assert.equal(await count(), 2);
+  await f.set({ ...input(), launched: true, refuseOnce: { newValue: 'existing edit' } });
+  const refused = await f.call('fill', { text: 'verified input' });
+  assert.equal(refused.isError, true);
+  assert.equal(value(refused).sent, false);
+  assert.equal(await count(), 3);
+  assert.ok(value(await f.call('list_elements')).elements.some(element => element.value === 'existing edit'));
+});
