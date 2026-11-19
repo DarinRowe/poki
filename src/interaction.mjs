@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { askHuman } from './human.mjs';
 import { screenIdentity } from './screen-identity.mjs';
 import { flagOn } from './element-flags.mjs';
+import { addControl, setSlider } from './controls.mjs';
 
 const behavior = JSON.parse(readFileSync(new URL('./data/interaction.json', import.meta.url), 'utf8'));
 import { pause, deadline, checkWork, stopped, remaining } from './work.mjs';
@@ -621,6 +622,8 @@ export async function interaction(ctx, name, args) {
       if (await keyboardVisible()) throw new Error("The keyboard is still visible after the toggle. Use its hide control, or tap outside the field if the app supports dismissing it that way.");
       return { hidden: true, screen_change: 'changed', screen_change_verified: true };
     }
+    case 'set_slider': return setSlider(ctx, args, seen => Boolean(promptWarning(seen.elements) || seen.elements.some(element => modalRole.test(elementRole(element)))));
+    case 'add_control': return addControl(ctx, args, search => interaction(ctx, 'fill', search));
     case 'system_gesture': {
       if (args.gesture === 'go_home') return ctx.input({ op: 'button', button: 'home' });
       if (args.gesture === 'app_switcher' && (await ctx.target()).kind === 'physical') return ctx.input({ op: 'button', button: 'home', count: 2, interval_ms: 120 });

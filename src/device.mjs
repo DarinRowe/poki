@@ -508,7 +508,7 @@ export class Devices {
       }
       switch (name) {
         case 'acquire_device': return text(await this.coordinator.acquire(this, await this.target(false), args.ttl_seconds ?? 120));
-        case 'poki_mcp_status': return text({ update: await updateNotice(), implementation: `Poki MCP ${version}`, ...await buildInfo(), registered_device_tools: 53, observation_tools: 1, management_tools: 4, transport_tools: 2, total_tools: definitions.length, devices: (await this.inventory()).length, selected: this.selected ?? null, approval_mode: process.env.POKI_MCP_APPROVAL_MODE === 'allow' ? 'operator-preapproved' : 'ask-human', approval_covers: [...approvedTools], approval_scope: 'Only the tools in approval_covers ask for approval. Taps, typing and other input inside apps, including a delete confirmed with a tap, are not gated.' });
+        case 'poki_mcp_status': return text({ update: await updateNotice(), implementation: `Poki MCP ${version}`, ...await buildInfo(), registered_device_tools: 55, observation_tools: 1, management_tools: 4, transport_tools: 2, total_tools: definitions.length, devices: (await this.inventory()).length, selected: this.selected ?? null, approval_mode: process.env.POKI_MCP_APPROVAL_MODE === 'allow' ? 'operator-preapproved' : 'ask-human', approval_covers: [...approvedTools], approval_scope: 'Only the tools in approval_covers ask for approval. Taps, typing and other input inside apps, including a delete confirmed with a tap, are not gated.' });
         case 'list_devices': {
           const devices = await this.describeDevices(args.include_all_simulators);
           return text({ devices, ...(devices.some(d => d.kind === 'physical') ? {} : { notice: noUsbDevice }), ...(args.include_all_simulators ? { simulator_models: await simulatorModels() } : {}) });
@@ -649,6 +649,13 @@ export class Devices {
           if (this.inBatch && result.screen_change_verified === false) { const { screen_change_verified, ...rest } = result; result = rest; }
           // The user's answer is the result: a confirmed dialog is a success, and an unanswered one an ordinary failure for stop_on_error to decide.
           if (name === 'request_human_action') return { ...(result.completed ? {} : { isError: true, _meta: { stop_reason: 'error' } }), ...text(result) };
+          if (name === 'add_control' && result.reason === 'control_add_unverified' && args.include_image !== false) {
+            try {
+              const frame = await deadline(4000, () => this.capture());
+              return { isError: true, _meta: { stop_reason: 'unknown' },
+                content: [...text(result).content, { type: 'image', data: frame.data.toString('base64'), mimeType: 'image/png' }] };
+            } catch { checkWork(); }
+          }
           if (result.stopped || result.isError) return { isError: true, ...text(result), _meta: { stop_reason: result.stop_reason ?? (result.stopped ? 'cancelled' : 'unknown') } };
           if (name === 'wait_for') return { content: [...text(result).content, { type: 'image', data: this.frame.data.toString('base64'), mimeType: 'image/png' }] };
           return { ...text(result), ...(unchanged || result.screen_change ? { _meta: { ...(unchanged ? { stop_reason: 'no_change' } : {}), ...(result.screen_change ? { verdict: result.screen_change } : {}) } } : {}) };
