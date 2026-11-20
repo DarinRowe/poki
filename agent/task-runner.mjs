@@ -17,7 +17,7 @@ import { checkDeviceTools } from './device-preflight.mjs';
 import { reusableActionObservation, receiptForModel } from './post-action-observation.mjs';
 
 const terminal = new Set(['completed', 'failed', 'stopped']);
-const allowedTools = new Set(['poki_mcp_status', 'get_foreground_app', 'list_apps', 'launch_app', 'take_screenshot', 'observe_device', 'list_elements', 'tap', 'tap_text', 'fill', 'type_text', 'press_key', 'hide_keyboard', 'scroll', 'swipe', 'go_back', 'handle_alert', 'batch_commands']);
+const allowedTools = new Set(['poki_mcp_status', 'get_foreground_app', 'list_apps', 'launch_app', 'take_screenshot', 'observe_device', 'list_elements', 'tap', 'tap_text', 'fill', 'type_text', 'press_key', 'hide_keyboard', 'scroll', 'swipe', 'scroll_to', 'go_back', 'handle_alert', 'batch_commands']);
 const object = (properties, required) => ({ type: 'object', properties, required, additionalProperties: false });
 const string = { type: 'string' };
 const textResult = text => ({ success: true, contentItems: [{ type: 'inputText', text }] });
@@ -69,7 +69,13 @@ function batchTrace(args, result, elapsed) {
   if (!Number.isInteger(summary?.completed_steps)) return null;
   let steps = batchSteps(args, result.content.slice(0, -1));
   if (steps.length !== summary.completed_steps) steps = [];
-  if (!result.isError && steps.length === args.commands.length) return steps;
+  if (!result.isError && steps.length === args.commands.length) {
+    const last = steps.at(-1);
+    if (last?.args.observe === 'quick' && !last.result?.screen && summary.screen?.screen_stable === false) {
+      last.result = { ...last.result, screen: summary.screen };
+    }
+    return steps;
+  }
   return [...steps, { tool: 'batch_commands', args, result: summary, error: !!result.isError, elapsedMilliseconds: elapsed, at: new Date().toISOString() }];
 }
 
@@ -223,7 +229,10 @@ export class PhoneTask extends EventEmitter {
     this.modelToolMilliseconds = this.snapshot.metrics.toolMilliseconds;
     const instructions = [this.poki.instructions, await readFile(new URL('./skills/iphone-unlock/SKILL.md', import.meta.url), 'utf8'), await readFile(new URL('./prompts/call-draft.md', import.meta.url), 'utf8'), await readFile(new URL('./prompts/pi-app.md', import.meta.url), 'utf8')].join('\n\n');
     const dynamicTools = definitions.filter(tool => allowedTools.has(tool.name) && !['poki_mcp_status', 'get_foreground_app'].includes(tool.name)).map(tool => ({
-      type: 'function', name: tool.name, description: tool.description + (!observations.has(tool.name) ? '\nA successful action also returns a fresh structured observation, including foreground and element refs. Use it before requesting another observation.' : ''), inputSchema: tool.inputSchema,
+      type: 'function', name: tool.name, description: tool.description +
+        (['scroll', 'swipe'].includes(tool.name) ? '\nUse observe=quick to browse. Before reporting success, use a separate observation to verify the result.'
+          : observations.has(tool.name) ? '' : '\nReuse any returned structured observation before requesting another screen read.'),
+      inputSchema: tool.inputSchema,
     }));
     const apps = dynamicTools.find(tool => tool.name === 'list_apps');
     if (apps) {
@@ -232,7 +241,7 @@ export class PhoneTask extends EventEmitter {
     }
     const batch = dynamicTools.find(tool => tool.name === 'batch_commands');
     if (batch) {
-      batch.description = 'Run known steps in order. May begin with launch_app followed by fill without field for a single visible input. Selectors use exact observed labels or current refs, never translated or guessed names. Use only commands.tool entries. Stop on error. Observe unknown branches before choosing the next action.';
+      batch.description += '\nThe Agent stops on error. Observe unknown branches before choosing the next action.';
       batch.inputSchema = structuredClone(batch.inputSchema);
       batch.inputSchema.properties.commands.items.properties.tool = { type: 'string', enum: dynamicTools.filter(tool => !['batch_commands', 'list_apps'].includes(tool.name)).map(tool => tool.name) };
     }
@@ -428,7 +437,15 @@ export class PhoneTask extends EventEmitter {
     this.#record(name, args, result);
     let reusedObservation = false;
     if (!observing && !result.isError) {
-      const observed = await this.#completeObservation(result, name);
+      const last = name === 'batch_commands' ? actual.commands.at(-1) : { tool: name, arguments: actual };
+      const receipt = resultData(name === 'batch_commands' ? { content: result.content.slice(-1) } : result);
+      const screen = receipt?.screen;
+      const quickBrowse = ['scroll', 'swipe'].includes(last?.tool) && last.arguments?.observe === 'quick' &&
+        !(name === 'batch_commands' && actual.return_observation) &&
+        (name === 'batch_commands' ? receipt?.completed_steps === actual.commands.length : receipt?.sent === true) &&
+        screen?.source === 'accessibility' && screen.screen_stable === false &&
+        screen.observation?.device === this.device && screen.elements?.length > 0 && !screen.blocker;
+      const observed = quickBrowse ? undefined : await this.#completeObservation(result, name);
       if (observed) {
         reusedObservation = observed.reused === true;
         result = { ...result, content: [...result.content, ...observed.content] };
@@ -527,9 +544,9 @@ export class PhoneTask extends EventEmitter {
       if (tool === 'batch_commands') throw new Error('Nested batches are not allowed');
       if (tool === 'list_apps') throw new Error('Call list_apps separately with a specific query.');
       return { tool, arguments: this.#validate(tool, command.arguments ?? {}) };
-    }), stop_on_error: true };
+    }), stop_on_error: true, ...(args.return_observation === true ? { return_observation: true } : {}) };
     return name === 'poki_mcp_status' ? {} : { ...args, device: this.device,
-      ...(reusableInputTools.has(name) ? { return_observation: true } : {}) };
+      ...(reusableInputTools.has(name) && args.observe !== 'quick' ? { return_observation: true } : {}) };
   }
 
   #say(role, text, state = null) {

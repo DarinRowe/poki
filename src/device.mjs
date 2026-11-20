@@ -720,12 +720,14 @@ export class Devices {
     const orderedAX = hybrid && hint ? [...nodes.filter(usableAXText), ...nodes.filter(element => !usableAXText(element))] : nodes;
     const hasText = orderedAX.slice(0, max).some(usableAXText);
     const warning = promptWarning(nodes);
+    const deviceState = seen && screenDeviceState(seen);
+    const locked = deviceState ? { device_state: deviceState, instruction: 'Unlock the iPhone before resuming app interactions.' } : {};
     const observation = hasText && this.observationFromStructure(seen);
 
     if (observation) {
       this.bindStructure(seen, observation, orderedAX.slice(0, max));
       const overlay = hybrid && process.env.POKI_DIRECT_REF === '1' && blockingOverlay({ elements: nodes });
-      return text({ observation, source: 'accessibility', foreground: seen.foreground,
+      return text({ observation, source: 'accessibility', foreground: seen.foreground, ...locked,
         ...(overlay ? { blocker: overlay, recovery: overlayRefusal(overlay).recovery } : {}),
         width: observation.width, height: observation.height, units: 'points',
         elements: this.elements, total: nodes.length, truncated: nodes.length > max,
@@ -740,7 +742,7 @@ export class Devices {
     // OCR needs local pixels even when the caller declines image attachments.
     // The image-only route has no use for a second capture without an attachment.
     let frame;
-    if (hybrid || attachImage) {
+    if (hybrid && !deviceState || attachImage) {
       try { frame = this.frame && this.frame !== previousFrame ? this.frame : await this.capture(); }
       catch (error) {
         if (attachImage || stopped(error)) throw error;
@@ -748,7 +750,7 @@ export class Devices {
       }
     }
 
-    if (hybrid && frame && !args.require_visual) {
+    if (hybrid && frame && !args.require_visual && !deviceState) {
       let rows;
       try { rows = await deadline(hybridOCRDeadlineMs, () => this.ocr(frame)); }
       catch (error) {
@@ -783,10 +785,10 @@ export class Devices {
     if (!attachImage) {
       return text({ source: 'unavailable', foreground: seen?.foreground, elements: [], total: 0,
         fallback_reason: fallbackReason, prompt,
-        instruction: 'The requested screen evidence could not be read as text. Retry with image attachments for visual inspection.' });
+        instruction: 'The requested screen evidence could not be read as text. Retry with image attachments for visual inspection.', ...locked });
     }
     return {
-      content: [...text({ observation: this.observation(frame), source: 'image', foreground: seen?.foreground,
+      content: [...text({ observation: this.observation(frame), source: 'image', foreground: seen?.foreground, ...locked,
         width: frame.width, height: frame.height, units: 'points', elements: [], total: 0,
         fallback_reason: fallbackReason,
         prompt }).content,

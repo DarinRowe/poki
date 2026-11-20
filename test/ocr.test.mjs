@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseTesseractTSV, tesseractLanguages } from '../src/ocr.mjs';
-import { promptWarning } from '../src/interaction.mjs';
+import { describeScreen, promptWarning } from '../src/interaction.mjs';
 import { Devices } from '../src/device.mjs';
 import { stateDir } from '../src/config.mjs';
 const header = 'level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext';
@@ -64,4 +64,26 @@ test('Tesseract discovers installed Chinese packs and respects an explicit langu
   await writeFile(binary, "#!/bin/sh\nprintf '%s\\n' 'List of available languages (4):' chi_sim eng osd chi_tra\n", { mode: 0o700 });
   assert.equal(await tesseractLanguages(binary), 'eng+chi_sim+chi_tra');
   assert.equal(await tesseractLanguages(binary, undefined, 'fra'), 'fra');
+});
+
+test('purchase detection keeps ordinary text and shop controls usable', () => {
+  for (const label of ['香港购买 iPhone 攻略', '購買紀錄', 'How to confirm with side button', '确认购买']) {
+    assert.equal(promptWarning([{ role: 'StaticText', label }, { role: 'Button', label: '购买' }]), null, label);
+  }
+  assert.deepEqual(promptWarning(['確認購買', '確定', '取消'].map(text => ({ text }))), { kind: 'purchase' });
+  for (const text of ['Double-click to Pay', 'Double-click to Install', 'Confirm with Side Button', '連 按 兩 下 以 購 買']) {
+    assert.deepEqual(promptWarning([{ text }]), { kind: 'purchase' }, text);
+  }
+});
+
+test('the system passcode screen identifies a locked device, while app passcode fields do not', () => {
+  const elements = [
+    { role: 'StaticText', label: 'Enter Passcode', visible: true },
+    { role: 'SecureTextField', label: 'Passcode field', visible: true },
+  ];
+  const screen = bundle_id => describeScreen({ foreground: { bundle_id }, elements });
+  assert.equal(screen('com.apple.springboard').device_state, 'locked');
+  assert.equal(screen('com.example.settings').device_state, undefined);
+  assert.equal(describeScreen({ foreground: { bundle_id: 'com.apple.springboard' }, elements: [] }).device_state, undefined);
+  assert.equal(describeScreen({ foreground: { bundle_id: 'com.apple.springboard' }, elements }, elements, 'ocr').device_state, undefined);
 });

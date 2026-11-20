@@ -393,7 +393,7 @@ const opensApp = (element, seen) => {
 export function blockingOverlay(seen) {
   const elements = seen?.elements?.filter(visible) ?? [];
   const prompt = promptWarning(elements);
-  const modal = elements.find(e => /^(?:AX|XCUIElementType)?(?:Alert|Sheet|Dialog|Popover)$/i.test(e.role ?? e.type ?? ''));
+  const modal = elements.find(e => modalRole.test(elementRole(e)));
   if (!prompt && !modal) return null;
   return { ...(prompt ? { prompt } : {}), ...(modal ? { role: modal.role ?? modal.type, label: modal.label ?? modal.text } : {}),
     visible_buttons: [...new Set(elements.filter(e => /^(?:AX|XCUIElementType)?Button$/i.test(e.role ?? e.type ?? '') &&
@@ -522,7 +522,7 @@ export async function interaction(ctx, name, args, directElement, maySend, actio
       return { ...result, ...(box ? { container: args.container } : {}), ...(args.pages ? { pages: args.pages } : {}) };
     }
     case 'scroll_to': {
-      let previous, first;
+      let previous, first, initialForeground;
       const maximum = Math.min(args.max_scrolls ?? args.max_swipes ?? 10, 50);
       const nextTap = ctx.batchStep?.next;
       const preparingTap = nextTap?.tool === 'tap_text' &&
@@ -534,6 +534,7 @@ export async function interaction(ctx, name, args, directElement, maySend, actio
       for (let count = 0; count <= maximum; count++) {
         const previousFrame = ctx.frame;
         const seen = await readStructure(ctx, count ? 0 : justReadMs);
+        if (count === 0) initialForeground = seen.foreground;
         const overlay = blockingOverlay(seen);
         if (overlay) return { ...overlayRefusal(overlay), ...(count ? { sent: true, outcome: 'partial', scrolls: count } : {}) };
         let result = { elements: seen.elements, source: 'accessibility' };
@@ -559,10 +560,20 @@ export async function interaction(ctx, name, args, directElement, maySend, actio
         const signature = JSON.stringify([seen.signature, result.elements.filter(visible).map(e => [e.label, e.text, e.value, place(e)])]);
         const unchanged = signature === previous;
         const axUnavailable = args.source === 'accessibility' && !seen.elements.length;
-        if (axUnavailable || count === maximum || unchanged) return { isError: true, stop_reason: 'error',
-          found: false, scrolls: count, sent: count > 0, outcome: count ? 'partial' : 'not_sent',
-          error: axUnavailable ? 'No readable accessibility elements. Inspect the current screen or use the default search.' :
-            `Text ${JSON.stringify(args.text)} was not found after ${count} scrolls${unchanged ? '; visible content stopped changing' : ''}.` };
+        if (axUnavailable || count === maximum || unchanged) {
+          const reason = axUnavailable ? 'accessibility_unavailable' : unchanged ? 'no_progress' : 'scroll_limit';
+          const foreground = seen.foreground;
+          const sameApp = foreground && initialForeground &&
+            foreground.pid === initialForeground.pid && foreground.bundle_id === initialForeground.bundle_id &&
+            (foreground.pid > 0 || foreground.bundle_id);
+          const current = sameApp && seen.elements.length && seen === ctx.seen &&
+            seen.startedAt >= ctx.lastInputAt && ctx.observationFromStructure(seen);
+          return { isError: true, stop_reason: 'error', reason, found: false, scrolls: count,
+            sent: count > 0, outcome: count ? 'partial' : 'not_sent',
+            error: axUnavailable ? 'No readable accessibility elements. Inspect the current screen or use the default search.' :
+              `Text ${JSON.stringify(args.text)} was not found after ${count} scrolls${unchanged ? '; consecutive samples matched' : ''}.`,
+            ...(current ? { screen: { ...describeScreen(seen), screen_stable: false } } : {}) };
+        }
         previous = signature;
         const drag = await interaction(ctx, 'scroll', { ...args, direction: args.direction ?? 'down', ...(pages ? { pages } : {}) },
           undefined, undefined, undefined, seen);

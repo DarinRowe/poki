@@ -245,6 +245,23 @@ test('recognized prompts report their type without forcing a human handoff',asyn
 });
 
 
+test('hybrid observation reports the system passcode gate without needing OCR', async t => {
+ const f = await fixture(t);
+ const elements = [
+  { label: 'Enter Passcode', role: 'StaticText', frame: { x: 10, y: 10, width: 80, height: 20 } },
+  { label: 'Passcode field', role: 'SecureTextField', frame: { x: 10, y: 40, width: 80, height: 20 } },
+ ];
+ await f.set({ bundleId: 'com.apple.springboard', elements });
+ const result = value(await f.call('observe_device', { fallback: 'hybrid', include_image: false }));
+ assert.equal(result.device_state, 'locked');
+ assert.match(result.instruction, /unlock/i);
+ assert.equal((await f.events()).some(event => event.tool === 'ocr'), false);
+
+ await f.set({ bundleId: 'com.example.auth', elements });
+ const app = value(await f.call('observe_device', { fallback: 'hybrid', include_image: false }));
+ assert.equal(app.device_state, undefined);
+});
+
 const purchaseElements = [
  {label:'确认购买',role:'StaticText',frame:{x:10,y:10,width:80,height:20}},
  {label:'确定',role:'Button',frame:{x:10,y:60,width:30,height:20}},

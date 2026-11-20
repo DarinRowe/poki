@@ -101,17 +101,19 @@ export async function runBatch(ctx, args) {
         failed = true;
         const selectorRefused = !inputOccurred && ['fill', 'tap_text'].includes(command.tool) &&
           (data.reason === 'target_not_found' || /No visible element matches|Requested field is not visible/.test(result.content[0]?.text ?? ''));
-        failureScreen = (reason === 'postcondition_unverified' || data.reason === 'target_not_found' || quickScroll) && data.screen
+        failureScreen = (reason === 'postcondition_unverified' || data.reason === 'target_not_found' || quickScroll ||
+          command.tool === 'scroll_to' && data.found === false) && data.screen
           ? { screen: data.screen } : undefined;
         failureOutcome = data.outcome === 'unknown' || reason === 'unknown' ? 'verify' :
           !dispatchStarted || data.outcome === 'not_sent' || data.sent === false || selectorRefused ? 'not_sent' : 'verify';
-        const error = (quickScroll || data.reason === 'target_not_found' ? data.error : undefined) ??
+        const error = (quickScroll || data.reason === 'target_not_found' || command.tool === 'scroll_to' ? data.error : undefined) ??
           result.content.find(block => block.type === 'text')?.text;
         failure = { step: ran, ...command, error };
         if (!stopReason && stopOnError) stopReason = 'error';
       } else failure = undefined;
       let content = result.content;
-      if (quickScroll && (stopReason && failureScreen || !failed && ran === commands.length && finalObservation)) {
+      if ((quickScroll || command.tool === 'scroll_to') && stopReason && failureScreen ||
+          quickScroll && !failed && ran === commands.length && finalObservation) {
         const { screen: _screen, ...action } = data;
         content = [receipt(action), ...content.slice(1)];
       } else if (finalObservation && ran === commands.length && !failed && !stopReason && data.post_action_observation) {

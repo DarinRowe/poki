@@ -7,12 +7,18 @@ import { once } from 'node:events';
 import { taskServices } from './fixtures/task-services.mjs';
 import { PhoneTask } from '../task-runner.mjs';
 
-async function scenario(t, postActionObservation, batch = false) {
+async function scenario(t, postActionObservation, batch = false, quickScreen) {
   const directory = await mkdtemp(join(tmpdir(), 'poki-reuse-'));
-  const services = await taskServices(join(directory, 'mcp'), { route: true, postActionObservation, pidOnlyReceipt: batch, execution: [
+  const services = await taskServices(join(directory, 'mcp'), { route: true, postActionObservation, pidOnlyReceipt: batch,
+    scrollResults: quickScreen ? [{ sent: true, screen: quickScreen }] : [], execution: [
     ['report_plan', { title: 'Write fixture', steps: ['Open app', 'Fill field'], currentStep: 1 }],
     ['launch_app', { bundle_id: 'org.example.channel-fixture' }],
     ['report_plan', { title: 'Write fixture', steps: ['Open app', 'Fill field'], currentStep: 2 }],
+    ...(quickScreen ? [
+      batch ? ['batch_commands', { commands: [{ tool: 'scroll', arguments: { direction: 'down', observe: 'quick' } }] }]
+        : ['scroll', { direction: 'down', observe: 'quick' }],
+      ...(quickScreen.elements.length ? [['finish_task', { success: true, summary: 'Too early', details: [], answer: { kind: 'action' } }]] : []),
+    ] : []),
     batch ? ['batch_commands', { commands: [{ tool: 'fill', arguments: { field: 'Value', text: 'Example', submit: false } }] }]
       : ['fill', { field: 'Value', text: 'Example', submit: false }],
     ['finish_task', { success: true, summary: 'Saved: Example',
@@ -62,4 +68,27 @@ test('Agent uses a PID-bound terminal batch observation without another list_ele
   assert.equal(reused.listCalls, 2, 'One launch read and one batch readback');
   assert.equal(reused.trace.filter(e => e.tool === 'post_action_observation' && e.reused).length, 1);
   assert.equal(reused.trace.filter(e => e.tool === 'list_elements').length, 1);
+});
+
+test('Agent uses quick scroll evidence for browsing and still requires a final observation', async t => {
+  const screen = { source: 'accessibility', screen_stable: false, observation: { device: 'synthetic-device' },
+    elements: [{ label: 'Quick row' }] };
+  for (const batch of [false, true]) await t.test(batch ? 'batch' : 'single scroll', async t => {
+    const result = await scenario(t, true, batch, screen);
+    const calls = result.deviceCalls.map(call => call.name);
+    const scroll = calls.indexOf('scroll');
+    assert.ok(scroll >= 0);
+    assert.equal(calls[scroll + 1], 'fill');
+    assert.notEqual(result.deviceCalls[scroll].args.return_observation, true);
+    const outputs = JSON.stringify(result.modelRequests.flatMap(request => request.input));
+    assert.match(outputs, /Quick row/);
+    assert.match(outputs, /Observe the result after the last action/);
+    assert.equal(result.trace.find(entry => entry.tool === 'scroll').result.screen.elements[0].label, 'Quick row');
+  });
+});
+
+test('Agent still reads the screen when a quick sample is unavailable', async t => {
+  const result = await scenario(t, true, false, { source: 'unavailable', screen_stable: false, elements: [] });
+  const calls = result.deviceCalls.map(call => call.name);
+  assert.equal(calls[calls.indexOf('scroll') + 1], 'list_elements');
 });

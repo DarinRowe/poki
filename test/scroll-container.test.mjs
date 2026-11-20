@@ -192,6 +192,39 @@ test('scroll_to stops after a drag with uncertain delivery', async () => {
   assert.equal(phone.drags.length, 1);
 });
 
+test('a bounded scroll search returns its last viewport without rereading or running the suffix', async () => {
+  const phone = new RowPhone();
+  const result = await phone.call('batch_commands', { commands: [
+    { tool: 'scroll_to', arguments: { text: 'Missing', source: 'accessibility', max_scrolls: 1 } },
+    { tool: 'tap_text', arguments: { text: 'Entries' } },
+  ] });
+  const step = JSON.parse(result.content[1].text);
+  const summary = JSON.parse(result.content.at(-1).text);
+  assert.equal(result.isError, true);
+  assert.equal(step.reason, 'no_progress');
+  assert.equal(step.outcome, 'partial');
+  assert.equal(step.screen, undefined);
+  assert.equal(summary.screen.screen_stable, false);
+  assert.ok(summary.screen.text.includes('Cell: Chip 1'));
+  assert.equal(summary.recovery.unattempted_steps.length, 1);
+  assert.equal(phone.axReads, 2);
+  assert.equal(phone.taps, 0);
+});
+
+test('a stopped scroll search does not reuse a viewport from a different foreground', async () => {
+  class ChangingAppPhone extends RowPhone {
+    screen() {
+      const screen = super.screen();
+      return this.drags.length ? { ...screen, foreground: { pid: 502, bundle_id: 'local.other' } } : screen;
+    }
+  }
+  const phone = new ChangingAppPhone();
+  const result = await phone.call('scroll_to', { text: 'Missing', source: 'accessibility', max_scrolls: 1 });
+  assert.equal(result.isError, true);
+  assert.equal(body(result).screen, undefined);
+  assert.equal(phone.drags.length, 1);
+});
+
 test('an AX-only search can find visible text without capturing or scrolling', async () => {
   const phone = new RowPhone();
   const found = body(await phone.call('scroll_to', { text: 'Chip 1', source: 'accessibility', exact: true }));
